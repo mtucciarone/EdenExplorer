@@ -1,0 +1,22 @@
+[package]
+name = "explorereden"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eframe = "0.33"
+egui = "0.33"
+egui_extras = "0.33"
+ntapi = "0.4"
+windows = { version = "0.56", features = [
+    "Win32_Foundation",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_Controls",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_FileSystem",
+    "Win32_Security"
+] }
+crossbeam-channel = "0.5"
+dirs = "5.0"
