@@ -47,7 +47,7 @@ impl FileItem {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Navigation {
     pub current: PathBuf,
     pub back: Vec<PathBuf>,
@@ -93,6 +93,9 @@ impl Navigation {
 
         if let Some(parent) = self.current.parent() {
             self.go_to(parent.to_path_buf());
+        } else {
+            // Drive root (e.g., "C:\\") has no parent in PathBuf.
+            self.go_to(PathBuf::from("::MY_PC::"));
         }
     }
 

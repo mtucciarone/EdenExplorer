@@ -35,6 +35,7 @@ type IconKey = (i32, u32);
 
 pub struct IconCache {
     textures: Arc<Mutex<HashMap<IconKey, egui::TextureHandle>>>,
+    icon_indices: Arc<Mutex<HashMap<String, i32>>>,
     sender: Sender<IconRequest>,
     size: u32,
 }
@@ -44,17 +45,23 @@ impl IconCache {
         let (tx, rx) = unbounded::<IconRequest>();
 
         let textures = Arc::new(Mutex::new(HashMap::new()));
+        let icon_indices = Arc::new(Mutex::new(HashMap::new()));
         let textures_bg = textures.clone();
+        let icon_indices_bg = icon_indices.clone();
         let ctx_bg = ctx.clone();
 
         let size = 48;
 
         thread::spawn(move || {
-            let image_list: IImageList =
-                unsafe { SHGetImageList(SHIL_EXTRALARGE as i32).unwrap() };
+            let image_list: IImageList = match unsafe { SHGetImageList(SHIL_EXTRALARGE as i32) } {
+                Ok(list) => list,
+                Err(_) => return,
+            };
 
             while let Ok(req) = rx.recv() {
-                if let Some(icon_index) = get_icon_index(&req.path, req.is_dir) {
+                if let Some(icon_index) =
+                    get_icon_index_cached(&icon_indices_bg, &req.path, req.is_dir)
+                {
                     let key = (icon_index, size);
 
                     if textures_bg.lock().unwrap().contains_key(&key) {
@@ -86,6 +93,7 @@ impl IconCache {
 
         Self {
             textures,
+            icon_indices,
             sender: tx,
             size,
         }
@@ -96,7 +104,9 @@ impl IconCache {
         path: &Path,
         is_dir: bool,
     ) -> Option<egui::TextureHandle> {
-        if let Some(icon_index) = get_icon_index(path, is_dir) {
+        if let Some(icon_index) =
+            get_icon_index_cached(&self.icon_indices, path, is_dir)
+        {
             let key = (icon_index, self.size);
 
             if let Some(tex) = self.textures.lock().unwrap().get(&key) {
@@ -115,45 +125,76 @@ impl IconCache {
 
 // ---------------- helpers ----------------
 
-fn get_icon_index(path: &Path, is_dir: bool) -> Option<i32> {
-    let wide: Vec<u16>;
+fn get_icon_index_cached(
+    cache: &Arc<Mutex<HashMap<String, i32>>>,
+    path: &Path,
+    is_dir: bool,
+) -> Option<i32> {
+    let key = icon_key(path, is_dir);
 
+    if let Some(idx) = cache.lock().unwrap().get(&key) {
+        return Some(*idx);
+    }
+
+    let idx = get_icon_index_for_key(&key, path, is_dir)?;
+    cache.lock().unwrap().insert(key, idx);
+    Some(idx)
+}
+
+fn icon_key(path: &Path, is_dir: bool) -> String {
     if is_dir {
-        if path.exists() {
-            wide = path
-                .as_os_str()
-                .encode_wide()
-                .chain(Some(0))
-                .collect();
+        if is_drive_root(path) {
+            format!("drive:{}", path.to_string_lossy().to_lowercase())
         } else {
-            wide = "folder".encode_utf16().chain(Some(0)).collect();
+            "folder".to_string()
         }
-    } else if path.exists() {
+    } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        format!("ext:{}", ext.to_lowercase())
+    } else {
+        "file".to_string()
+    }
+}
+
+fn is_drive_root(path: &Path) -> bool {
+    let s = path.to_string_lossy();
+    s.len() >= 3 && s.ends_with(":\\") && path.parent().is_none()
+}
+
+fn get_icon_index_for_key(
+    key: &str,
+    path: &Path,
+    is_dir: bool,
+) -> Option<i32> {
+    let wide: Vec<u16>;
+    let mut flags = SHGFI_SYSICONINDEX;
+    let file_attrs = if is_dir {
+        FILE_ATTRIBUTE_DIRECTORY
+    } else {
+        FILE_ATTRIBUTE_NORMAL
+    };
+
+    if key.starts_with("drive:") {
         wide = path
             .as_os_str()
             .encode_wide()
             .chain(Some(0))
             .collect();
+    } else if is_dir {
+        wide = "folder".encode_utf16().chain(Some(0)).collect();
+        flags |= SHGFI_USEFILEATTRIBUTES;
     } else {
-        let ext = path.extension()?.to_str()?;
-        let fake = format!("file.{}", ext);
+        let ext = key.strip_prefix("ext:").unwrap_or("");
+        let fake = if ext.is_empty() {
+            "file".to_string()
+        } else {
+            format!("file.{}", ext)
+        };
         wide = fake.encode_utf16().chain(Some(0)).collect();
+        flags |= SHGFI_USEFILEATTRIBUTES;
     }
 
     unsafe {
         let mut info = std::mem::zeroed::<SHFILEINFOW>();
-
-        let flags = if is_dir && path.exists() {
-            SHGFI_SYSICONINDEX
-        } else {
-            SHGFI_SYSICONINDEX | SHGFI_USEFILEATTRIBUTES
-        };
-
-        let file_attrs = if is_dir {
-            FILE_ATTRIBUTE_DIRECTORY
-        } else {
-            FILE_ATTRIBUTE_NORMAL
-        };
 
         let res = SHGetFileInfoW(
             PCWSTR(wide.as_ptr()),
