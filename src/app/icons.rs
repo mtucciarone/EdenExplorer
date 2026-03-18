@@ -9,6 +9,7 @@ use std::os::windows::ffi::OsStrExt;
 
 use crossbeam_channel::{unbounded, Sender};
 use eframe::egui;
+use windows::Win32::UI::Controls::IImageList;
 use windows::{
     core::PCWSTR,
     Win32::{
@@ -16,15 +17,13 @@ use windows::{
         Storage::FileSystem::{FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL},
         UI::{
             Shell::{
-                SHGetFileInfoW, SHGetImageList, SHFILEINFOW,
-                SHGFI_SYSICONINDEX, SHGFI_USEFILEATTRIBUTES,
-                SHIL_EXTRALARGE,
+                SHGetFileInfoW, SHGetImageList, SHFILEINFOW, SHGFI_SYSICONINDEX,
+                SHGFI_USEFILEATTRIBUTES, SHIL_EXTRALARGE,
             },
             WindowsAndMessaging::{DestroyIcon, GetIconInfo, HICON, ICONINFO},
         },
     },
 };
-use windows::Win32::UI::Controls::IImageList;
 
 struct IconRequest {
     path: PathBuf,
@@ -70,7 +69,9 @@ impl IconCache {
 
                     if let Some(icon) = get_icon_from_list(&image_list, icon_index) {
                         if let Some((pixels, w, h)) = icon_to_rgba(icon) {
-                            unsafe { let _ = DestroyIcon(icon); };
+                            unsafe {
+                                let _ = DestroyIcon(icon);
+                            };
 
                             let image = egui::ColorImage::from_rgba_unmultiplied(
                                 [w as usize, h as usize],
@@ -99,14 +100,8 @@ impl IconCache {
         }
     }
 
-    pub fn get(
-        &self,
-        path: &Path,
-        is_dir: bool,
-    ) -> Option<egui::TextureHandle> {
-        if let Some(icon_index) =
-            get_icon_index_cached(&self.icon_indices, path, is_dir)
-        {
+    pub fn get(&self, path: &Path, is_dir: bool) -> Option<egui::TextureHandle> {
+        if let Some(icon_index) = get_icon_index_cached(&self.icon_indices, path, is_dir) {
             let key = (icon_index, self.size);
 
             if let Some(tex) = self.textures.lock().unwrap().get(&key) {
@@ -160,11 +155,7 @@ fn is_drive_root(path: &Path) -> bool {
     s.len() >= 3 && s.ends_with(":\\") && path.parent().is_none()
 }
 
-fn get_icon_index_for_key(
-    key: &str,
-    path: &Path,
-    is_dir: bool,
-) -> Option<i32> {
+fn get_icon_index_for_key(key: &str, path: &Path, is_dir: bool) -> Option<i32> {
     let wide: Vec<u16>;
     let mut flags = SHGFI_SYSICONINDEX;
     let file_attrs = if is_dir {
@@ -174,11 +165,7 @@ fn get_icon_index_for_key(
     };
 
     if key.starts_with("drive:") {
-        wide = path
-            .as_os_str()
-            .encode_wide()
-            .chain(Some(0))
-            .collect();
+        wide = path.as_os_str().encode_wide().chain(Some(0)).collect();
     } else if is_dir {
         wide = "folder".encode_utf16().chain(Some(0)).collect();
         flags |= SHGFI_USEFILEATTRIBUTES;
@@ -213,9 +200,7 @@ fn get_icon_index_for_key(
 }
 
 fn get_icon_from_list(list: &IImageList, index: i32) -> Option<HICON> {
-    unsafe {
-        list.GetIcon(index, 0).ok()
-    }
+    unsafe { list.GetIcon(index, 0).ok() }
 }
 
 fn icon_to_rgba(icon: HICON) -> Option<(Vec<u8>, u32, u32)> {
@@ -229,7 +214,8 @@ fn icon_to_rgba(icon: HICON) -> Option<(Vec<u8>, u32, u32)> {
             icon_info.hbmColor,
             std::mem::size_of::<BITMAP>() as i32,
             Some(&mut bmp as *mut _ as _),
-        ) == 0 {
+        ) == 0
+        {
             return None;
         }
 

@@ -7,10 +7,7 @@ pub struct TopbarAction {
     pub hamburger: bool,
 }
 
-pub fn draw_topbar(
-    ui: &mut egui::Ui,
-    is_dark: bool,
-) -> TopbarAction {
+pub fn draw_topbar(ui: &mut egui::Ui, is_dark: bool) -> TopbarAction {
     let mut action = TopbarAction::default();
 
     ui.horizontal(|ui| {

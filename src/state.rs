@@ -7,6 +7,7 @@ pub struct FileItem {
     pub is_dir: bool,
     pub file_size: Option<u64>,
     pub modified_time: Option<String>,
+    pub created_time: Option<String>,
 
     // Optional drive info (only populated for drive roots)
     pub total_space: Option<u64>,
@@ -14,13 +15,21 @@ pub struct FileItem {
 }
 
 impl FileItem {
-    pub fn new(name: String, path: PathBuf, is_dir: bool, file_size: Option<u64>, modified_time: Option<String>) -> Self {
+    pub fn new(
+        name: String,
+        path: PathBuf,
+        is_dir: bool,
+        file_size: Option<u64>,
+        modified_time: Option<String>,
+        created_time: Option<String>,
+    ) -> Self {
         Self {
             name,
             path,
             is_dir,
             file_size,
             modified_time,
+            created_time,
             total_space: None,
             free_space: None,
         }
@@ -32,6 +41,7 @@ impl FileItem {
         is_dir: bool,
         file_size: Option<u64>,
         modified_time: Option<String>,
+        created_time: Option<String>,
         total: u64,
         free: u64,
     ) -> Self {
@@ -41,6 +51,7 @@ impl FileItem {
             is_dir,
             file_size,
             modified_time,
+            created_time,
             total_space: Some(total),
             free_space: Some(free),
         }

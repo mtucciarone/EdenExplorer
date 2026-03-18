@@ -1,6 +1,6 @@
 use std::ffi::OsString;
-use std::path::{Path, PathBuf};
 use std::os::windows::ffi::OsStrExt;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -11,19 +11,17 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use windows::core::{Error, PCWSTR};
-use windows::Win32::Foundation::{CloseHandle, HANDLE, GENERIC_READ};
+use windows::Win32::Foundation::{CloseHandle, GENERIC_READ, HANDLE};
 use windows::Win32::Storage::FileSystem::{
-    CreateFileW, FILE_ATTRIBUTE_DIRECTORY,
-    FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE, FILE_SHARE_READ,
-    FILE_SHARE_WRITE, OPEN_EXISTING,
+    CreateFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE,
+    FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
 };
-use windows::Win32::System::IO::DeviceIoControl;
 use windows::Win32::System::Ioctl::{
     FSCTL_ENUM_USN_DATA, FSCTL_GET_NTFS_FILE_RECORD, FSCTL_QUERY_USN_JOURNAL,
     FSCTL_READ_USN_JOURNAL, MFT_ENUM_DATA_V0, NTFS_FILE_RECORD_INPUT_BUFFER,
-    NTFS_FILE_RECORD_OUTPUT_BUFFER, READ_USN_JOURNAL_DATA_V0,
-    USN_JOURNAL_DATA_V0,
+    NTFS_FILE_RECORD_OUTPUT_BUFFER, READ_USN_JOURNAL_DATA_V0, USN_JOURNAL_DATA_V0,
 };
+use windows::Win32::System::IO::DeviceIoControl;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FileRecord {
@@ -212,11 +210,7 @@ impl Indexer {
     }
 
     fn snapshot(&self, journal_id: u64) -> CacheSnapshot {
-        let records: Vec<FileRecord> = self
-            .records
-            .iter()
-            .map(|r| r.value().clone())
-            .collect();
+        let records: Vec<FileRecord> = self.records.iter().map(|r| r.value().clone()).collect();
         let folder_sizes: Vec<(u64, u64)> = self
             .folder_sizes
             .iter()
@@ -279,11 +273,7 @@ impl Indexer {
 
     fn rebuild_folder_sizes(&self) {
         self.folder_sizes.clear();
-        let records: Vec<FileRecord> = self
-            .records
-            .iter()
-            .map(|r| r.value().clone())
-            .collect();
+        let records: Vec<FileRecord> = self.records.iter().map(|r| r.value().clone()).collect();
 
         for record in records {
             if record.is_dir || record.size == 0 {
@@ -312,7 +302,10 @@ impl Indexer {
         let mut current_ref = 5u64; // Root directory FRN
         let mut iter = path.iter().peekable();
         let drive = iter.next()?.to_string_lossy().to_string();
-        if !drive.to_ascii_lowercase().starts_with(&format!("{}:", self.drive)) {
+        if !drive
+            .to_ascii_lowercase()
+            .starts_with(&format!("{}:", self.drive))
+        {
             return None;
         }
 
@@ -723,9 +716,7 @@ fn get_file_size_by_frn(handle: HANDLE, file_ref: u64) -> Option<u64> {
         return None;
     }
 
-    let output = unsafe {
-        &*(out.as_ptr() as *const NTFS_FILE_RECORD_OUTPUT_BUFFER)
-    };
+    let output = unsafe { &*(out.as_ptr() as *const NTFS_FILE_RECORD_OUTPUT_BUFFER) };
 
     let record = unsafe {
         std::slice::from_raw_parts(
@@ -738,9 +729,7 @@ fn get_file_size_by_frn(handle: HANDLE, file_ref: u64) -> Option<u64> {
         return None;
     }
 
-    let header = unsafe {
-        &*(record.as_ptr() as *const FileRecordHeader)
-    };
+    let header = unsafe { &*(record.as_ptr() as *const FileRecordHeader) };
 
     if header.signature != 0x454C4946 {
         return None;
@@ -748,9 +737,7 @@ fn get_file_size_by_frn(handle: HANDLE, file_ref: u64) -> Option<u64> {
 
     let mut offset = header.first_attribute_offset as usize;
     while offset + std::mem::size_of::<AttrHeaderCommon>() <= record.len() {
-        let common = unsafe {
-            &*(record.as_ptr().add(offset) as *const AttrHeaderCommon)
-        };
+        let common = unsafe { &*(record.as_ptr().add(offset) as *const AttrHeaderCommon) };
 
         if common.type_code == 0xFFFFFFFF {
             break;
@@ -765,17 +752,15 @@ fn get_file_size_by_frn(handle: HANDLE, file_ref: u64) -> Option<u64> {
                 if offset + std::mem::size_of::<AttrHeaderResident>() > record.len() {
                     return None;
                 }
-                let resident = unsafe {
-                    &*(record.as_ptr().add(offset) as *const AttrHeaderResident)
-                };
+                let resident =
+                    unsafe { &*(record.as_ptr().add(offset) as *const AttrHeaderResident) };
                 return Some(resident.value_length as u64);
             } else {
                 if offset + std::mem::size_of::<AttrHeaderNonResident>() > record.len() {
                     return None;
                 }
-                let non_resident = unsafe {
-                    &*(record.as_ptr().add(offset) as *const AttrHeaderNonResident)
-                };
+                let non_resident =
+                    unsafe { &*(record.as_ptr().add(offset) as *const AttrHeaderNonResident) };
                 return Some(non_resident.data_size);
             }
         }
@@ -788,12 +773,18 @@ fn get_file_size_by_frn(handle: HANDLE, file_ref: u64) -> Option<u64> {
 
 fn cache_path(drive: char) -> Option<PathBuf> {
     let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join(format!("index_{}.bin", drive)))
+    Some(
+        base.join("ExplorerEden")
+            .join(format!("index_{}.bin", drive)),
+    )
 }
 
 fn favorites_cache_path(drive: char) -> Option<PathBuf> {
     let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join(format!("favorites_{}.bin", drive)))
+    Some(
+        base.join("ExplorerEden")
+            .join(format!("favorites_{}.bin", drive)),
+    )
 }
 
 fn load_cache(drive: char) -> Option<CacheSnapshot> {

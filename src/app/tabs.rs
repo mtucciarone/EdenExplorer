@@ -1,9 +1,9 @@
 use eframe::egui;
 use std::path::{Path, PathBuf};
 
-use egui_phosphor::regular;
 use crate::app::icons::IconCache;
 use crate::state::Navigation;
+use egui_phosphor::regular;
 
 #[derive(Clone)]
 pub struct TabInfo {
@@ -18,11 +18,7 @@ pub struct TabsAction {
     pub open_new: bool,
 }
 
-pub fn draw_tabs(
-    ui: &mut egui::Ui,
-    tabs: &[TabInfo],
-    active_id: u64,
-) -> TabsAction {
+pub fn draw_tabs(ui: &mut egui::Ui, tabs: &[TabInfo], active_id: u64) -> TabsAction {
     let mut action = TabsAction::default();
 
     ui.horizontal(|ui| {
@@ -58,27 +54,26 @@ pub fn draw_tabs(
                     egui::Stroke::NONE
                 });
 
-            let resp = tab_frame.show(ui, |ui| {
-                ui.set_min_width(160.0);
-                ui.set_max_width(200.0);
-                ui.horizontal(|ui| {
-                    ui.add(
-                        egui::Label::new(regular::FOLDER_SIMPLE)
-                            .selectable(false),
-                    );
+            let resp = tab_frame
+                .show(ui, |ui| {
+                    ui.set_min_width(160.0);
+                    ui.set_max_width(200.0);
+                    ui.horizontal(|ui| {
+                        ui.add(egui::Label::new(regular::FOLDER_SIMPLE).selectable(false));
 
-                    if ui
-                        .add(
-                            egui::Label::new(&tab.title)
-                                .selectable(false)
-                                .sense(egui::Sense::click()),
-                        )
-                        .clicked()
-                    {
-                        action.activate = Some(tab.id);
-                    }
-                });
-            }).response;
+                        if ui
+                            .add(
+                                egui::Label::new(&tab.title)
+                                    .selectable(false)
+                                    .sense(egui::Sense::click()),
+                            )
+                            .clicked()
+                        {
+                            action.activate = Some(tab.id);
+                        }
+                    });
+                })
+                .response;
 
             let close_resp = tab_close_button(ui, resp.rect, tab.id);
             if close_resp.clicked() {
@@ -118,10 +113,17 @@ pub fn draw_tabs(
 fn tab_close_button(ui: &mut egui::Ui, tab_rect: egui::Rect, tab_id: u64) -> egui::Response {
     let size = egui::vec2(18.0, 18.0);
     let rect = egui::Rect::from_min_size(
-        egui::pos2(tab_rect.right() - size.x - 6.0, tab_rect.center().y - size.y * 0.5),
+        egui::pos2(
+            tab_rect.right() - size.x - 6.0,
+            tab_rect.center().y - size.y * 0.5,
+        ),
         size,
     );
-    let resp = ui.interact(rect, ui.id().with(("tab_close", tab_id)), egui::Sense::click());
+    let resp = ui.interact(
+        rect,
+        ui.id().with(("tab_close", tab_id)),
+        egui::Sense::click(),
+    );
     let hovered = resp.hovered();
     let bg = if hovered {
         egui::Color32::from_rgb(200, 52, 52)
@@ -228,18 +230,13 @@ pub fn draw_tabbar(
         if nav.is_root() {
             let pc_icon_path = PathBuf::from("C:\\");
             if let Some(icon) = icon_cache.get(&pc_icon_path, true) {
-                ui.add(
-                    egui::Image::new(&icon)
-                        .fit_to_exact_size(egui::vec2(14.0, 14.0)),
-                );
+                ui.add(egui::Image::new(&icon).fit_to_exact_size(egui::vec2(14.0, 14.0)));
             }
             if ui
                 .add(
-                    egui::Label::new(
-                        egui::RichText::new("This PC").size(13.0),
-                    )
-                    .selectable(false)
-                    .sense(egui::Sense::click()),
+                    egui::Label::new(egui::RichText::new("This PC").size(13.0))
+                        .selectable(false)
+                        .sense(egui::Sense::click()),
                 )
                 .clicked()
             {
@@ -275,11 +272,9 @@ pub fn draw_tabbar(
                     .corner_radius(egui::CornerRadius::same(4))
                     .show(ui, |ui| {
                         ui.add(
-                            egui::Label::new(
-                                egui::RichText::new(label).size(13.0),
-                            )
-                            .selectable(false)
-                            .sense(egui::Sense::click()),
+                            egui::Label::new(egui::RichText::new(label).size(13.0))
+                                .selectable(false)
+                                .sense(egui::Sense::click()),
                         )
                     });
 
@@ -328,10 +323,7 @@ fn build_breadcrumbs(path: &Path) -> Vec<(String, PathBuf)> {
             }
             Component::Normal(name) => {
                 current.push(name);
-                segments.push((
-                    name.to_string_lossy().to_string(),
-                    current.clone(),
-                ));
+                segments.push((name.to_string_lossy().to_string(), current.clone()));
             }
             _ => {}
         }

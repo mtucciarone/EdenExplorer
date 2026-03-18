@@ -6,119 +6,30 @@ use std::sync::Arc;
 
 use crossbeam_channel::{unbounded, Receiver, Sender};
 
-use crate::state::{FileItem, Navigation};
-use crate::fs::{scan_dir_async, get_drive_space, calculate_folder_size_fast_progress};
-use crate::drives::{get_drives, get_drive_infos, parse_drive_display};
 use crate::app::icons::IconCache; // 🔥 FIXED PATH
-use crate::app::sidebar::{draw_sidebar, FavoriteItem, SidebarPalette};
+use crate::app::sidebar::{draw_sidebar, FavoriteItem, SidebarAction, SidebarPalette};
+use crate::app::tabs::{draw_tabbar, draw_tabs, TabInfo, TabbarNavAction};
 use crate::app::topbar::draw_topbar;
-use crate::app::tabs::{draw_tabs, draw_tabbar, TabInfo, TabbarNavAction};
 use crate::app::utils::{
-    copy_dir_recursive, shell_delete_to_recycle_bin, set_clipboard_files,
-    get_clipboard_files, clipboard_has_files,
+    clipboard_has_files, copy_dir_recursive, get_clipboard_files, set_clipboard_files,
+    shell_delete_to_recycle_bin,
 };
-use crate::indexer::{Indexer, IndexStatus, load_favorites, save_favorites};
+use crate::drives::{get_drive_infos, get_drives, parse_drive_display};
+use crate::fs::{calculate_folder_size_fast_progress, get_drive_space, scan_dir_async};
+use crate::indexer::{load_favorites, save_favorites, IndexStatus, Indexer};
+use crate::state::{FileItem, Navigation};
 
+use super::features::{apply_theme, palette, ThemeMode};
+use super::itemviewer::{
+    draw_item_viewer, ItemViewerAction, ItemViewerContextAction, ItemViewerFolderSizeState,
+    RenameState,
+};
 use super::sorting::{sort_files, SortColumn};
-use super::itemviewer::{draw_item_viewer, ItemViewerAction, ItemViewerContextAction, ItemViewerFolderSizeState};
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use windows::core::PCWSTR;
-use windows::Win32::UI::Shell::{
-    ShellExecuteExW, SHELLEXECUTEINFOW, SEE_MASK_INVOKEIDLIST,
-};
+use windows::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_INVOKEIDLIST, SHELLEXECUTEINFOW};
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOW;
-
-#[derive(Clone, Copy, PartialEq)]
-enum ThemeMode {
-    Light,
-    Dark,
-}
-
-struct ThemePalette {
-    topbar_bg: egui::Color32,
-    sidebar_bg: egui::Color32,
-    sidebar_hover: egui::Color32,
-    sidebar_active: egui::Color32,
-}
-
-struct RenameState {
-    path: PathBuf,
-    new_name: String,
-}
-
-
-fn palette(mode: ThemeMode) -> ThemePalette {
-    match mode {
-        ThemeMode::Dark => ThemePalette {
-            topbar_bg: egui::Color32::from_rgb(24, 27, 31),
-            sidebar_bg: egui::Color32::from_rgb(28, 32, 37),
-            sidebar_hover: egui::Color32::from_rgb(38, 44, 52),
-            sidebar_active: egui::Color32::from_rgb(46, 54, 64),
-        },
-        ThemeMode::Light => ThemePalette {
-            topbar_bg: egui::Color32::from_rgb(247, 248, 250),
-            sidebar_bg: egui::Color32::from_rgb(235, 239, 245),
-            sidebar_hover: egui::Color32::from_rgb(224, 232, 242),
-            sidebar_active: egui::Color32::from_rgb(214, 224, 236),
-        },
-    }
-}
-
-fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
-    let mut style = (*ctx.style()).clone();
-    style.visuals = match mode {
-        ThemeMode::Dark => egui::Visuals::dark(),
-        ThemeMode::Light => egui::Visuals::light(),
-    };
-
-    style.spacing.item_spacing = egui::vec2(10.0, 8.0);
-    style.spacing.button_padding = egui::vec2(10.0, 6.0);
-    style.spacing.window_margin = egui::Margin::same(10);
-    style.text_styles.insert(
-        egui::TextStyle::Heading,
-        egui::FontId::proportional(18.0),
-    );
-    style.text_styles.insert(
-        egui::TextStyle::Body,
-        egui::FontId::proportional(14.0),
-    );
-    style.visuals.window_corner_radius = egui::CornerRadius::same(10);
-    style.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(6);
-    style.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(6);
-    style.visuals.widgets.active.corner_radius = egui::CornerRadius::same(6);
-
-    match mode {
-        ThemeMode::Dark => {
-            style.visuals.panel_fill = egui::Color32::from_rgb(20, 22, 26);
-            style.visuals.faint_bg_color = egui::Color32::from_rgb(26, 30, 36);
-            style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(30, 34, 40);
-            style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(38, 44, 52);
-            style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(46, 54, 64);
-            style.visuals.selection.bg_fill = egui::Color32::from_rgb(60, 90, 130);
-            style.visuals.selection.stroke.color = egui::Color32::from_rgb(120, 160, 210);
-            style.visuals.widgets.inactive.fg_stroke.color = egui::Color32::from_rgb(220, 226, 232);
-            style.visuals.widgets.hovered.fg_stroke.color = egui::Color32::from_rgb(235, 240, 246);
-            style.visuals.widgets.active.fg_stroke.color = egui::Color32::from_rgb(245, 248, 252);
-            style.visuals.widgets.noninteractive.fg_stroke.color = egui::Color32::from_rgb(160, 170, 180);
-        }
-        ThemeMode::Light => {
-            style.visuals.panel_fill = egui::Color32::from_rgb(250, 251, 253);
-            style.visuals.faint_bg_color = egui::Color32::from_rgb(244, 246, 249);
-            style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(247, 248, 250);
-            style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(236, 240, 246);
-            style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(224, 231, 242);
-            style.visuals.selection.bg_fill = egui::Color32::from_rgb(210, 225, 245);
-            style.visuals.selection.stroke.color = egui::Color32::from_rgb(60, 90, 130);
-            style.visuals.widgets.inactive.fg_stroke.color = egui::Color32::from_rgb(35, 41, 47);
-            style.visuals.widgets.hovered.fg_stroke.color = egui::Color32::from_rgb(25, 29, 33);
-            style.visuals.widgets.active.fg_stroke.color = egui::Color32::from_rgb(15, 18, 22);
-            style.visuals.widgets.noninteractive.fg_stroke.color = egui::Color32::from_rgb(70, 78, 86);
-        }
-    }
-
-    ctx.set_style(style);
-}
 
 struct TabState {
     id: u64,
@@ -139,6 +50,7 @@ pub struct ExplorerApp {
     search_results: Vec<FileItem>,
     search_active: bool,
     favorites: Vec<FavoriteItem>,
+    dragging_favorite: Option<usize>,
     sidebar_selected: Option<PathBuf>,
     selected_path: Option<PathBuf>,
     rename_state: Option<RenameState>,
@@ -149,12 +61,17 @@ pub struct ExplorerApp {
     sort_column: SortColumn,
     sort_ascending: bool,
     icon_cache: Option<IconCache>, // 🔥 FIX: lazy init
+    sidebar_width: f32,
+    file_type_cache: HashMap<String, String>,
 }
 
 impl Default for ExplorerApp {
     fn default() -> Self {
         let mut app = Self {
-            tabs: vec![TabState { id: 1, nav: Navigation::new() }],
+            tabs: vec![TabState {
+                id: 1,
+                nav: Navigation::new(),
+            }],
             active_tab: 0,
             next_tab_id: 2,
             files: vec![],
@@ -167,6 +84,7 @@ impl Default for ExplorerApp {
             search_results: Vec::new(),
             search_active: false,
             favorites: Vec::new(),
+            dragging_favorite: None,
             sidebar_selected: None,
             selected_path: None,
             rename_state: None,
@@ -177,6 +95,8 @@ impl Default for ExplorerApp {
             sort_column: SortColumn::Name,
             sort_ascending: true,
             icon_cache: None, // 🔥 FIX
+            sidebar_width: 200.0,
+            file_type_cache: HashMap::new(),
         };
 
         let stored = load_favorites('C');
@@ -275,22 +195,11 @@ impl ExplorerApp {
 
                 if let Some((total, free)) = get_drive_space(&path) {
                     self.files.push(FileItem::with_drive_info(
-                        label,
-                        path,
-                        true,
-                        None,
-                        None,
-                        total,
-                        free,
+                        label, path, true, None, None, None, total, free,
                     ));
                 } else {
-                    self.files.push(FileItem::new(
-                        label,
-                        path,
-                        true,
-                        None,
-                        None,
-                    ));
+                    self.files
+                        .push(FileItem::new(label, path, true, None, None, None));
                 }
             }
 
@@ -340,11 +249,7 @@ impl ExplorerApp {
         }
 
         let path = self.current_nav().current.clone();
-        if self
-            .favorites
-            .iter()
-            .any(|fav| fav.path == path)
-        {
+        if self.favorites.iter().any(|fav| fav.path == path) {
             return;
         }
 
@@ -384,7 +289,10 @@ impl ExplorerApp {
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| path.display().to_string());
-                self.rename_state = Some(RenameState { path, new_name: name });
+                self.rename_state = Some(RenameState {
+                    path,
+                    new_name: name,
+                });
             }
             ItemViewerContextAction::Delete(path) => {
                 self.delete_path(&path);
@@ -392,6 +300,14 @@ impl ExplorerApp {
             }
             ItemViewerContextAction::Properties(path) => {
                 self.open_properties(&path);
+            }
+            ItemViewerContextAction::Undo => {
+                todo!("Undo not implemented yet");
+                // self.undo(); // implement this method or your undo logic here
+            }
+            ItemViewerContextAction::Redo => {
+                todo!("Redo not implemented yet");
+                // self.redo(); // implement this method or your redo logic here
             }
         }
     }
@@ -449,11 +365,7 @@ impl ExplorerApp {
     }
 
     fn open_properties(&self, path: &PathBuf) {
-        let wide: Vec<u16> = path
-            .as_os_str()
-            .encode_wide()
-            .chain(Some(0))
-            .collect();
+        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
         let verb: Vec<u16> = OsStr::new("properties")
             .encode_wide()
             .chain(Some(0))
@@ -506,9 +418,12 @@ impl eframe::App for ExplorerApp {
             if !batch.is_empty() {
                 for item in batch.iter() {
                     if item.is_dir {
-                        self.folder_sizes
-                            .entry(item.path.clone())
-                            .or_insert(ItemViewerFolderSizeState { bytes: 0, done: false });
+                        self.folder_sizes.entry(item.path.clone()).or_insert(
+                            ItemViewerFolderSizeState {
+                                bytes: 0,
+                                done: false,
+                            },
+                        );
                         if self.pending_size_set.insert(item.path.clone()) {
                             self.pending_size_queue.push_back(item.path.clone());
                         }
@@ -535,9 +450,7 @@ impl eframe::App for ExplorerApp {
                             path.clone(),
                             ItemViewerFolderSizeState { bytes: size, done },
                         );
-                        if let Some(item) =
-                            self.files.iter_mut().find(|f| f.path == path)
-                        {
+                        if let Some(item) = self.files.iter_mut().find(|f| f.path == path) {
                             item.file_size = Some(size);
                             updated = true;
                         }
@@ -556,34 +469,10 @@ impl eframe::App for ExplorerApp {
         let palette = palette(self.theme);
         let mut topbar_action = None;
 
-        let mut rename_request: Option<(PathBuf, String)> = None;
-        let mut rename_cancel = false;
-        if let Some(rename) = &mut self.rename_state {
-            egui::Window::new("Rename")
-                .collapsible(false)
-                .resizable(false)
-                .show(ctx, |ui| {
-                    ui.label("New name");
-                    let resp = ui.text_edit_singleline(&mut rename.new_name);
-                    if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                        rename_request = Some((rename.path.clone(), rename.new_name.trim().to_string()));
-                    }
-                    ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
-                            rename_cancel = true;
-                        }
-                        if ui.button("OK").clicked() {
-                            rename_request = Some((rename.path.clone(), rename.new_name.trim().to_string()));
-                        }
-                    });
-                });
-        }
-
         // Throttle size requests to keep UI responsive
         if let Some(size_req_tx) = &self.size_req_tx {
-            let should_pause = ctx.input(|i| {
-                i.pointer.any_down() || i.raw_scroll_delta.y.abs() > 0.0
-            });
+            let should_pause =
+                ctx.input(|i| i.pointer.any_down() || i.raw_scroll_delta.y.abs() > 0.0);
             if !should_pause {
                 for _ in 0..6 {
                     if let Some(path) = self.pending_size_queue.pop_front() {
@@ -594,24 +483,13 @@ impl eframe::App for ExplorerApp {
                 }
             }
         }
-        if rename_cancel {
-            self.rename_state = None;
-        }
-        if let Some((path, new_name)) = rename_request {
-            if let Some(parent) = path.parent() {
-                let target = parent.join(new_name);
-                let _ = std::fs::rename(&path, &target);
-                self.rename_state = None;
-                self.load_path();
-            }
-        }
 
         // Main layout: sidebar + tabs column
         let sidebar_palette = SidebarPalette {
             hover: palette.sidebar_hover,
             active: palette.sidebar_active,
         };
-        let mut sidebar_action = None;
+        let mut sidebar_action: Option<SidebarAction> = None;
         let mut tabs_action = None;
         let mut tabbar_action = None;
         let nav_snapshot = self.current_nav().clone();
@@ -624,42 +502,59 @@ impl eframe::App for ExplorerApp {
                 avail,
                 egui::Layout::left_to_right(egui::Align::Min),
                 |ui| {
-                    // Sidebar column
-                    let sidebar_width = 220.0;
-                    let sidebar_frame = egui::Frame::NONE
-                        .fill(palette.sidebar_bg)
-                        .inner_margin(egui::Margin::symmetric(12, 6));
+                    // Sidebar column with resizable width
+                    let sidebar_width = self.sidebar_width.max(140.0).min(280.0);
+                    let sidebar_frame =
+                        egui::Frame::NONE.inner_margin(egui::Margin::symmetric(12, 0));
+
+                    // Left panel (sidebar)
                     ui.allocate_ui_with_layout(
                         egui::vec2(sidebar_width, ui.available_height()),
                         egui::Layout::top_down(egui::Align::Min),
                         |ui| {
-                            egui::Frame::NONE
-                                .fill(palette.topbar_bg)
-                                .inner_margin(egui::Margin::symmetric(12, 4))
-                                .show(ui, |ui| {
-                                    topbar_action = Some(draw_topbar(
-                                        ui,
-                                        self.theme == ThemeMode::Dark,
-                                    ));
-                                });
-
-                            ui.add_space(6.0);
-
+                            egui::Frame::NONE.show(ui, |ui| {
+                                topbar_action =
+                                    Some(draw_topbar(ui, self.theme == ThemeMode::Dark));
+                            });
                             sidebar_frame.show(ui, |ui| {
                                 let drives = get_drive_infos();
                                 sidebar_action = Some(draw_sidebar(
                                     ui,
                                     &icon_cache,
-                                    &self.favorites,
+                                    &mut self.favorites,
                                     self.sidebar_selected.as_ref(),
                                     &drives,
                                     &sidebar_palette,
+                                    &mut self.dragging_favorite,
                                 ));
+
+                                // Apply reorder
+                                if let Some((from, to)) = sidebar_action.as_ref().unwrap().reorder {
+                                    self.favorites.swap(from, to);
+                                }
                             });
                         },
                     );
 
-                    ui.add_space(8.0);
+                    // Resize handle
+                    let separator_response = ui.allocate_rect(
+                        egui::Rect::from_min_size(
+                            ui.cursor().min,
+                            egui::vec2(4.0, ui.available_height()),
+                        ),
+                        egui::Sense::click_and_drag(),
+                    );
+
+                    if separator_response.hovered() {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+                    }
+
+                    if separator_response.dragged() {
+                        self.sidebar_width = (self.sidebar_width
+                            + separator_response.drag_delta().x)
+                            .max(140.0)
+                            .min(560.0);
+                    }
 
                     // Tabs column
                     let right_size = egui::vec2(ui.available_width(), ui.available_height());
@@ -680,11 +575,7 @@ impl eframe::App for ExplorerApp {
                                 .collect();
                             let active_id = self.tabs[self.active_tab].id;
 
-                            tabs_action = Some(draw_tabs(
-                                ui,
-                                &tab_infos,
-                                active_id,
-                            ));
+                            tabs_action = Some(draw_tabs(ui, &tab_infos, active_id));
 
                             let container_stroke = ui.visuals().widgets.active.bg_stroke;
                             let container = egui::Frame::NONE
@@ -706,8 +597,6 @@ impl eframe::App for ExplorerApp {
                                 ));
 
                                 ui.add_space(4.0);
-                                ui.separator();
-                                ui.add_space(4.0);
 
                                 let display_files = if self.search_active {
                                     &self.search_results
@@ -715,9 +604,9 @@ impl eframe::App for ExplorerApp {
                                     &self.files
                                 };
 
-                                egui::ScrollArea::vertical()
-                                    .auto_shrink([false; 2])
-                                    .show(ui, |ui| {
+                                egui::ScrollArea::vertical().auto_shrink([false; 2]).show(
+                                    ui,
+                                    |ui| {
                                         pending_action = draw_item_viewer(
                                             ui,
                                             display_files,
@@ -727,8 +616,12 @@ impl eframe::App for ExplorerApp {
                                             self.sort_column,
                                             self.sort_ascending,
                                             &icon_cache,
+                                            self.rename_state.as_mut(),
+                                            &palette,
+                                            &mut self.file_type_cache,
                                         );
-                                    });
+                                    },
+                                );
                             });
 
                             ui.spacing_mut().item_spacing = old_spacing;
@@ -785,7 +678,10 @@ impl eframe::App for ExplorerApp {
                 let cloned_nav = self.current_nav().clone();
                 let id = self.next_tab_id;
                 self.next_tab_id += 1;
-                self.tabs.push(TabState { id, nav: cloned_nav });
+                self.tabs.push(TabState {
+                    id,
+                    nav: cloned_nav,
+                });
                 self.active_tab = self.tabs.len() - 1;
                 self.load_path();
             }
@@ -860,6 +756,27 @@ impl eframe::App for ExplorerApp {
                 ItemViewerAction::Context(action) => {
                     self.handle_context_action(action);
                 }
+                ItemViewerAction::StartEdit(path) => {
+                    let name = path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| path.display().to_string());
+                    self.rename_state = Some(RenameState {
+                        path,
+                        new_name: name,
+                    });
+                }
+                ItemViewerAction::RenameRequest(path, new_name) => {
+                    if let Some(parent) = path.parent() {
+                        let target = parent.join(new_name);
+                        let _ = std::fs::rename(&path, &target);
+                        self.rename_state = None;
+                        self.load_path();
+                    }
+                }
+                ItemViewerAction::RenameCancel => {
+                    self.rename_state = None;
+                }
             }
         }
 
@@ -888,12 +805,6 @@ impl ExplorerApp {
             Some(rec.size)
         };
 
-        Some(FileItem::new(
-            rec.name,
-            path,
-            rec.is_dir,
-            file_size,
-            None,
-        ))
+        Some(FileItem::new(rec.name, path, rec.is_dir, file_size, None, None))
     }
 }

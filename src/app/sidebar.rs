@@ -2,7 +2,7 @@ use eframe::egui;
 use std::path::PathBuf;
 
 use crate::app::icons::IconCache;
-use crate::app::utils::drive_usage_bar_sidebar;
+use crate::app::utils::drive_usage_gradient;
 use crate::drives::DriveInfo;
 
 #[derive(Clone)]
@@ -17,6 +17,7 @@ pub struct SidebarAction {
     pub open_new_tab: Option<PathBuf>,
     pub remove_favorite: Option<PathBuf>,
     pub select_favorite: Option<PathBuf>,
+    pub reorder: Option<(usize, usize)>, // from_idx, to_idx
 }
 
 #[derive(Clone)]
@@ -25,6 +26,7 @@ pub struct SidebarPalette {
     pub active: egui::Color32,
 }
 
+/// Draw a single sidebar item (favorite or folder)
 fn sidebar_item(
     ui: &mut egui::Ui,
     icon_cache: &IconCache,
@@ -34,161 +36,169 @@ fn sidebar_item(
     palette: &SidebarPalette,
     selected: bool,
 ) -> egui::Response {
-    let width = ui.available_width();
-    let height = 22.0;
-    let (rect, resp) = ui.allocate_exact_size(
-        egui::vec2(width, height),
-        egui::Sense::click(),
-    );
-    let mut combined_resp = resp.clone();
+    let available_width = ui.available_width();
+    let height = ui.text_style_height(&egui::TextStyle::Button) + 4.0; // vertical padding
 
-    if ui.is_rect_visible(rect) {
-        let fill = if selected {
-            Some(palette.active)
-        } else if combined_resp.is_pointer_button_down_on() {
-            Some(palette.active)
-        } else if combined_resp.hovered() {
-            Some(palette.hover)
-        } else {
-            None
-        };
+    let (rect, item_resp) =
+        ui.allocate_exact_size(egui::vec2(available_width, height), egui::Sense::click());
 
-        if let Some(color) = fill {
-            ui.painter().rect_filled(
-                rect,
-                egui::CornerRadius::same(6),
-                color,
-            );
-        }
-
-        let mut child = ui.new_child(
-            egui::UiBuilder::new()
-                .max_rect(rect)
-                .layout(egui::Layout::left_to_right(egui::Align::Center)),
-        );
-        child.add_space(4.0);
-
-        if let Some(icon) = icon_cache.get(path, is_dir) {
-            let icon_resp = child.add(
-                egui::Image::new(&icon)
-                    .fit_to_exact_size(egui::vec2(16.0, 16.0)),
-            );
-            combined_resp = combined_resp.union(icon_resp);
-        } else {
-            child.add_space(16.0);
-        }
-
-        child.add_space(6.0);
-        let label_resp = child.add(
-            egui::Label::new(
-                egui::RichText::new(label)
-                    .text_style(egui::TextStyle::Button),
-            )
-            .sense(egui::Sense::click()),
-        );
-        combined_resp = combined_resp.union(label_resp);
-    }
-
-    if combined_resp.hovered() {
+    // Hover background first
+    if item_resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        ui.painter()
+            .rect_filled(rect, egui::CornerRadius::same(4), palette.hover);
     }
 
-    combined_resp
+    // Icon
+    let icon_size = egui::vec2(16.0, 16.0);
+    let icon_padding = 4.0;
+    let text_offset_x = if let Some(icon) = icon_cache.get(path, is_dir) {
+        let icon_pos = egui::pos2(rect.min.x + 4.0, rect.center().y - icon_size.y / 2.0);
+        ui.painter().image(
+            (&icon).into(),
+            egui::Rect::from_min_size(icon_pos, icon_size),
+            egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+        8.0 + icon_size.x + icon_padding
+    } else {
+        8.0 + 16.0 + icon_padding
+    };
+
+    // Text
+    let text_pos = egui::pos2(rect.min.x + text_offset_x, rect.center().y);
+    ui.painter().text(
+        text_pos,
+        egui::Align2::LEFT_CENTER,
+        label,
+        egui::TextStyle::Button.resolve(ui.style()),
+        ui.style().visuals.text_color(),
+    );
+
+    item_resp
 }
 
+/// Draw a drive item with usage bar and size on hover
 fn sidebar_drive_item(
     ui: &mut egui::Ui,
     icon_cache: &IconCache,
     drive: &DriveInfo,
     palette: &SidebarPalette,
+    selected: bool,
 ) -> egui::Response {
-    let width = ui.available_width();
-    let height = if drive.total_space.is_some() { 44.0 } else { 24.0 };
-    let (rect, resp) = ui.allocate_exact_size(
-        egui::vec2(width, height),
-        egui::Sense::click(),
-    );
-    let mut combined_resp = resp.clone();
+    let available_width = ui.available_width();
+    let height = 32.0;
 
-    if ui.is_rect_visible(rect) {
-        let fill = if combined_resp.is_pointer_button_down_on() {
-            Some(palette.active)
-        } else if combined_resp.hovered() {
-            Some(palette.hover)
-        } else {
-            None
-        };
+    let (rect, mut resp) =
+        ui.allocate_exact_size(egui::vec2(available_width, height), egui::Sense::click());
 
-        if let Some(color) = fill {
-            ui.painter().rect_filled(
-                rect,
-                egui::CornerRadius::same(6),
-                color,
-            );
-        }
+    // Background (selected > active click > hover)
+    let fill_color = if selected {
+        palette.active
+    } else if resp.is_pointer_button_down_on() {
+        palette.active
+    } else if resp.hovered() {
+        palette.hover
+    } else {
+        egui::Color32::TRANSPARENT
+    };
 
-        let mut child = ui.new_child(
-            egui::UiBuilder::new()
-                .max_rect(rect)
-                .layout(egui::Layout::top_down(egui::Align::Min)),
-        );
-        child.add_space(2.0);
-
-        child.horizontal(|ui| {
-            if let Some(icon) = icon_cache.get(&drive.path, true) {
-                let icon_resp = ui.add(
-                    egui::Image::new(&icon)
-                        .fit_to_exact_size(egui::vec2(16.0, 16.0)),
-                );
-                combined_resp = combined_resp.union(icon_resp);
-            } else {
-                ui.add_space(16.0);
-            }
-
-            ui.add_space(6.0);
-            let label_resp = ui.add(
-                egui::Label::new(
-                    egui::RichText::new(&drive.display)
-                        .text_style(egui::TextStyle::Button),
-                )
-                .sense(egui::Sense::click()),
-            );
-            combined_resp = combined_resp.union(label_resp);
-        });
-
-        if let (Some(total), Some(free)) = (drive.total_space, drive.free_space) {
-            child.add_space(2.0);
-            child.spacing_mut().item_spacing.y = 2.0;
-            drive_usage_bar_sidebar(&mut child, total, free);
-        }
+    if fill_color != egui::Color32::TRANSPARENT {
+        ui.painter()
+            .rect_filled(rect, egui::CornerRadius::same(4), fill_color);
     }
 
-    if combined_resp.hovered() {
+    // Cursor
+    if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
 
-    combined_resp
+    // --- Top row: icon + label ---
+    let icon_size = egui::vec2(16.0, 16.0);
+    let icon_padding = 4.0;
+
+    let text_offset_x = if let Some(icon) = icon_cache.get(&drive.path, true) {
+        let icon_pos = egui::pos2(rect.min.x + 4.0, rect.min.y + 4.0);
+
+        ui.painter().image(
+            (&icon).into(),
+            egui::Rect::from_min_size(icon_pos, icon_size),
+            egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+
+        8.0 + icon_size.x + icon_padding
+    } else {
+        8.0 + 16.0 + icon_padding
+    };
+
+    let text_y = rect.min.y + 4.0 + icon_size.y / 2.0;
+    let text_pos = egui::pos2(rect.min.x + text_offset_x, text_y);
+
+    ui.painter().text(
+        text_pos,
+        egui::Align2::LEFT_CENTER,
+        &drive.display,
+        egui::TextStyle::Button.resolve(ui.style()),
+        ui.style().visuals.text_color(),
+    );
+
+    // --- Bottom row: progress bar ---
+    if let (Some(total), Some(free)) = (drive.total_space, drive.free_space) {
+        let bar_height = 6.0;
+
+        let bar_rect = egui::Rect::from_min_size(
+            egui::pos2(rect.min.x + 4.0, rect.bottom() - bar_height - 4.0),
+            egui::vec2(available_width - 8.0, bar_height),
+        );
+
+        let bar_bg = palette.hover.gamma_multiply(0.5);
+        let bar_fill = drive_usage_gradient((total - free) as f32 / total as f32).0;
+
+        ui.painter()
+            .rect_filled(bar_rect, egui::CornerRadius::same(2), bar_bg);
+
+        let used_ratio = (total - free) as f32 / total as f32;
+        let fill_width = bar_rect.width() * used_ratio;
+
+        let fill_rect = egui::Rect::from_min_size(bar_rect.min, egui::vec2(fill_width, bar_height));
+
+        ui.painter()
+            .rect_filled(fill_rect, egui::CornerRadius::same(2), bar_fill);
+
+        // Tooltip (FIXED)
+        let gb = 1024.0 * 1024.0 * 1024.0;
+        let used_gb = (total - free) as f64 / gb;
+        let total_gb = total as f64 / gb;
+
+        resp = resp.on_hover_text(format!("{:.1}/{:.1}GB", used_gb, total_gb));
+    }
+
+    resp
 }
 
+/// Draw the sidebar, supporting favorites reordering
 pub fn draw_sidebar(
     ui: &mut egui::Ui,
     icon_cache: &IconCache,
-    favorites: &[FavoriteItem],
+    favorites: &mut [FavoriteItem],
     sidebar_selected: Option<&PathBuf>,
     drives: &[DriveInfo],
     palette: &SidebarPalette,
+    dragging_favorite: &mut Option<usize>, // track dragged item globally
 ) -> SidebarAction {
     let mut action = SidebarAction::default();
+    let mut drop_index: Option<usize> = None;
 
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y *= 0.5;
+
         ui.add(egui::Label::new(
-            egui::RichText::new("Places")
-                .size(13.0)
-                .strong(),
+            egui::RichText::new("Places").size(13.0).strong(),
         ));
         ui.add_space(8.0);
 
+        // "This PC"
         let pc_icon_path = PathBuf::from("C:\\");
         let resp = sidebar_item(
             ui,
@@ -206,16 +216,9 @@ pub fn draw_sidebar(
             action.open_new_tab = Some(PathBuf::from("::MY_PC::"));
         }
 
+        // User Home
         if let Some(home) = dirs::home_dir() {
-            let resp = sidebar_item(
-                ui,
-                icon_cache,
-                &home,
-                "Home",
-                true,
-                palette,
-                false,
-            );
+            let resp = sidebar_item(ui, icon_cache, &home, "My User Home", true, palette, false);
             if resp.clicked() {
                 action.nav_to = Some(home.clone());
             }
@@ -224,16 +227,16 @@ pub fn draw_sidebar(
             }
         }
 
+        // Favorites
         ui.add_space(6.0);
         ui.add(egui::Label::new(
-            egui::RichText::new("Favorites")
-                .size(13.0)
-                .strong(),
+            egui::RichText::new("Favorites").size(13.0).strong(),
         ));
         ui.add_space(4.0);
 
-        for favorite in favorites {
+        for (i, favorite) in favorites.iter().enumerate() {
             let fav_path = favorite.path.clone();
+            let is_selected = sidebar_selected.map(|p| p == &fav_path).unwrap_or(false);
             let resp = sidebar_item(
                 ui,
                 icon_cache,
@@ -241,12 +244,11 @@ pub fn draw_sidebar(
                 &favorite.label,
                 true,
                 palette,
-                sidebar_selected
-                    .map(|p| p == &fav_path)
-                    .unwrap_or(false),
+                is_selected,
             );
+
             if resp.clicked() {
-                action.nav_to = Some(favorite.path.clone());
+                action.nav_to = Some(fav_path.clone());
             }
             if resp.secondary_clicked() {
                 action.select_favorite = Some(fav_path.clone());
@@ -254,24 +256,72 @@ pub fn draw_sidebar(
             if resp.middle_clicked() {
                 action.open_new_tab = Some(fav_path.clone());
             }
+
             resp.context_menu(|ui| {
                 if ui.button("Remove Favorite").clicked() {
                     action.remove_favorite = Some(fav_path.clone());
                     ui.close();
                 }
             });
+
+            // --- Drag logic ---
+            if resp.drag_started() {
+                *dragging_favorite = Some(i);
+            }
+
+            if resp.hovered() && dragging_favorite.is_some() && dragging_favorite.unwrap() != i {
+                drop_index = Some(i);
+            }
+
+            // Draw drag ghost
+            if let Some(drag_idx) = dragging_favorite {
+                if *drag_idx == i {
+                    let pointer = ui.ctx().input(|i| i.pointer.hover_pos());
+                    if let Some(pos) = pointer {
+                        ui.painter().rect_filled(
+                            egui::Rect::from_center_size(
+                                pos,
+                                egui::vec2(ui.available_width(), 22.0),
+                            ),
+                            egui::CornerRadius::same(6),
+                            palette.active,
+                        );
+                        // Get the FontId for the desired text style
+                        let font_id: egui::FontId =
+                            ui.style().text_styles[&egui::TextStyle::Button].clone();
+
+                        ui.painter().text(
+                            pos,
+                            egui::Align2::CENTER_CENTER,
+                            &favorites[*drag_idx].label,
+                            font_id,
+                            egui::Color32::WHITE,
+                        );
+                    }
+                }
+            }
+
+            // Commit reorder on release
+            if ui.ctx().input(|i| i.pointer.any_released()) {
+                if let (Some(from), Some(to)) = (*dragging_favorite, drop_index) {
+                    action.reorder = Some((from, to));
+                }
+                *dragging_favorite = None;
+                drop_index = None;
+            }
         }
 
+        // Storage drives
         ui.add_space(6.0);
         ui.add(egui::Label::new(
-            egui::RichText::new("Storage")
-                .size(13.0)
-                .strong(),
+            egui::RichText::new("Storage").size(13.0).strong(),
         ));
         ui.add_space(4.0);
 
         for drive in drives {
-            let resp = sidebar_drive_item(ui, icon_cache, drive, palette);
+            let is_selected = sidebar_selected.map(|p| p == &drive.path).unwrap_or(false);
+
+            let resp = sidebar_drive_item(ui, icon_cache, drive, palette, is_selected);
             if resp.clicked() {
                 action.nav_to = Some(drive.path.clone());
             }

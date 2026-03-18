@@ -1,10 +1,29 @@
 use eframe::egui;
 
+pub fn drive_usage_color(ratio: f32) -> egui::Color32 {
+    let base = if ratio > 0.95 {
+        egui::Color32::from_rgb(200, 72, 72)
+    } else if ratio >= 0.85 {
+        egui::Color32::from_rgb(214, 170, 76)
+    } else {
+        egui::Color32::from_rgb(88, 170, 120)
+    };
+
+    base.gamma_multiply(0.6) // 👈 dull it down
+}
+
+pub fn drive_usage_gradient(ratio: f32) -> (egui::Color32, egui::Color32) {
+    let left = drive_usage_color(ratio);
+    let right = left.gamma_multiply(0.8); // slightly darker for gradient
+    (left, right)
+}
+
 pub fn drive_usage_bar(
     ui: &mut egui::Ui,
     total: u64,
     free: u64,
     height: f32,
+    palette: &crate::app::features::ThemePalette,
 ) {
     let used = total.saturating_sub(free);
 
@@ -24,38 +43,25 @@ pub fn drive_usage_bar(
 
     let width = ui.available_width();
 
-    let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(width, height),
-        egui::Sense::hover(),
-    );
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
 
     let painter = ui.painter();
 
     // background track
-    painter.rect_filled(rect, 2.0, egui::Color32::from_gray(30));
+    painter.rect_filled(rect, 2.0, palette.sidebar_hover.gamma_multiply(0.5));
 
     // fill width
     let fill_width = rect.width() * animated_ratio;
 
     if fill_width > 0.0 {
-        let fill_rect = egui::Rect::from_min_size(
-            rect.min,
-            egui::vec2(fill_width, rect.height()),
-        );
+        let fill_rect = egui::Rect::from_min_size(rect.min, egui::vec2(fill_width, rect.height()));
 
-        // 🔥 subtle gradient (left → right)
-        let left_color = if target_ratio > 0.95 {
-            egui::Color32::from_rgb(200, 72, 72)
-        } else if target_ratio >= 0.85 {
-            egui::Color32::from_rgb(214, 170, 76)
-        } else {
-            egui::Color32::from_rgb(88, 170, 120)
-        };
+        let (left, right) = drive_usage_gradient(target_ratio);
 
         painter.add(egui::epaint::RectShape::filled(
             fill_rect,
             2.0,
-            left_color,
+            egui::Color32::from_rgb(left.r(), left.g(), left.b()),
         ));
 
         // 🔥 subtle highlight strip (fake gradient feel)
@@ -64,11 +70,7 @@ pub fn drive_usage_bar(
             egui::vec2(fill_rect.width(), fill_rect.height() * 0.5),
         );
 
-        painter.rect_filled(
-            highlight_rect,
-            2.0,
-            egui::Color32::from_white_alpha(20),
-        );
+        painter.rect_filled(highlight_rect, 2.0, egui::Color32::from_white_alpha(20));
     }
 
     // percentage text
@@ -81,50 +83,6 @@ pub fn drive_usage_bar(
         egui::TextStyle::Small.resolve(ui.style()),
         egui::Color32::WHITE,
     );
-}
-
-pub fn drive_usage_bar_sidebar(
-    ui: &mut egui::Ui,
-    total: u64,
-    free: u64,
-) {
-    let used = total.saturating_sub(free);
-
-    let used_ratio = if total == 0 {
-        0.0
-    } else {
-        used as f32 / total as f32
-    };
-
-    let bar_color = if used_ratio > 0.95 {
-        egui::Color32::from_rgb(200, 72, 72)
-    } else if used_ratio >= 0.85 {
-        egui::Color32::from_rgb(214, 170, 76)
-    } else {
-        egui::Color32::from_rgb(88, 170, 120)
-    };
-
-    let height = 4.0;
-
-    // 🔥 key change: clamp width
-    let max_bar_width = 140.0; // tweak this (120–160 is usually ideal)
-    let width = ui.available_width().min(max_bar_width);
-
-    let (rect, _) = ui.allocate_exact_size(
-        egui::vec2(width, height),
-        egui::Sense::hover(),
-    );
-
-    // background track
-    ui.painter().rect_filled(rect, 2.0, egui::Color32::from_gray(40));
-
-    // fill
-    let fill_rect = egui::Rect::from_min_size(
-        rect.min,
-        egui::vec2(rect.width() * used_ratio, rect.height()),
-    );
-
-    ui.painter().rect_filled(fill_rect, 2.0, bar_color);
 }
 
 pub fn copy_dir_recursive(src: &std::path::Path, dest: &std::path::Path) -> std::io::Result<()> {
@@ -145,7 +103,7 @@ pub fn copy_dir_recursive(src: &std::path::Path, dest: &std::path::Path) -> std:
 pub fn shell_delete_to_recycle_bin(path: &std::path::PathBuf) -> bool {
     use std::os::windows::ffi::OsStrExt;
     use windows::core::PCWSTR;
-    use windows::Win32::UI::Shell::{SHFileOperationW, SHFILEOPSTRUCTW, FO_DELETE, FOF_ALLOWUNDO};
+    use windows::Win32::UI::Shell::{SHFileOperationW, FOF_ALLOWUNDO, FO_DELETE, SHFILEOPSTRUCTW};
 
     let mut wide: Vec<u16> = path.as_os_str().encode_wide().collect();
     wide.push(0);
@@ -163,12 +121,9 @@ pub fn set_clipboard_files(paths: &[std::path::PathBuf], cut: bool) -> bool {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
     use windows::Win32::System::DataExchange::{
-        CloseClipboard, EmptyClipboard, OpenClipboard, RegisterClipboardFormatW,
-        SetClipboardData,
+        CloseClipboard, EmptyClipboard, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
     };
-    use windows::Win32::System::Memory::{
-        GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE,
-    };
+    use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
     use windows::Win32::System::Ole::CF_HDROP;
 
     if paths.is_empty() {
@@ -190,8 +145,7 @@ pub fn set_clipboard_files(paths: &[std::path::PathBuf], cut: bool) -> bool {
         f_wide: i32,
     }
 
-    let size =
-        std::mem::size_of::<DropFiles>() + wide.len() * std::mem::size_of::<u16>();
+    let size = std::mem::size_of::<DropFiles>() + wide.len() * std::mem::size_of::<u16>();
 
     let hglobal = match unsafe { GlobalAlloc(GMEM_MOVEABLE, size) } {
         Ok(h) => h,
@@ -320,9 +274,9 @@ pub fn get_clipboard_files() -> Option<(Vec<std::path::PathBuf>, bool)> {
     let mut cut = false;
     if let Ok(hglobal) = unsafe { GetClipboardData(format) } {
         if hglobal.0 != 0 {
-            let ptr = unsafe {
-                GlobalLock(windows::Win32::Foundation::HGLOBAL(hglobal.0 as *mut _))
-            } as *const u32;
+            let ptr =
+                unsafe { GlobalLock(windows::Win32::Foundation::HGLOBAL(hglobal.0 as *mut _)) }
+                    as *const u32;
             if !ptr.is_null() {
                 let val = unsafe { *ptr };
                 cut = val == 2;

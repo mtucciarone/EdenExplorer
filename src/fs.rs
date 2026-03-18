@@ -8,17 +8,13 @@ use std::ffi::OsString;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 
 use windows::core::PCWSTR;
-use windows::Win32::Foundation::{HANDLE, CloseHandle};
+use windows::Win32::Foundation::{CloseHandle, HANDLE};
 use windows::Win32::Storage::FileSystem::{
-    CreateFileW, GetDiskFreeSpaceExW,
-    FILE_ATTRIBUTE_DIRECTORY,
-    FILE_FLAG_BACKUP_SEMANTICS,
-    FILE_LIST_DIRECTORY,
-    FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
-    OPEN_EXISTING,
+    CreateFileW, GetDiskFreeSpaceExW, FILE_ATTRIBUTE_DIRECTORY, FILE_FLAG_BACKUP_SEMANTICS,
+    FILE_LIST_DIRECTORY, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
 };
 
-use ntapi::ntioapi::{NtQueryDirectoryFile, IO_STATUS_BLOCK, FILE_DIRECTORY_INFORMATION};
+use ntapi::ntioapi::{NtQueryDirectoryFile, FILE_DIRECTORY_INFORMATION, IO_STATUS_BLOCK};
 
 use crate::state::FileItem;
 
@@ -121,21 +117,21 @@ pub fn calculate_folder_size_fast(path: PathBuf) -> u64 {
 
                     let name_len = entry.FileNameLength as usize / 2;
 
-                    let name = OsString::from_wide(
-                        std::slice::from_raw_parts(entry.FileName.as_ptr(), name_len),
-                    );
+                    let name = OsString::from_wide(std::slice::from_raw_parts(
+                        entry.FileName.as_ptr(),
+                        name_len,
+                    ));
 
                     if name != "." && name != ".." {
                         let full = dir.join(&name);
 
-                        let is_dir =
-                            (entry.FileAttributes & FILE_ATTRIBUTE_DIRECTORY.0) != 0;
+                        let is_dir = (entry.FileAttributes & FILE_ATTRIBUTE_DIRECTORY.0) != 0;
 
                         if is_dir {
                             stack.push(full);
                         } else {
-                            total_size = total_size
-                                .saturating_add(*entry.EndOfFile.QuadPart() as u64);
+                            total_size =
+                                total_size.saturating_add(*entry.EndOfFile.QuadPart() as u64);
                         }
                     }
 
@@ -155,10 +151,7 @@ pub fn calculate_folder_size_fast(path: PathBuf) -> u64 {
 }
 
 /// 🚀 FAST folder size calculation with progress updates
-pub fn calculate_folder_size_fast_progress(
-    path: PathBuf,
-    tx: Sender<(PathBuf, u64, bool)>,
-) {
+pub fn calculate_folder_size_fast_progress(path: PathBuf, tx: Sender<(PathBuf, u64, bool)>) {
     let mut total_size = 0u64;
     let mut stack = vec![path.clone()];
     let mut last_emit = Instant::now();
@@ -201,21 +194,21 @@ pub fn calculate_folder_size_fast_progress(
 
                     let name_len = entry.FileNameLength as usize / 2;
 
-                    let name = OsString::from_wide(
-                        std::slice::from_raw_parts(entry.FileName.as_ptr(), name_len),
-                    );
+                    let name = OsString::from_wide(std::slice::from_raw_parts(
+                        entry.FileName.as_ptr(),
+                        name_len,
+                    ));
 
                     if name != "." && name != ".." {
                         let full = dir.join(&name);
 
-                        let is_dir =
-                            (entry.FileAttributes & FILE_ATTRIBUTE_DIRECTORY.0) != 0;
+                        let is_dir = (entry.FileAttributes & FILE_ATTRIBUTE_DIRECTORY.0) != 0;
 
                         if is_dir {
                             stack.push(full);
                         } else {
-                            total_size = total_size
-                                .saturating_add(*entry.EndOfFile.QuadPart() as u64);
+                            total_size =
+                                total_size.saturating_add(*entry.EndOfFile.QuadPart() as u64);
                         }
                     }
 
@@ -283,9 +276,10 @@ pub fn scan_dir_async(path: PathBuf, tx: Sender<FileItem>) {
 
                     let name_len = entry.FileNameLength as usize / 2;
 
-                    let name_os = OsString::from_wide(
-                        std::slice::from_raw_parts(entry.FileName.as_ptr(), name_len),
-                    );
+                    let name_os = OsString::from_wide(std::slice::from_raw_parts(
+                        entry.FileName.as_ptr(),
+                        name_len,
+                    ));
 
                     let name = name_os.to_string_lossy().to_string();
 
@@ -299,8 +293,7 @@ pub fn scan_dir_async(path: PathBuf, tx: Sender<FileItem>) {
 
                     let full_path = path.join(&name_os);
 
-                    let is_dir =
-                        (entry.FileAttributes & FILE_ATTRIBUTE_DIRECTORY.0) != 0;
+                    let is_dir = (entry.FileAttributes & FILE_ATTRIBUTE_DIRECTORY.0) != 0;
 
                     let file_size = if is_dir {
                         None
@@ -336,13 +329,36 @@ pub fn scan_dir_async(path: PathBuf, tx: Sender<FileItem>) {
                         None
                     };
 
-                    let item = FileItem::new(
-                        name,
-                        full_path.clone(),
-                        is_dir,
-                        file_size,
-                        modified_time,
-                    );
+                    let created_time = if entry.CreationTime.QuadPart() != &0 {
+                        let filetime = *entry.CreationTime.QuadPart() as i64;
+                        let unix_time = (filetime / 10000000) - 11644473600;
+
+                        if unix_time > 0 {
+                            let secs = unix_time as u64;
+                            let days = secs / 86400;
+                            let years = 1970 + (days / 365);
+                            let remaining_days = days % 365;
+                            let months = (remaining_days / 30) + 1;
+                            let hours = (secs % 86400) / 3600;
+                            let minutes = (secs % 3600) / 60;
+
+                            Some(format!(
+                                "{:04}-{:02}-{:02} {:02}:{:02}",
+                                years,
+                                months,
+                                remaining_days % 30 + 1,
+                                hours,
+                                minutes
+                            ))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
+                    let item =
+                        FileItem::new(name, full_path.clone(), is_dir, file_size, modified_time, created_time);
 
                     let _ = tx.send(item);
 
