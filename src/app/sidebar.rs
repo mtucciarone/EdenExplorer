@@ -5,6 +5,7 @@ use crate::app::features::ThemePalette;
 use crate::app::icons::IconCache;
 use crate::app::utils::drive_usage_gradient;
 use crate::drives::DriveInfo;
+use egui::{FontId, FontFamily};
 
 #[derive(Clone)]
 pub struct FavoriteItem {
@@ -48,7 +49,7 @@ fn sidebar_item(
     }
 
     // Icon
-    let icon_size = egui::vec2(16.0, 16.0);
+    let icon_size = egui::vec2(20.0, 20.0);
     let icon_padding = 4.0;
     let text_offset_x = if let Some(icon) = icon_cache.get(path, is_dir) {
         let icon_pos = egui::pos2(rect.min.x + 4.0, rect.center().y - icon_size.y / 2.0);
@@ -65,11 +66,12 @@ fn sidebar_item(
 
     // Text
     let text_pos = egui::pos2(rect.min.x + text_offset_x, rect.center().y);
+    let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     ui.painter().text(
         text_pos,
         egui::Align2::LEFT_CENTER,
         label,
-        egui::TextStyle::Button.resolve(ui.style()),
+        font_id,
         ui.style().visuals.text_color(),
     );
 
@@ -114,7 +116,7 @@ fn sidebar_drive_item(
     }
 
     // --- Top row: icon + label ---
-    let icon_size = egui::vec2(16.0, 16.0);
+    let icon_size = egui::vec2(20.0, 20.0);
     let icon_padding = 4.0;
 
     let text_offset_x = if let Some(icon) = icon_cache.get(&drive.path, true) {
@@ -134,12 +136,13 @@ fn sidebar_drive_item(
 
     let text_y = rect.min.y + 4.0 + icon_size.y / 2.0;
     let text_pos = egui::pos2(rect.min.x + text_offset_x, text_y);
+    let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
 
     ui.painter().text(
         text_pos,
         egui::Align2::LEFT_CENTER,
         &drive.display,
-        egui::TextStyle::Button.resolve(ui.style()),
+        font_id,
         ui.style().visuals.text_color(),
     );
 
@@ -200,7 +203,7 @@ pub fn draw_sidebar(
         ui.spacing_mut().item_spacing.y *= 0.5;
 
         ui.add(egui::Label::new(
-            egui::RichText::new("Places").size(13.0).strong(),
+            egui::RichText::new("Places").size(palette.text_size).strong(),
         ));
         ui.add_space(8.0);
 
@@ -236,7 +239,7 @@ pub fn draw_sidebar(
         // Favorites
         ui.add_space(6.0);
         ui.add(egui::Label::new(
-            egui::RichText::new("Favorites").size(13.0).strong(),
+            egui::RichText::new("Favorites").size(palette.text_size).strong(),
         ));
         ui.add_space(4.0);
 
@@ -292,9 +295,8 @@ pub fn draw_sidebar(
                             egui::CornerRadius::same(palette.large_radius),
                             palette.primary_active,
                         );
-                        // Get the FontId for the desired text style
-                        let font_id: egui::FontId =
-                            ui.style().text_styles[&egui::TextStyle::Button].clone();
+
+                        let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
 
                         ui.painter().text(
                             pos,
@@ -320,7 +322,7 @@ pub fn draw_sidebar(
         // Storage drives
         ui.add_space(6.0);
         ui.add(egui::Label::new(
-            egui::RichText::new("Storage").size(13.0).strong(),
+            egui::RichText::new("Storage").size(palette.text_size).strong(),
         ));
         ui.add_space(4.0);
 

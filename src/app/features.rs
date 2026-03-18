@@ -1,4 +1,5 @@
 use eframe::egui;
+use std::sync::LazyLock;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
@@ -15,6 +16,7 @@ impl Default for ThemeMode {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ThemePalette {
+    pub text_size: f32,
     // 🎯 Core brand color
     pub primary: egui::Color32,
     pub primary_hover: egui::Color32,
@@ -27,6 +29,7 @@ pub struct ThemePalette {
     pub box_selection_fill: egui::Color32,
     pub icon_color: egui::Color32,
     pub row_label_selected: egui::Color32,
+    pub row_label_default: egui::Color32,
 
     // 🎯 Corner radius values
     pub small_radius: u8,
@@ -51,96 +54,75 @@ fn base_color() -> egui::Color32 {
     egui::Color32::from_rgb(110, 85, 160)
 }
 
-pub fn palette(mode: ThemeMode) -> ThemePalette {
+// 🌙 Dark theme palette (lazy)
+pub static PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
     let base = base_color();
+    ThemePalette {
+        text_size: 12.0,
+        primary: base,
+        primary_hover: egui::Color32::from_rgba_unmultiplied(95, 75, 135, 128),
+        primary_active: egui::Color32::from_rgb(70, 55, 110),
+        primary_subtle: egui::Color32::from_rgba_unmultiplied(95, 75, 135, 60),
+        secondary: egui::Color32::from_rgb(255, 255, 255),
+        box_selection_stroke: egui::Color32::from_rgba_unmultiplied(95, 75, 135, 60),
+        box_selection_fill: base,
+        icon_color: egui::Color32::WHITE,
+        row_label_selected: egui::Color32::WHITE,
+        row_label_default: egui::Color32::from_rgb(160, 170, 180),
+        small_radius: 2,
+        medium_radius: 4,
+        large_radius: 6,
+        tab_active_radius: egui::CornerRadius { nw: 8, ne: 8, sw: 0, se: 0 },
+        tab_inactive_radius: egui::CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 },
+        tab_button_radius: egui::CornerRadius::same(4),
+        drive_usage_critical: egui::Color32::from_rgb(200, 72, 72),
+        drive_usage_warning: egui::Color32::from_rgb(214, 170, 76),
+        drive_usage_normal: egui::Color32::from_rgb(88, 170, 120),
+        tab_close_hover: egui::Color32::from_rgb(200, 52, 52),
+        tab_add_hover: egui::Color32::from_rgb(54, 168, 82),
+    }
+});
 
+// ☀️ Light theme palette (lazy)
+pub static PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
+    let base = base_color();
+    ThemePalette {
+        text_size: 12.0,
+        primary: base,
+        primary_hover: egui::Color32::from_rgba_unmultiplied(110, 85, 160, 90),
+        primary_active: egui::Color32::from_rgb(140, 120, 200),
+        primary_subtle: egui::Color32::from_rgba_unmultiplied(110, 85, 160, 40),
+        secondary: egui::Color32::from_rgb(0, 0, 0),
+        box_selection_stroke: egui::Color32::from_rgba_unmultiplied(110, 85, 160, 40),
+        box_selection_fill: base,
+        icon_color: egui::Color32::WHITE,
+        row_label_selected: egui::Color32::from_rgb(0, 0, 0),
+        row_label_default: egui::Color32::from_rgb(70, 78, 86),
+        small_radius: 2,
+        medium_radius: 4,
+        large_radius: 6,
+        tab_active_radius: egui::CornerRadius { nw: 8, ne: 8, sw: 0, se: 0 },
+        tab_inactive_radius: egui::CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 },
+        tab_button_radius: egui::CornerRadius::same(4),
+        drive_usage_critical: egui::Color32::from_rgb(200, 72, 72),
+        drive_usage_warning: egui::Color32::from_rgb(214, 170, 76),
+        drive_usage_normal: egui::Color32::from_rgb(88, 170, 120),
+        tab_close_hover: egui::Color32::from_rgb(200, 52, 52),
+        tab_add_hover: egui::Color32::from_rgb(54, 168, 82),
+    }
+});
+
+// Usage:
+pub fn get_palette(mode: ThemeMode) -> &'static ThemePalette {
     match mode {
-        ThemeMode::Dark => {
-            let primary = base;
-            let primary_hover = egui::Color32::from_rgba_unmultiplied(95, 75, 135, 128);
-            let primary_active = egui::Color32::from_rgb(70, 55, 110);
-            let primary_subtle = egui::Color32::from_rgba_unmultiplied(95, 75, 135, 60);
-
-            ThemePalette {
-                primary,
-                primary_hover,
-                primary_active,
-                primary_subtle,
-                secondary: egui::Color32::from_rgb(255, 255, 255),
-                box_selection_stroke: primary_subtle,
-                box_selection_fill: primary,
-                icon_color: egui::Color32::WHITE,
-                row_label_selected: egui::Color32::WHITE,
-                small_radius: 2,
-                medium_radius: 4,
-                large_radius: 6,
-                tab_active_radius: egui::CornerRadius {
-                    nw: 8,
-                    ne: 8,
-                    sw: 0,
-                    se: 0,
-                },
-                tab_inactive_radius: egui::CornerRadius {
-                    nw: 6,
-                    ne: 6,
-                    sw: 0,
-                    se: 0,
-                },
-                tab_button_radius: egui::CornerRadius::same(4),
-                drive_usage_critical: egui::Color32::from_rgb(200, 72, 72),
-                drive_usage_warning: egui::Color32::from_rgb(214, 170, 76),
-                drive_usage_normal: egui::Color32::from_rgb(88, 170, 120),
-                tab_close_hover: egui::Color32::from_rgb(200, 52, 52),
-                tab_add_hover: egui::Color32::from_rgb(54, 168, 82),
-            }
-        }
-
-        ThemeMode::Light => {
-            // Same hue, lighter + less alpha
-            let primary = base;
-            let primary_hover = egui::Color32::from_rgba_unmultiplied(110, 85, 160, 90);
-            let primary_active = egui::Color32::from_rgb(140, 120, 200);
-            let primary_subtle = egui::Color32::from_rgba_unmultiplied(110, 85, 160, 40);
-
-            ThemePalette {
-                primary,
-                primary_hover,
-                primary_active,
-                primary_subtle,
-                secondary: egui::Color32::from_rgb(0, 0, 0),
-                box_selection_stroke: primary_subtle,
-                box_selection_fill: primary,
-                icon_color: egui::Color32::WHITE,
-                row_label_selected: egui::Color32::from_rgb(0, 0, 0),
-                small_radius: 2,
-                medium_radius: 4,
-                large_radius: 6,
-                tab_active_radius: egui::CornerRadius {
-                    nw: 8,
-                    ne: 8,
-                    sw: 0,
-                    se: 0,
-                },
-                tab_inactive_radius: egui::CornerRadius {
-                    nw: 6,
-                    ne: 6,
-                    sw: 0,
-                    se: 0,
-                },
-                tab_button_radius: egui::CornerRadius::same(4),
-                drive_usage_critical: egui::Color32::from_rgb(200, 72, 72),
-                drive_usage_warning: egui::Color32::from_rgb(214, 170, 76),
-                drive_usage_normal: egui::Color32::from_rgb(88, 170, 120),
-                tab_close_hover: egui::Color32::from_rgb(200, 52, 52),
-                tab_add_hover: egui::Color32::from_rgb(54, 168, 82),
-            }
-        }
+        ThemeMode::Dark => &PALETTE_DARK,
+        ThemeMode::Light => &PALETTE_LIGHT,
     }
 }
 
 pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
     let mut style = (*ctx.style()).clone();
-    let palette = palette(mode);
+    let palette = get_palette(mode);
 
     style.visuals = match mode {
         ThemeMode::Dark => egui::Visuals::dark(),

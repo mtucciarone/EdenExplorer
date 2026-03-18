@@ -4,6 +4,7 @@ use crate::app::icons::IconCache;
 use crate::app::utils::drive_usage_bar;
 use crate::state::FileItem;
 use eframe::egui;
+use egui::{FontFamily, FontId};
 use egui_extras::{Column, TableBuilder};
 use egui_phosphor::regular;
 use std::collections::{HashMap, HashSet};
@@ -130,6 +131,17 @@ pub fn draw_item_viewer(
         return action;
     }
 
+    fn get_row_color(
+        is_multi_selected: bool,
+        palette: &crate::app::features::ThemePalette,
+    ) -> egui::Color32 {
+        if is_multi_selected {
+            palette.row_label_selected
+        } else {
+            palette.row_label_default
+        }
+    }
+
     // Wrap table in a scroll area for horizontal scrolling
     egui::ScrollArea::both()
         .show(ui, |ui| {
@@ -215,27 +227,6 @@ pub fn draw_item_viewer(
                 .animate_scrolling(true)
                 .resizable(true)
                 .id_salt("item_viewer_table");
-
-            table = table.row_visuals(|row_index, is_selected| {
-                let file = &files[row_index];
-                let is_multi_selected = selected_paths.contains(&file.path);
-
-                let text_color = if is_multi_selected {
-                    palette.row_label_selected
-                } else {
-                    ui.style().visuals.text_color()
-                };
-
-                egui_extras::TableRowVisuals {
-                    bg_fill: if is_selected {
-                        palette.primary_subtle
-                    } else {
-                        egui::Color32::TRANSPARENT
-                    },
-                    stroke: Default::default(),
-                    text_color: Some(text_color),
-                }
-            });
 
             // Conditionally add checkbox column
             if !is_drive_view {
@@ -431,7 +422,7 @@ pub fn draw_item_viewer(
                         let is_multi_selected = selected_paths.contains(&file.path);
 
                         // Use table's built-in selection for visual consistency
-                        // row.set_selected(is_multi_selected);
+                        row.set_selected(is_multi_selected);
 
                         // Checkbox column (only show for non-drive views)
                         if !is_drive_view {
@@ -450,6 +441,7 @@ pub fn draw_item_viewer(
 
                         // Name
                         row.col(|ui| {
+                            let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
                             let available_width = ui.available_width();
 
                             let (rect, item_resp) = ui.allocate_exact_size(
@@ -480,7 +472,7 @@ pub fn draw_item_viewer(
                             }
 
                             // --- ICON ---
-                            let icon_size = egui::vec2(16.0, 16.0);
+                            let icon_size = egui::vec2(20.0, 20.0);
                             let icon_padding = 4.0;
 
                             let text_offset_x =
@@ -562,23 +554,18 @@ pub fn draw_item_viewer(
 
                             let text_pos = egui::pos2(rect.min.x + text_offset_x, rect.center().y);
 
-                            let text_color = if is_multi_selected {
-                                palette.row_label_selected
-                            } else {
-                                ui.style().visuals.text_color()
-                            };
-
                             ui.painter().text(
                                 text_pos,
                                 egui::Align2::LEFT_CENTER,
                                 display_name,
-                                egui::TextStyle::Button.resolve(ui.style()),
-                                text_color,
+                                font_id,
+                                get_row_color(is_multi_selected, palette),
                             );
                         });
 
                         // Type
                         row.col(|ui| {
+                            let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
                             let available_width = ui.available_width();
                             let max_chars = (available_width / 7.0) as usize; // Approximate 7px per character for type names
 
@@ -608,16 +595,11 @@ pub fn draw_item_viewer(
                                 type_text.clone()
                             };
 
-                            let text_color = if is_multi_selected {
-                                palette.row_label_selected
-                            } else {
-                                ui.style().visuals.text_color()
-                            };
-
                             let label = egui::Label::new(
                                 egui::RichText::new(display_type)
-                                    .size(13.0)
-                                    .color(text_color),
+                                    .size(palette.text_size)
+                                    .color(get_row_color(is_multi_selected, palette))
+                                    .font(font_id),
                             )
                             .sense(egui::Sense::hover());
                             let resp = ui.add(label);
@@ -628,11 +610,7 @@ pub fn draw_item_viewer(
 
                         // Size
                         row.col(|ui| {
-                            let text_color = if is_multi_selected {
-                                palette.row_label_selected
-                            } else {
-                                ui.style().visuals.text_color()
-                            };
+                            let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
                             if let (Some(total), Some(free)) = (file.total_space, file.free_space) {
                                 let gb = 1024.0 * 1024.0 * 1024.0;
                                 ui.with_layout(
@@ -644,8 +622,9 @@ pub fn draw_item_viewer(
                                                 free as f64 / gb,
                                                 total as f64 / gb
                                             ))
-                                            .size(13.0)
-                                            .color(text_color),
+                                            .size(palette.text_size)
+                                            .color(get_row_color(is_multi_selected, palette))
+                                            .font(font_id),
                                         );
                                     },
                                 );
@@ -658,30 +637,38 @@ pub fn draw_item_viewer(
                                         } else {
                                             format!("⏳ {}", label)
                                         })
-                                        .size(13.0)
-                                        .color(text_color),
+                                        .size(palette.text_size)
+                                        .color(get_row_color(is_multi_selected, palette))
+                                        .font(font_id),
                                     );
                                 } else {
-                                    ui.label(egui::RichText::new("—").size(13.0).color(text_color));
+                                    ui.label(
+                                        egui::RichText::new("—")
+                                            .size(palette.text_size)
+                                            .color(get_row_color(is_multi_selected, palette))
+                                            .font(font_id),
+                                    );
                                 }
                             } else if let Some(size) = file.file_size {
                                 ui.label(
                                     egui::RichText::new(format_size(size))
-                                        .size(13.0)
-                                        .color(text_color),
+                                        .size(palette.text_size)
+                                        .color(get_row_color(is_multi_selected, palette))
+                                        .font(font_id),
                                 );
                             } else {
-                                ui.label(egui::RichText::new("—").size(13.0).color(text_color));
+                                ui.label(
+                                    egui::RichText::new("—")
+                                        .size(palette.text_size)
+                                        .color(get_row_color(is_multi_selected, palette))
+                                        .font(font_id),
+                                );
                             }
                         });
 
                         // Usage / Modified column
                         row.col(|ui| {
-                            let text_color = if is_multi_selected {
-                                palette.row_label_selected
-                            } else {
-                                ui.style().visuals.text_color()
-                            };
+                            let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
                             if is_drive_view {
                                 if let (Some(total), Some(free)) =
                                     (file.total_space, file.free_space)
@@ -693,9 +680,19 @@ pub fn draw_item_viewer(
                                 }
                             } else {
                                 if let Some(m) = &file.modified_time {
-                                    ui.label(egui::RichText::new(m).size(13.0).color(text_color));
+                                    ui.label(
+                                        egui::RichText::new(m)
+                                            .size(palette.text_size)
+                                            .color(get_row_color(is_multi_selected, palette))
+                                            .font(font_id),
+                                    );
                                 } else {
-                                    ui.label(egui::RichText::new("—").size(13.0).color(text_color));
+                                    ui.label(
+                                        egui::RichText::new("—")
+                                            .size(palette.text_size)
+                                            .color(get_row_color(is_multi_selected, palette))
+                                            .font(font_id),
+                                    );
                                 }
                             }
                         });
@@ -703,15 +700,22 @@ pub fn draw_item_viewer(
                         // Created column (only for non-drive views)
                         if !is_drive_view {
                             row.col(|ui| {
-                                let text_color = if is_multi_selected {
-                                    palette.row_label_selected
-                                } else {
-                                    ui.style().visuals.text_color()
-                                };
+                                let font_id =
+                                    FontId::new(palette.text_size, FontFamily::Proportional);
                                 if let Some(c) = &file.created_time {
-                                    ui.label(egui::RichText::new(c).size(13.0).color(text_color));
+                                    ui.label(
+                                        egui::RichText::new(c)
+                                            .size(palette.text_size)
+                                            .color(get_row_color(is_multi_selected, palette))
+                                            .font(font_id),
+                                    );
                                 } else {
-                                    ui.label(egui::RichText::new("—").size(13.0).color(text_color));
+                                    ui.label(
+                                        egui::RichText::new("—")
+                                            .size(palette.text_size)
+                                            .color(get_row_color(is_multi_selected, palette))
+                                            .font(font_id),
+                                    );
                                 }
                             });
                         }
@@ -815,7 +819,7 @@ pub fn draw_item_viewer(
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
             }
 
-            if let Some(pos) = ui.ctx().pointer_hover_pos() {
+            if let Some(_pos) = ui.ctx().pointer_hover_pos() {
                 // Optionally, check if pos is inside table rect if you want
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
             }

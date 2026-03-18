@@ -5,6 +5,7 @@ use crate::app::features::ThemePalette;
 use crate::app::icons::IconCache;
 use crate::state::Navigation;
 use egui_phosphor::regular;
+use egui::{FontId, FontFamily};
 
 #[derive(Clone)]
 pub struct TabInfo {
@@ -64,8 +65,10 @@ pub fn draw_tabs(
                             ui.visuals().widgets.noninteractive.fg_stroke.color
                         };
 
+                        let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
+
                         let resp = ui.add(egui::Label::new(
-                            egui::RichText::new(&tab.title).color(label_color),
+                            egui::RichText::new(&tab.title).color(label_color).font(font_id),
                         ));
 
                         // Change the cursor depending on hover state
@@ -147,11 +150,13 @@ fn tab_close_button(
         ui.visuals().widgets.noninteractive.fg_stroke.color
     };
 
+    let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
+
     ui.painter().text(
         rect.center(),
         egui::Align2::CENTER_CENTER,
         regular::X,
-        egui::FontId::proportional(12.0),
+        font_id,
         color,
     );
 
@@ -183,11 +188,13 @@ fn tab_add_button(
         ui.visuals().widgets.noninteractive.fg_stroke.color
     };
 
+    let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
+
     ui.painter().text(
         rect.center(),
         egui::Align2::CENTER_CENTER,
         regular::PLUS,
-        egui::FontId::proportional(12.0),
+        font_id,
         color,
     );
 
@@ -250,7 +257,7 @@ pub fn draw_tabbar(
             }
             if ui
                 .add(
-                    egui::Label::new(egui::RichText::new("This PC").size(13.0))
+                    egui::Label::new(egui::RichText::new("This PC").size(palette.text_size))
                         .selectable(false)
                         .sense(egui::Sense::click()),
                 )
@@ -261,34 +268,26 @@ pub fn draw_tabbar(
         } else {
             let segments = build_breadcrumbs(&nav.current);
             let mut first = true;
-            for (idx, (label, path)) in segments.into_iter().enumerate() {
+            for (_idx, (label, path)) in segments.into_iter().enumerate() {
                 if !first {
                     let old_spacing = ui.spacing().item_spacing;
-                    ui.spacing_mut().item_spacing.x = 4.0;
+                    ui.spacing_mut().item_spacing.x = 10.0;
                     ui.label(
                         egui::RichText::new(">")
-                            .size(13.0)
+                            .size(palette.text_size)
                             .color(ui.visuals().widgets.noninteractive.fg_stroke.color),
                     );
                     ui.spacing_mut().item_spacing = old_spacing;
                 }
                 first = false;
-                let base = ui.visuals().widgets.hovered.bg_fill;
-                let tint = if idx % 2 == 0 { 0.12 } else { 0.22 };
-                let crumb_bg = egui::Color32::from_rgba_premultiplied(
-                    base.r(),
-                    base.g(),
-                    base.b(),
-                    (255.0 * tint) as u8,
-                );
 
                 let inner = egui::Frame::NONE
-                    .fill(crumb_bg)
+                    .fill(egui::Color32::TRANSPARENT)
                     .inner_margin(egui::Margin::symmetric(6, 2))
                     .corner_radius(egui::CornerRadius::same(palette.medium_radius))
                     .show(ui, |ui| {
                         ui.add(
-                            egui::Label::new(egui::RichText::new(label).size(13.0))
+                            egui::Label::new(egui::RichText::new(label).size(palette.text_size))
                                 .selectable(false)
                                 .sense(egui::Sense::click()),
                         )

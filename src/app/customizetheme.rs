@@ -2,7 +2,7 @@ use eframe::egui;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use super::features::{ThemeMode, ThemePalette, palette};
+use super::features::{ThemeMode, ThemePalette};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CustomTheme {
@@ -16,7 +16,7 @@ impl Default for CustomTheme {
         Self {
             name: "Default".to_string(),
             mode: ThemeMode::Dark,
-            palette: palette(ThemeMode::Dark),
+            palette: crate::app::features::get_palette(ThemeMode::Dark).clone(),
         }
     }
 }

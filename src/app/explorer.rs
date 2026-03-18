@@ -4,7 +4,6 @@ use std::collections::{HashSet, VecDeque};
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
 
@@ -27,7 +26,7 @@ use crate::fs::{calculate_folder_size_fast_progress, get_drive_space, scan_dir_a
 use crate::indexer::{IndexStatus, Indexer, load_favorites, save_favorites};
 use crate::state::{FileItem, Navigation};
 
-use super::features::{ThemeMode, apply_theme, palette};
+use super::features::{ThemeMode, apply_theme};
 use super::itemviewer::{
     ItemViewerAction, ItemViewerContextAction, ItemViewerFolderSizeState, RenameState,
     draw_item_viewer,
@@ -481,7 +480,7 @@ impl eframe::App for ExplorerApp {
         }
 
         // Toolbar (left column)
-        let palette = &self.theme_customizer.current_theme.palette;
+        let palette = crate::app::features::get_palette(self.theme);
         let mut topbar_action = None;
 
         // Throttle size requests to keep UI responsive
