@@ -1,6 +1,7 @@
 use eframe::egui;
 use std::path::PathBuf;
 
+use crate::app::features::ThemePalette;
 use crate::app::icons::IconCache;
 use crate::app::utils::drive_usage_gradient;
 use crate::drives::DriveInfo;
@@ -20,12 +21,6 @@ pub struct SidebarAction {
     pub reorder: Option<(usize, usize)>, // from_idx, to_idx
 }
 
-#[derive(Clone)]
-pub struct SidebarPalette {
-    pub hover: egui::Color32,
-    pub active: egui::Color32,
-}
-
 /// Draw a single sidebar item (favorite or folder)
 fn sidebar_item(
     ui: &mut egui::Ui,
@@ -33,8 +28,8 @@ fn sidebar_item(
     path: &PathBuf,
     label: &str,
     is_dir: bool,
-    palette: &SidebarPalette,
-    selected: bool,
+    palette: &ThemePalette,
+    _selected: bool,
 ) -> egui::Response {
     let available_width = ui.available_width();
     let height = ui.text_style_height(&egui::TextStyle::Button) + 4.0; // vertical padding
@@ -44,9 +39,12 @@ fn sidebar_item(
 
     // Hover background first
     if item_resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-        ui.painter()
-            .rect_filled(rect, egui::CornerRadius::same(4), palette.hover);
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
+        ui.painter().rect_filled(
+            rect,
+            egui::CornerRadius::same(palette.medium_radius),
+            palette.primary_hover,
+        );
     }
 
     // Icon
@@ -83,7 +81,7 @@ fn sidebar_drive_item(
     ui: &mut egui::Ui,
     icon_cache: &IconCache,
     drive: &DriveInfo,
-    palette: &SidebarPalette,
+    palette: &ThemePalette,
     selected: bool,
 ) -> egui::Response {
     let available_width = ui.available_width();
@@ -94,23 +92,25 @@ fn sidebar_drive_item(
 
     // Background (selected > active click > hover)
     let fill_color = if selected {
-        palette.active
+        palette.primary_active
     } else if resp.is_pointer_button_down_on() {
-        palette.active
+        palette.primary_active
     } else if resp.hovered() {
-        palette.hover
+        palette.primary_hover
     } else {
         egui::Color32::TRANSPARENT
     };
 
     if fill_color != egui::Color32::TRANSPARENT {
-        ui.painter()
-            .rect_filled(rect, egui::CornerRadius::same(4), fill_color);
+        ui.painter().rect_filled(
+            rect,
+            egui::CornerRadius::same(palette.medium_radius),
+            fill_color,
+        );
     }
 
-    // Cursor
     if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
     }
 
     // --- Top row: icon + label ---
@@ -124,7 +124,7 @@ fn sidebar_drive_item(
             (&icon).into(),
             egui::Rect::from_min_size(icon_pos, icon_size),
             egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1.0, 1.0)),
-            egui::Color32::WHITE,
+            palette.icon_color,
         );
 
         8.0 + icon_size.x + icon_padding
@@ -152,19 +152,25 @@ fn sidebar_drive_item(
             egui::vec2(available_width - 8.0, bar_height),
         );
 
-        let bar_bg = palette.hover.gamma_multiply(0.5);
-        let bar_fill = drive_usage_gradient((total - free) as f32 / total as f32).0;
+        let bar_bg = palette.primary_hover.gamma_multiply(0.5);
+        let bar_fill = drive_usage_gradient((total - free) as f32 / total as f32, palette).0;
 
-        ui.painter()
-            .rect_filled(bar_rect, egui::CornerRadius::same(2), bar_bg);
+        ui.painter().rect_filled(
+            bar_rect,
+            egui::CornerRadius::same(palette.small_radius),
+            bar_bg,
+        );
 
         let used_ratio = (total - free) as f32 / total as f32;
         let fill_width = bar_rect.width() * used_ratio;
 
         let fill_rect = egui::Rect::from_min_size(bar_rect.min, egui::vec2(fill_width, bar_height));
 
-        ui.painter()
-            .rect_filled(fill_rect, egui::CornerRadius::same(2), bar_fill);
+        ui.painter().rect_filled(
+            fill_rect,
+            egui::CornerRadius::same(palette.small_radius),
+            bar_fill,
+        );
 
         // Tooltip (FIXED)
         let gb = 1024.0 * 1024.0 * 1024.0;
@@ -184,7 +190,7 @@ pub fn draw_sidebar(
     favorites: &mut [FavoriteItem],
     sidebar_selected: Option<&PathBuf>,
     drives: &[DriveInfo],
-    palette: &SidebarPalette,
+    palette: &ThemePalette,
     dragging_favorite: &mut Option<usize>, // track dragged item globally
 ) -> SidebarAction {
     let mut action = SidebarAction::default();
@@ -283,8 +289,8 @@ pub fn draw_sidebar(
                                 pos,
                                 egui::vec2(ui.available_width(), 22.0),
                             ),
-                            egui::CornerRadius::same(6),
-                            palette.active,
+                            egui::CornerRadius::same(palette.large_radius),
+                            palette.primary_active,
                         );
                         // Get the FontId for the desired text style
                         let font_id: egui::FontId =
@@ -295,7 +301,7 @@ pub fn draw_sidebar(
                             egui::Align2::CENTER_CENTER,
                             &favorites[*drag_idx].label,
                             font_id,
-                            egui::Color32::WHITE,
+                            palette.icon_color,
                         );
                     }
                 }

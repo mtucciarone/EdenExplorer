@@ -1,14 +1,22 @@
 use eframe::egui;
 use std::collections::HashMap;
 use std::collections::{HashSet, VecDeque};
+use std::ffi::OsStr;
+use std::os::windows::ffi::OsStrExt;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crossbeam_channel::{unbounded, Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender, unbounded};
 
+use windows::Win32::Foundation::HWND;
+use windows::Win32::UI::Shell::ShellExecuteW;
+use windows::Win32::UI::WindowsAndMessaging::{SW_SHOW, SW_SHOWNORMAL};
+use windows::core::PCWSTR;
+
+use crate::app::customizetheme;
 use crate::app::icons::IconCache; // 🔥 FIXED PATH
-use crate::app::sidebar::{draw_sidebar, FavoriteItem, SidebarAction, SidebarPalette};
-use crate::app::tabs::{draw_tabbar, draw_tabs, TabInfo, TabbarNavAction};
+use crate::app::sidebar::{FavoriteItem, SidebarAction, draw_sidebar};
+use crate::app::tabs::{TabInfo, TabbarNavAction, draw_tabbar, draw_tabs};
 use crate::app::topbar::draw_topbar;
 use crate::app::utils::{
     clipboard_has_files, copy_dir_recursive, get_clipboard_files, set_clipboard_files,
@@ -16,20 +24,16 @@ use crate::app::utils::{
 };
 use crate::drives::{get_drive_infos, get_drives, parse_drive_display};
 use crate::fs::{calculate_folder_size_fast_progress, get_drive_space, scan_dir_async};
-use crate::indexer::{load_favorites, save_favorites, IndexStatus, Indexer};
+use crate::indexer::{IndexStatus, Indexer, load_favorites, save_favorites};
 use crate::state::{FileItem, Navigation};
 
-use super::features::{apply_theme, palette, ThemeMode};
+use super::features::{ThemeMode, apply_theme, palette};
 use super::itemviewer::{
-    draw_item_viewer, ItemViewerAction, ItemViewerContextAction, ItemViewerFolderSizeState,
-    RenameState,
+    ItemViewerAction, ItemViewerContextAction, ItemViewerFolderSizeState, RenameState,
+    draw_item_viewer,
 };
-use super::sorting::{sort_files, SortColumn};
-use std::ffi::OsStr;
-use std::os::windows::ffi::OsStrExt;
-use windows::core::PCWSTR;
-use windows::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_INVOKEIDLIST, SHELLEXECUTEINFOW};
-use windows::Win32::UI::WindowsAndMessaging::SW_SHOW;
+use super::sorting::{SortColumn, sort_files};
+use windows::Win32::UI::Shell::{SEE_MASK_INVOKEIDLIST, SHELLEXECUTEINFOW, ShellExecuteExW};
 
 struct TabState {
     id: u64,
@@ -45,7 +49,7 @@ pub struct ExplorerApp {
     size_req_tx: Option<Sender<PathBuf>>,
     size_rx: Option<Receiver<(PathBuf, u64, bool)>>,
     folder_sizes: HashMap<PathBuf, ItemViewerFolderSizeState>,
-    indexer: Arc<Indexer>,
+    indexer: std::sync::Arc<crate::indexer::Indexer>,
     search_query: String,
     search_results: Vec<FileItem>,
     search_active: bool,
@@ -58,11 +62,16 @@ pub struct ExplorerApp {
     pending_size_set: HashSet<PathBuf>,
     theme: ThemeMode,
     theme_dirty: bool,
+    show_hamburger_menu: bool,
     sort_column: SortColumn,
     sort_ascending: bool,
     icon_cache: Option<IconCache>, // 🔥 FIX: lazy init
     sidebar_width: f32,
     file_type_cache: HashMap<String, String>,
+    selected_paths: HashSet<PathBuf>,        // Multi-selection state
+    box_selection_start: Option<egui::Pos2>, // Box selection start position
+    box_selection_active: bool,              // Whether box selection is currently active
+    theme_customizer: customizetheme::ThemeCustomizer,
 }
 
 impl Default for ExplorerApp {
@@ -81,9 +90,9 @@ impl Default for ExplorerApp {
             folder_sizes: HashMap::new(),
             indexer: Indexer::start('C'),
             search_query: String::new(),
-            search_results: Vec::new(),
+            search_results: vec![],
             search_active: false,
-            favorites: Vec::new(),
+            favorites: vec![],
             dragging_favorite: None,
             sidebar_selected: None,
             selected_path: None,
@@ -91,14 +100,18 @@ impl Default for ExplorerApp {
             pending_size_queue: VecDeque::new(),
             pending_size_set: HashSet::new(),
             theme: ThemeMode::Dark,
-            theme_dirty: true,
+            theme_dirty: false,
+            show_hamburger_menu: false,
             sort_column: SortColumn::Name,
             sort_ascending: true,
-            icon_cache: None, // 🔥 FIX
-            sidebar_width: 200.0,
+            icon_cache: None, //
+            sidebar_width: 250.0,
             file_type_cache: HashMap::new(),
+            selected_paths: HashSet::new(), // Multi-selection state
+            box_selection_start: None,      // Box selection start position
+            box_selection_active: false,    // Whether box selection is currently active
+            theme_customizer: Default::default(),
         };
-
         let stored = load_favorites('C');
         if stored.is_empty() {
             app.favorites = app.default_favorites();
@@ -385,6 +398,8 @@ impl ExplorerApp {
 
 impl eframe::App for ExplorerApp {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        apply_theme(ctx, self.theme);
+
         if self.theme_dirty {
             apply_theme(ctx, self.theme);
             self.theme_dirty = false;
@@ -466,7 +481,7 @@ impl eframe::App for ExplorerApp {
         }
 
         // Toolbar (left column)
-        let palette = palette(self.theme);
+        let palette = &self.theme_customizer.current_theme.palette;
         let mut topbar_action = None;
 
         // Throttle size requests to keep UI responsive
@@ -485,10 +500,6 @@ impl eframe::App for ExplorerApp {
         }
 
         // Main layout: sidebar + tabs column
-        let sidebar_palette = SidebarPalette {
-            hover: palette.sidebar_hover,
-            active: palette.sidebar_active,
-        };
         let mut sidebar_action: Option<SidebarAction> = None;
         let mut tabs_action = None;
         let mut tabbar_action = None;
@@ -524,7 +535,7 @@ impl eframe::App for ExplorerApp {
                                     &mut self.favorites,
                                     self.sidebar_selected.as_ref(),
                                     &drives,
-                                    &sidebar_palette,
+                                    &palette,
                                     &mut self.dragging_favorite,
                                 ));
 
@@ -575,7 +586,7 @@ impl eframe::App for ExplorerApp {
                                 .collect();
                             let active_id = self.tabs[self.active_tab].id;
 
-                            tabs_action = Some(draw_tabs(ui, &tab_infos, active_id));
+                            tabs_action = Some(draw_tabs(ui, &tab_infos, active_id, &palette));
 
                             let container_stroke = ui.visuals().widgets.active.bg_stroke;
                             let container = egui::Frame::NONE
@@ -594,6 +605,7 @@ impl eframe::App for ExplorerApp {
                                     &icon_cache,
                                     &nav_snapshot,
                                     &mut search_snapshot,
+                                    &palette,
                                 ));
 
                                 ui.add_space(4.0);
@@ -612,6 +624,7 @@ impl eframe::App for ExplorerApp {
                                             display_files,
                                             &self.folder_sizes,
                                             self.selected_path.as_ref(),
+                                            &self.selected_paths,
                                             clipboard_has_files(),
                                             self.sort_column,
                                             self.sort_ascending,
@@ -638,6 +651,10 @@ impl eframe::App for ExplorerApp {
                     ThemeMode::Light => ThemeMode::Dark,
                 };
                 self.theme_dirty = true;
+            }
+
+            if action.customize_theme {
+                self.theme_customizer.open = true;
             }
         }
 
@@ -742,12 +759,63 @@ impl eframe::App for ExplorerApp {
             match action {
                 ItemViewerAction::Sort(col) => self.toggle_sort(col),
                 ItemViewerAction::Select(path) => {
-                    self.selected_path = Some(path);
+                    self.selected_path = Some(path.clone());
+                    self.selected_paths.insert(path);
+                }
+                ItemViewerAction::Deselect(path) => {
+                    self.selected_paths.remove(&path);
+                }
+                ItemViewerAction::SelectAll => {
+                    self.selected_paths.clear();
+                    for file in &self.files {
+                        self.selected_paths.insert(file.path.clone());
+                    }
+                }
+                ItemViewerAction::DeselectAll => {
+                    self.selected_paths.clear();
+                }
+                ItemViewerAction::BoxSelect(paths) => {
+                    // Clear current selection and add box-selected files
+                    self.selected_paths.clear();
+                    for path in paths {
+                        self.selected_paths.insert(path);
+                    }
+                }
+                ItemViewerAction::RangeSelect(paths) => {
+                    // Clear current selection and add range-selected files
+                    self.selected_paths.clear();
+                    for path in paths {
+                        self.selected_paths.insert(path);
+                    }
                 }
                 ItemViewerAction::Open(path) => {
                     self.selected_path = Some(path.clone());
                     self.current_nav_mut().go_to(path);
                     self.load_path();
+                }
+                ItemViewerAction::OpenWithDefault(path) => {
+                    // Open file with default Windows application
+                    let path_str = path.to_string_lossy().to_string();
+                    let wide_path: Vec<u16> = OsStr::new(&path_str)
+                        .encode_wide()
+                        .chain(std::iter::once(0))
+                        .collect();
+
+                    unsafe {
+                        let result = ShellExecuteW(
+                            HWND::default(),
+                            PCWSTR::null(),
+                            PCWSTR(wide_path.as_ptr()),
+                            PCWSTR::null(),
+                            PCWSTR::null(),
+                            SW_SHOWNORMAL,
+                        );
+
+                        // Check if the operation was successful (result > 32)
+                        if result.0 <= 32 {
+                            eprintln!("Failed to open file: {}", path.display());
+                        }
+                    }
                 }
                 ItemViewerAction::OpenInNewTab(path) => {
                     self.open_new_tab(path);
@@ -780,6 +848,36 @@ impl eframe::App for ExplorerApp {
             }
         }
 
+        if let Some(action) = customizetheme::draw_theme_customizer(ctx, &mut self.theme_customizer)
+        {
+            match action {
+                customizetheme::ThemeCustomizerAction::ApplyTheme => {
+                    self.theme_dirty = true;
+                }
+
+                customizetheme::ThemeCustomizerAction::ResetToDefaults => {
+                    self.theme_customizer.current_theme = Default::default();
+                    self.theme_dirty = true;
+                }
+
+                customizetheme::ThemeCustomizerAction::SaveTheme => {
+                    // implement later
+                }
+
+                customizetheme::ThemeCustomizerAction::LoadTheme => {
+                    // implement later
+                }
+
+                customizetheme::ThemeCustomizerAction::ExportTheme => {
+                    // implement later
+                }
+
+                customizetheme::ThemeCustomizerAction::ImportTheme => {
+                    // implement later
+                }
+            }
+        }
+
         // 🔥 PUT IT BACK
         self.icon_cache = Some(icon_cache);
     }
@@ -805,6 +903,8 @@ impl ExplorerApp {
             Some(rec.size)
         };
 
-        Some(FileItem::new(rec.name, path, rec.is_dir, file_size, None, None))
+        Some(FileItem::new(
+            rec.name, path, rec.is_dir, file_size, None, None,
+        ))
     }
 }

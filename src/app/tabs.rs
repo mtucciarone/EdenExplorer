@@ -1,6 +1,7 @@
 use eframe::egui;
 use std::path::{Path, PathBuf};
 
+use crate::app::features::ThemePalette;
 use crate::app::icons::IconCache;
 use crate::state::Navigation;
 use egui_phosphor::regular;
@@ -18,26 +19,21 @@ pub struct TabsAction {
     pub open_new: bool,
 }
 
-pub fn draw_tabs(ui: &mut egui::Ui, tabs: &[TabInfo], active_id: u64) -> TabsAction {
+pub fn draw_tabs(
+    ui: &mut egui::Ui,
+    tabs: &[TabInfo],
+    active_id: u64,
+    palette: &ThemePalette,
+) -> TabsAction {
     let mut action = TabsAction::default();
 
     ui.horizontal(|ui| {
         for tab in tabs {
             let is_active = tab.id == active_id;
             let corner = if is_active {
-                egui::CornerRadius {
-                    nw: 8,
-                    ne: 8,
-                    sw: 0,
-                    se: 0,
-                }
+                palette.tab_active_radius
             } else {
-                egui::CornerRadius {
-                    nw: 6,
-                    ne: 6,
-                    sw: 0,
-                    se: 0,
-                }
+                palette.tab_inactive_radius
             };
             let tab_fill = if is_active {
                 ui.visuals().widgets.active.bg_fill
@@ -58,24 +54,36 @@ pub fn draw_tabs(ui: &mut egui::Ui, tabs: &[TabInfo], active_id: u64) -> TabsAct
                 .show(ui, |ui| {
                     ui.set_min_width(160.0);
                     ui.set_max_width(200.0);
+
                     ui.horizontal(|ui| {
                         ui.add(egui::Label::new(regular::FOLDER_SIMPLE).selectable(false));
 
-                        if ui
-                            .add(
-                                egui::Label::new(&tab.title)
-                                    .selectable(false)
-                                    .sense(egui::Sense::click()),
-                            )
-                            .clicked()
-                        {
-                            action.activate = Some(tab.id);
+                        let label_color = if is_active {
+                            palette.row_label_selected
+                        } else {
+                            ui.visuals().widgets.noninteractive.fg_stroke.color
+                        };
+
+                        let resp = ui.add(egui::Label::new(
+                            egui::RichText::new(&tab.title).color(label_color),
+                        ));
+
+                        // Change the cursor depending on hover state
+                        if resp.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
+                        } else {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
                         }
                     });
                 })
-                .response;
+                .response
+                .interact(egui::Sense::click());
 
-            let close_resp = tab_close_button(ui, resp.rect, tab.id);
+            if resp.clicked() {
+                action.activate = Some(tab.id);
+            }
+
+            let close_resp = tab_close_button(ui, resp.rect, tab.id, palette);
             if close_resp.clicked() {
                 action.close = Some(tab.id);
             }
@@ -85,12 +93,7 @@ pub fn draw_tabs(ui: &mut egui::Ui, tabs: &[TabInfo], active_id: u64) -> TabsAct
 
         let add_frame = egui::Frame::NONE
             .inner_margin(egui::Margin::symmetric(6, 6))
-            .corner_radius(egui::CornerRadius {
-                nw: 6,
-                ne: 6,
-                sw: 0,
-                se: 0,
-            })
+            .corner_radius(palette.tab_inactive_radius)
             .stroke(egui::Stroke::new(
                 1.0,
                 ui.visuals().widgets.noninteractive.bg_stroke.color,
@@ -101,7 +104,7 @@ pub fn draw_tabs(ui: &mut egui::Ui, tabs: &[TabInfo], active_id: u64) -> TabsAct
             let (rect, resp) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
             (rect, resp)
         });
-        let add_resp = tab_add_button(ui, add_resp.inner.0, add_resp.inner.1);
+        let add_resp = tab_add_button(ui, add_resp.inner.0, add_resp.inner.1, palette);
         if add_resp.clicked() {
             action.open_new = true;
         }
@@ -110,7 +113,12 @@ pub fn draw_tabs(ui: &mut egui::Ui, tabs: &[TabInfo], active_id: u64) -> TabsAct
     action
 }
 
-fn tab_close_button(ui: &mut egui::Ui, tab_rect: egui::Rect, tab_id: u64) -> egui::Response {
+fn tab_close_button(
+    ui: &mut egui::Ui,
+    tab_rect: egui::Rect,
+    tab_id: u64,
+    palette: &ThemePalette,
+) -> egui::Response {
     let size = egui::vec2(18.0, 18.0);
     let rect = egui::Rect::from_min_size(
         egui::pos2(
@@ -126,14 +134,15 @@ fn tab_close_button(ui: &mut egui::Ui, tab_rect: egui::Rect, tab_id: u64) -> egu
     );
     let hovered = resp.hovered();
     let bg = if hovered {
-        egui::Color32::from_rgb(200, 52, 52)
+        palette.tab_close_hover
     } else {
         egui::Color32::TRANSPARENT
     };
-    ui.painter().rect_filled(rect, 4.0, bg);
+    ui.painter()
+        .rect_filled(rect, palette.tab_button_radius, bg);
 
     let color = if hovered {
-        egui::Color32::WHITE
+        palette.icon_color
     } else {
         ui.visuals().widgets.noninteractive.fg_stroke.color
     };
@@ -153,17 +162,23 @@ fn tab_close_button(ui: &mut egui::Ui, tab_rect: egui::Rect, tab_id: u64) -> egu
     resp
 }
 
-fn tab_add_button(ui: &mut egui::Ui, rect: egui::Rect, resp: egui::Response) -> egui::Response {
+fn tab_add_button(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    resp: egui::Response,
+    palette: &ThemePalette,
+) -> egui::Response {
     let hovered = resp.hovered();
     let bg = if hovered {
-        egui::Color32::from_rgb(54, 168, 82)
+        palette.tab_add_hover
     } else {
         egui::Color32::TRANSPARENT
     };
-    ui.painter().rect_filled(rect, 4.0, bg);
+    ui.painter()
+        .rect_filled(rect, palette.tab_button_radius, bg);
 
     let color = if hovered {
-        egui::Color32::WHITE
+        palette.icon_color
     } else {
         ui.visuals().widgets.noninteractive.fg_stroke.color
     };
@@ -203,6 +218,7 @@ pub fn draw_tabbar(
     icon_cache: &IconCache,
     nav: &Navigation,
     search_query: &mut String,
+    palette: &ThemePalette,
 ) -> TabbarAction {
     let mut action = TabbarAction::default();
 
@@ -269,7 +285,7 @@ pub fn draw_tabbar(
                 let inner = egui::Frame::NONE
                     .fill(crumb_bg)
                     .inner_margin(egui::Margin::symmetric(6, 2))
-                    .corner_radius(egui::CornerRadius::same(4))
+                    .corner_radius(egui::CornerRadius::same(palette.medium_radius))
                     .show(ui, |ui| {
                         ui.add(
                             egui::Label::new(egui::RichText::new(label).size(13.0))

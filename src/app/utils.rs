@@ -1,20 +1,26 @@
 use eframe::egui;
 
-pub fn drive_usage_color(ratio: f32) -> egui::Color32 {
+pub fn drive_usage_color(
+    ratio: f32,
+    palette: &crate::app::features::ThemePalette,
+) -> egui::Color32 {
     let base = if ratio > 0.95 {
-        egui::Color32::from_rgb(200, 72, 72)
+        palette.drive_usage_critical
     } else if ratio >= 0.85 {
-        egui::Color32::from_rgb(214, 170, 76)
+        palette.drive_usage_warning
     } else {
-        egui::Color32::from_rgb(88, 170, 120)
+        palette.drive_usage_normal
     };
 
-    base.gamma_multiply(0.6) // 👈 dull it down
+    base.gamma_multiply(0.6)
 }
 
-pub fn drive_usage_gradient(ratio: f32) -> (egui::Color32, egui::Color32) {
-    let left = drive_usage_color(ratio);
-    let right = left.gamma_multiply(0.8); // slightly darker for gradient
+pub fn drive_usage_gradient(
+    ratio: f32,
+    palette: &crate::app::features::ThemePalette,
+) -> (egui::Color32, egui::Color32) {
+    let left = drive_usage_color(ratio, palette);
+    let right = left.gamma_multiply(0.8);
     (left, right)
 }
 
@@ -48,7 +54,11 @@ pub fn drive_usage_bar(
     let painter = ui.painter();
 
     // background track
-    painter.rect_filled(rect, 2.0, palette.sidebar_hover.gamma_multiply(0.5));
+    painter.rect_filled(
+        rect,
+        palette.small_radius,
+        palette.secondary.gamma_multiply(0.5),
+    );
 
     // fill width
     let fill_width = rect.width() * animated_ratio;
@@ -56,11 +66,11 @@ pub fn drive_usage_bar(
     if fill_width > 0.0 {
         let fill_rect = egui::Rect::from_min_size(rect.min, egui::vec2(fill_width, rect.height()));
 
-        let (left, right) = drive_usage_gradient(target_ratio);
+        let (left, _right) = drive_usage_gradient(target_ratio, palette);
 
         painter.add(egui::epaint::RectShape::filled(
             fill_rect,
-            2.0,
+            palette.small_radius,
             egui::Color32::from_rgb(left.r(), left.g(), left.b()),
         ));
 
@@ -70,7 +80,11 @@ pub fn drive_usage_bar(
             egui::vec2(fill_rect.width(), fill_rect.height() * 0.5),
         );
 
-        painter.rect_filled(highlight_rect, 2.0, egui::Color32::from_white_alpha(20));
+        painter.rect_filled(
+            highlight_rect,
+            palette.small_radius,
+            egui::Color32::from_white_alpha(20),
+        );
     }
 
     // percentage text
@@ -81,7 +95,7 @@ pub fn drive_usage_bar(
         egui::Align2::CENTER_CENTER,
         percent,
         egui::TextStyle::Small.resolve(ui.style()),
-        egui::Color32::WHITE,
+        palette.icon_color,
     );
 }
 
@@ -102,8 +116,8 @@ pub fn copy_dir_recursive(src: &std::path::Path, dest: &std::path::Path) -> std:
 
 pub fn shell_delete_to_recycle_bin(path: &std::path::PathBuf) -> bool {
     use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::UI::Shell::{FO_DELETE, FOF_ALLOWUNDO, SHFILEOPSTRUCTW, SHFileOperationW};
     use windows::core::PCWSTR;
-    use windows::Win32::UI::Shell::{SHFileOperationW, FOF_ALLOWUNDO, FO_DELETE, SHFILEOPSTRUCTW};
 
     let mut wide: Vec<u16> = path.as_os_str().encode_wide().collect();
     wide.push(0);
@@ -123,7 +137,7 @@ pub fn set_clipboard_files(paths: &[std::path::PathBuf], cut: bool) -> bool {
     use windows::Win32::System::DataExchange::{
         CloseClipboard, EmptyClipboard, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
     };
-    use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+    use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock};
     use windows::Win32::System::Ole::CF_HDROP;
 
     if paths.is_empty() {

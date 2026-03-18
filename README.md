@@ -2,9 +2,9 @@
   <img src="src/assets/icon.ico" alt="Eden Explorer Icon" width="128" height="128">
 </p>
 
-# Eden Explorer
+# FOSS Windows 11 Explorer - Eden Explorer
 
-**Eden Explorer** is a blazing-fast, minimal Windows 11 file explorer built in Rust with egui.  
+**Eden Explorer** is a blazing-fast, FOSS (Fully Open Source Software) minimal Windows 11 file explorer built in Rust with egui.  
 It is designed for performance, direct NT-level filesystem scanning, and low memory overhead.  
 ---
 ## Why Eden Explorer and not the native File Explorer?

@@ -1,48 +1,166 @@
 use eframe::egui;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub enum ThemeMode {
     Light,
     Dark,
 }
 
+impl Default for ThemeMode {
+    fn default() -> Self {
+        ThemeMode::Dark
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ThemePalette {
-    pub sidebar_bg: egui::Color32,
-    pub sidebar_hover: egui::Color32,
-    pub sidebar_active: egui::Color32,
+    // 🎯 Core brand color
+    pub primary: egui::Color32,
+    pub primary_hover: egui::Color32,
+    pub primary_active: egui::Color32,
+    pub primary_subtle: egui::Color32,
+    pub secondary: egui::Color32,
+
+    // 🎯 UI element colors
+    pub box_selection_stroke: egui::Color32,
+    pub box_selection_fill: egui::Color32,
+    pub icon_color: egui::Color32,
+    pub row_label_selected: egui::Color32,
+
+    // 🎯 Corner radius values
+    pub small_radius: u8,
+    pub medium_radius: u8,
+    pub large_radius: u8,
+    pub tab_active_radius: egui::CornerRadius,
+    pub tab_inactive_radius: egui::CornerRadius,
+    pub tab_button_radius: egui::CornerRadius,
+
+    // 🎯 Drive usage colors
+    pub drive_usage_critical: egui::Color32,
+    pub drive_usage_warning: egui::Color32,
+    pub drive_usage_normal: egui::Color32,
+
+    // 🎯 Tab button colors
+    pub tab_close_hover: egui::Color32,
+    pub tab_add_hover: egui::Color32,
+}
+
+// 🎯 Single base color (your purple)
+fn base_color() -> egui::Color32 {
+    egui::Color32::from_rgb(110, 85, 160)
 }
 
 pub fn palette(mode: ThemeMode) -> ThemePalette {
+    let base = base_color();
+
     match mode {
-        ThemeMode::Dark => ThemePalette {
-            sidebar_bg: egui::Color32::from_rgb(28, 32, 37),
-            sidebar_hover: egui::Color32::from_rgb(38, 44, 52),
-            sidebar_active: egui::Color32::from_rgb(46, 54, 64),
-        },
-        ThemeMode::Light => ThemePalette {
-            sidebar_bg: egui::Color32::from_rgb(235, 239, 245),
-            sidebar_hover: egui::Color32::from_rgb(224, 232, 242),
-            sidebar_active: egui::Color32::from_rgb(214, 224, 236),
-        },
+        ThemeMode::Dark => {
+            let primary = base;
+            let primary_hover = egui::Color32::from_rgba_unmultiplied(95, 75, 135, 128);
+            let primary_active = egui::Color32::from_rgb(70, 55, 110);
+            let primary_subtle = egui::Color32::from_rgba_unmultiplied(95, 75, 135, 60);
+
+            ThemePalette {
+                primary,
+                primary_hover,
+                primary_active,
+                primary_subtle,
+                secondary: egui::Color32::from_rgb(255, 255, 255),
+                box_selection_stroke: primary_subtle,
+                box_selection_fill: primary,
+                icon_color: egui::Color32::WHITE,
+                row_label_selected: egui::Color32::WHITE,
+                small_radius: 2,
+                medium_radius: 4,
+                large_radius: 6,
+                tab_active_radius: egui::CornerRadius {
+                    nw: 8,
+                    ne: 8,
+                    sw: 0,
+                    se: 0,
+                },
+                tab_inactive_radius: egui::CornerRadius {
+                    nw: 6,
+                    ne: 6,
+                    sw: 0,
+                    se: 0,
+                },
+                tab_button_radius: egui::CornerRadius::same(4),
+                drive_usage_critical: egui::Color32::from_rgb(200, 72, 72),
+                drive_usage_warning: egui::Color32::from_rgb(214, 170, 76),
+                drive_usage_normal: egui::Color32::from_rgb(88, 170, 120),
+                tab_close_hover: egui::Color32::from_rgb(200, 52, 52),
+                tab_add_hover: egui::Color32::from_rgb(54, 168, 82),
+            }
+        }
+
+        ThemeMode::Light => {
+            // Same hue, lighter + less alpha
+            let primary = base;
+            let primary_hover = egui::Color32::from_rgba_unmultiplied(110, 85, 160, 90);
+            let primary_active = egui::Color32::from_rgb(140, 120, 200);
+            let primary_subtle = egui::Color32::from_rgba_unmultiplied(110, 85, 160, 40);
+
+            ThemePalette {
+                primary,
+                primary_hover,
+                primary_active,
+                primary_subtle,
+                secondary: egui::Color32::from_rgb(0, 0, 0),
+                box_selection_stroke: primary_subtle,
+                box_selection_fill: primary,
+                icon_color: egui::Color32::WHITE,
+                row_label_selected: egui::Color32::from_rgb(0, 0, 0),
+                small_radius: 2,
+                medium_radius: 4,
+                large_radius: 6,
+                tab_active_radius: egui::CornerRadius {
+                    nw: 8,
+                    ne: 8,
+                    sw: 0,
+                    se: 0,
+                },
+                tab_inactive_radius: egui::CornerRadius {
+                    nw: 6,
+                    ne: 6,
+                    sw: 0,
+                    se: 0,
+                },
+                tab_button_radius: egui::CornerRadius::same(4),
+                drive_usage_critical: egui::Color32::from_rgb(200, 72, 72),
+                drive_usage_warning: egui::Color32::from_rgb(214, 170, 76),
+                drive_usage_normal: egui::Color32::from_rgb(88, 170, 120),
+                tab_close_hover: egui::Color32::from_rgb(200, 52, 52),
+                tab_add_hover: egui::Color32::from_rgb(54, 168, 82),
+            }
+        }
     }
 }
 
 pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
     let mut style = (*ctx.style()).clone();
+    let palette = palette(mode);
+
     style.visuals = match mode {
         ThemeMode::Dark => egui::Visuals::dark(),
         ThemeMode::Light => egui::Visuals::light(),
     };
 
+    // 📐 Layout / spacing
     style.spacing.item_spacing = egui::vec2(10.0, 8.0);
     style.spacing.button_padding = egui::vec2(10.0, 6.0);
     style.spacing.window_margin = egui::Margin::same(10);
+
+    // 🔤 Typography
     style
         .text_styles
         .insert(egui::TextStyle::Heading, egui::FontId::proportional(18.0));
     style
         .text_styles
         .insert(egui::TextStyle::Body, egui::FontId::proportional(14.0));
+
+    // 🔲 Shape
     style.visuals.window_corner_radius = egui::CornerRadius::same(10);
     style.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(6);
     style.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(6);
@@ -52,28 +170,49 @@ pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
         ThemeMode::Dark => {
             style.visuals.panel_fill = egui::Color32::from_rgb(20, 22, 26);
             style.visuals.faint_bg_color = egui::Color32::from_rgb(26, 30, 36);
+
             style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(30, 34, 40);
-            style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(38, 44, 52);
-            style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(46, 54, 64);
-            style.visuals.selection.bg_fill = egui::Color32::from_rgb(60, 90, 130);
-            style.visuals.selection.stroke.color = egui::Color32::from_rgb(120, 160, 210);
+
+            // 🎯 PRIMARY SYSTEM
+            style.visuals.widgets.hovered.bg_fill = palette.primary_hover;
+            style.visuals.widgets.hovered.weak_bg_fill = palette.primary_hover;
+            style.visuals.widgets.hovered.bg_stroke.color = palette.primary_hover;
+
+            style.visuals.widgets.active.bg_fill = palette.primary_active;
+
+            style.visuals.selection.bg_fill = palette.primary_hover;
+            style.visuals.selection.stroke.color = palette.primary_active;
+
+            // 🔤 Text
             style.visuals.widgets.inactive.fg_stroke.color = egui::Color32::from_rgb(220, 226, 232);
-            style.visuals.widgets.hovered.fg_stroke.color = egui::Color32::from_rgb(235, 240, 246);
-            style.visuals.widgets.active.fg_stroke.color = egui::Color32::from_rgb(245, 248, 252);
+            style.visuals.widgets.hovered.fg_stroke.color = egui::Color32::from_rgb(245, 240, 255);
+            style.visuals.widgets.active.fg_stroke.color = egui::Color32::from_rgb(255, 250, 255);
+
             style.visuals.widgets.noninteractive.fg_stroke.color =
                 egui::Color32::from_rgb(160, 170, 180);
         }
+
         ThemeMode::Light => {
             style.visuals.panel_fill = egui::Color32::from_rgb(250, 251, 253);
             style.visuals.faint_bg_color = egui::Color32::from_rgb(244, 246, 249);
+
             style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(247, 248, 250);
-            style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(236, 240, 246);
-            style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(224, 231, 242);
-            style.visuals.selection.bg_fill = egui::Color32::from_rgb(210, 225, 245);
-            style.visuals.selection.stroke.color = egui::Color32::from_rgb(60, 90, 130);
+
+            // 🎯 SAME SYSTEM (just lighter)
+            style.visuals.widgets.hovered.bg_fill = palette.primary_hover;
+            style.visuals.widgets.hovered.weak_bg_fill = palette.primary_hover;
+            style.visuals.widgets.hovered.bg_stroke.color = palette.primary_hover;
+
+            style.visuals.widgets.active.bg_fill = palette.primary_active;
+
+            style.visuals.selection.bg_fill = palette.primary_subtle;
+            style.visuals.selection.stroke.color = palette.primary;
+
+            // 🔤 Text
             style.visuals.widgets.inactive.fg_stroke.color = egui::Color32::from_rgb(35, 41, 47);
             style.visuals.widgets.hovered.fg_stroke.color = egui::Color32::from_rgb(25, 29, 33);
             style.visuals.widgets.active.fg_stroke.color = egui::Color32::from_rgb(15, 18, 22);
+
             style.visuals.widgets.noninteractive.fg_stroke.color =
                 egui::Color32::from_rgb(70, 78, 86);
         }

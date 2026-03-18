@@ -8,6 +8,7 @@ pub mod sorting;
 pub mod tabs;
 pub mod topbar;
 pub mod utils;
+pub mod customizetheme;
 
 // Re-export main app so main.rs can use it cleanly
 pub use explorer::ExplorerApp;
