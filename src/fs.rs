@@ -1,22 +1,17 @@
+use crate::state::FileItem;
+use crossbeam_channel::Sender;
+use ntapi::ntioapi::{FILE_DIRECTORY_INFORMATION, IO_STATUS_BLOCK, NtQueryDirectoryFile};
+use std::ffi::OsString;
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::path::PathBuf;
 use std::thread;
 use std::time::{Duration, Instant};
-
-use crossbeam_channel::Sender;
-
-use std::ffi::OsString;
-use std::os::windows::ffi::{OsStrExt, OsStringExt};
-
-use windows::core::PCWSTR;
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 use windows::Win32::Storage::FileSystem::{
-    CreateFileW, GetDiskFreeSpaceExW, FILE_ATTRIBUTE_DIRECTORY, FILE_FLAG_BACKUP_SEMANTICS,
-    FILE_LIST_DIRECTORY, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    CreateFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_FLAG_BACKUP_SEMANTICS, FILE_LIST_DIRECTORY,
+    FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, GetDiskFreeSpaceExW, OPEN_EXISTING,
 };
-
-use ntapi::ntioapi::{NtQueryDirectoryFile, FILE_DIRECTORY_INFORMATION, IO_STATUS_BLOCK};
-
-use crate::state::FileItem;
+use windows::core::PCWSTR;
 
 const STATUS_NO_MORE_FILES: i32 = 0x80000006u32 as i32;
 
@@ -79,6 +74,9 @@ pub fn calculate_folder_size_fast(path: PathBuf) -> u64 {
     let mut total_size = 0u64;
     let mut stack = vec![path];
 
+    // Reuse buffer (good)
+    let mut buffer = vec![0u8; 256 * 1024];
+
     while let Some(dir) = stack.pop() {
         let handle = match open_directory_handle(&dir) {
             Some(h) => h,
@@ -86,7 +84,6 @@ pub fn calculate_folder_size_fast(path: PathBuf) -> u64 {
         };
 
         unsafe {
-            let mut buffer = vec![0u8; 64 * 1024];
             let mut io_status: IO_STATUS_BLOCK = std::mem::zeroed();
 
             loop {
@@ -108,27 +105,31 @@ pub fn calculate_folder_size_fast(path: PathBuf) -> u64 {
                     break;
                 }
 
-                let mut offset = 0;
+                let mut offset = 0usize;
+                let end = io_status.Information as usize;
 
-                while offset < io_status.Information as usize {
+                while offset < end {
                     let entry_ptr =
                         buffer.as_ptr().add(offset) as *const FILE_DIRECTORY_INFORMATION;
                     let entry = &*entry_ptr;
 
                     let name_len = entry.FileNameLength as usize / 2;
+                    let name_ptr = entry.FileName.as_ptr();
 
-                    let name = OsString::from_wide(std::slice::from_raw_parts(
-                        entry.FileName.as_ptr(),
-                        name_len,
-                    ));
+                    // 🚀 FAST "." and ".." check (no allocation)
+                    let is_dot = name_len == 1 && *name_ptr == b'.' as u16;
+                    let is_dotdot = name_len == 2
+                        && *name_ptr == b'.' as u16
+                        && *name_ptr.add(1) == b'.' as u16;
 
-                    if name != "." && name != ".." {
-                        let full = dir.join(&name);
-
+                    if !is_dot && !is_dotdot {
                         let is_dir = (entry.FileAttributes & FILE_ATTRIBUTE_DIRECTORY.0) != 0;
 
                         if is_dir {
-                            stack.push(full);
+                            // Only allocate when needed (directory)
+                            let name =
+                                OsString::from_wide(std::slice::from_raw_parts(name_ptr, name_len));
+                            stack.push(dir.join(name));
                         } else {
                             total_size =
                                 total_size.saturating_add(*entry.EndOfFile.QuadPart() as u64);
@@ -140,88 +141,6 @@ pub fn calculate_folder_size_fast(path: PathBuf) -> u64 {
                     }
 
                     offset += entry.NextEntryOffset as usize;
-                }
-            }
-
-            let _ = CloseHandle(handle); // 🔥 IMPORTANT
-        }
-    }
-
-    total_size
-}
-
-/// 🚀 FAST folder size calculation with progress updates
-pub fn calculate_folder_size_fast_progress(path: PathBuf, tx: Sender<(PathBuf, u64, bool)>) {
-    let mut total_size = 0u64;
-    let mut stack = vec![path.clone()];
-    let mut last_emit = Instant::now();
-
-    while let Some(dir) = stack.pop() {
-        let handle = match open_directory_handle(&dir) {
-            Some(h) => h,
-            None => continue,
-        };
-
-        unsafe {
-            let mut buffer = vec![0u8; 64 * 1024];
-            let mut io_status: IO_STATUS_BLOCK = std::mem::zeroed();
-
-            loop {
-                let status = NtQueryDirectoryFile(
-                    handle.0 as *mut _,
-                    std::ptr::null_mut(),
-                    None,
-                    std::ptr::null_mut(),
-                    &mut io_status,
-                    buffer.as_mut_ptr() as *mut _,
-                    buffer.len() as u32,
-                    1,
-                    0,
-                    std::ptr::null_mut(),
-                    0,
-                );
-
-                if status == STATUS_NO_MORE_FILES || status < 0 {
-                    break;
-                }
-
-                let mut offset = 0;
-
-                while offset < io_status.Information as usize {
-                    let entry_ptr =
-                        buffer.as_ptr().add(offset) as *const FILE_DIRECTORY_INFORMATION;
-                    let entry = &*entry_ptr;
-
-                    let name_len = entry.FileNameLength as usize / 2;
-
-                    let name = OsString::from_wide(std::slice::from_raw_parts(
-                        entry.FileName.as_ptr(),
-                        name_len,
-                    ));
-
-                    if name != "." && name != ".." {
-                        let full = dir.join(&name);
-
-                        let is_dir = (entry.FileAttributes & FILE_ATTRIBUTE_DIRECTORY.0) != 0;
-
-                        if is_dir {
-                            stack.push(full);
-                        } else {
-                            total_size =
-                                total_size.saturating_add(*entry.EndOfFile.QuadPart() as u64);
-                        }
-                    }
-
-                    if entry.NextEntryOffset == 0 {
-                        break;
-                    }
-
-                    offset += entry.NextEntryOffset as usize;
-                }
-
-                if last_emit.elapsed() > Duration::from_millis(120) {
-                    let _ = tx.send((path.clone(), total_size, false));
-                    last_emit = Instant::now();
                 }
             }
 
@@ -229,7 +148,7 @@ pub fn calculate_folder_size_fast_progress(path: PathBuf, tx: Sender<(PathBuf, u
         }
     }
 
-    let _ = tx.send((path, total_size, true));
+    total_size
 }
 
 /// 🚀 Async directory scan
@@ -357,8 +276,14 @@ pub fn scan_dir_async(path: PathBuf, tx: Sender<FileItem>) {
                         None
                     };
 
-                    let item =
-                        FileItem::new(name, full_path.clone(), is_dir, file_size, modified_time, created_time);
+                    let item = FileItem::new(
+                        name,
+                        full_path.clone(),
+                        is_dir,
+                        file_size,
+                        modified_time,
+                        created_time,
+                    );
 
                     let _ = tx.send(item);
 
@@ -373,4 +298,169 @@ pub fn scan_dir_async(path: PathBuf, tx: Sender<FileItem>) {
             let _ = CloseHandle(handle);
         }
     });
+}
+
+/// 🚀 Lightning fast folder size calculation with progress
+pub fn calculate_folder_size_fast_progress_new(path: PathBuf, tx: Sender<(PathBuf, u64, bool)>) {
+    let mut total_size = 0u64;
+    let mut stack = vec![path.clone()];
+    let mut last_emit = Instant::now();
+
+    while let Some(dir) = stack.pop() {
+        if let Some(handle) = open_directory_handle(&dir) {
+            unsafe {
+                let mut buffer = vec![0u8; 64 * 1024];
+                let mut io_status: IO_STATUS_BLOCK = std::mem::zeroed();
+
+                loop {
+                    let status = NtQueryDirectoryFile(
+                        handle.0 as *mut _,
+                        std::ptr::null_mut(),
+                        None,
+                        std::ptr::null_mut(),
+                        &mut io_status,
+                        buffer.as_mut_ptr() as *mut _,
+                        buffer.len() as u32,
+                        1,
+                        0,
+                        std::ptr::null_mut(),
+                        0,
+                    );
+
+                    if status == STATUS_NO_MORE_FILES || status < 0 {
+                        break;
+                    }
+
+                    let mut offset = 0;
+                    while offset < io_status.Information as usize {
+                        let entry_ptr =
+                            buffer.as_ptr().add(offset) as *const FILE_DIRECTORY_INFORMATION;
+                        let entry = &*entry_ptr;
+
+                        let name_len = entry.FileNameLength as usize / 2;
+                        let name = OsString::from_wide(std::slice::from_raw_parts(
+                            entry.FileName.as_ptr(),
+                            name_len,
+                        ));
+
+                        if name != "." && name != ".." {
+                            let full_path = dir.join(&name);
+                            let is_dir = (entry.FileAttributes & FILE_ATTRIBUTE_DIRECTORY.0) != 0;
+
+                            if is_dir {
+                                stack.push(full_path);
+                            } else {
+                                total_size = total_size.saturating_add(*entry.EndOfFile.QuadPart() as u64);
+                            }
+                        }
+
+                        if entry.NextEntryOffset == 0 {
+                            break;
+                        }
+                        offset += entry.NextEntryOffset as usize;
+                    }
+
+                    // Emit progress every 100ms
+                    if last_emit.elapsed() > Duration::from_millis(100) {
+                        let _ = tx.send((path.clone(), total_size, false));
+                        last_emit = Instant::now();
+                    }
+                }
+
+                let _ = CloseHandle(handle);
+            }
+        }
+    }
+
+    // Final emit
+    let _ = tx.send((path, total_size, true));
+}
+
+
+
+use windows::Win32::{
+    Storage::FileSystem::{
+        FILE_ATTRIBUTE_REPARSE_POINT
+    }
+};
+
+// ⚡ Fast, accurate folder size calculation with progress updates
+pub fn calculate_folder_size_fast_progress_new_2(path: PathBuf, tx: Sender<(PathBuf, u64, bool)>) {
+    let mut total_size = 0u64;
+    let mut stack = vec![path.clone()];
+    let mut last_emit = Instant::now();
+
+    while let Some(dir) = stack.pop() {
+        if let Some(handle) = open_directory_handle(&dir) {
+            unsafe {
+                let mut buffer = vec![0u8; 64 * 1024];
+                let mut io_status: IO_STATUS_BLOCK = std::mem::zeroed();
+
+                loop {
+                    let status = NtQueryDirectoryFile(
+                        handle.0 as *mut _,
+                        std::ptr::null_mut(),
+                        None,
+                        std::ptr::null_mut(),
+                        &mut io_status,
+                        buffer.as_mut_ptr() as *mut _,
+                        buffer.len() as u32,
+                        1, // FileDirectoryInformation
+                        0,
+                        std::ptr::null_mut(),
+                        0,
+                    );
+
+                    if status == STATUS_NO_MORE_FILES || status < 0 {
+                        break;
+                    }
+
+                    let mut offset = 0;
+                    while offset < io_status.Information as usize {
+                        let entry_ptr =
+                            buffer.as_ptr().add(offset) as *const FILE_DIRECTORY_INFORMATION;
+                        let entry = &*entry_ptr;
+
+                        let name_len = entry.FileNameLength as usize / 2;
+                        let name = OsString::from_wide(std::slice::from_raw_parts(
+                            entry.FileName.as_ptr(),
+                            name_len,
+                        ));
+
+                        if name != "." && name != ".." {
+                            let full_path = dir.join(&name);
+                            let is_dir =
+                                (entry.FileAttributes & FILE_ATTRIBUTE_DIRECTORY.0) != 0;
+                            let is_reparse =
+                                (entry.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT.0) != 0;
+
+                            // Only traverse real directories (skip symlinks/junctions)
+                            if is_dir && !is_reparse {
+                                stack.push(full_path);
+                            } else if !is_dir {
+                                total_size =
+                                    total_size.saturating_add(*entry.EndOfFile.QuadPart() as u64);
+                            }
+                        }
+
+                        if entry.NextEntryOffset == 0 {
+                            break;
+                        }
+                        offset += entry.NextEntryOffset as usize;
+                    }
+
+                    // Emit progress every 100ms
+                    if last_emit.elapsed() > Duration::from_millis(100) {
+                        let _ = tx.send((path.clone(), total_size, false));
+                        last_emit = Instant::now();
+                    }
+                }
+
+                let _ = CloseHandle(handle);
+            }
+        }
+    }
+
+    // Final emit
+    let _ = tx.send((path, total_size, true));
 }

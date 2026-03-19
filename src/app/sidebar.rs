@@ -33,7 +33,7 @@ fn sidebar_item(
     _selected: bool,
 ) -> egui::Response {
     let available_width = ui.available_width();
-    let height = ui.text_style_height(&egui::TextStyle::Button) + 4.0; // vertical padding
+    let height = 18.0;
 
     let (rect, item_resp) =
         ui.allocate_exact_size(egui::vec2(available_width, height), egui::Sense::click());

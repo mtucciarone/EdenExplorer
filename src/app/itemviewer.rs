@@ -2,7 +2,7 @@ use super::features::apply_checkbox_colors;
 use super::formatting::format_size;
 use super::sorting::SortColumn;
 use crate::app::icons::IconCache;
-use crate::app::utils::{drive_usage_bar, get_file_type_name};
+use crate::app::utils::{drive_usage_bar, get_cut_paths, get_file_type_name};
 use crate::state::FileItem;
 use eframe::egui;
 use egui::{FontFamily, FontId};
@@ -58,7 +58,7 @@ pub fn draw_item_viewer(
     ui: &mut egui::Ui,
     files: &Vec<FileItem>,
     folder_sizes: &HashMap<PathBuf, ItemViewerFolderSizeState>,
-    selected_path: Option<&PathBuf>,
+    selected_path: &mut Option<PathBuf>,
     selected_paths: &HashSet<PathBuf>,
     paste_enabled: bool,
     sort_column: SortColumn,
@@ -68,7 +68,22 @@ pub fn draw_item_viewer(
     palette: &crate::app::features::ThemePalette,
     file_type_cache: &mut HashMap<String, String>,
     drag_hover: &mut bool,
+    selection_anchor: &mut Option<usize>,
+    selection_focus: &mut Option<usize>,
 ) -> Option<ItemViewerAction> {
+    // ✅ Step 2: Compute cut paths once per frame
+    let cut_paths = get_cut_paths();
+
+    // Helper function to get dimmed color for cut files
+    let get_text_color = |is_selected: bool, is_cut: bool| -> egui::Color32 {
+        let base_color = get_row_color(is_selected, palette);
+        if is_cut {
+            base_color.linear_multiply(0.5)
+        } else {
+            base_color
+        }
+    };
+
     // ✅ Step 6: Visual feedback for drag hover
     if *drag_hover {
         let rect = ui.max_rect();
@@ -133,6 +148,7 @@ pub fn draw_item_viewer(
                 selected_paths,
                 paste_enabled,
                 palette,
+                selection_anchor,
             ) {
                 action = Some(global_action);
             }
@@ -206,6 +222,9 @@ pub fn draw_item_viewer(
                         let is_selected = selected_paths.contains(&file.path);
                         row.set_selected(is_selected);
 
+                        // ✅ Step 3: Detect if file is cut
+                        let is_cut = cut_paths.contains(&file.path);
+
                         // Checkbox column (only show for non-drive views)
                         if !is_drive_view {
                             row.col(|ui| {
@@ -252,7 +271,12 @@ pub fn draw_item_viewer(
                                             egui::pos2(0.0, 0.0),
                                             egui::vec2(1.0, 1.0),
                                         ),
-                                        palette.icon_color,
+                                        // ✅ Step 6: Dim icons for cut files
+                                        if is_cut {
+                                            palette.icon_color.linear_multiply(0.5)
+                                        } else {
+                                            palette.icon_color
+                                        },
                                     );
 
                                     8.0 + icon_size.x + icon_padding
@@ -352,12 +376,13 @@ pub fn draw_item_viewer(
 
                             let text_pos = egui::pos2(rect.min.x + text_offset_x, rect.center().y);
 
+                            // ✅ Step 4: Apply dimmed styling to text using helper
                             ui.painter().text(
                                 text_pos,
                                 egui::Align2::LEFT_CENTER,
                                 display_name,
                                 font_id.clone(),
-                                get_row_color(is_selected, palette),
+                                get_text_color(is_selected, is_cut),
                             );
                         });
 
@@ -392,13 +417,17 @@ pub fn draw_item_viewer(
                                 type_text.clone()
                             };
 
-                            let label = egui::Label::new(
-                                egui::RichText::new(display_type)
-                                    .size(palette.text_size)
-                                    .color(get_row_color(is_selected, palette))
-                                    .font(font_id.clone()),
-                            )
-                            .sense(egui::Sense::hover());
+                            let mut rich_text = egui::RichText::new(display_type)
+                                .size(palette.text_size)
+                                // ✅ Step 5: Apply dimmed styling using helper
+                                .color(get_text_color(is_selected, is_cut));
+
+                            if is_cut {
+                                rich_text = rich_text.italics();
+                            }
+
+                            let label = egui::Label::new(rich_text.font(font_id.clone()))
+                                .sense(egui::Sense::hover());
                             let resp = ui.add(label);
                             if resp.hovered() && type_text.len() > max_chars && max_chars > 3 {
                                 resp.on_hover_text(&type_text);
@@ -419,7 +448,7 @@ pub fn draw_item_viewer(
                                                 total as f64 / gb
                                             ))
                                             .size(palette.text_size)
-                                            .color(get_row_color(is_selected, palette))
+                                            .color(get_text_color(is_selected, is_cut))
                                             .font(font_id.clone()),
                                         );
                                     },
@@ -434,14 +463,14 @@ pub fn draw_item_viewer(
                                             format!("⏳ {}", label)
                                         })
                                         .size(palette.text_size)
-                                        .color(get_row_color(is_selected, palette))
+                                        .color(get_text_color(is_selected, is_cut))
                                         .font(font_id.clone()),
                                     );
                                 } else {
                                     ui.label(
                                         egui::RichText::new("—")
                                             .size(palette.text_size)
-                                            .color(get_row_color(is_selected, palette))
+                                            .color(get_text_color(is_selected, is_cut))
                                             .font(font_id.clone()),
                                     );
                                 }
@@ -449,14 +478,14 @@ pub fn draw_item_viewer(
                                 ui.label(
                                     egui::RichText::new(format_size(size))
                                         .size(palette.text_size)
-                                        .color(get_row_color(is_selected, palette))
+                                        .color(get_text_color(is_selected, is_cut))
                                         .font(font_id.clone()),
                                 );
                             } else {
                                 ui.label(
                                     egui::RichText::new("—")
                                         .size(palette.text_size)
-                                        .color(get_row_color(is_selected, palette))
+                                        .color(get_text_color(is_selected, is_cut))
                                         .font(font_id.clone()),
                                 );
                             }
@@ -478,14 +507,14 @@ pub fn draw_item_viewer(
                                     ui.label(
                                         egui::RichText::new(m)
                                             .size(palette.text_size)
-                                            .color(get_row_color(is_selected, palette))
+                                            .color(get_text_color(is_selected, is_cut))
                                             .font(font_id.clone()),
                                     );
                                 } else {
                                     ui.label(
                                         egui::RichText::new("—")
                                             .size(palette.text_size)
-                                            .color(get_row_color(is_selected, palette))
+                                            .color(get_text_color(is_selected, is_cut))
                                             .font(font_id.clone()),
                                     );
                                 }
@@ -499,14 +528,14 @@ pub fn draw_item_viewer(
                                     ui.label(
                                         egui::RichText::new(c)
                                             .size(palette.text_size)
-                                            .color(get_row_color(is_selected, palette))
+                                            .color(get_text_color(is_selected, is_cut))
                                             .font(font_id.clone()),
                                     );
                                 } else {
                                     ui.label(
                                         egui::RichText::new("—")
                                             .size(palette.text_size)
-                                            .color(get_row_color(is_selected, palette))
+                                            .color(get_text_color(is_selected, is_cut))
                                             .font(font_id.clone()),
                                     );
                                 }
@@ -517,17 +546,39 @@ pub fn draw_item_viewer(
 
                         // Row click selection
                         if row_resp.clicked() {
-                            if modifiers.ctrl {
-                                // Ctrl = toggle multi-select
+                            if modifiers.shift {
+                                if let Some(anchor_idx) = *selection_anchor {
+                                    let current_idx = idx;
+
+                                    let range_start = anchor_idx.min(current_idx);
+                                    let range_end = anchor_idx.max(current_idx);
+
+                                    let range_paths: Vec<PathBuf> = files[range_start..=range_end]
+                                        .iter()
+                                        .map(|f| f.path.clone())
+                                        .collect();
+
+                                    action = Some(ItemViewerAction::RangeSelect(range_paths));
+                                    *selection_focus = Some(current_idx);
+                                } else {
+                                    // First shift-click sets anchor
+                                    *selection_anchor = Some(idx);
+                                    *selection_focus = Some(idx);
+                                    action = Some(ItemViewerAction::Select(file.path.clone()));
+                                }
+                            } else if modifiers.ctrl {
+                                // ✅ Ctrl = toggle, DO NOT reset anchor (Explorer behavior)
                                 if is_selected {
                                     action = Some(ItemViewerAction::Deselect(file.path.clone()));
                                 } else {
                                     action = Some(ItemViewerAction::Select(file.path.clone()));
                                 }
                             } else {
-                                // Default = replace selection (Explorer behavior)
+                                // ✅ Normal click = reset selection + anchor
                                 action =
                                     Some(ItemViewerAction::ReplaceSelection(file.path.clone()));
+                                *selection_anchor = Some(idx);
+                                *selection_focus = Some(idx);
                             }
                         }
 
@@ -558,7 +609,7 @@ pub fn draw_item_viewer(
                                 ui.close();
                             }
 
-                            ui.separator(); // 🔥 separator after "Open in new tab"
+                            ui.separator();
 
                             // Second section: file operations + undo/redo
                             if ui.button("Cut").clicked() {
@@ -582,7 +633,7 @@ pub fn draw_item_viewer(
                                 ui.close();
                             }
 
-                            ui.separator(); // 🔥 separator after "Open in new tab"
+                            ui.separator();
 
                             if ui.button("Rename").clicked() {
                                 action = Some(ItemViewerAction::StartEdit(file.path.clone()));
@@ -595,7 +646,7 @@ pub fn draw_item_viewer(
                                 ui.close();
                             }
 
-                            ui.separator(); // 🔥 separator after "Open in new tab"
+                            ui.separator();
 
                             if ui.button("Undo").clicked() {
                                 action =
@@ -650,6 +701,100 @@ pub fn draw_item_viewer(
                 }
             }
 
+            // ✅ Shift+Up/Down for extended selection
+            if input_state.modifiers.shift && !files.is_empty() {
+                // Find current focused item index
+                let current_index = if let Some(selected) = selected_path {
+                    files.iter().position(|f| {
+                        f.path.as_ref() as &std::path::Path == selected.as_ref() as &std::path::Path
+                    })
+                } else {
+                    None
+                };
+
+                if let Some(current_idx) = current_index {
+                    // ✅ Initialize anchor + focus if not set
+                    if selection_anchor.is_none() {
+                        *selection_anchor = Some(current_idx);
+                        *selection_focus = Some(current_idx);
+                    }
+
+                    let anchor_idx = selection_anchor.unwrap();
+                    let focus_idx = selection_focus.unwrap_or(current_idx);
+
+                    // 🔼 Shift + Up
+                    if input_state.key_pressed(egui::Key::ArrowUp) && focus_idx > 0 {
+                        let new_focus = focus_idx - 1;
+                        *selection_focus = Some(new_focus);
+
+                        let range_start = anchor_idx.min(new_focus);
+                        let range_end = anchor_idx.max(new_focus);
+
+                        let range_paths: Vec<PathBuf> = files[range_start..=range_end]
+                            .iter()
+                            .map(|f| f.path.clone())
+                            .collect();
+
+                        action = Some(ItemViewerAction::RangeSelect(range_paths));
+                    }
+                    // 🔽 Shift + Down
+                    else if input_state.key_pressed(egui::Key::ArrowDown)
+                        && focus_idx < files.len() - 1
+                    {
+                        let new_focus = focus_idx + 1;
+                        *selection_focus = Some(new_focus);
+
+                        let range_start = anchor_idx.min(new_focus);
+                        let range_end = anchor_idx.max(new_focus);
+
+                        let range_paths: Vec<PathBuf> = files[range_start..=range_end]
+                            .iter()
+                            .map(|f| f.path.clone())
+                            .collect();
+
+                        action = Some(ItemViewerAction::RangeSelect(range_paths));
+                    }
+                } else if !files.is_empty() {
+                    // No current selection → start from first item
+                    if input_state.key_pressed(egui::Key::ArrowDown) {
+                        action = Some(ItemViewerAction::Select(files[0].path.clone()));
+                        *selection_anchor = Some(0);
+                        *selection_focus = Some(0);
+                    }
+                }
+            }
+            if !input_state.modifiers.shift {
+                *selection_anchor = None;
+                *selection_focus = None;
+            }
+
+            // ✅ Regular arrow navigation (without Shift)
+            if !input_state.modifiers.shift && !files.is_empty() {
+                // Reset anchor when doing regular navigation
+                *selection_anchor = None;
+
+                if let Some(current_idx) = selected_path.as_ref().and_then(|selected| {
+                    files.iter().position(|f| {
+                        f.path.as_ref() as &std::path::Path == selected.as_ref() as &std::path::Path
+                    })
+                }) {
+                    if input_state.key_pressed(egui::Key::ArrowUp) && current_idx > 0 {
+                        // Move selection up
+                        let target_path = files[current_idx - 1].path.clone();
+                        action = Some(ItemViewerAction::ReplaceSelection(target_path));
+                    } else if input_state.key_pressed(egui::Key::ArrowDown)
+                        && current_idx < files.len() - 1
+                    {
+                        // Move selection down
+                        let target_path = files[current_idx + 1].path.clone();
+                        action = Some(ItemViewerAction::ReplaceSelection(target_path));
+                    }
+                } else if files.len() > 0 && input_state.key_pressed(egui::Key::ArrowDown) {
+                    // No selection, select first item
+                    action = Some(ItemViewerAction::Select(files[0].path.clone()));
+                }
+            }
+
             // --- Drag and Drop Detection ---
             // Check for external drag and drop
             let input_state = ui.ctx().input(|i| i.clone());
@@ -681,10 +826,11 @@ pub fn draw_item_viewer(
 fn handle_global_actions(
     ui: &mut egui::Ui,
     files: &Vec<FileItem>,
-    selected_path: Option<&PathBuf>,
+    selected_path: &mut Option<PathBuf>,
     selected_paths: &HashSet<PathBuf>,
     paste_enabled: bool,
     palette: &crate::app::features::ThemePalette,
+    selection_anchor: &mut Option<usize>,
 ) -> Option<ItemViewerAction> {
     // --- Keyboard Shortcuts ---
     {

@@ -1,5 +1,5 @@
 use eframe::egui;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::path::PathBuf;
@@ -8,6 +8,27 @@ use windows::Win32::UI::Shell::{
     SHFILEINFOW, SHGFI_TYPENAME, SHGFI_USEFILEATTRIBUTES, SHGetFileInfoW,
 };
 use windows::core::PCWSTR;
+
+pub fn get_cut_paths() -> HashSet<PathBuf> {
+    if let Some((paths, cut)) = get_clipboard_files() {
+        if cut {
+            return paths.into_iter().collect();
+        }
+    }
+    HashSet::new()
+}
+
+pub fn clear_clipboard_files() {
+    use windows::Win32::System::DataExchange::{OpenClipboard, CloseClipboard, SetClipboardData};
+    use windows::Win32::System::Ole::CF_HDROP;
+    
+    unsafe {
+        if OpenClipboard(None).is_ok() {
+            let _ = SetClipboardData(CF_HDROP.0 as u32, None);
+            let _ = CloseClipboard();
+        }
+    }
+}
 
 pub fn drive_usage_color(
     ratio: f32,

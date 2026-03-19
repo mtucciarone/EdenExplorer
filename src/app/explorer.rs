@@ -4,8 +4,11 @@ use std::collections::{HashSet, VecDeque};
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::path::PathBuf;
-
-use crossbeam_channel::{Receiver, Sender, unbounded};
+use std::sync::Arc;
+use std::thread;
+use crossbeam_channel::{unbounded, Sender};
+use crossbeam_channel::Receiver;
+// use crossbeam_channel::unbounded;
 
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::Shell::ShellExecuteW;
@@ -15,16 +18,18 @@ use windows::core::PCWSTR;
 use crate::app::customizetheme;
 use crate::app::icons::IconCache; // 🔥 FIXED PATH
 use crate::app::sidebar::{FavoriteItem, SidebarAction, draw_sidebar};
-use crate::app::tabs::{TabInfo, TabbarAction, TabbarNavAction, draw_tabbar, draw_tabs};
+use crate::app::tabs::{TabInfo, TabbarNavAction, draw_tabbar, draw_tabs};
 use crate::app::topbar::draw_topbar;
 use crate::app::utils::{
-    clipboard_has_files, copy_dir_recursive, get_clipboard_files, set_clipboard_files,
-    shell_delete_to_recycle_bin,
+    clear_clipboard_files, clipboard_has_files, copy_dir_recursive, get_clipboard_files,
+    set_clipboard_files, shell_delete_to_recycle_bin,
 };
 use crate::drives::{get_drive_infos, get_drives, parse_drive_display};
-use crate::fs::{calculate_folder_size_fast_progress, get_drive_space, scan_dir_async};
+use crate::fs::{
+    calculate_folder_size_fast_progress_new, get_drive_space, scan_dir_async, calculate_folder_size_fast_progress_new_2
+};
 use crate::indexer::{IndexStatus, Indexer, load_favorites, save_favorites};
-use crate::state::{FileItem, Navigation};
+use crate::state::{FileItem, FileOp, History, Navigation, execute_op};
 
 use super::features::{ThemeMode, apply_theme};
 use super::itemviewer::{
@@ -74,6 +79,24 @@ pub struct ExplorerApp {
     dropped_files: Vec<PathBuf>, // Files dropped from external drag and drop
     drag_hover: bool,            // Whether external drag is hovering over the item viewer
     pending_refresh: bool,
+    action_history: History,
+    selection_anchor: Option<usize>, // Anchor index for extended selection
+    selection_focus: Option<usize>,  // Focus index for extended selection
+}
+
+fn calculate_folder_sizes_parallel(req_rx: crossbeam_channel::Receiver<PathBuf>, done_tx: Sender<(PathBuf, u64, bool)>, num_threads: usize) {
+    let req_rx = Arc::new(req_rx);
+
+    for _ in 0..num_threads {
+        let rx = Arc::clone(&req_rx);
+        let tx = done_tx.clone();
+
+        thread::spawn(move || {
+            while let Ok(path) = rx.recv() {
+                calculate_folder_size_fast_progress_new_2(path, tx.clone());
+            }
+        });
+    }
 }
 
 impl Default for ExplorerApp {
@@ -106,7 +129,7 @@ impl Default for ExplorerApp {
             show_hamburger_menu: false,
             sort_column: SortColumn::Name,
             sort_ascending: true,
-            icon_cache: None, //
+            icon_cache: None,
             sidebar_width: 250.0,
             file_type_cache: HashMap::new(),
             selected_paths: HashSet::new(), // Multi-selection state
@@ -116,6 +139,9 @@ impl Default for ExplorerApp {
             dropped_files: Vec::new(), // Files dropped from external drag and drop
             drag_hover: false,         // Whether external drag is hovering over the item viewer
             pending_refresh: false,
+            action_history: History::default(),
+            selection_anchor: None, // Anchor index for extended selection
+            selection_focus: None,  // Focus index for extended selection
         };
         let stored = load_favorites('C');
         if stored.is_empty() {
@@ -195,7 +221,58 @@ impl ExplorerApp {
         sort_files(&mut self.files, self.sort_column, self.sort_ascending);
     }
 
-    fn load_path(&mut self) {
+    // fn load_path(&mut self) {
+    //     self.files.clear();
+    //     self.rx = None;
+    //     self.size_req_tx = None;
+    //     self.size_rx = None;
+    //     self.folder_sizes.clear();
+    //     self.search_active = false;
+    //     self.search_results.clear();
+    //     self.selected_path = None;
+    //     self.pending_size_queue.clear();
+    //     self.pending_size_set.clear();
+
+    //     if self.current_nav().is_root() {
+    //         for d in get_drives() {
+    //             let (label, path) = parse_drive_display(&d);
+
+    //             if let Some((total, free)) = get_drive_space(&path) {
+    //                 self.files.push(FileItem::with_drive_info(
+    //                     label, path, true, None, None, None, total, free,
+    //                 ));
+    //             } else {
+    //                 self.files
+    //                     .push(FileItem::new(label, path, true, None, None, None));
+    //             }
+    //         }
+
+    //         sort_files(&mut self.files, self.sort_column, self.sort_ascending);
+    //         return;
+    //     }
+
+    //     let (tx, rx) = unbounded();
+    //     scan_dir_async(self.current_nav().current.clone(), tx);
+    //     self.rx = Some(rx);
+
+    //     let (size_req_tx, size_req_rx) = unbounded::<PathBuf>();
+    //     let (size_done_tx, size_done_rx) = unbounded::<(PathBuf, u64, bool)>();
+    //     self.size_req_tx = Some(size_req_tx);
+    //     self.size_rx = Some(size_done_rx);
+
+    //     let size_done_tx = size_done_tx.clone();
+
+    //     std::thread::spawn(move || {
+    //         while let Ok(path) = size_req_rx.recv() {
+    //             calculate_folder_size_fast_progress_new(path, size_done_tx.clone());
+    //         }
+    //     });
+    // }
+
+
+
+
+    pub fn load_path(&mut self) {
         self.files.clear();
         self.rx = None;
         self.size_req_tx = None;
@@ -225,21 +302,22 @@ impl ExplorerApp {
             return;
         }
 
+        // Async directory listing
         let (tx, rx) = unbounded();
         scan_dir_async(self.current_nav().current.clone(), tx);
         self.rx = Some(rx);
 
+        // Setup folder size calculation channels
         let (size_req_tx, size_req_rx) = unbounded::<PathBuf>();
         let (size_done_tx, size_done_rx) = unbounded::<(PathBuf, u64, bool)>();
         self.size_req_tx = Some(size_req_tx);
         self.size_rx = Some(size_done_rx);
 
-        std::thread::spawn(move || {
-            while let Ok(path) = size_req_rx.recv() {
-                calculate_folder_size_fast_progress(path, size_done_tx.clone());
-            }
-        });
+        // Spawn a thread pool to handle folder size requests in parallel
+        let num_threads = num_cpus::get().max(2); // use all available cores
+        calculate_folder_sizes_parallel(size_req_rx, size_done_tx, num_threads);
     }
+
 
     fn create_new_folder(&mut self) {
         if self.current_nav().is_root() {
@@ -321,12 +399,10 @@ impl ExplorerApp {
                 self.open_properties(&path);
             }
             ItemViewerContextAction::Undo => {
-                todo!("Undo not implemented yet");
-                // self.undo(); // implement this method or your undo logic here
+                self.undo();
             }
             ItemViewerContextAction::Redo => {
-                todo!("Redo not implemented yet");
-                // self.redo(); // implement this method or your redo logic here
+                self.redo();
             }
         }
     }
@@ -349,11 +425,24 @@ impl ExplorerApp {
                 None => continue,
             };
 
+            let stem = path
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| name.clone());
+
+            let ext = path.extension().map(|e| e.to_string_lossy().to_string());
+
             let mut dest = dest_dir.join(&name);
             let mut counter = 1;
+
             while dest.exists() {
                 counter += 1;
-                let new_name = format!("{} ({})", name, counter);
+
+                let new_name = match &ext {
+                    Some(ext) => format!("{} ({}).{}", stem, counter, ext),
+                    None => format!("{} ({})", stem, counter),
+                };
+
                 dest = dest_dir.join(new_name);
             }
 
@@ -368,6 +457,11 @@ impl ExplorerApp {
             if res.is_err() {
                 continue;
             }
+        }
+
+        // ✅ Only clear clipboard if it was a CUT (move)
+        if cut {
+            clear_clipboard_files();
         }
 
         self.load_path();
@@ -654,7 +748,7 @@ impl eframe::App for ExplorerApp {
                                             ui,
                                             display_files,
                                             &self.folder_sizes,
-                                            self.selected_path.as_ref(),
+                                            &mut self.selected_path,
                                             &self.selected_paths,
                                             clipboard_has_files(),
                                             self.sort_column,
@@ -664,6 +758,8 @@ impl eframe::App for ExplorerApp {
                                             &palette,
                                             &mut self.file_type_cache,
                                             &mut self.drag_hover,
+                                            &mut self.selection_anchor,
+                                            &mut self.selection_focus,
                                         );
                                     },
                                 );
@@ -816,8 +912,31 @@ impl eframe::App for ExplorerApp {
                 ItemViewerAction::RangeSelect(paths) => {
                     // Clear current selection and add range-selected files
                     self.selected_paths.clear();
-                    for path in paths {
-                        self.selected_paths.insert(path);
+                    for path in &paths {
+                        self.selected_paths.insert(path.clone());
+                    }
+                    // Set the current position to the target edge of the range
+                    // The target should be the item that was just moved to
+                    if let Some(anchor_idx) = self.selection_anchor {
+                        if let Some(current_selected) = self.selected_path.as_ref() {
+                            if let Some(current_idx) =
+                                self.files.iter().position(|f| &f.path == current_selected)
+                            {
+                                // Determine which edge was just selected
+                                if current_idx > anchor_idx {
+                                    // Moving down - set current to the bottom of range
+                                    if let Some(bottom_path) = paths.last() {
+                                        self.selected_path = Some(bottom_path.clone());
+                                    }
+                                } else if current_idx < anchor_idx {
+                                    // Moving up - set current to the top of range
+                                    if let Some(top_path) = paths.first() {
+                                        self.selected_path = Some(top_path.clone());
+                                    }
+                                }
+                                // If current_idx == anchor_idx, no change needed
+                            }
+                        }
                     }
                 }
                 ItemViewerAction::Open(path) => {
@@ -869,19 +988,40 @@ impl eframe::App for ExplorerApp {
                 }
                 ItemViewerAction::RenameRequest(path, new_name) => {
                     if let Some(parent) = path.parent() {
-                        let target = parent.join(new_name);
-                        let _ = std::fs::rename(&path, &target);
+                        let target = parent.join(new_name.trim());
+
+                        if new_name.is_empty() {
+                            self.rename_state = None;
+                            return;
+                        }
+
+                        // Avoid no-op rename
+                        if path != target {
+                            execute_op(
+                                &mut self.action_history,
+                                FileOp::Rename {
+                                    from: path.clone(),
+                                    to: target.clone(),
+                                },
+                            );
+                        }
+
                         self.rename_state = None;
                         self.load_path();
                     }
                 }
+
                 ItemViewerAction::RenameCancel => {
                     self.rename_state = None;
                 }
                 ItemViewerAction::ReplaceSelection(path) => {
                     self.selected_paths.clear();
                     self.selected_paths.insert(path.clone());
-                    self.selected_path = Some(path);
+                    self.selected_path = Some(path.clone());
+                    // Set anchor index for extended selection
+                    if let Some(anchor_idx) = self.files.iter().position(|f| f.path == path) {
+                        self.selection_anchor = Some(anchor_idx);
+                    }
                 }
                 ItemViewerAction::FilesDropped(dropped_files) => {
                     let valid_files: Vec<PathBuf> =
@@ -966,5 +1106,14 @@ impl ExplorerApp {
         Some(FileItem::new(
             rec.name, path, rec.is_dir, file_size, None, None,
         ))
+    }
+    pub fn undo(&mut self) {
+        crate::state::undo(&mut self.action_history);
+        self.load_path(); // refresh UI after filesystem change
+    }
+
+    pub fn redo(&mut self) {
+        crate::state::redo(&mut self.action_history);
+        self.load_path(); // refresh UI
     }
 }
