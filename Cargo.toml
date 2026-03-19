@@ -24,7 +24,8 @@ windows = { version = "0.56", features = [
     "Win32_System_Memory",
     "Win32_System_Ole",
     "Win32_System_Registry",
-    "Win32_System_WindowsProgramming"
+    "Win32_System_WindowsProgramming",
+    "Win32_System_Com"
 ] }
 crossbeam-channel = "0.5"
 dirs = "5.0"

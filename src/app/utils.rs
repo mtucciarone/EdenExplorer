@@ -1,4 +1,13 @@
 use eframe::egui;
+use std::collections::HashMap;
+use std::ffi::OsStr;
+use std::os::windows::ffi::OsStrExt;
+use std::path::PathBuf;
+use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
+use windows::Win32::UI::Shell::{
+    SHFILEINFOW, SHGFI_TYPENAME, SHGFI_USEFILEATTRIBUTES, SHGetFileInfoW,
+};
+use windows::core::PCWSTR;
 
 pub fn drive_usage_color(
     ratio: f32,
@@ -44,20 +53,18 @@ pub fn drive_usage_bar(
     let animated_ratio = ui.ctx().animate_value_with_time(
         id,
         target_ratio,
-        0.4, // animation speed (lower = faster)
+        1.5, // animation speed (lower = faster)
     );
 
     let width = ui.available_width();
-
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
-
     let painter = ui.painter();
 
     // background track
     painter.rect_filled(
         rect,
         palette.small_radius,
-        palette.secondary.gamma_multiply(0.5),
+        palette.primary_hover.gamma_multiply(0.5),
     );
 
     // fill width
@@ -65,7 +72,6 @@ pub fn drive_usage_bar(
 
     if fill_width > 0.0 {
         let fill_rect = egui::Rect::from_min_size(rect.min, egui::vec2(fill_width, rect.height()));
-
         let (left, _right) = drive_usage_gradient(target_ratio, palette);
 
         painter.add(egui::epaint::RectShape::filled(
@@ -315,4 +321,117 @@ pub fn clipboard_has_files() -> bool {
     let has = unsafe { GetClipboardData(CF_HDROP.0 as u32) }.is_ok();
     let _ = unsafe { CloseClipboard() };
     has
+}
+
+pub fn get_file_type_name(ext: &str, cache: &mut HashMap<String, String>) -> String {
+    // Check cache first
+    if let Some(cached) = cache.get(ext) {
+        return cached.clone();
+    }
+
+    // Ensure extension starts with "."
+    let ext_formatted = if ext.starts_with('.') {
+        ext.to_string()
+    } else {
+        format!(".{}", ext)
+    };
+
+    let wide: Vec<u16> = OsStr::new(&ext_formatted)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    let mut info = SHFILEINFOW::default();
+
+    let _result = unsafe {
+        SHGetFileInfoW(
+            PCWSTR(wide.as_ptr()),
+            FILE_ATTRIBUTE_NORMAL,
+            Some(&mut info),
+            std::mem::size_of::<SHFILEINFOW>() as u32,
+            SHGFI_TYPENAME | SHGFI_USEFILEATTRIBUTES,
+        )
+    };
+
+    // Convert UTF-16 buffer to Rust String
+    let len = info.szTypeName.iter().position(|&c| c == 0).unwrap_or(0);
+    let type_name = String::from_utf16_lossy(&info.szTypeName[..len]);
+
+    // Cache the result
+    cache.insert(ext.to_string(), type_name.clone());
+
+    type_name
+}
+
+
+use std::path::{Path};
+use windows::Win32::System::Com::{
+    CoCreateInstance, CoInitializeEx, CoUninitialize,
+    CLSCTX_ALL, COINIT_APARTMENTTHREADED,
+};
+
+use windows::Win32::UI::Shell::{
+    IFileOperation, IShellItem, FileOperation, SHCreateItemFromParsingName,
+};
+
+pub fn show_copy_move_dialog(
+    sources: Vec<PathBuf>,
+    destination: &PathBuf,
+) -> windows::core::Result<()> {
+    if sources.is_empty() {
+        return Ok(());
+    }
+
+    unsafe {
+        // ✅ FIX: HRESULT → Result
+        CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok()?;
+
+        let result = (|| {
+            let file_op: IFileOperation =
+                CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
+
+            // Minimal flags (safe default)
+            file_op.SetOperationFlags(windows::Win32::UI::Shell::FILEOPERATION_FLAGS(0))?;
+
+            // Destination
+            let dest_w: Vec<u16> = destination
+                .as_os_str()
+                .encode_wide()
+                .chain(Some(0))
+                .collect();
+
+            let dest_item: IShellItem =
+                SHCreateItemFromParsingName(PCWSTR(dest_w.as_ptr()), None)?;
+
+            for src in &sources {
+                let src_w: Vec<u16> = src
+                    .as_os_str()
+                    .encode_wide()
+                    .chain(Some(0))
+                    .collect();
+
+                let src_item: IShellItem =
+                    SHCreateItemFromParsingName(PCWSTR(src_w.as_ptr()), None)?;
+
+                if same_drive(src, destination) {
+                    // ✅ FIX: 4th argument
+                    file_op.MoveItem(&src_item, Some(&dest_item), None, None)?;
+                } else {
+                    file_op.CopyItem(&src_item, Some(&dest_item), None, None)?;
+                }
+            }
+
+            file_op.PerformOperations()?;
+
+            Ok(())
+        })();
+
+        CoUninitialize();
+
+        result
+    }
+}
+
+fn same_drive(a: &Path, b: &Path) -> bool {
+    a.components().next() == b.components().next()
 }

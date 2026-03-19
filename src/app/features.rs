@@ -1,6 +1,6 @@
 use eframe::egui;
-use std::sync::LazyLock;
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub enum ThemeMode {
@@ -30,6 +30,9 @@ pub struct ThemePalette {
     pub icon_color: egui::Color32,
     pub row_label_selected: egui::Color32,
     pub row_label_default: egui::Color32,
+    pub row_selected_bg: egui::Color32,
+    pub row_bg: egui::Color32,
+    pub itemviewer_header_color: egui::Color32,
 
     // 🎯 Corner radius values
     pub small_radius: u8,
@@ -47,6 +50,12 @@ pub struct ThemePalette {
     // 🎯 Tab button colors
     pub tab_close_hover: egui::Color32,
     pub tab_add_hover: egui::Color32,
+
+    // checkbox
+    pub checkbox_bg_default: egui::Color32,
+    pub checkbox_checkmark_color: egui::Color32,
+    pub checkbox_bg_hover: egui::Color32,
+    pub checkbox_bg_active: egui::Color32,
 }
 
 // 🎯 Single base color (your purple)
@@ -69,17 +78,34 @@ pub static PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         icon_color: egui::Color32::WHITE,
         row_label_selected: egui::Color32::WHITE,
         row_label_default: egui::Color32::from_rgb(160, 170, 180),
+        row_selected_bg: egui::Color32::from_rgb(70, 78, 86),
+        row_bg: egui::Color32::from_rgb(40, 45, 50),
+        itemviewer_header_color: egui::Color32::WHITE,
         small_radius: 2,
         medium_radius: 4,
         large_radius: 6,
-        tab_active_radius: egui::CornerRadius { nw: 8, ne: 8, sw: 0, se: 0 },
-        tab_inactive_radius: egui::CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 },
+        tab_active_radius: egui::CornerRadius {
+            nw: 8,
+            ne: 8,
+            sw: 0,
+            se: 0,
+        },
+        tab_inactive_radius: egui::CornerRadius {
+            nw: 6,
+            ne: 6,
+            sw: 0,
+            se: 0,
+        },
         tab_button_radius: egui::CornerRadius::same(4),
         drive_usage_critical: egui::Color32::from_rgb(200, 72, 72),
         drive_usage_warning: egui::Color32::from_rgb(214, 170, 76),
         drive_usage_normal: egui::Color32::from_rgb(88, 170, 120),
         tab_close_hover: egui::Color32::from_rgb(200, 52, 52),
         tab_add_hover: egui::Color32::from_rgb(54, 168, 82),
+        checkbox_bg_default: egui::Color32::from_rgba_unmultiplied(160, 170, 180, 20),
+        checkbox_checkmark_color: egui::Color32::WHITE,
+        checkbox_bg_hover: base,
+        checkbox_bg_active: base,
     }
 });
 
@@ -98,17 +124,34 @@ pub static PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         icon_color: egui::Color32::WHITE,
         row_label_selected: egui::Color32::from_rgb(0, 0, 0),
         row_label_default: egui::Color32::from_rgb(70, 78, 86),
+        row_selected_bg: egui::Color32::from_rgb(70, 78, 86),
+        row_bg: egui::Color32::from_rgb(240, 245, 250),
+        itemviewer_header_color: egui::Color32::from_rgb(0, 0, 0),
         small_radius: 2,
         medium_radius: 4,
         large_radius: 6,
-        tab_active_radius: egui::CornerRadius { nw: 8, ne: 8, sw: 0, se: 0 },
-        tab_inactive_radius: egui::CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 },
+        tab_active_radius: egui::CornerRadius {
+            nw: 8,
+            ne: 8,
+            sw: 0,
+            se: 0,
+        },
+        tab_inactive_radius: egui::CornerRadius {
+            nw: 6,
+            ne: 6,
+            sw: 0,
+            se: 0,
+        },
         tab_button_radius: egui::CornerRadius::same(4),
         drive_usage_critical: egui::Color32::from_rgb(200, 72, 72),
         drive_usage_warning: egui::Color32::from_rgb(214, 170, 76),
         drive_usage_normal: egui::Color32::from_rgb(88, 170, 120),
         tab_close_hover: egui::Color32::from_rgb(200, 52, 52),
         tab_add_hover: egui::Color32::from_rgb(54, 168, 82),
+        checkbox_bg_default: egui::Color32::from_rgba_unmultiplied(160, 170, 180, 95),
+        checkbox_checkmark_color: egui::Color32::WHITE,
+        checkbox_bg_hover: base,
+        checkbox_bg_active: base,
     }
 });
 
@@ -201,4 +244,38 @@ pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
     }
 
     ctx.set_style(style);
+}
+
+pub fn apply_checkbox_colors(ui: &mut egui::Ui, palette: &ThemePalette, checked: bool) {
+    let visuals = &mut ui.visuals_mut().widgets;
+
+    // Determine the background color depending on checked state
+    let bg_fill = if checked {
+        palette.checkbox_bg_active // "base" color when checked
+    } else {
+        palette.checkbox_bg_default
+    };
+
+    // Background fill
+    visuals.inactive.bg_fill = bg_fill;
+    visuals.hovered.bg_fill = if checked {
+        palette.checkbox_bg_active
+    } else {
+        palette.checkbox_bg_hover
+    };
+    visuals.active.bg_fill = palette.checkbox_bg_active;
+
+    // Border / stroke
+    visuals.inactive.bg_stroke.color = bg_fill;
+    visuals.hovered.bg_stroke.color = if checked {
+        palette.checkbox_bg_active
+    } else {
+        palette.checkbox_bg_hover
+    };
+    visuals.active.bg_stroke.color = palette.checkbox_bg_active;
+
+    // Checkmark color
+    visuals.inactive.fg_stroke.color = palette.checkbox_checkmark_color;
+    visuals.hovered.fg_stroke.color = palette.checkbox_checkmark_color;
+    visuals.active.fg_stroke.color = palette.checkbox_checkmark_color;
 }

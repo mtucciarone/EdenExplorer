@@ -1,61 +1,15 @@
+use super::features::apply_checkbox_colors;
 use super::formatting::format_size;
 use super::sorting::SortColumn;
 use crate::app::icons::IconCache;
-use crate::app::utils::drive_usage_bar;
+use crate::app::utils::{drive_usage_bar, get_file_type_name};
 use crate::state::FileItem;
 use eframe::egui;
 use egui::{FontFamily, FontId};
 use egui_extras::{Column, TableBuilder};
 use egui_phosphor::regular;
 use std::collections::{HashMap, HashSet};
-use std::ffi::OsStr;
-use std::os::windows::ffi::OsStrExt;
 use std::path::PathBuf;
-use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
-use windows::Win32::UI::Shell::{
-    SHFILEINFOW, SHGFI_TYPENAME, SHGFI_USEFILEATTRIBUTES, SHGetFileInfoW,
-};
-use windows::core::PCWSTR;
-
-fn get_file_type_name(ext: &str, cache: &mut HashMap<String, String>) -> String {
-    // Check cache first
-    if let Some(cached) = cache.get(ext) {
-        return cached.clone();
-    }
-
-    // Ensure extension starts with "."
-    let ext_formatted = if ext.starts_with('.') {
-        ext.to_string()
-    } else {
-        format!(".{}", ext)
-    };
-
-    let wide: Vec<u16> = OsStr::new(&ext_formatted)
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-
-    let mut info = SHFILEINFOW::default();
-
-    let _result = unsafe {
-        SHGetFileInfoW(
-            PCWSTR(wide.as_ptr()),
-            FILE_ATTRIBUTE_NORMAL,
-            Some(&mut info),
-            std::mem::size_of::<SHFILEINFOW>() as u32,
-            SHGFI_TYPENAME | SHGFI_USEFILEATTRIBUTES,
-        )
-    };
-
-    // Convert UTF-16 buffer to Rust String
-    let len = info.szTypeName.iter().position(|&c| c == 0).unwrap_or(0);
-    let type_name = String::from_utf16_lossy(&info.szTypeName[..len]);
-
-    // Cache the result
-    cache.insert(ext.to_string(), type_name.clone());
-
-    type_name
-}
 
 pub enum ItemViewerAction {
     Sort(SortColumn),
@@ -72,6 +26,8 @@ pub enum ItemViewerAction {
     RenameRequest(PathBuf, String),
     RenameCancel,
     StartEdit(PathBuf),
+    FilesDropped(Vec<PathBuf>),
+    ReplaceSelection(PathBuf),
 }
 
 #[derive(Clone)]
@@ -95,6 +51,7 @@ pub struct ItemViewerFolderSizeState {
 pub struct RenameState {
     pub path: PathBuf,
     pub new_name: String,
+    pub should_focus: bool,
 }
 
 pub fn draw_item_viewer(
@@ -110,12 +67,36 @@ pub fn draw_item_viewer(
     mut rename_state: Option<&mut RenameState>,
     palette: &crate::app::features::ThemePalette,
     file_type_cache: &mut HashMap<String, String>,
+    drag_hover: &mut bool,
 ) -> Option<ItemViewerAction> {
-    let row_height = ui.text_style_height(&egui::TextStyle::Button) + 4.0;
-    let header_height = row_height + 6.0;
+    // ✅ Step 6: Visual feedback for drag hover
+    if *drag_hover {
+        let rect = ui.max_rect();
+
+        ui.painter().rect_filled(
+            rect,
+            egui::CornerRadius::same(6),
+            ui.visuals().selection.bg_fill.linear_multiply(0.15),
+        );
+
+        // ✅ Step 7: Show drag text
+        let text = "Copy to this folder";
+        ui.painter().text(
+            ui.max_rect().center(),
+            egui::Align2::CENTER_CENTER,
+            text,
+            egui::TextStyle::Heading.resolve(ui.style()),
+            ui.visuals().text_color(),
+        );
+    }
+
+    let text_height = 14.0; // base text height
+    let row_padding = 6.0; // vertical padding inside each row
+    let row_height = text_height + row_padding; // final row height
+    let header_padding = 0.0; // extra padding for header
+    let header_height = row_height + header_padding;
     let header_gap = 6.0;
     let available_width = ui.available_width();
-    let context_menu_open = ui.ctx().is_popup_open();
     let mut any_row_hovered = false;
     let mut action: Option<ItemViewerAction> = None;
 
@@ -145,85 +126,22 @@ pub fn draw_item_viewer(
     // Wrap table in a scroll area for horizontal scrolling
     egui::ScrollArea::both()
         .show(ui, |ui| {
-            // Handle keyboard shortcuts
-            if ui.input(|i| i.key_pressed(egui::Key::A) && i.modifiers.ctrl) {
-                action = Some(ItemViewerAction::SelectAll);
-            }
-            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                action = Some(ItemViewerAction::DeselectAll);
-            }
-
-            // Handle box selection
-            let rect = ui.available_rect_before_wrap();
-            let pointer_pos = ui.ctx().pointer_hover_pos();
-
-            if let Some(pos) = pointer_pos {
-                if rect.contains(pos) {
-                    // Check for mouse drag to start box selection
-                    if ui.input(|i| i.pointer.primary_pressed()) {
-                        // Start box selection
-                        ui.ctx().memory_mut(|mem| {
-                            mem.data.insert_temp("box_selection_start".into(), pos);
-                        });
-                    }
-
-                    if ui.input(|i| i.pointer.primary_down()) {
-                        // Continue box selection
-                        if let Some(start_pos) = ui.ctx().memory(|mem| {
-                            mem.data
-                                .get_temp::<egui::Pos2>("box_selection_start".into())
-                        }) {
-                            let selection_rect = egui::Rect::from_min_max(start_pos, pos);
-
-                            // Draw selection rectangle
-                            ui.painter().rect_stroke(
-                                selection_rect,
-                                egui::CornerRadius::same(0),
-                                egui::Stroke::new(1.0, palette.box_selection_stroke),
-                                egui::StrokeKind::Inside,
-                            );
-                            ui.painter().rect_filled(
-                                selection_rect,
-                                egui::CornerRadius::same(0),
-                                palette.primary,
-                            );
-
-                            // Check which files are within the selection rectangle
-                            let mut selected_files = Vec::new();
-                            for file in files {
-                                // Calculate file row rect (approximate)
-                                let row_index =
-                                    files.iter().position(|f| f.path == file.path).unwrap_or(0);
-                                let row_y = rect.min.y + (row_index as f32) * row_height;
-                                let file_rect = egui::Rect::from_min_size(
-                                    egui::pos2(rect.min.x, row_y),
-                                    egui::vec2(rect.width(), row_height),
-                                );
-
-                                if selection_rect.intersects(file_rect) {
-                                    selected_files.push(file.path.clone());
-                                }
-                            }
-
-                            // Return selection action
-                            if !selected_files.is_empty() {
-                                action = Some(ItemViewerAction::BoxSelect(selected_files));
-                            }
-                        }
-                    }
-                }
+            if let Some(global_action) = handle_global_actions(
+                ui,
+                files,
+                selected_path,
+                selected_paths,
+                paste_enabled,
+                palette,
+            ) {
+                action = Some(global_action);
             }
 
-            // Clear box selection on mouse release
-            if ui.input(|i| i.pointer.primary_released()) {
-                ui.ctx().memory_mut(|mem| {
-                    mem.data.remove::<egui::Pos2>("box_selection_start".into());
-                });
-            }
+            let modifiers = ui.ctx().input(|i| i.modifiers);
 
             let mut table = TableBuilder::new(ui)
                 .striped(false)
-                .sense(egui::Sense::click_and_drag()) // Use full sense for proper table behavior
+                .sense(egui::Sense::click_and_drag())
                 .animate_scrolling(true)
                 .resizable(true)
                 .id_salt("item_viewer_table");
@@ -265,211 +183,56 @@ pub fn draw_item_viewer(
 
             table
                 .header(header_height, |mut header| {
-                    // Checkbox column (only show for non-drive views)
-                    if !is_drive_view {
-                        header.col(|ui| {
-                            // Add a small checkbox in header for select all functionality
-                            let mut all_selected =
-                                files.iter().all(|f| selected_paths.contains(&f.path));
-                            if ui.checkbox(&mut all_selected, "").clicked() {
-                                if all_selected {
-                                    // Select all
-                                    action = Some(ItemViewerAction::SelectAll);
-                                } else {
-                                    // Deselect all
-                                    action = Some(ItemViewerAction::DeselectAll);
-                                }
-                            }
-                        });
-                    }
-
-                    // Name column
-                    header.col(|ui| {
-                        ui.add_space(2.0);
-                        let (label, arrow) = match sort_column {
-                            SortColumn::Name => (
-                                "Name",
-                                if sort_ascending {
-                                    regular::CARET_UP
-                                } else {
-                                    regular::CARET_DOWN
-                                },
-                            ),
-                            _ => ("Name", ""),
-                        };
-                        let resp = ui.add(
-                            egui::Label::new(format!("{label} {arrow}").trim_end())
-                                .selectable(false)
-                                .sense(egui::Sense::click()),
-                        );
-                        if resp.clicked() {
-                            action = Some(ItemViewerAction::Sort(SortColumn::Name));
-                        }
-                    });
-
-                    // Type column
-                    header.col(|ui| {
-                        ui.add_space(2.0);
-                        let (label, arrow) = match sort_column {
-                            SortColumn::Type => (
-                                "Type",
-                                if sort_ascending {
-                                    regular::CARET_UP
-                                } else {
-                                    regular::CARET_DOWN
-                                },
-                            ),
-                            _ => ("Type", ""),
-                        };
-                        let resp = ui.add(
-                            egui::Label::new(format!("{label} {arrow}").trim_end())
-                                .selectable(false)
-                                .sense(egui::Sense::click()),
-                        );
-                        if resp.clicked() {
-                            action = Some(ItemViewerAction::Sort(SortColumn::Type));
-                        }
-                    });
-
-                    // Size column
-                    header.col(|ui| {
-                        ui.add_space(2.0);
-                        let (label, arrow) = match sort_column {
-                            SortColumn::Size => (
-                                "Size",
-                                if sort_ascending {
-                                    regular::CARET_UP
-                                } else {
-                                    regular::CARET_DOWN
-                                },
-                            ),
-                            _ => ("Size", ""),
-                        };
-                        let resp = ui.add(
-                            egui::Label::new(format!("{label} {arrow}").trim_end())
-                                .selectable(false)
-                                .sense(egui::Sense::click()),
-                        );
-                        if resp.hovered() {
-                            ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
-                        }
-                        if resp.clicked() {
-                            action = Some(ItemViewerAction::Sort(SortColumn::Size));
-                        }
-                    });
-
-                    // Usage / Modified column
-                    if is_drive_view {
-                        header.col(|ui| {
-                            ui.add(
-                                egui::Label::new("Usage")
-                                    .selectable(false)
-                                    .sense(egui::Sense::click()),
-                            );
-                        });
-                    } else {
-                        header.col(|ui| {
-                            let (label, arrow) = match sort_column {
-                                SortColumn::Modified => (
-                                    "Modified",
-                                    if sort_ascending {
-                                        regular::CARET_UP
-                                    } else {
-                                        regular::CARET_DOWN
-                                    },
-                                ),
-                                _ => ("Modified", ""),
-                            };
-                            let resp = ui.add(
-                                egui::Label::new(format!("{label} {arrow}").trim_end())
-                                    .selectable(false)
-                                    .sense(egui::Sense::click()),
-                            );
-                            if resp.clicked() {
-                                action = Some(ItemViewerAction::Sort(SortColumn::Modified));
-                            }
-                        });
-
-                        // Created column
-                        header.col(|ui| {
-                            let (label, arrow) = match sort_column {
-                                SortColumn::Created => (
-                                    "Created",
-                                    if sort_ascending {
-                                        regular::CARET_UP
-                                    } else {
-                                        regular::CARET_DOWN
-                                    },
-                                ),
-                                _ => ("Created", ""),
-                            };
-                            let resp = ui.add(
-                                egui::Label::new(format!("{label} {arrow}").trim_end())
-                                    .selectable(false)
-                                    .sense(egui::Sense::click()),
-                            );
-
-                            if resp.clicked() {
-                                action = Some(ItemViewerAction::Sort(SortColumn::Created));
-                            }
-                        });
+                    if let Some(a) = draw_item_viewer_header(
+                        &mut header,
+                        header_height,
+                        is_drive_view,
+                        files,
+                        selected_paths,
+                        sort_column,
+                        sort_ascending,
+                        &palette,
+                    ) {
+                        action = Some(a);
                     }
                 })
                 .body(|body| {
                     body.rows(row_height, files.len(), |mut row| {
+                        let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
                         let idx = row.index();
                         let file = &files[idx];
-                        let is_multi_selected = selected_paths.contains(&file.path);
 
-                        // Use table's built-in selection for visual consistency
-                        row.set_selected(is_multi_selected);
+                        // Determine if this row is selected
+                        let is_selected = selected_paths.contains(&file.path);
+                        row.set_selected(is_selected);
 
                         // Checkbox column (only show for non-drive views)
                         if !is_drive_view {
                             row.col(|ui| {
-                                let mut checked = is_multi_selected;
-                                if ui.checkbox(&mut checked, "").clicked() {
-                                    if checked {
-                                        action = Some(ItemViewerAction::Select(file.path.clone()));
-                                    } else {
-                                        action =
-                                            Some(ItemViewerAction::Deselect(file.path.clone()));
+                                let mut checked = is_selected;
+                                ui.scope(|ui| {
+                                    apply_checkbox_colors(ui, palette, checked);
+                                    if ui.checkbox(&mut checked, "").clicked() {
+                                        if checked {
+                                            action =
+                                                Some(ItemViewerAction::Select(file.path.clone()));
+                                        } else {
+                                            action =
+                                                Some(ItemViewerAction::Deselect(file.path.clone()));
+                                        }
                                     }
-                                }
+                                });
                             });
                         }
 
                         // Name
                         row.col(|ui| {
-                            let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
                             let available_width = ui.available_width();
 
-                            let (rect, item_resp) = ui.allocate_exact_size(
+                            let (rect, _) = ui.allocate_exact_size(
                                 egui::vec2(available_width, row_height),
-                                egui::Sense::click(),
+                                egui::Sense::hover(),
                             );
-
-                            // Handle special case: if already selected and clicked again, navigate/execute
-                            if item_resp.clicked() && selected_paths.contains(&file.path) {
-                                if file.is_dir {
-                                    action = Some(ItemViewerAction::Open(file.path.clone()));
-                                } else {
-                                    action =
-                                        Some(ItemViewerAction::OpenWithDefault(file.path.clone()));
-                                }
-                            }
-
-                            // Handle double-click for opening
-                            if item_resp.double_clicked() {
-                                if file.is_dir {
-                                    // Double-click on directory: navigate to it
-                                    action = Some(ItemViewerAction::Open(file.path.clone()));
-                                } else {
-                                    // Double-click on file: open with default application
-                                    action =
-                                        Some(ItemViewerAction::OpenWithDefault(file.path.clone()));
-                                }
-                            }
 
                             // --- ICON ---
                             let icon_size = egui::vec2(20.0, 20.0);
@@ -509,23 +272,58 @@ pub fn draw_item_viewer(
                                         let mut child_ui = ui
                                             .new_child(egui::UiBuilder::new().max_rect(text_rect));
 
-                                        let edit_response = child_ui.add(
-                                            egui::TextEdit::singleline(&mut rename_state.new_name)
-                                                .desired_width(f32::INFINITY),
-                                        );
+                                        child_ui.scope(|ui| {
+                                            let visuals = ui.visuals_mut();
 
-                                        if edit_response.lost_focus() {
-                                            if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                                                let new_name =
-                                                    rename_state.new_name.trim().to_string();
-                                                action = Some(ItemViewerAction::RenameRequest(
-                                                    file.path.clone(),
-                                                    new_name,
-                                                ));
+                                            // 🔥 Match row styling (Explorer-style inline edit)
+                                            let bg = if is_selected {
+                                                palette.row_selected_bg
                                             } else {
-                                                action = Some(ItemViewerAction::RenameCancel);
+                                                palette.row_bg
+                                            };
+
+                                            visuals.widgets.inactive.bg_fill = bg;
+                                            visuals.widgets.hovered.bg_fill = bg;
+                                            visuals.widgets.active.bg_fill = bg;
+
+                                            // 🔥 Remove textbox borders
+                                            visuals.widgets.inactive.bg_stroke.width = 0.0;
+                                            visuals.widgets.hovered.bg_stroke.width = 0.0;
+                                            visuals.widgets.active.bg_stroke.width = 0.0;
+
+                                            // 🔥 Match text color with row
+                                            visuals.override_text_color =
+                                                Some(get_row_color(is_selected, palette));
+
+                                            let edit_response = ui.add(
+                                                egui::TextEdit::singleline(
+                                                    &mut rename_state.new_name,
+                                                )
+                                                .desired_width(f32::INFINITY)
+                                                .font(FontId::new(
+                                                    palette.text_size,
+                                                    FontFamily::Proportional,
+                                                )),
+                                            );
+
+                                            if rename_state.should_focus {
+                                                edit_response.request_focus();
+                                                rename_state.should_focus = false;
                                             }
-                                        }
+
+                                            if edit_response.lost_focus() {
+                                                if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                                                    let new_name =
+                                                        rename_state.new_name.trim().to_string();
+                                                    action = Some(ItemViewerAction::RenameRequest(
+                                                        file.path.clone(),
+                                                        new_name,
+                                                    ));
+                                                } else {
+                                                    action = Some(ItemViewerAction::RenameCancel);
+                                                }
+                                            }
+                                        });
                                     }
 
                                     return; // ✅ just exit closure
@@ -558,14 +356,13 @@ pub fn draw_item_viewer(
                                 text_pos,
                                 egui::Align2::LEFT_CENTER,
                                 display_name,
-                                font_id,
-                                get_row_color(is_multi_selected, palette),
+                                font_id.clone(),
+                                get_row_color(is_selected, palette),
                             );
                         });
 
                         // Type
                         row.col(|ui| {
-                            let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
                             let available_width = ui.available_width();
                             let max_chars = (available_width / 7.0) as usize; // Approximate 7px per character for type names
 
@@ -598,8 +395,8 @@ pub fn draw_item_viewer(
                             let label = egui::Label::new(
                                 egui::RichText::new(display_type)
                                     .size(palette.text_size)
-                                    .color(get_row_color(is_multi_selected, palette))
-                                    .font(font_id),
+                                    .color(get_row_color(is_selected, palette))
+                                    .font(font_id.clone()),
                             )
                             .sense(egui::Sense::hover());
                             let resp = ui.add(label);
@@ -610,7 +407,6 @@ pub fn draw_item_viewer(
 
                         // Size
                         row.col(|ui| {
-                            let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
                             if let (Some(total), Some(free)) = (file.total_space, file.free_space) {
                                 let gb = 1024.0 * 1024.0 * 1024.0;
                                 ui.with_layout(
@@ -623,8 +419,8 @@ pub fn draw_item_viewer(
                                                 total as f64 / gb
                                             ))
                                             .size(palette.text_size)
-                                            .color(get_row_color(is_multi_selected, palette))
-                                            .font(font_id),
+                                            .color(get_row_color(is_selected, palette))
+                                            .font(font_id.clone()),
                                         );
                                     },
                                 );
@@ -638,37 +434,36 @@ pub fn draw_item_viewer(
                                             format!("⏳ {}", label)
                                         })
                                         .size(palette.text_size)
-                                        .color(get_row_color(is_multi_selected, palette))
-                                        .font(font_id),
+                                        .color(get_row_color(is_selected, palette))
+                                        .font(font_id.clone()),
                                     );
                                 } else {
                                     ui.label(
                                         egui::RichText::new("—")
                                             .size(palette.text_size)
-                                            .color(get_row_color(is_multi_selected, palette))
-                                            .font(font_id),
+                                            .color(get_row_color(is_selected, palette))
+                                            .font(font_id.clone()),
                                     );
                                 }
                             } else if let Some(size) = file.file_size {
                                 ui.label(
                                     egui::RichText::new(format_size(size))
                                         .size(palette.text_size)
-                                        .color(get_row_color(is_multi_selected, palette))
-                                        .font(font_id),
+                                        .color(get_row_color(is_selected, palette))
+                                        .font(font_id.clone()),
                                 );
                             } else {
                                 ui.label(
                                     egui::RichText::new("—")
                                         .size(palette.text_size)
-                                        .color(get_row_color(is_multi_selected, palette))
-                                        .font(font_id),
+                                        .color(get_row_color(is_selected, palette))
+                                        .font(font_id.clone()),
                                 );
                             }
                         });
 
                         // Usage / Modified column
                         row.col(|ui| {
-                            let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
                             if is_drive_view {
                                 if let (Some(total), Some(free)) =
                                     (file.total_space, file.free_space)
@@ -683,15 +478,15 @@ pub fn draw_item_viewer(
                                     ui.label(
                                         egui::RichText::new(m)
                                             .size(palette.text_size)
-                                            .color(get_row_color(is_multi_selected, palette))
-                                            .font(font_id),
+                                            .color(get_row_color(is_selected, palette))
+                                            .font(font_id.clone()),
                                     );
                                 } else {
                                     ui.label(
                                         egui::RichText::new("—")
                                             .size(palette.text_size)
-                                            .color(get_row_color(is_multi_selected, palette))
-                                            .font(font_id),
+                                            .color(get_row_color(is_selected, palette))
+                                            .font(font_id.clone()),
                                     );
                                 }
                             }
@@ -700,21 +495,19 @@ pub fn draw_item_viewer(
                         // Created column (only for non-drive views)
                         if !is_drive_view {
                             row.col(|ui| {
-                                let font_id =
-                                    FontId::new(palette.text_size, FontFamily::Proportional);
                                 if let Some(c) = &file.created_time {
                                     ui.label(
                                         egui::RichText::new(c)
                                             .size(palette.text_size)
-                                            .color(get_row_color(is_multi_selected, palette))
-                                            .font(font_id),
+                                            .color(get_row_color(is_selected, palette))
+                                            .font(font_id.clone()),
                                     );
                                 } else {
                                     ui.label(
                                         egui::RichText::new("—")
                                             .size(palette.text_size)
-                                            .color(get_row_color(is_multi_selected, palette))
-                                            .font(font_id),
+                                            .color(get_row_color(is_selected, palette))
+                                            .font(font_id.clone()),
                                     );
                                 }
                             });
@@ -722,29 +515,43 @@ pub fn draw_item_viewer(
 
                         let row_resp = row.response();
 
-                        // Handle table-level selection
+                        // Row click selection
                         if row_resp.clicked() {
-                            // For now, just handle basic selection without keyboard modifiers
-                            // to avoid borrow checker issues
-                            action = Some(ItemViewerAction::Select(file.path.clone()));
+                            if modifiers.ctrl {
+                                // Ctrl = toggle multi-select
+                                if is_selected {
+                                    action = Some(ItemViewerAction::Deselect(file.path.clone()));
+                                } else {
+                                    action = Some(ItemViewerAction::Select(file.path.clone()));
+                                }
+                            } else {
+                                // Default = replace selection (Explorer behavior)
+                                action =
+                                    Some(ItemViewerAction::ReplaceSelection(file.path.clone()));
+                            }
                         }
 
-                        if !context_menu_open && row_resp.hovered() {
-                            row.set_hovered(true);
-                            any_row_hovered = true;
-                        }
-
-                        if row_resp.clicked() {
-                            action = Some(ItemViewerAction::Select(file.path.clone()));
-                        }
-                        if row_resp.double_clicked() && file.is_dir {
-                            action = Some(ItemViewerAction::Open(file.path.clone()));
+                        if row_resp.double_clicked() {
+                            if file.is_dir {
+                                action = Some(ItemViewerAction::Open(file.path.clone()));
+                            } else {
+                                action = Some(ItemViewerAction::OpenWithDefault(file.path.clone()));
+                            }
                         }
                         if row_resp.middle_clicked() && file.is_dir {
                             action = Some(ItemViewerAction::OpenInNewTab(file.path.clone()));
                         }
 
+                        if row_resp.hovered() {
+                            row.set_hovered(true);
+                            any_row_hovered = true;
+                        }
+
                         row_resp.context_menu(|ui| {
+                            if !is_selected {
+                                action =
+                                    Some(ItemViewerAction::ReplaceSelection(file.path.clone()));
+                            }
                             // First section: Open
                             if ui.button("Open in new tab").clicked() {
                                 action = Some(ItemViewerAction::OpenInNewTab(file.path.clone()));
@@ -843,7 +650,328 @@ pub fn draw_item_viewer(
                 }
             }
 
+            // --- Drag and Drop Detection ---
+            // Check for external drag and drop
+            let input_state = ui.ctx().input(|i| i.clone());
+            if !input_state.raw.dropped_files.is_empty() {
+                let dropped_paths: Vec<PathBuf> = input_state
+                    .raw
+                    .dropped_files
+                    .iter()
+                    .filter_map(|file| file.path.clone())
+                    .collect();
+
+                if !dropped_paths.is_empty() {
+                    action = Some(ItemViewerAction::FilesDropped(dropped_paths));
+                }
+            }
+
+            // Update drag hover state
+            *drag_hover = input_state
+                .raw
+                .hovered_files
+                .iter()
+                .any(|file| file.path.is_some());
+
             action
         })
         .inner
+}
+
+fn handle_global_actions(
+    ui: &mut egui::Ui,
+    files: &Vec<FileItem>,
+    selected_path: Option<&PathBuf>,
+    selected_paths: &HashSet<PathBuf>,
+    paste_enabled: bool,
+    palette: &crate::app::features::ThemePalette,
+) -> Option<ItemViewerAction> {
+    // --- Keyboard Shortcuts ---
+    {
+        let input = ui.input(|i| i.clone());
+
+        // Select All / Deselect All
+        if input.key_pressed(egui::Key::A) && input.modifiers.ctrl {
+            return Some(ItemViewerAction::SelectAll);
+        }
+        if input.key_pressed(egui::Key::Escape) {
+            return Some(ItemViewerAction::DeselectAll);
+        }
+
+        // Up / Down arrow navigation
+        if !files.is_empty() {
+            if let Some(current) = selected_path {
+                if let Some(idx) = files.iter().position(|f| &f.path == current) {
+                    if input.key_pressed(egui::Key::ArrowDown) && idx + 1 < files.len() {
+                        return Some(ItemViewerAction::Select(files[idx + 1].path.clone()));
+                    }
+                    if input.key_pressed(egui::Key::ArrowUp) && idx > 0 {
+                        return Some(ItemViewerAction::Select(files[idx - 1].path.clone()));
+                    }
+                }
+            } else if input.key_pressed(egui::Key::ArrowDown) {
+                // Nothing selected → select first row
+                return Some(ItemViewerAction::Select(files[0].path.clone()));
+            }
+        }
+    }
+
+    // --- Box Selection ---
+    // Track box selection start position in memory
+    let start_pos = ui.ctx().memory_mut(|mem| {
+        mem.data
+            .get_temp::<egui::Pos2>("box_selection_start".into())
+    });
+
+    if let Some(pointer_pos) = ui.ctx().pointer_hover_pos() {
+        // Start box selection on mouse press
+        if ui.input(|i| i.pointer.primary_pressed()) {
+            ui.ctx().memory_mut(|mem| {
+                mem.data
+                    .insert_temp("box_selection_start".into(), pointer_pos);
+            });
+        }
+
+        // Continue box selection while dragging
+        if ui.input(|i| i.pointer.primary_down()) {
+            if let Some(start_pos) = start_pos {
+                let selection_rect = egui::Rect::from_min_max(start_pos, pointer_pos);
+
+                // Draw selection rectangle
+                ui.painter().rect_filled(
+                    selection_rect,
+                    egui::CornerRadius::same(0),
+                    palette.primary,
+                );
+                ui.painter().rect_stroke(
+                    selection_rect,
+                    egui::CornerRadius::same(0),
+                    egui::Stroke::new(1.0, palette.box_selection_stroke),
+                    egui::StrokeKind::Inside,
+                );
+
+                // Collect files that intersect with selection_rect
+                // ✅ Instead of manual row math, use TableRow rects
+                let selected_files: Vec<PathBuf> = ui.ctx().memory(|mem| {
+                    mem.data
+                        .get_temp::<Vec<egui::Rect>>("table_row_rects".into())
+                        .unwrap_or_default()
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(idx, row_rect)| {
+                            // no & needed
+                            if selection_rect.intersects(*row_rect) {
+                                Some(files[idx].path.clone())
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                });
+
+                if !selected_files.is_empty() {
+                    return Some(ItemViewerAction::BoxSelect(selected_files));
+                }
+            }
+        }
+    }
+
+    // Clear box selection start position on mouse release
+    if ui.input(|i| i.pointer.primary_released()) {
+        ui.ctx().memory_mut(|mem| {
+            mem.data.remove::<egui::Pos2>("box_selection_start".into());
+        });
+    }
+
+    None
+}
+
+fn draw_item_viewer_header(
+    header: &mut egui_extras::TableRow<'_, '_>,
+    header_height: f32,
+    is_drive_view: bool,
+    files: &Vec<FileItem>,
+    selected_paths: &HashSet<PathBuf>,
+    sort_column: SortColumn,
+    sort_ascending: bool,
+    palette: &crate::app::features::ThemePalette,
+) -> Option<ItemViewerAction> {
+    let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
+    let mut action: Option<ItemViewerAction> = None;
+    // Checkbox column (only show for non-drive views)
+    if !is_drive_view {
+        header.col(|ui| {
+            // Add a small checkbox in header for select all functionality
+            let mut all_selected = files.iter().all(|f| selected_paths.contains(&f.path));
+
+            ui.scope(|ui| {
+                apply_checkbox_colors(ui, palette, all_selected);
+                if ui.checkbox(&mut all_selected, "").clicked() {
+                    if all_selected {
+                        // Select all
+                        action = Some(ItemViewerAction::SelectAll);
+                    } else {
+                        // Deselect all
+                        action = Some(ItemViewerAction::DeselectAll);
+                    }
+                }
+            });
+        });
+    }
+
+    // Name column
+    header.col(|ui| {
+        let (label, arrow) = match sort_column {
+            SortColumn::Name => (
+                "Name",
+                if sort_ascending {
+                    regular::CARET_UP
+                } else {
+                    regular::CARET_DOWN
+                },
+            ),
+            _ => ("Name", ""),
+        };
+        let resp = ui.add(
+            egui::Label::new(
+                egui::RichText::new(format!("{label} {arrow}").trim_end())
+                    .font(font_id.clone())
+                    .size(palette.text_size)
+                    .color(palette.itemviewer_header_color),
+            )
+            .selectable(false)
+            .sense(egui::Sense::click()),
+        );
+        if resp.clicked() {
+            action = Some(ItemViewerAction::Sort(SortColumn::Name));
+        }
+    });
+
+    // Type column
+    header.col(|ui| {
+        let (label, arrow) = match sort_column {
+            SortColumn::Type => (
+                "Type",
+                if sort_ascending {
+                    regular::CARET_UP
+                } else {
+                    regular::CARET_DOWN
+                },
+            ),
+            _ => ("Type", ""),
+        };
+        let resp = ui.add(
+            egui::Label::new(
+                egui::RichText::new(format!("{label} {arrow}").trim_end())
+                    .font(font_id.clone())
+                    .size(palette.text_size)
+                    .color(palette.itemviewer_header_color),
+            )
+            .selectable(false)
+            .sense(egui::Sense::click()),
+        );
+        if resp.clicked() {
+            action = Some(ItemViewerAction::Sort(SortColumn::Type));
+        }
+    });
+
+    // Size column
+    header.col(|ui| {
+        let (label, arrow) = match sort_column {
+            SortColumn::Size => (
+                "Size",
+                if sort_ascending {
+                    regular::CARET_UP
+                } else {
+                    regular::CARET_DOWN
+                },
+            ),
+            _ => ("Size", ""),
+        };
+        let resp = ui.add(
+            egui::Label::new(
+                egui::RichText::new(format!("{label} {arrow}").trim_end())
+                    .font(font_id.clone())
+                    .size(palette.text_size)
+                    .color(palette.itemviewer_header_color),
+            )
+            .selectable(false)
+            .sense(egui::Sense::click()),
+        );
+        if resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
+        }
+        if resp.clicked() {
+            action = Some(ItemViewerAction::Sort(SortColumn::Size));
+        }
+    });
+
+    // Usage / Modified column
+    if is_drive_view {
+        header.col(|ui| {
+            ui.add(
+                egui::Label::new("Usage")
+                    .selectable(false)
+                    .sense(egui::Sense::click()),
+            );
+        });
+    } else {
+        header.col(|ui| {
+            let (label, arrow) = match sort_column {
+                SortColumn::Modified => (
+                    "Modified",
+                    if sort_ascending {
+                        regular::CARET_UP
+                    } else {
+                        regular::CARET_DOWN
+                    },
+                ),
+                _ => ("Modified", ""),
+            };
+            let resp = ui.add(
+                egui::Label::new(
+                    egui::RichText::new(format!("{label} {arrow}").trim_end())
+                        .font(font_id.clone())
+                        .size(palette.text_size)
+                        .color(palette.itemviewer_header_color),
+                )
+                .selectable(false)
+                .sense(egui::Sense::click()),
+            );
+            if resp.clicked() {
+                action = Some(ItemViewerAction::Sort(SortColumn::Modified));
+            }
+        });
+
+        // Created column
+        header.col(|ui| {
+            let (label, arrow) = match sort_column {
+                SortColumn::Created => (
+                    "Created",
+                    if sort_ascending {
+                        regular::CARET_UP
+                    } else {
+                        regular::CARET_DOWN
+                    },
+                ),
+                _ => ("Created", ""),
+            };
+            let resp = ui.add(
+                egui::Label::new(
+                    egui::RichText::new(format!("{label} {arrow}").trim_end())
+                        .font(font_id.clone())
+                        .size(palette.text_size)
+                        .color(palette.itemviewer_header_color),
+                )
+                .selectable(false)
+                .sense(egui::Sense::click()),
+            );
+
+            if resp.clicked() {
+                action = Some(ItemViewerAction::Sort(SortColumn::Created));
+            }
+        });
+    }
+
+    action
 }

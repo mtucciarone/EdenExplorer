@@ -15,7 +15,7 @@ use windows::core::PCWSTR;
 use crate::app::customizetheme;
 use crate::app::icons::IconCache; // 🔥 FIXED PATH
 use crate::app::sidebar::{FavoriteItem, SidebarAction, draw_sidebar};
-use crate::app::tabs::{TabInfo, TabbarNavAction, draw_tabbar, draw_tabs};
+use crate::app::tabs::{TabInfo, TabbarAction, TabbarNavAction, draw_tabbar, draw_tabs};
 use crate::app::topbar::draw_topbar;
 use crate::app::utils::{
     clipboard_has_files, copy_dir_recursive, get_clipboard_files, set_clipboard_files,
@@ -71,6 +71,9 @@ pub struct ExplorerApp {
     box_selection_start: Option<egui::Pos2>, // Box selection start position
     box_selection_active: bool,              // Whether box selection is currently active
     theme_customizer: customizetheme::ThemeCustomizer,
+    dropped_files: Vec<PathBuf>, // Files dropped from external drag and drop
+    drag_hover: bool,            // Whether external drag is hovering over the item viewer
+    pending_refresh: bool,
 }
 
 impl Default for ExplorerApp {
@@ -110,6 +113,9 @@ impl Default for ExplorerApp {
             box_selection_start: None,      // Box selection start position
             box_selection_active: false,    // Whether box selection is currently active
             theme_customizer: Default::default(),
+            dropped_files: Vec::new(), // Files dropped from external drag and drop
+            drag_hover: false,         // Whether external drag is hovering over the item viewer
+            pending_refresh: false,
         };
         let stored = load_favorites('C');
         if stored.is_empty() {
@@ -304,6 +310,7 @@ impl ExplorerApp {
                 self.rename_state = Some(RenameState {
                     path,
                     new_name: name,
+                    should_focus: true,
                 });
             }
             ItemViewerContextAction::Delete(path) => {
@@ -397,7 +404,35 @@ impl ExplorerApp {
 
 impl eframe::App for ExplorerApp {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        // 🔥 Step 4: Force continuous repaint (dev mode)
+        ctx.request_repaint(); // keeps UI live
+
         apply_theme(ctx, self.theme);
+
+        // Main layout: sidebar + tabs column
+        let sidebar_action: Option<SidebarAction> = None;
+        let tabs_action: Option<crate::app::tabs::TabsAction> = None;
+        let tabbar_action: Option<crate::app::tabs::TabbarNavAction> = None;
+        let nav_snapshot = self.current_nav().clone();
+        let mut search_snapshot = self.search_query.clone();
+        let mut pending_action: Option<ItemViewerAction> = None;
+
+        // 🔥 Detect external drag-over (files hovering)
+        self.drag_hover = ctx.input(|i| !i.raw.hovered_files.is_empty());
+
+        // 🔥 Detect dropped files from OS
+        let dropped_files: Vec<PathBuf> = ctx.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .filter_map(|f| f.path.clone())
+                .collect()
+        });
+
+        if !dropped_files.is_empty() {
+            // Send into your existing system
+            pending_action = Some(ItemViewerAction::FilesDropped(dropped_files));
+        }
 
         if self.theme_dirty {
             apply_theme(ctx, self.theme);
@@ -502,9 +537,6 @@ impl eframe::App for ExplorerApp {
         let mut sidebar_action: Option<SidebarAction> = None;
         let mut tabs_action = None;
         let mut tabbar_action = None;
-        let nav_snapshot = self.current_nav().clone();
-        let mut search_snapshot = self.search_query.clone();
-        let mut pending_action: Option<ItemViewerAction> = None;
 
         egui::CentralPanel::default().show(ctx, |ui| {
             let avail = ui.available_size();
@@ -631,6 +663,7 @@ impl eframe::App for ExplorerApp {
                                             self.rename_state.as_mut(),
                                             &palette,
                                             &mut self.file_type_cache,
+                                            &mut self.drag_hover,
                                         );
                                     },
                                 );
@@ -831,6 +864,7 @@ impl eframe::App for ExplorerApp {
                     self.rename_state = Some(RenameState {
                         path,
                         new_name: name,
+                        should_focus: true,
                     });
                 }
                 ItemViewerAction::RenameRequest(path, new_name) => {
@@ -844,6 +878,32 @@ impl eframe::App for ExplorerApp {
                 ItemViewerAction::RenameCancel => {
                     self.rename_state = None;
                 }
+                ItemViewerAction::ReplaceSelection(path) => {
+                    self.selected_paths.clear();
+                    self.selected_paths.insert(path.clone());
+                    self.selected_path = Some(path);
+                }
+                ItemViewerAction::FilesDropped(dropped_files) => {
+                    let valid_files: Vec<PathBuf> =
+                        dropped_files.into_iter().filter(|p| p.exists()).collect();
+
+                    if valid_files.is_empty() {
+                        return;
+                    }
+
+                    self.dropped_files = valid_files.clone();
+
+                    let current_path = self.current_nav().current.clone();
+
+                    if let Err(e) =
+                        crate::app::utils::show_copy_move_dialog(valid_files, &current_path)
+                    {
+                        eprintln!("Failed to show copy/move dialog: {}", e);
+                    }
+
+                    // ✅ Defer refresh (important)
+                    self.pending_refresh = true;
+                }
             }
         }
 
@@ -853,28 +913,29 @@ impl eframe::App for ExplorerApp {
                 customizetheme::ThemeCustomizerAction::ApplyTheme => {
                     self.theme_dirty = true;
                 }
-
                 customizetheme::ThemeCustomizerAction::ResetToDefaults => {
                     self.theme_customizer.current_theme = Default::default();
                     self.theme_dirty = true;
                 }
-
                 customizetheme::ThemeCustomizerAction::SaveTheme => {
                     // implement later
                 }
-
                 customizetheme::ThemeCustomizerAction::LoadTheme => {
                     // implement later
                 }
-
                 customizetheme::ThemeCustomizerAction::ExportTheme => {
                     // implement later
                 }
-
                 customizetheme::ThemeCustomizerAction::ImportTheme => {
                     // implement later
                 }
             }
+        }
+
+        // ✅ Step 5: Apply Deferred Refresh (IMPORTANT)
+        if self.pending_refresh {
+            self.load_path();
+            self.pending_refresh = false;
         }
 
         // 🔥 PUT IT BACK
