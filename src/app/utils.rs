@@ -3,11 +3,28 @@ use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::path::PathBuf;
+use windows::core::PCWSTR;
 use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
 use windows::Win32::UI::Shell::{
-    SHFILEINFOW, SHGFI_TYPENAME, SHGFI_USEFILEATTRIBUTES, SHGetFileInfoW,
+    SHGetFileInfoW, SHFILEINFOW, SHGFI_TYPENAME, SHGFI_USEFILEATTRIBUTES,
 };
-use windows::core::PCWSTR;
+
+/// Creates a clickable icon with hover color effect
+pub fn clickable_icon(ui: &mut egui::Ui, icon: &str, hover_color: egui::Color32) -> egui::Response {
+    let resp = ui.add(egui::Label::new(icon).sense(egui::Sense::click()));
+
+    if resp.hovered() {
+        ui.painter().text(
+            resp.rect.center(),
+            egui::Align2::CENTER_CENTER,
+            icon,
+            egui::FontId::default(),
+            hover_color,
+        );
+    }
+
+    resp
+}
 
 pub fn get_cut_paths() -> HashSet<PathBuf> {
     if let Some((paths, cut)) = get_clipboard_files() {
@@ -19,9 +36,9 @@ pub fn get_cut_paths() -> HashSet<PathBuf> {
 }
 
 pub fn clear_clipboard_files() {
-    use windows::Win32::System::DataExchange::{OpenClipboard, CloseClipboard, SetClipboardData};
+    use windows::Win32::System::DataExchange::{CloseClipboard, OpenClipboard, SetClipboardData};
     use windows::Win32::System::Ole::CF_HDROP;
-    
+
     unsafe {
         if OpenClipboard(None).is_ok() {
             let _ = SetClipboardData(CF_HDROP.0 as u32, None);
@@ -77,15 +94,24 @@ pub fn drive_usage_bar(
         1.5, // animation speed (lower = faster)
     );
 
-    let width = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+    let max_bar_width = 180.0;
+    let bar_width = (ui.available_width() - 8.0).min(max_bar_width);
+    let (outer_rect, _) =
+        ui.allocate_exact_size(egui::vec2(bar_width, height), egui::Sense::hover());
     let painter = ui.painter();
 
+    let bar_height = outer_rect.height() * 0.65;
+    let y_offset = (outer_rect.height() - bar_height) / 2.0;
+
+    let rect = egui::Rect::from_min_size(
+        egui::pos2(outer_rect.min.x, outer_rect.min.y + y_offset),
+        egui::vec2(outer_rect.width(), bar_height),
+    );
     // background track
     painter.rect_filled(
         rect,
-        palette.small_radius,
-        palette.primary_hover.gamma_multiply(0.5),
+        egui::CornerRadius::same(palette.small_radius),
+        palette.drive_usage_background,
     );
 
     // fill width
@@ -95,21 +121,35 @@ pub fn drive_usage_bar(
         let fill_rect = egui::Rect::from_min_size(rect.min, egui::vec2(fill_width, rect.height()));
         let (left, _right) = drive_usage_gradient(target_ratio, palette);
 
-        painter.add(egui::epaint::RectShape::filled(
+        let radius = palette.small_radius;
+
+        // Only round right side if nearly full
+        let fill_rounding = if animated_ratio >= 0.999 {
+            egui::CornerRadius::same(radius)
+        } else {
+            egui::CornerRadius {
+                nw: radius,
+                sw: radius,
+                ne: 0,
+                se: 0,
+            }
+        };
+
+        painter.rect_filled(
             fill_rect,
-            palette.small_radius,
+            fill_rounding,
             egui::Color32::from_rgb(left.r(), left.g(), left.b()),
-        ));
+        );
 
         // 🔥 subtle highlight strip (fake gradient feel)
         let highlight_rect = egui::Rect::from_min_size(
             fill_rect.min,
-            egui::vec2(fill_rect.width(), fill_rect.height() * 0.5),
+            egui::vec2(fill_rect.width(), fill_rect.height() * 0.25),
         );
 
         painter.rect_filled(
             highlight_rect,
-            palette.small_radius,
+            fill_rounding,
             egui::Color32::from_white_alpha(20),
         );
     }
@@ -143,8 +183,8 @@ pub fn copy_dir_recursive(src: &std::path::Path, dest: &std::path::Path) -> std:
 
 pub fn shell_delete_to_recycle_bin(path: &std::path::PathBuf) -> bool {
     use std::os::windows::ffi::OsStrExt;
-    use windows::Win32::UI::Shell::{FO_DELETE, FOF_ALLOWUNDO, SHFILEOPSTRUCTW, SHFileOperationW};
     use windows::core::PCWSTR;
+    use windows::Win32::UI::Shell::{SHFileOperationW, FOF_ALLOWUNDO, FO_DELETE, SHFILEOPSTRUCTW};
 
     let mut wide: Vec<u16> = path.as_os_str().encode_wide().collect();
     wide.push(0);
@@ -164,7 +204,7 @@ pub fn set_clipboard_files(paths: &[std::path::PathBuf], cut: bool) -> bool {
     use windows::Win32::System::DataExchange::{
         CloseClipboard, EmptyClipboard, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
     };
-    use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock};
+    use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
     use windows::Win32::System::Ole::CF_HDROP;
 
     if paths.is_empty() {
@@ -384,15 +424,13 @@ pub fn get_file_type_name(ext: &str, cache: &mut HashMap<String, String>) -> Str
     type_name
 }
 
-
-use std::path::{Path};
+use std::path::Path;
 use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, CoUninitialize,
-    CLSCTX_ALL, COINIT_APARTMENTTHREADED,
+    CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
 };
 
 use windows::Win32::UI::Shell::{
-    IFileOperation, IShellItem, FileOperation, SHCreateItemFromParsingName,
+    FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
 };
 
 pub fn show_copy_move_dialog(
@@ -408,8 +446,7 @@ pub fn show_copy_move_dialog(
         CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok()?;
 
         let result = (|| {
-            let file_op: IFileOperation =
-                CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
+            let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
 
             // Minimal flags (safe default)
             file_op.SetOperationFlags(windows::Win32::UI::Shell::FILEOPERATION_FLAGS(0))?;
@@ -421,15 +458,10 @@ pub fn show_copy_move_dialog(
                 .chain(Some(0))
                 .collect();
 
-            let dest_item: IShellItem =
-                SHCreateItemFromParsingName(PCWSTR(dest_w.as_ptr()), None)?;
+            let dest_item: IShellItem = SHCreateItemFromParsingName(PCWSTR(dest_w.as_ptr()), None)?;
 
             for src in &sources {
-                let src_w: Vec<u16> = src
-                    .as_os_str()
-                    .encode_wide()
-                    .chain(Some(0))
-                    .collect();
+                let src_w: Vec<u16> = src.as_os_str().encode_wide().chain(Some(0)).collect();
 
                 let src_item: IShellItem =
                     SHCreateItemFromParsingName(PCWSTR(src_w.as_ptr()), None)?;

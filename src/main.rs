@@ -5,13 +5,32 @@ mod indexer;
 mod state;
 
 use eframe::{NativeOptions, egui};
+use indexer::{load_app_settings, WindowSizeMode};
 
 fn main() -> eframe::Result<()> {
     let icon = load_icon().expect("Failed to load icon");
+    
+    // Load saved window settings
+    let (_folder_scanning_enabled, window_size_mode) = load_app_settings();
+    
+    // Determine window size based on saved settings
+    let window_size = match window_size_mode {
+        WindowSizeMode::FullScreen => {
+            // For fullscreen, use a large size that will be maximized
+            egui::Vec2::new(1920.0, 1080.0)
+        }
+        WindowSizeMode::HalfScreen => {
+            // Use half of typical screen dimensions
+            egui::Vec2::new(960.0, 540.0)
+        }
+        WindowSizeMode::Custom { width, height } => {
+            egui::Vec2::new(width, height)
+        }
+    };
 
     let options = NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1400.0, 800.0])
+            .with_inner_size(window_size)
             .with_icon(icon),
         ..Default::default()
     };

@@ -33,6 +33,7 @@ pub struct ThemePalette {
     pub row_selected_bg: egui::Color32,
     pub row_bg: egui::Color32,
     pub itemviewer_header_color: egui::Color32,
+    pub resize_handle: egui::Color32,
 
     // 🎯 Corner radius values
     pub small_radius: u8,
@@ -46,10 +47,17 @@ pub struct ThemePalette {
     pub drive_usage_critical: egui::Color32,
     pub drive_usage_warning: egui::Color32,
     pub drive_usage_normal: egui::Color32,
+    pub drive_usage_background: egui::Color32,
 
     // 🎯 Tab button colors
     pub tab_close_hover: egui::Color32,
     pub tab_add_hover: egui::Color32,
+    pub tab_border_active: egui::Color32,
+    pub tab_border_default: egui::Color32,
+
+    // 🎯 Tooltip colors
+    pub tooltip_text_size: f32,
+    pub tooltip_text_color: egui::Color32,
 
     // checkbox
     pub checkbox_bg_default: egui::Color32,
@@ -81,6 +89,7 @@ pub static PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         row_selected_bg: egui::Color32::from_rgb(70, 78, 86),
         row_bg: egui::Color32::from_rgb(40, 45, 50),
         itemviewer_header_color: egui::Color32::WHITE,
+        resize_handle: egui::Color32::from_rgb(160, 170, 180),
         small_radius: 2,
         medium_radius: 4,
         large_radius: 6,
@@ -97,9 +106,14 @@ pub static PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
             se: 0,
         },
         tab_button_radius: egui::CornerRadius::same(4),
+        tab_border_active: base,
+        tab_border_default: egui::Color32::from_rgba_unmultiplied(95, 75, 135, 60),
+        tooltip_text_size: 13.0,
+        tooltip_text_color: egui::Color32::from_rgb(220, 220, 220),
         drive_usage_critical: egui::Color32::from_rgb(200, 72, 72),
         drive_usage_warning: egui::Color32::from_rgb(214, 170, 76),
         drive_usage_normal: egui::Color32::from_rgb(88, 170, 120),
+        drive_usage_background: egui::Color32::from_rgba_unmultiplied(160, 170, 180, 20),
         tab_close_hover: egui::Color32::from_rgb(200, 52, 52),
         tab_add_hover: egui::Color32::from_rgb(54, 168, 82),
         checkbox_bg_default: egui::Color32::from_rgba_unmultiplied(160, 170, 180, 20),
@@ -127,6 +141,7 @@ pub static PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         row_selected_bg: egui::Color32::from_rgb(70, 78, 86),
         row_bg: egui::Color32::from_rgb(240, 245, 250),
         itemviewer_header_color: egui::Color32::from_rgb(0, 0, 0),
+        resize_handle: egui::Color32::from_rgb(160, 170, 180),
         small_radius: 2,
         medium_radius: 4,
         large_radius: 6,
@@ -143,9 +158,14 @@ pub static PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
             se: 0,
         },
         tab_button_radius: egui::CornerRadius::same(4),
+        tab_border_active: base,
+        tab_border_default: egui::Color32::from_rgba_unmultiplied(110, 85, 160, 40),
+        tooltip_text_size: 13.0,
+        tooltip_text_color: egui::Color32::from_rgb(40, 40, 40),
         drive_usage_critical: egui::Color32::from_rgb(200, 72, 72),
         drive_usage_warning: egui::Color32::from_rgb(214, 170, 76),
         drive_usage_normal: egui::Color32::from_rgb(88, 170, 120),
+        drive_usage_background: egui::Color32::from_rgba_unmultiplied(160, 170, 180, 95),
         tab_close_hover: egui::Color32::from_rgb(200, 52, 52),
         tab_add_hover: egui::Color32::from_rgb(54, 168, 82),
         checkbox_bg_default: egui::Color32::from_rgba_unmultiplied(160, 170, 180, 95),

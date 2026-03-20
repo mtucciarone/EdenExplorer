@@ -28,9 +28,10 @@ pub enum ItemViewerAction {
     StartEdit(PathBuf),
     FilesDropped(Vec<PathBuf>),
     ReplaceSelection(PathBuf),
+    BackNavigation,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ItemViewerContextAction {
     Cut(PathBuf),
     Copy(PathBuf),
@@ -164,7 +165,7 @@ pub fn draw_item_viewer(
 
             // Conditionally add checkbox column
             if !is_drive_view {
-                table = table.column(Column::exact(30.0)); // Checkbox
+                table = table.column(Column::exact(20.0)); // Checkbox
             }
 
             table = table
@@ -194,14 +195,14 @@ pub fn draw_item_viewer(
                             .at_least(120.0)
                             .resizable(true),
                     ) // Modified
-                    .column(Column::remainder().at_least(120.0).resizable(true)); // Created
+                    .column(Column::remainder().at_least(120.0).resizable(true));
+                // Created
             }
 
             table
                 .header(header_height, |mut header| {
                     if let Some(a) = draw_item_viewer_header(
                         &mut header,
-                        header_height,
                         is_drive_view,
                         files,
                         selected_paths,
@@ -430,7 +431,11 @@ pub fn draw_item_viewer(
                                 .sense(egui::Sense::hover());
                             let resp = ui.add(label);
                             if resp.hovered() && type_text.len() > max_chars && max_chars > 3 {
-                                resp.on_hover_text(&type_text);
+                                resp.on_hover_text(
+                                    egui::RichText::new(&type_text)
+                                        .size(palette.tooltip_text_size)
+                                        .color(palette.tooltip_text_color),
+                                );
                             }
                         });
 
@@ -682,24 +687,7 @@ pub fn draw_item_viewer(
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
             }
 
-            // 🔥 Keyboard shortcuts
-            let input_state = ui.ctx().input(|i| i.clone()); // clone to avoid lifetime issues
-            if let Some(selected) = selected_path {
-                if input_state.key_pressed(egui::Key::Delete) {
-                    action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
-                        selected.clone(),
-                    )));
-                }
-            }
-
-            if input_state.modifiers.ctrl {
-                if input_state.key_pressed(egui::Key::Z) {
-                    action = Some(ItemViewerAction::Context(ItemViewerContextAction::Undo));
-                }
-                if input_state.key_pressed(egui::Key::Y) {
-                    action = Some(ItemViewerAction::Context(ItemViewerContextAction::Redo));
-                }
-            }
+            let input_state = ui.ctx().input(|i| i.clone());
 
             // ✅ Shift+Up/Down for extended selection
             if input_state.modifiers.shift && !files.is_empty() {
@@ -832,45 +820,191 @@ fn handle_global_actions(
     palette: &crate::app::features::ThemePalette,
     selection_anchor: &mut Option<usize>,
 ) -> Option<ItemViewerAction> {
-    // --- Keyboard Shortcuts ---
-    {
-        let input = ui.input(|i| i.clone());
+    // 🔥 TEMP: disable focus blocking for now (fix later with rename_state)
+    let is_text_edit_active = false;
 
-        // Select All / Deselect All
-        if input.key_pressed(egui::Key::A) && input.modifiers.ctrl {
-            return Some(ItemViewerAction::SelectAll);
-        }
-        if input.key_pressed(egui::Key::Escape) {
-            return Some(ItemViewerAction::DeselectAll);
+    let mut action: Option<ItemViewerAction> = None;
+
+    // =========================
+    // 🔥 EVENT-BASED SHORTCUTS
+    // =========================
+    ui.input(|i| {
+        for event in &i.events {
+            // println!("EVENT: {:?}", event); // keep debug
+
+            match event {
+                // =========================
+                // 🔥 CLIPBOARD EVENTS (CORRECT WAY)
+                // =========================
+                egui::Event::Copy => {
+                    if is_text_edit_active {
+                        continue;
+                    }
+
+                    let copy_path = if let Some(selected) = selected_path {
+                        selected.clone()
+                    } else if !files.is_empty() {
+                        files[0].path.clone()
+                    } else {
+                        continue;
+                    };
+
+                    println!("🔥 Copy event detected");
+                    action = Some(ItemViewerAction::Context(ItemViewerContextAction::Copy(
+                        copy_path,
+                    )));
+                }
+
+                egui::Event::Cut => {
+                    if is_text_edit_active {
+                        continue;
+                    }
+
+                    let cut_path = if let Some(selected) = selected_path {
+                        selected.clone()
+                    } else if !files.is_empty() {
+                        files[0].path.clone()
+                    } else {
+                        continue;
+                    };
+
+                    println!("🔥 Cut event detected");
+                    action = Some(ItemViewerAction::Context(ItemViewerContextAction::Cut(
+                        cut_path,
+                    )));
+                }
+
+                // Fegui::Event::Paste(content) => {
+                //     action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
+                // }
+
+                // egui::Event::Paste(_) => {
+                //     if is_text_edit_active || !paste_enabled {
+                //         continue;
+                //     }
+
+                //     action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
+                // }
+
+                // =========================
+                // 🔥 FALLBACK: KEY EVENTS (YOUR CASE)
+                // =========================
+                egui::Event::Key {
+                    key,
+                    pressed: false, // 👈 IMPORTANT: your system emits false
+                    modifiers,
+                    ..
+                } => {
+                    if modifiers.command && !is_text_edit_active {
+                        match key {
+                            egui::Key::V => {
+                                println!("🔥 Ctrl+V detected (fallback)");
+                                action =
+                                    Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
+                            }
+                            egui::Key::C => {
+                                println!("🔥 Ctrl+C detected (fallback)");
+
+                                let copy_path = if let Some(selected) = selected_path {
+                                    selected.clone()
+                                } else if !files.is_empty() {
+                                    files[0].path.clone()
+                                } else {
+                                    continue;
+                                };
+
+                                action = Some(ItemViewerAction::Context(
+                                    ItemViewerContextAction::Copy(copy_path),
+                                ));
+                            }
+                            egui::Key::X => {
+                                println!("🔥 Ctrl+X detected (fallback)");
+
+                                let cut_path = if let Some(selected) = selected_path {
+                                    selected.clone()
+                                } else if !files.is_empty() {
+                                    files[0].path.clone()
+                                } else {
+                                    continue;
+                                };
+
+                                action = Some(ItemViewerAction::Context(
+                                    ItemViewerContextAction::Cut(cut_path),
+                                ));
+                            }
+                            egui::Key::Z => {
+                                println!("🔥 Ctrl+Z detected");
+                                action =
+                                    Some(ItemViewerAction::Context(ItemViewerContextAction::Undo));
+                            }
+                            egui::Key::Y => {
+                                println!("🔥 Ctrl+Y detected");
+                                action =
+                                    Some(ItemViewerAction::Context(ItemViewerContextAction::Redo));
+                            }
+                            egui::Key::A => {
+                                println!("🔥 Ctrl+A detected");
+                                action = Some(ItemViewerAction::SelectAll);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
+                _ => {}
+            }
         }
 
-        // Up / Down arrow navigation
+        // =========================
+        // 🔹 NON-MODIFIER KEYS
+        // =========================
+
+        if i.key_pressed(egui::Key::Escape) {
+            action = Some(ItemViewerAction::DeselectAll);
+        }
+
+        if let Some(selected) = selected_path {
+            if i.key_pressed(egui::Key::Delete) {
+                action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
+                    selected.clone(),
+                )));
+            }
+        }
+
+        if i.key_pressed(egui::Key::Backspace) {
+            action = Some(ItemViewerAction::BackNavigation);
+        }
+
+        // =========================
+        // 🔹 ARROW NAVIGATION
+        // =========================
+
         if !files.is_empty() {
             if let Some(current) = selected_path {
                 if let Some(idx) = files.iter().position(|f| &f.path == current) {
-                    if input.key_pressed(egui::Key::ArrowDown) && idx + 1 < files.len() {
-                        return Some(ItemViewerAction::Select(files[idx + 1].path.clone()));
+                    if i.key_pressed(egui::Key::ArrowDown) && idx + 1 < files.len() {
+                        action = Some(ItemViewerAction::Select(files[idx + 1].path.clone()));
                     }
-                    if input.key_pressed(egui::Key::ArrowUp) && idx > 0 {
-                        return Some(ItemViewerAction::Select(files[idx - 1].path.clone()));
+                    if i.key_pressed(egui::Key::ArrowUp) && idx > 0 {
+                        action = Some(ItemViewerAction::Select(files[idx - 1].path.clone()));
                     }
                 }
-            } else if input.key_pressed(egui::Key::ArrowDown) {
-                // Nothing selected → select first row
-                return Some(ItemViewerAction::Select(files[0].path.clone()));
+            } else if i.key_pressed(egui::Key::ArrowDown) {
+                action = Some(ItemViewerAction::Select(files[0].path.clone()));
             }
         }
-    }
+    });
 
-    // --- Box Selection ---
-    // Track box selection start position in memory
+    // =========================
+    // 🔹 BOX SELECTION (UNCHANGED)
+    // =========================
+
     let start_pos = ui.ctx().memory_mut(|mem| {
         mem.data
             .get_temp::<egui::Pos2>("box_selection_start".into())
     });
 
     if let Some(pointer_pos) = ui.ctx().pointer_hover_pos() {
-        // Start box selection on mouse press
         if ui.input(|i| i.pointer.primary_pressed()) {
             ui.ctx().memory_mut(|mem| {
                 mem.data
@@ -878,12 +1012,10 @@ fn handle_global_actions(
             });
         }
 
-        // Continue box selection while dragging
         if ui.input(|i| i.pointer.primary_down()) {
             if let Some(start_pos) = start_pos {
                 let selection_rect = egui::Rect::from_min_max(start_pos, pointer_pos);
 
-                // Draw selection rectangle
                 ui.painter().rect_filled(
                     selection_rect,
                     egui::CornerRadius::same(0),
@@ -896,8 +1028,6 @@ fn handle_global_actions(
                     egui::StrokeKind::Inside,
                 );
 
-                // Collect files that intersect with selection_rect
-                // ✅ Instead of manual row math, use TableRow rects
                 let selected_files: Vec<PathBuf> = ui.ctx().memory(|mem| {
                     mem.data
                         .get_temp::<Vec<egui::Rect>>("table_row_rects".into())
@@ -905,7 +1035,6 @@ fn handle_global_actions(
                         .iter()
                         .enumerate()
                         .filter_map(|(idx, row_rect)| {
-                            // no & needed
                             if selection_rect.intersects(*row_rect) {
                                 Some(files[idx].path.clone())
                             } else {
@@ -922,19 +1051,163 @@ fn handle_global_actions(
         }
     }
 
-    // Clear box selection start position on mouse release
     if ui.input(|i| i.pointer.primary_released()) {
         ui.ctx().memory_mut(|mem| {
             mem.data.remove::<egui::Pos2>("box_selection_start".into());
         });
     }
 
-    None
+    action
 }
+
+// fn handle_global_actions(
+//     ui: &mut egui::Ui,
+//     files: &Vec<FileItem>,
+//     selected_path: &mut Option<PathBuf>,
+//     selected_paths: &HashSet<PathBuf>,
+//     paste_enabled: bool,
+//     palette: &crate::app::features::ThemePalette,
+//     selection_anchor: &mut Option<usize>,
+// ) -> Option<ItemViewerAction> {
+//     // --- Keyboard Shortcuts ---
+//     {
+//         let input = ui.input(|i| i.clone());
+
+//         // Select All / Deselect All
+//         if input.key_pressed(egui::Key::A) && input.modifiers.ctrl {
+//             return Some(ItemViewerAction::SelectAll);
+//         }
+//         if input.key_pressed(egui::Key::Escape) {
+//             return Some(ItemViewerAction::DeselectAll);
+//         }
+
+//         // Copy, Paste, Undo, Redo
+//         if input.modifiers.ctrl {
+//             if input.key_pressed(egui::Key::C) {
+//                 // Copy - use selected item or current item
+//                 let copy_path = if let Some(selected) = selected_path {
+//                     selected.clone()
+//                 } else if !files.is_empty() {
+//                     files[0].path.clone()
+//                 } else {
+//                     return None;
+//                 };
+//                 println!("Copy shortcut triggered for: {:?}", copy_path);
+//                 return Some(ItemViewerAction::Context(ItemViewerContextAction::Copy(copy_path)));
+//             }
+
+//             if input.key_pressed(egui::Key::V) {
+//                 // Paste
+//                 println!("Paste shortcut triggered");
+//                 return Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
+//             }
+
+//             if input.key_pressed(egui::Key::Z) {
+//                 // Undo
+//                 return Some(ItemViewerAction::Context(ItemViewerContextAction::Undo));
+//             }
+
+//             if input.key_pressed(egui::Key::Y) {
+//                 // Redo
+//                 return Some(ItemViewerAction::Context(ItemViewerContextAction::Redo));
+//             }
+//         }
+
+//         // Back navigation
+//         if input.key_pressed(egui::Key::Backspace) {
+//             return Some(ItemViewerAction::BackNavigation);
+//         }
+
+//         // Up / Down arrow navigation
+//         if !files.is_empty() {
+//             if let Some(current) = selected_path {
+//                 if let Some(idx) = files.iter().position(|f| &f.path == current) {
+//                     if input.key_pressed(egui::Key::ArrowDown) && idx + 1 < files.len() {
+//                         return Some(ItemViewerAction::Select(files[idx + 1].path.clone()));
+//                     }
+//                     if input.key_pressed(egui::Key::ArrowUp) && idx > 0 {
+//                         return Some(ItemViewerAction::Select(files[idx - 1].path.clone()));
+//                     }
+//                 }
+//             } else if input.key_pressed(egui::Key::ArrowDown) {
+//                 // Nothing selected → select first row
+//                 return Some(ItemViewerAction::Select(files[0].path.clone()));
+//             }
+//         }
+//     }
+
+//     // --- Box Selection ---
+//     // Track box selection start position in memory
+//     let start_pos = ui.ctx().memory_mut(|mem| {
+//         mem.data
+//             .get_temp::<egui::Pos2>("box_selection_start".into())
+//     });
+
+//     if let Some(pointer_pos) = ui.ctx().pointer_hover_pos() {
+//         // Start box selection on mouse press
+//         if ui.input(|i| i.pointer.primary_pressed()) {
+//             ui.ctx().memory_mut(|mem| {
+//                 mem.data
+//                     .insert_temp("box_selection_start".into(), pointer_pos);
+//             });
+//         }
+
+//         // Continue box selection while dragging
+//         if ui.input(|i| i.pointer.primary_down()) {
+//             if let Some(start_pos) = start_pos {
+//                 let selection_rect = egui::Rect::from_min_max(start_pos, pointer_pos);
+
+//                 // Draw selection rectangle
+//                 ui.painter().rect_filled(
+//                     selection_rect,
+//                     egui::CornerRadius::same(0),
+//                     palette.primary,
+//                 );
+//                 ui.painter().rect_stroke(
+//                     selection_rect,
+//                     egui::CornerRadius::same(0),
+//                     egui::Stroke::new(1.0, palette.box_selection_stroke),
+//                     egui::StrokeKind::Inside,
+//                 );
+
+//                 // Collect files that intersect with selection_rect
+//                 // ✅ Instead of manual row math, use TableRow rects
+//                 let selected_files: Vec<PathBuf> = ui.ctx().memory(|mem| {
+//                     mem.data
+//                         .get_temp::<Vec<egui::Rect>>("table_row_rects".into())
+//                         .unwrap_or_default()
+//                         .iter()
+//                         .enumerate()
+//                         .filter_map(|(idx, row_rect)| {
+//                             // no & needed
+//                             if selection_rect.intersects(*row_rect) {
+//                                 Some(files[idx].path.clone())
+//                             } else {
+//                                 None
+//                             }
+//                         })
+//                         .collect()
+//                 });
+
+//                 if !selected_files.is_empty() {
+//                     return Some(ItemViewerAction::BoxSelect(selected_files));
+//                 }
+//             }
+//         }
+//     }
+
+//     // Clear box selection start position on mouse release
+//     if ui.input(|i| i.pointer.primary_released()) {
+//         ui.ctx().memory_mut(|mem| {
+//             mem.data.remove::<egui::Pos2>("box_selection_start".into());
+//         });
+//     }
+
+//     None
+// }
 
 fn draw_item_viewer_header(
     header: &mut egui_extras::TableRow<'_, '_>,
-    header_height: f32,
     is_drive_view: bool,
     files: &Vec<FileItem>,
     selected_paths: &HashSet<PathBuf>,

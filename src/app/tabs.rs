@@ -3,14 +3,16 @@ use std::path::{Path, PathBuf};
 
 use crate::app::features::ThemePalette;
 use crate::app::icons::IconCache;
+use crate::app::utils::clickable_icon;
 use crate::state::Navigation;
+use egui::{FontFamily, FontId};
 use egui_phosphor::regular;
-use egui::{FontId, FontFamily};
 
 #[derive(Clone)]
 pub struct TabInfo {
     pub id: u64,
     pub title: String,
+    pub full_path: PathBuf,
 }
 
 #[derive(Default)]
@@ -18,6 +20,13 @@ pub struct TabsAction {
     pub activate: Option<u64>,
     pub close: Option<u64>,
     pub open_new: bool,
+}
+
+pub struct TabState {
+    pub id: u64,
+    pub nav: Navigation,
+    pub is_editing_path: bool,
+    pub path_buffer: String,
 }
 
 pub fn draw_tabs(
@@ -41,15 +50,12 @@ pub fn draw_tabs(
             } else {
                 egui::Color32::TRANSPARENT
             };
+
             let tab_frame = egui::Frame::NONE
                 .fill(tab_fill)
                 .inner_margin(egui::Margin::symmetric(10, 6))
                 .corner_radius(corner)
-                .stroke(if is_active {
-                    egui::Stroke::new(1.0, ui.visuals().widgets.active.bg_stroke.color)
-                } else {
-                    egui::Stroke::NONE
-                });
+                .stroke(egui::Stroke::NONE);
 
             let resp = tab_frame
                 .show(ui, |ui| {
@@ -57,6 +63,7 @@ pub fn draw_tabs(
                     ui.set_max_width(200.0);
 
                     ui.horizontal(|ui| {
+                        // Add folder icon with vertical centering
                         ui.add(egui::Label::new(regular::FOLDER_SIMPLE).selectable(false));
 
                         let label_color = if is_active {
@@ -67,11 +74,40 @@ pub fn draw_tabs(
 
                         let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
 
+                        // --- DISPLAY TEXT WITH TRUNCATION ---
+                        let available_width = ui.available_width() - 24.0; // Account for spacing
+                        let max_chars = (available_width / 7.0) as usize; // Approximate character width
+
+                        let display_title = if tab.title.len() > max_chars && max_chars > 3 {
+                            // Use character boundaries instead of byte indices
+                            let mut char_count = 0;
+                            let mut byte_end = 0;
+                            for (i, _) in tab.title.char_indices() {
+                                if char_count >= max_chars - 3 {
+                                    break;
+                                }
+                                char_count += 1;
+                                byte_end = i;
+                            }
+                            format!("{}...", &tab.title[..byte_end])
+                        } else {
+                            tab.title.clone()
+                        };
+
                         let resp = ui.add(egui::Label::new(
-                            egui::RichText::new(&tab.title).color(label_color).font(font_id),
+                            egui::RichText::new(display_title)
+                                .color(label_color)
+                                .font(font_id),
                         ));
 
-                        // Change the cursor depending on hover state
+                        // Add tooltip showing full path
+                        let resp = resp.on_hover_text(
+                            egui::RichText::new(format!("{}", tab.full_path.display()))
+                                .size(palette.tooltip_text_size)
+                                .color(palette.tooltip_text_color),
+                        );
+
+                        // Change cursor depending on hover state
                         if resp.hovered() {
                             ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
                         } else {
@@ -81,6 +117,42 @@ pub fn draw_tabs(
                 })
                 .response
                 .interact(egui::Sense::click());
+
+            let rect = resp.rect;
+
+            let stroke_width = 1.0;
+
+            // 👇 Allow space for outside stroke, but still clip bottom
+            let clip_rect = egui::Rect::from_min_max(
+                egui::pos2(rect.min.x - stroke_width, rect.min.y - stroke_width),
+                egui::pos2(rect.max.x + stroke_width, rect.max.y + 0.5), // only trim bottom
+            );
+
+            let painter = ui.painter().with_clip_rect(clip_rect);
+
+            let rounding = egui::CornerRadius {
+                nw: corner.nw,
+                ne: corner.ne,
+                sw: 0,
+                se: 0,
+            };
+
+            let stroke = if is_active {
+                egui::Stroke::new(1.0, palette.tab_border_active)
+            } else {
+                egui::Stroke::new(1.0, palette.tab_border_default)
+            };
+
+            // ✅ Draw border
+            painter.rect_stroke(rect, rounding, stroke, egui::StrokeKind::Outside);
+
+            // 🎯 Active tab blends into panel
+            if is_active {
+                painter.line_segment(
+                    [rect.left_bottom(), rect.right_bottom()],
+                    egui::Stroke::new(2.0, ui.visuals().panel_fill),
+                );
+            }
 
             if resp.clicked() {
                 action.activate = Some(tab.id);
@@ -97,10 +169,7 @@ pub fn draw_tabs(
         let add_frame = egui::Frame::NONE
             .inner_margin(egui::Margin::symmetric(6, 6))
             .corner_radius(palette.tab_inactive_radius)
-            .stroke(egui::Stroke::new(
-                1.0,
-                ui.visuals().widgets.noninteractive.bg_stroke.color,
-            ));
+            .stroke(egui::Stroke::new(1.0, palette.tab_border_default));
 
         let add_resp = add_frame.show(ui, |ui| {
             ui.set_min_width(25.0);
@@ -174,11 +243,15 @@ fn tab_add_button(
     palette: &ThemePalette,
 ) -> egui::Response {
     let hovered = resp.hovered();
+    let nudge = egui::vec2(4.0, 0.0);
+    let rect = rect.translate(nudge);
+
     let bg = if hovered {
         palette.tab_add_hover
     } else {
         egui::Color32::TRANSPARENT
     };
+
     ui.painter()
         .rect_filled(rect, palette.tab_button_radius, bg);
 
@@ -198,7 +271,7 @@ fn tab_add_button(
         color,
     );
 
-    if resp.hovered() {
+    if hovered {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
 
@@ -209,9 +282,46 @@ fn tab_add_button(
 pub struct TabbarAction {
     pub nav: Option<TabbarNavAction>,
     pub create_folder: bool,
+    pub create_file: bool,
     pub add_favorite: bool,
-    pub search_changed: bool,
     pub nav_to: Option<PathBuf>,
+    pub refresh_current_directory: bool,
+}
+
+fn toolbar_buttons(ui: &mut egui::Ui, palette: &ThemePalette) -> TabbarAction {
+    let mut action = TabbarAction::default();
+
+    // Navigation buttons
+    if clickable_icon(ui, regular::ARROW_LEFT, palette.primary).clicked() {
+        action.nav = Some(TabbarNavAction::Back);
+    }
+
+    if clickable_icon(ui, regular::ARROW_RIGHT, palette.primary).clicked() {
+        action.nav = Some(TabbarNavAction::Forward);
+    }
+
+    if clickable_icon(ui, regular::ARROW_UP, palette.primary).clicked() {
+        action.nav = Some(TabbarNavAction::Up);
+    }
+
+    if clickable_icon(ui, regular::ARROWS_CLOCKWISE, palette.primary).clicked() {
+        action.refresh_current_directory = true;
+    }
+
+    // Action buttons
+    if clickable_icon(ui, regular::FOLDER_PLUS, palette.primary).clicked() {
+        action.create_folder = true;
+    }
+
+    if clickable_icon(ui, regular::FILE_PLUS, palette.primary).clicked() {
+        action.create_file = true;
+    }
+
+    if clickable_icon(ui, regular::STAR, palette.primary).clicked() {
+        action.add_favorite = true;
+    }
+
+    action
 }
 
 pub enum TabbarNavAction {
@@ -223,38 +333,64 @@ pub enum TabbarNavAction {
 pub fn draw_tabbar(
     ui: &mut egui::Ui,
     icon_cache: &IconCache,
-    nav: &Navigation,
+    tab: &mut TabState,
     search_query: &mut String,
     palette: &ThemePalette,
 ) -> TabbarAction {
     let mut action = TabbarAction::default();
 
     ui.horizontal(|ui| {
-        if ui.button(regular::ARROW_LEFT).clicked() {
-            action.nav = Some(TabbarNavAction::Back);
-        }
-        if ui.button(regular::ARROW_RIGHT).clicked() {
-            action.nav = Some(TabbarNavAction::Forward);
-        }
-        if ui.button(regular::ARROW_UP).clicked() {
-            action.nav = Some(TabbarNavAction::Up);
-        }
+        let toolbar_action = toolbar_buttons(ui, palette);
 
-        if ui.button(regular::FOLDER_PLUS).clicked() {
+        // Merge toolbar actions
+        if toolbar_action.nav.is_some() {
+            action.nav = toolbar_action.nav;
+        }
+        if toolbar_action.refresh_current_directory {
+            action.refresh_current_directory = true;
+        }
+        if toolbar_action.create_folder {
             action.create_folder = true;
         }
-
-        if ui.button(regular::STAR).clicked() {
+        if toolbar_action.create_file {
+            action.create_file = true;
+        }
+        if toolbar_action.add_favorite {
             action.add_favorite = true;
         }
 
         ui.separator();
 
-        if nav.is_root() {
+        // 👇 SWITCH BETWEEN MODES
+        if tab.is_editing_path {
+            let resp = ui.add(
+                egui::TextEdit::singleline(&mut tab.path_buffer)
+                    .desired_width(ui.available_width() - 40.0)
+                    .font(FontId::new(
+                        palette.text_size,
+                        egui::FontFamily::Proportional,
+                    )),
+            );
+
+            resp.request_focus();
+
+            let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+            let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+
+            if enter {
+                action.nav_to = Some(PathBuf::from(tab.path_buffer.clone()));
+                tab.is_editing_path = false;
+            } else if escape {
+                tab.is_editing_path = false;
+            } else if resp.lost_focus() {
+                tab.is_editing_path = false;
+            }
+        } else if tab.nav.is_root() {
             let pc_icon_path = PathBuf::from("C:\\");
             if let Some(icon) = icon_cache.get(&pc_icon_path, true) {
                 ui.add(egui::Image::new(&icon).fit_to_exact_size(egui::vec2(14.0, 14.0)));
             }
+
             if ui
                 .add(
                     egui::Label::new(egui::RichText::new("This PC").size(palette.text_size))
@@ -266,17 +402,20 @@ pub fn draw_tabbar(
                 action.nav_to = Some(PathBuf::from("::MY_PC::"));
             }
         } else {
-            let segments = build_breadcrumbs(&nav.current);
+            let segments = build_breadcrumbs(&tab.nav.current);
             let mut first = true;
+
             for (_idx, (label, path)) in segments.into_iter().enumerate() {
                 if !first {
                     let old_spacing = ui.spacing().item_spacing;
                     ui.spacing_mut().item_spacing.x = 10.0;
+
                     ui.label(
                         egui::RichText::new(">")
                             .size(palette.text_size)
                             .color(ui.visuals().widgets.noninteractive.fg_stroke.color),
                     );
+
                     ui.spacing_mut().item_spacing = old_spacing;
                 }
                 first = false;
@@ -294,6 +433,7 @@ pub fn draw_tabbar(
                     });
 
                 let resp = inner.response.union(inner.inner);
+
                 if resp.hovered() {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                 }
@@ -304,16 +444,20 @@ pub fn draw_tabbar(
             }
         }
 
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let search_resp = ui.add(
-                egui::TextEdit::singleline(search_query)
-                    .hint_text("Search")
-                    .desired_width(220.0),
-            );
-            if search_resp.changed() {
-                action.search_changed = true;
-            }
-        });
+        if !tab.nav.is_root() {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if tab.is_editing_path {
+                    if clickable_icon(ui, regular::X, palette.primary).clicked() {
+                        tab.is_editing_path = false;
+                    }
+                } else {
+                    if clickable_icon(ui, regular::PENCIL_SIMPLE, palette.primary).clicked() {
+                        tab.is_editing_path = true;
+                        tab.path_buffer = tab.nav.current.to_string_lossy().to_string();
+                    }
+                }
+            });
+        }
     });
 
     action
