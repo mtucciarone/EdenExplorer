@@ -1,8 +1,9 @@
+use crate::core::indexer::WindowSizeMode;
+use crate::gui::theme::ThemePalette;
 use eframe::egui;
 use egui_phosphor::regular;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use crate::indexer::WindowSizeMode;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AppSettings {
@@ -37,9 +38,9 @@ pub enum SettingsAction {
 }
 
 // Helper function for info icon with hover text (non-clickable)
-fn info_icon(ui: &mut egui::Ui, hover_text: &str, palette: &crate::app::features::ThemePalette) -> egui::Response {
+fn info_icon(ui: &mut egui::Ui, hover_text: &str, palette: &ThemePalette) -> egui::Response {
     let resp = ui.add(egui::Label::new(regular::QUESTION).sense(egui::Sense::hover()));
-    
+
     if resp.hovered() {
         ui.painter().text(
             resp.rect.center(),
@@ -49,7 +50,7 @@ fn info_icon(ui: &mut egui::Ui, hover_text: &str, palette: &crate::app::features
             palette.primary,
         );
     }
-    
+
     if resp.hovered() {
         egui::containers::Area::new(ui.next_auto_id())
             .current_pos(resp.rect.right_top())
@@ -60,19 +61,19 @@ fn info_icon(ui: &mut egui::Ui, hover_text: &str, palette: &crate::app::features
                         ui.label(
                             egui::RichText::new(hover_text)
                                 .size(palette.text_size)
-                                .color(ui.visuals().text_color())
+                                .color(ui.visuals().text_color()),
                         );
                     });
             });
     }
-    
+
     resp
 }
 
 pub fn draw_settings_window(
     ctx: &egui::Context,
     settings: &mut SettingsWindow,
-    palette: &crate::app::features::ThemePalette,
+    palette: &ThemePalette,
 ) -> Option<SettingsAction> {
     let mut action = None;
 
@@ -119,7 +120,6 @@ pub fn draw_settings_window(
                             action = Some(SettingsAction::ResetToDefaults);
                         }
                     });
-                    
                     // Folder Scanning
                     ui.horizontal(|ui| {
                         if ui.checkbox(
@@ -129,62 +129,47 @@ pub fn draw_settings_window(
                             // Auto-save when setting changes
                             action = Some(SettingsAction::ApplySettings);
                         }
-                        
                         info_icon(ui, "When enabled, the application will scan folders to calculate their sizes. This may impact performance on large directories.", palette);
                     });
-
                     ui.add_space(12.0);
-
                     // Starting Path
                     ui.horizontal(|ui| {
                         ui.label("Startup Directory Path:");
-                        
                         let path_text = settings.current_settings.starting_path
                             .as_ref()
                             .map_or("Default (system)".to_string(), |p| p.to_string_lossy().to_string());
-                        
                         ui.label(path_text);
-                        
                         if ui.button(regular::FOLDER_OPEN).clicked() {
                             // TODO: Implement file dialog for path selection
                             action = Some(SettingsAction::ApplySettings);
                         }
-                        
                         if ui.button(regular::ARROW_CLOCKWISE).clicked() {
                             settings.current_settings.starting_path = None;
                             action = Some(SettingsAction::ApplySettings);
                         }
-                        
                         info_icon(ui, "Set the default directory that opens when the application starts.", palette);
                     });
-
                     ui.add_space(12.0);
-
                     // Display Settings Section
                     ui.heading(format!("{} Display Settings", regular::MONITOR));
                     ui.add_space(8.0);
-                    
                     ui.horizontal(|ui| {
                         ui.label("Launch mode:");
-                        
                         let mut full_screen = matches!(settings.current_settings.window_size_mode, WindowSizeMode::FullScreen);
                         let mut half_screen = matches!(settings.current_settings.window_size_mode, WindowSizeMode::HalfScreen);
                         let mut custom = matches!(settings.current_settings.window_size_mode, WindowSizeMode::Custom { .. });
-                        
                         if ui.checkbox(&mut full_screen, "Fullscreen").changed() {
                             if full_screen {
                                 settings.current_settings.window_size_mode = WindowSizeMode::FullScreen;
                                 action = Some(SettingsAction::ApplySettings);
                             }
                         }
-                        
                         if ui.checkbox(&mut half_screen, "Half Screen").changed() {
                             if half_screen {
                                 settings.current_settings.window_size_mode = WindowSizeMode::HalfScreen;
                                 action = Some(SettingsAction::ApplySettings);
                             }
                         }
-                        
                         if ui.checkbox(&mut custom, "Custom").changed() {
                             if custom {
                                 settings.current_settings.window_size_mode = WindowSizeMode::Custom { width: 1200.0, height: 800.0 };
@@ -192,7 +177,6 @@ pub fn draw_settings_window(
                             }
                         }
                     });
-                    
                     // Custom size inputs
                     if let WindowSizeMode::Custom { width, height } = &mut settings.current_settings.window_size_mode {
                         ui.add_space(8.0);
@@ -201,32 +185,25 @@ pub fn draw_settings_window(
                             if ui.add(egui::DragValue::new(width).range(400.0..=3840.0)).changed() {
                                 action = Some(SettingsAction::ApplySettings);
                             }
-                            
                             ui.label("Height:");
                             if ui.add(egui::DragValue::new(height).range(300.0..=2160.0)).changed() {
                                 action = Some(SettingsAction::ApplySettings);
                             }
-                            
                             info_icon(ui, "Configure the window size when the application launches.", palette);
                         });
                     }
-
                     ui.add_space(12.0);
-
                     // Favorites Reset
                     ui.horizontal(|ui| {
                         if ui.button(format!("{} Reset Sidebar Favorites", regular::TRASH)).clicked() {
                             settings.show_reset_favorites_confirmation = true;
                         }
-                        
                         info_icon(ui, "Clear all saved favourite locations and restore defaults.", palette);
                     });
                 });
-
             // Reset Favorites Confirmation Dialog
             if settings.show_reset_favorites_confirmation {
                 let mut should_close = false;
-                
                 egui::Window::new("Reset Favorites")
                     .collapsible(false)
                     .resizable(false)
@@ -235,20 +212,20 @@ pub fn draw_settings_window(
                     .frame(egui::Frame::popup(&ctx.style()).corner_radius(egui::CornerRadius::same(8)))
                     .show(ctx, |ui| {
                         ui.vertical_centered(|ui| {
-                            ui.add_space(10.0);
-                            ui.heading("Reset Sidebar Favorites?");
-                            ui.add_space(15.0);
-                            
-                            ui.label("This will clear all your saved favorite locations");
-                            ui.label("and restore the default favorites.");
+                            ui.label(
+                                egui::RichText::new("This will clear all your saved favorite locations")
+                                    .size(palette.text_size)
+                            );
+                            ui.label(
+                                egui::RichText::new("and restore the default favorites.")
+                                    .size(palette.text_size)
+                            );
                             ui.add_space(20.0);
-                            
                             ui.horizontal(|ui| {
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                     if ui.button("Close").clicked() {
                                         should_close = true;
                                     }
-                                    
                                     if ui.button("Reset").clicked() {
                                         action = Some(SettingsAction::ResetFavourites);
                                         should_close = true;
@@ -257,18 +234,14 @@ pub fn draw_settings_window(
                             });
                         });
                     });
-                
                 if should_close {
                     settings.show_reset_favorites_confirmation = false;
                 }
             }
-
             ui.separator();
-
             // Footer
             ui.horizontal(|ui| {
                 ui.label("Changes are automatically saved when modified.");
-                
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button(format!("{} Close", regular::X)).clicked() {
                         should_close = true;
@@ -276,11 +249,9 @@ pub fn draw_settings_window(
                 });
             });
         });
-
     // Update the open state based on should_close
     if should_close {
         settings.open = false;
     }
-
     action
 }

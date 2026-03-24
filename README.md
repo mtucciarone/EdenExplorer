@@ -178,7 +178,7 @@ Submit a pull request with a description of your changes
 
 ## 🗺️ Roadmap
 
-### ✅ Completed Features
+### ✅ Implemented Features
 - [x] **Tabbed interface** with tab management and navigation
 - [x] **Search and filter engine** with real-time file indexing
 - [x] **File operations history** with undo/redo functionality
@@ -186,36 +186,37 @@ Submit a pull request with a description of your changes
 - [x] **Comprehensive navigation** with back/forward/up controls
 - [x] **Favorites system** with drag-and-drop support
 - [x] **Context menu operations** (cut, copy, paste, rename, delete)
+- [x] **Enhanced drive caching** with 30-second cache duration for improved UI performance
+- [x] **Optimized icon caching** with metadata-based cache keys and background loading
+- [x] **Folder size scanning control** with user setting to enable/disable performance-heavy operations
+- [x] **Portable device support** for iPhone, Android, and other connected devices
+- [x] **Raw/unmounted drive detection** for ISO sticks and Linux partitions
 
-### 🚀 Phase 1: Core Performance (Q2 2026)
-- [ ] Replace `std::fs::read_dir` with **NT API** (NtQueryDirectoryFile) scanning for maximum speed
-- [ ] Implement **virtualized file list rendering** for directories with 100k+ files
-- [ ] Add **file operation queue** for batch operations (copy, move, delete)
-- [ ] Optimize **search indexing** for faster query results
-
-### 🎨 Phase 2: Enhanced UX (Q3 2026)
-- [ ] **Bookmarks and favorites persistence** with cloud sync support
-- [ ] **File preview pane** for images, documents, and code files
-- [ ] **Advanced search** with regex support and content indexing
-- [ ] **Custom themes** and color schemes beyond dark/light
+### 🚀 Upcoming Features
+- [ ] **Image previews using Spacebar** - GPU texture via wgpu / egui_wgpu_backend
+  - Decodes image once, uploads to GPU, renders instantly
+  - Even very large images (>10k×10k) show instantly
+  - Minimal CPU overhead
+  - Best for "popup over app" with no lag
+- [ ] **Drag and drop files into folders** or move folders into folders
+- [ ] **Fix reordering of favorites** in sidebar
+- [ ] **My Places updates** - add "Control Panel" or "Settings"
+- [ ] **Keyboard filtering** - typing characters should automatically start filtering items in itemviewer
+- [ ] **Network section** in sidebar with network drive and computer access support
+- [ ] **Tab navigation improvements** - multiple tabs should reduce tab size, with left/right arrows for horizontal scrolling when >6 tabs
 - [ ] **Keyboard shortcuts** customization and help system
-
-### 🔧 Phase 3: Advanced Features (Q4 2026)
-- [ ] **Custom icons and metadata** without performance impact
 - [ ] **Network drive support** and cloud storage integration
 - [ ] **File operations queue** with progress tracking
-- [ ] **Advanced sorting** and filtering options
-- [ ] **File properties panel** with detailed metadata
+- [ ] **Real-time file synchronization** across devices
+- [ ] Remove native min, max, and close icons and replace with your own
 
-### 🌟 Phase 4: Ecosystem (2027)
-- [ ] **Plugin system** for third-party extensions
-- [ ] **Command-line interface** for power users
-- [ ] **Portable version** for USB drives
+## 🐛 Known Bugs
 
-### 📈 Long-term Vision
-- **AI-powered file organization** and smart categorization
-- **Real-time file synchronization** across devices
-- **Advanced security features** with encryption support
+### **Critical Issues:**
+- **Multiple files/folders selected opening properties** just opens the file property
+- **Ctrl+C/Ctrl+V in breadcrumb path** copies the first file in the itemviewer instead of path text
+- Double-clicking a selected nested folder doesn't always navigate
+- Creating a new folder/file doesn't automatically scroll the viewier to focus on it
 
 ## License
 This project is FOSS, released under the MIT License.

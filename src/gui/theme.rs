@@ -16,6 +16,7 @@ impl Default for ThemeMode {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ThemePalette {
+    pub application_bg_color: egui::Color32,
     pub text_size: f32,
     // 🎯 Core brand color
     pub primary: egui::Color32,
@@ -75,6 +76,7 @@ fn base_color() -> egui::Color32 {
 pub static PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
     let base = base_color();
     ThemePalette {
+        application_bg_color: egui::Color32::from_rgb(20, 22, 26),
         text_size: 12.0,
         primary: base,
         primary_hover: egui::Color32::from_rgba_unmultiplied(95, 75, 135, 128),
@@ -127,6 +129,7 @@ pub static PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
 pub static PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
     let base = base_color();
     ThemePalette {
+        application_bg_color: egui::Color32::from_rgb(245, 245, 245),
         text_size: 12.0,
         primary: base,
         primary_hover: egui::Color32::from_rgba_unmultiplied(110, 85, 160, 90),

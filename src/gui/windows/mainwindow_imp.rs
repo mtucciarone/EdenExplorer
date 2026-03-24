@@ -1,4 +1,24 @@
-use super::*;
+use crate::core::drives::{get_drives, parse_drive_display};
+use crate::core::fs::{get_drive_space, parallel_directory_scan, scan_dir_async};
+use crate::core::indexer::{save_app_settings, save_favorites};
+use crate::core::state::{execute_op, redo, undo, FileItem, FileOp, Navigation};
+use crate::gui::theme::{ThemeMode, ThemePalette};
+use crate::gui::utils::{
+    clear_clipboard_files, copy_dir_recursive, get_clipboard_files, set_clipboard_files,
+    shell_delete_to_recycle_bin, show_copy_move_dialog, sort_files, SortColumn,
+};
+use crate::gui::windows::containers::enums::{
+    ItemViewerAction, ItemViewerContextAction, TabbarNavAction,
+};
+use crate::gui::windows::containers::structs::{
+    FavoriteItem, ItemViewerFolderSizeState, RenameState, SidebarAction, TabState, TabbarAction,
+    TabsAction, TopbarAction,
+};
+use crate::gui::windows::customizetheme::{
+    draw_theme_customizer, ThemeCustomizer, ThemeCustomizerAction,
+};
+use crate::gui::windows::settings::{draw_settings_window, SettingsAction};
+use crate::gui::MainWindow;
 use crossbeam_channel::Receiver;
 use crossbeam_channel::{unbounded, Sender};
 use eframe::egui;
@@ -8,28 +28,19 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
-use windows::core::PCWSTR;
 use windows::Win32::Foundation::HWND;
+use windows::Win32::Foundation::*;
+use windows::Win32::Graphics::Dwm::*;
+use windows::Win32::UI::Controls::MARGINS;
+use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows::Win32::UI::Shell::ShellExecuteW;
-use windows::Win32::UI::WindowsAndMessaging::{SW_SHOW, SW_SHOWNORMAL};
-use super::itemviewer::{ItemViewerAction, ItemViewerContextAction, RenameState};
-use super::sorting::{sort_files, SortColumn};
-use crate::app::customizetheme::{draw_theme_customizer, ThemeCustomizer, ThemeCustomizerAction};
-use crate::app::features::ThemePalette;
-use crate::app::settings::{draw_settings_window, SettingsAction};
-use crate::app::sidebar::FavoriteItem;
-use crate::app::tabs::TabState;
-use crate::app::utils::{
-    clear_clipboard_files, copy_dir_recursive, get_clipboard_files, set_clipboard_files,
-    shell_delete_to_recycle_bin,
-};
-use crate::drives::{get_drives, parse_drive_display};
-use crate::fs::{get_drive_space, parallel_directory_scan, scan_dir_async};
-use crate::indexer::{save_app_settings, save_favorites};
-use crate::state::{execute_op, FileItem, FileOp, Navigation};
 use windows::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_INVOKEIDLIST, SHELLEXECUTEINFOW};
+use windows::Win32::UI::WindowsAndMessaging::*;
+// use windows::Win32::UI::WindowsAndMessaging::{SW_SHOW, SW_SHOWNORMAL};
+use windows::core::PCWSTR;
+static mut ORIGINAL_WNDPROC: Option<WNDPROC> = None;
 
-impl ExplorerApp {
+impl MainWindow {
     pub fn current_nav(&self) -> &Navigation {
         &self.tabs[self.active_tab].nav
     }
@@ -125,20 +136,26 @@ impl ExplorerApp {
         scan_dir_async(self.current_nav().current.clone(), tx);
         self.rx = Some(rx);
 
-        // Setup folder size calculation channels
-        let (size_req_tx, size_req_rx) = unbounded::<PathBuf>();
-        let (size_done_tx, size_done_rx) = unbounded::<(PathBuf, u64, bool)>();
-        self.size_req_tx = Some(size_req_tx);
-        self.size_rx = Some(size_done_rx);
+        // Setup folder size calculation channels only if folder scanning is enabled
+        if self
+            .settings_window
+            .current_settings
+            .folder_scanning_enabled
+        {
+            let (size_req_tx, size_req_rx) = unbounded::<PathBuf>();
+            let (size_done_tx, size_done_rx) = unbounded::<(PathBuf, u64, bool)>();
+            self.size_req_tx = Some(size_req_tx);
+            self.size_rx = Some(size_done_rx);
 
-        // Spawn a thread pool to handle folder size requests in parallel
-        let num_threads = num_cpus::get().max(2); // use all available cores
-        self.size_threads = calculate_folder_sizes_parallel(
-            size_req_rx,
-            size_done_tx,
-            Arc::clone(&self.shutdown),
-            num_threads,
-        );
+            // Spawn a thread pool to handle folder size requests in parallel
+            let num_threads = num_cpus::get().max(2); // use all available cores
+            self.size_threads = calculate_folder_sizes_parallel(
+                size_req_rx,
+                size_done_tx,
+                Arc::clone(&self.shutdown),
+                num_threads,
+            );
+        }
     }
 
     pub fn create_new_folder(&mut self) {
@@ -364,12 +381,12 @@ impl ExplorerApp {
     }
 
     pub fn undo(&mut self) {
-        crate::state::undo(&mut self.action_history);
+        undo(&mut self.action_history);
         self.load_path(); // refresh UI after filesystem change
     }
 
     pub fn redo(&mut self) {
-        crate::state::redo(&mut self.action_history);
+        redo(&mut self.action_history);
         self.load_path(); // refresh UI
     }
 
@@ -423,6 +440,221 @@ impl ExplorerApp {
             }
         }
     }
+
+    pub fn handle_tabbar_action(&mut self, tabbar_action: Option<TabbarAction>) {
+        self.search_query = self.search_query.clone();
+        if let Some(action) = tabbar_action.as_ref().and_then(|t| t.nav.as_ref()) {
+            match action {
+                TabbarNavAction::Back => self.current_nav_mut().go_back(),
+                TabbarNavAction::Forward => self.current_nav_mut().go_forward(),
+                TabbarNavAction::Up => self.current_nav_mut().go_up(),
+            }
+            self.load_path();
+        } else {
+            if let Some(path) = tabbar_action.as_ref().and_then(|t| t.nav_to.as_ref()) {
+                self.current_nav_mut().go_to(path.clone());
+                self.load_path();
+            }
+            if tabbar_action
+                .as_ref()
+                .map(|t| t.refresh_current_directory)
+                .unwrap_or(false)
+            {
+                self.load_path();
+            }
+            if tabbar_action
+                .as_ref()
+                .map(|t| t.create_folder)
+                .unwrap_or(false)
+            {
+                self.create_new_folder();
+            }
+            if tabbar_action
+                .as_ref()
+                .map(|t| t.create_file)
+                .unwrap_or(false)
+            {
+                self.create_new_file();
+            }
+            if tabbar_action
+                .as_ref()
+                .map(|t| t.add_favorite)
+                .unwrap_or(false)
+            {
+                self.add_favorite();
+            }
+        }
+    }
+
+    pub fn handle_tabs_action(&mut self, tabs_action: Option<TabsAction>) {
+        if let Some(action) = tabs_action {
+            if action.open_new {
+                let cloned_nav = self.current_nav().clone();
+                let id = self.next_tab_id;
+                self.next_tab_id += 1;
+                self.tabs.push(TabState {
+                    id,
+                    nav: cloned_nav,
+                    is_editing_path: false,
+                    path_buffer: String::new(),
+                });
+                self.active_tab = self.tabs.len() - 1;
+                self.load_path();
+            }
+            if let Some(id) = action.close {
+                if self.tabs.len() > 1 {
+                    if let Some(idx) = self.tabs.iter().position(|t| t.id == id) {
+                        self.tabs.remove(idx);
+                        if self.active_tab >= self.tabs.len() {
+                            self.active_tab = self.tabs.len() - 1;
+                        }
+                        self.load_path();
+                    }
+                } else {
+                    self.tabs[0].nav = Navigation::new();
+                    self.active_tab = 0;
+                    self.load_path();
+                }
+            }
+        }
+    }
+
+    pub fn handle_sidebar_action(&mut self, sidebar_action: Option<SidebarAction>) {
+        if let Some(action) = sidebar_action {
+            if let Some(path) = action.nav_to {
+                self.current_nav_mut().go_to(path);
+                self.load_path();
+            }
+            if let Some(path) = action.open_new_tab {
+                self.open_new_tab(path);
+                self.load_path();
+            }
+            if let Some(path) = action.select_favorite {
+                self.sidebar_selected = Some(path);
+            }
+            if let Some(path) = action.remove_favorite {
+                self.favorites.retain(|fav| fav.path != path);
+                self.persist_favorites();
+                if self
+                    .sidebar_selected
+                    .as_ref()
+                    .map(|p| p == &path)
+                    .unwrap_or(false)
+                {
+                    self.sidebar_selected = None;
+                }
+            }
+        }
+    }
+
+    pub fn handle_topbar_action(&mut self, topbar_action: Option<TopbarAction>) {
+        if let Some(action) = topbar_action {
+            if action.toggle_theme {
+                self.theme = match self.theme {
+                    ThemeMode::Dark => ThemeMode::Light,
+                    ThemeMode::Light => ThemeMode::Dark,
+                };
+                self.theme_dirty = true;
+            }
+
+            if action.customize_theme {
+                self.theme_customizer.open = true;
+            }
+
+            if action.open_settings {
+                self.settings_window.open = true;
+            }
+        }
+    }
+
+    pub fn handle_throttle_size_requests(&mut self, ctx: &egui::Context) {
+        // Throttle size requests to keep UI responsive
+        if let Some(size_req_tx) = &self.size_req_tx {
+            let should_pause =
+                ctx.input(|i| i.pointer.any_down() || i.raw_scroll_delta.y.abs() > 0.0);
+            if !should_pause {
+                for _ in 0..6 {
+                    if let Some(path) = self.pending_size_queue.pop_front() {
+                        let _ = size_req_tx.send(path);
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn handle_directory_size_updates(&mut self, ctx: &egui::Context) {
+        // Folder size updates
+        if let Some(size_rx) = &self.size_rx {
+            let mut updated = false;
+
+            for _ in 0..128 {
+                match size_rx.try_recv() {
+                    Ok((path, size, done)) => {
+                        if done {
+                            self.pending_size_set.remove(&path);
+                        }
+                        self.folder_sizes.insert(
+                            path.clone(),
+                            ItemViewerFolderSizeState { bytes: size, done },
+                        );
+                        if let Some(item) = self.files.iter_mut().find(|f| f.path == path) {
+                            item.file_size = Some(size);
+                            updated = true;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+
+            if updated {
+                sort_files(&mut self.files, self.sort_column, self.sort_ascending);
+                ctx.request_repaint();
+            }
+        }
+    }
+
+    pub fn handle_directory_batch_recieve(&mut self, ctx: &egui::Context) {
+        // Batch receive
+        if let Some(rx) = &self.rx {
+            let mut batch = Vec::with_capacity(128);
+
+            for _ in 0..128 {
+                match rx.try_recv() {
+                    Ok(item) => batch.push(item),
+                    Err(_) => break,
+                }
+            }
+
+            if !batch.is_empty() {
+                for item in batch.iter() {
+                    if item.is_dir {
+                        // Only set up folder size tracking if scanning is enabled
+                        if self
+                            .settings_window
+                            .current_settings
+                            .folder_scanning_enabled
+                        {
+                            self.folder_sizes.entry(item.path.clone()).or_insert(
+                                ItemViewerFolderSizeState {
+                                    bytes: 0,
+                                    done: false,
+                                },
+                            );
+                            if self.pending_size_set.insert(item.path.clone()) {
+                                self.pending_size_queue.push_back(item.path.clone());
+                            }
+                        }
+                    }
+                }
+
+                self.files.extend(batch);
+                sort_files(&mut self.files, self.sort_column, self.sort_ascending);
+                ctx.request_repaint();
+            }
+        }
+    }
 }
 
 pub fn calculate_folder_sizes_parallel(
@@ -467,10 +699,7 @@ pub fn calculate_folder_sizes_parallel(
     handles
 }
 
-pub fn handle_pending_actions(
-    pending_action: Option<ItemViewerAction>,
-    explorer: &mut ExplorerApp,
-) {
+pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer: &mut MainWindow) {
     if let Some(action) = pending_action {
         match action {
             ItemViewerAction::Sort(col) => explorer.toggle_sort(col),
@@ -544,7 +773,7 @@ pub fn handle_pending_actions(
 
                 unsafe {
                     let result = ShellExecuteW(
-                        HWND::default(),
+                        None,
                         PCWSTR::null(),
                         PCWSTR(wide_path.as_ptr()),
                         PCWSTR::null(),
@@ -553,7 +782,7 @@ pub fn handle_pending_actions(
                     );
 
                     // Check if the operation was successful (result > 32)
-                    if result.0 <= 32 {
+                    if result.0 <= std::ptr::null_mut() {
                         eprintln!("Failed to open file: {}", path.display());
                     }
                 }
@@ -625,13 +854,12 @@ pub fn handle_pending_actions(
 
                 let current_path = explorer.current_nav().current.clone();
 
-                if let Err(e) = crate::app::utils::show_copy_move_dialog(valid_files, &current_path)
-                {
+                if let Err(e) = show_copy_move_dialog(valid_files, &current_path) {
                     eprintln!("Failed to show copy/move dialog: {}", e);
                 }
 
                 // ✅ Defer refresh (important)
-                explorer.pending_refresh = true;
+                explorer.dropped_files_pending_ui_refresh = true;
             }
             ItemViewerAction::BackNavigation => {
                 explorer.current_nav_mut().go_back();
@@ -647,9 +875,9 @@ pub fn handle_draw_customizetheme_window(
 ) {
     if let Some(action) = draw_theme_customizer(ctx, theme_customizer) {
         match action {
-            ThemeCustomizerAction::ApplyTheme => {
-                // Theme will be applied when theme_dirty is set to true
-            }
+            // ThemeCustomizerAction::ApplyTheme => {
+            //     // Theme will be applied when theme_dirty is set to true
+            // }
             ThemeCustomizerAction::ResetToDefaults => {
                 theme_customizer.current_theme = Default::default();
             }
@@ -678,4 +906,296 @@ pub fn tab_title_for(nav: &Navigation) -> String {
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| nav.current.display().to_string())
+}
+
+pub fn handle_draw_draggable_toolbar(
+    ui: &mut egui::Ui,
+    hwnd: Option<windows::Win32::Foundation::HWND>,
+    height: f32,
+) {
+    use egui::*;
+    // use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::*;
+
+    let full_rect = ui.max_rect();
+
+    let edge_margin = 6.0;
+    let right_block = 80.0; // width of your window buttons area
+
+    let rect = egui::Rect::from_min_max(
+        egui::pos2(full_rect.min.x + edge_margin, full_rect.min.y),
+        egui::pos2(
+            full_rect.max.x - edge_margin - right_block,
+            full_rect.min.y + height,
+        ),
+    );
+
+    // let resp = ui.interact(rect, ui.id().with("window_drag"), Sense::click_and_drag());
+
+    let resp = ui.interact(
+        rect,
+        ui.id().with("window_drag"),
+        egui::Sense::hover(), // 👈 no click, no drag
+    );
+
+    let pointer_pressed = ui.input(|i| i.pointer.primary_pressed());
+
+    if pointer_pressed && resp.hovered() {
+        if let Some(hwnd) = hwnd {
+            unsafe {
+                use windows::Win32::Foundation::{LPARAM, WPARAM};
+                use windows::Win32::UI::WindowsAndMessaging::*;
+
+                let _ = ReleaseCapture();
+                let _ = SendMessageW(
+                    hwnd,
+                    WM_NCLBUTTONDOWN,
+                    Some(WPARAM(HTCAPTION as usize)),
+                    Some(LPARAM(0)),
+                );
+            }
+        }
+    }
+
+    // 👇 TEMP DEBUG VISUAL (very visible)
+    ui.painter().rect_filled(
+        rect,
+        0.0,
+        Color32::from_rgba_unmultiplied(255, 0, 0, 80), // translucent red
+    );
+
+    // Optional: draw border for clarity
+    ui.painter().rect_stroke(
+        rect,
+        0.0,
+        Stroke::new(1.0, Color32::RED),
+        StrokeKind::Outside,
+    );
+
+    // Optional: label it
+    ui.painter().text(
+        rect.center(),
+        Align2::CENTER_CENTER,
+        "DRAG AREA",
+        FontId::proportional(14.0),
+        Color32::WHITE,
+    );
+
+    // --- Drag ---
+    // if resp.drag_started() {
+    //     if let Some(hwnd) = hwnd {
+    //         unsafe {
+    //             ReleaseCapture();
+    //             SendMessageW(
+    //                 hwnd,
+    //                 WM_NCLBUTTONDOWN,
+    //                 WPARAM(HTCAPTION as usize),
+    //                 LPARAM(0),
+    //             );
+    //         }
+
+    //         // 👇 THIS is the real fix
+    //         ui.ctx().memory_mut(|mem| mem.interaction = Default::default());
+    //     }
+    // }
+
+    // --- Double click maximize ---
+    if resp.double_clicked() {
+        if let Some(hwnd) = hwnd {
+            unsafe {
+                let mut placement = WINDOWPLACEMENT::default();
+                placement.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
+
+                if GetWindowPlacement(hwnd, &mut placement).is_ok() {
+                    if placement.showCmd == SW_SHOWMAXIMIZED.0 as u32 {
+                        let _ = ShowWindow(hwnd, SW_RESTORE);
+                    } else {
+                        let _ = ShowWindow(hwnd, SW_MAXIMIZE);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn color32_to_dwm(color: egui::Color32) -> u32 {
+    let r = color.r() as u32;
+    let g = color.g() as u32;
+    let b = color.b() as u32;
+
+    // Windows expects 0x00BBGGRR
+    (b << 16) | (g << 8) | r
+}
+
+pub fn apply_window_override(hwnd: HWND, palette: &ThemePalette) {
+    unsafe {
+        // --- 1. Keep minimal frame ---
+        let style = GetWindowLongW(hwnd, GWL_STYLE);
+
+        let new_style = (style & !(WS_CAPTION.0 as i32)) // remove title bar
+            | (WS_THICKFRAME.0 as i32)
+            | (WS_MINIMIZEBOX.0 as i32)
+            | (WS_MAXIMIZEBOX.0 as i32)
+            | (WS_SYSMENU.0 as i32);
+
+        let _ = SetWindowLongW(hwnd, GWL_STYLE, new_style);
+
+        // --- 2. Disable DWM non-client rendering ---
+        let policy = DWMNCRENDERINGPOLICY(2); // 👈 DWMNCRP_DISABLED
+
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWINDOWATTRIBUTE(2), // 👈 DWMWA_NCRENDERING_POLICY
+            &policy as *const _ as _,
+            std::mem::size_of::<DWMNCRENDERINGPOLICY>() as u32,
+        );
+
+        const DWMWA_WINDOW_CORNER_PREFERENCE: DWMWINDOWATTRIBUTE = DWMWINDOWATTRIBUTE(33);
+        let preference: u32 = 2; // DWMWCP_ROUND
+
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            &preference as *const _ as _,
+            std::mem::size_of::<u32>() as u32,
+        );
+
+        // --- 3. Remove frame insets (fix top gap) ---
+        let margins = MARGINS {
+            cxLeftWidth: 0,
+            cxRightWidth: 0,
+            cyTopHeight: 0,
+            cyBottomHeight: 0,
+        };
+
+        let border_color = color32_to_dwm(palette.application_bg_color);
+        let caption_color = color32_to_dwm(palette.application_bg_color);
+        let text_color = color32_to_dwm(palette.application_bg_color);
+
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWINDOWATTRIBUTE(34),
+            &border_color as *const _ as _,
+            std::mem::size_of::<u32>() as u32,
+        );
+
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWINDOWATTRIBUTE(35),
+            &caption_color as *const _ as _,
+            std::mem::size_of::<u32>() as u32,
+        );
+
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWINDOWATTRIBUTE(36),
+            &text_color as *const _ as _,
+            std::mem::size_of::<u32>() as u32,
+        );
+
+        let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
+
+        // --- 4. Apply changes ---
+        let _ = SetWindowPos(
+            hwnd,
+            None,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
+        );
+    }
+}
+
+pub unsafe fn install_wndproc(hwnd: HWND) {
+    unsafe {
+        ORIGINAL_WNDPROC = Some(std::mem::transmute(SetWindowLongPtrW(
+            hwnd,
+            GWLP_WNDPROC,
+            custom_wndproc as *const () as isize,
+        )));
+    }
+}
+
+unsafe extern "system" fn custom_wndproc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    match msg {
+        WM_NCHITTEST => {
+            let x = get_x_lparam(lparam);
+            let y = get_y_lparam(lparam);
+
+            let mut rect = RECT::default();
+            unsafe {
+                GetWindowRect(hwnd, &mut rect);
+            }
+
+            let width = rect.right - rect.left;
+            let height = rect.bottom - rect.top;
+
+            let local_x = x - rect.left;
+            let local_y = y - rect.top;
+
+            const RESIZE_BORDER: i32 = 6;
+            const DRAG_HEIGHT: i32 = 15;
+
+            // 8 resize corners
+            if local_x < RESIZE_BORDER && local_y < RESIZE_BORDER {
+                return LRESULT(HTTOPLEFT as _);
+            }
+            if local_x >= width - RESIZE_BORDER && local_y < RESIZE_BORDER {
+                return LRESULT(HTTOPRIGHT as _);
+            }
+            if local_x < RESIZE_BORDER && local_y >= height - RESIZE_BORDER {
+                return LRESULT(HTBOTTOMLEFT as _);
+            }
+            if local_x >= width - RESIZE_BORDER && local_y >= height - RESIZE_BORDER {
+                return LRESULT(HTBOTTOMRIGHT as _);
+            }
+
+            // edges
+            if local_x < RESIZE_BORDER {
+                return LRESULT(HTLEFT as _);
+            }
+            if local_x >= width - RESIZE_BORDER {
+                return LRESULT(HTRIGHT as _);
+            }
+            if local_y < RESIZE_BORDER {
+                return LRESULT(HTTOP as _);
+            }
+            if local_y >= height - RESIZE_BORDER {
+                return LRESULT(HTBOTTOM as _);
+            }
+
+            // drag zone
+            if local_y < DRAG_HEIGHT {
+                return LRESULT(HTCAPTION as _);
+            }
+
+            // everything else is client
+            return LRESULT(HTCLIENT as _);
+        }
+        _ => {
+            unsafe {
+                // forward everything else to original WNDPROC
+                if let Some(orig) = ORIGINAL_WNDPROC {
+                    return CallWindowProcW(orig, hwnd, msg, wparam, lparam);
+                } else {
+                    return DefWindowProcW(hwnd, msg, wparam, lparam);
+                }
+            }
+        }
+    }
+}
+
+// helper
+fn get_x_lparam(lparam: LPARAM) -> i32 {
+    (lparam.0 & 0xFFFF) as i16 as i32
+}
+fn get_y_lparam(lparam: LPARAM) -> i32 {
+    ((lparam.0 >> 16) & 0xFFFF) as i16 as i32
 }

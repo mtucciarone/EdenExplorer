@@ -1,26 +1,12 @@
+use crate::core::drives::DriveInfo;
+use crate::core::networkdevices::NetworkDevicesState;
+use crate::gui::icons::IconCache;
+use crate::gui::theme::ThemePalette;
+use crate::gui::utils::drive_usage_gradient;
 use eframe::egui;
-use std::path::PathBuf;
-
-use crate::app::features::ThemePalette;
-use crate::app::icons::IconCache;
-use crate::app::utils::drive_usage_gradient;
-use crate::drives::DriveInfo;
 use egui::{FontFamily, FontId, ScrollArea};
-
-#[derive(Clone)]
-pub struct FavoriteItem {
-    pub path: PathBuf,
-    pub label: String,
-}
-
-#[derive(Default)]
-pub struct SidebarAction {
-    pub nav_to: Option<PathBuf>,
-    pub open_new_tab: Option<PathBuf>,
-    pub remove_favorite: Option<PathBuf>,
-    pub select_favorite: Option<PathBuf>,
-    pub reorder: Option<(usize, usize)>, // from_idx, to_idx
-}
+use std::path::PathBuf;
+use crate::gui::windows::containers::structs::{FavoriteItem, SidebarAction};
 
 /// Draw a single sidebar item (favorite or folder)
 fn sidebar_item(
@@ -193,7 +179,7 @@ fn sidebar_drive_item(
         let bar_width = (available_width - 8.0).min(max_bar_width);
 
         let bar_rect = egui::Rect::from_min_size(
-            egui::pos2(rect.min.x + 4.0, rect.bottom() - bar_height - 4.0),
+            egui::pos2(rect.min.x + 4.0, rect.bottom() - bar_height),
             egui::vec2(bar_width, bar_height),
         );
 
@@ -225,7 +211,7 @@ fn sidebar_drive_item(
         resp = resp.on_hover_text(
             egui::RichText::new(format!("{:.1}/{:.1}GB", used_gb, total_gb))
                 .size(palette.tooltip_text_size)
-                .color(palette.tooltip_text_color)
+                .color(palette.tooltip_text_color),
         );
     }
 
@@ -241,6 +227,7 @@ pub fn draw_sidebar(
     drives: &[DriveInfo],
     palette: &ThemePalette,
     dragging_favorite: &mut Option<usize>, // track dragged item globally
+    network_state: &mut NetworkDevicesState,
 ) -> SidebarAction {
     let mut action = SidebarAction::default();
     let mut drop_index: Option<usize> = None;
@@ -250,7 +237,9 @@ pub fn draw_sidebar(
         .auto_shrink([false; 2]) // don't shrink horizontally or vertically
         .show(ui, |ui| {
             ui.horizontal(|ui| {
+                ui.add_space(12.0);
                 ui.vertical(|ui| {
+                    ui.add_space(8.0);
                     ui.spacing_mut().item_spacing.y *= 0.5;
 
                     ui.add(egui::Label::new(
@@ -280,8 +269,15 @@ pub fn draw_sidebar(
 
                     // User Home
                     if let Some(home) = dirs::home_dir() {
-                        let resp =
-                            sidebar_item(ui, icon_cache, &home, "My User Home", true, palette, false);
+                        let resp = sidebar_item(
+                            ui,
+                            icon_cache,
+                            &home,
+                            "My User Home",
+                            true,
+                            palette,
+                            false,
+                        );
                         if resp.clicked() {
                             action.nav_to = Some(home.clone());
                         }
@@ -389,7 +385,8 @@ pub fn draw_sidebar(
                     ui.add_space(4.0);
 
                     for drive in drives {
-                        let is_selected = sidebar_selected.map(|p| p == &drive.path).unwrap_or(false);
+                        let is_selected =
+                            sidebar_selected.map(|p| p == &drive.path).unwrap_or(false);
 
                         let resp = sidebar_drive_item(ui, icon_cache, drive, palette, is_selected);
                         if resp.clicked() {
@@ -397,6 +394,45 @@ pub fn draw_sidebar(
                         }
                         if resp.middle_clicked() {
                             action.open_new_tab = Some(drive.path.clone());
+                        }
+                    }
+
+                    // --- Network Devices ---
+                    ui.add_space(6.0);
+                    ui.add(egui::Label::new(
+                        egui::RichText::new("Network")
+                            .size(palette.text_size)
+                            .strong(),
+                    ));
+                    ui.add_space(4.0);
+
+                    // Update state from channel
+                    network_state.update();
+
+                    // Start loading if first frame
+                    network_state.start_loading();
+
+                    if network_state.loading {
+                        ui.label("Scanning LAN...");
+                    }
+
+                    for device in &network_state.devices {
+                        let device_path = PathBuf::from(format!("\\\\{}", device.name));
+                        let resp = sidebar_item(
+                            ui,
+                            icon_cache,
+                            &device_path,
+                            &device.name,
+                            true,
+                            palette,
+                            false,
+                        );
+
+                        if resp.clicked() {
+                            action.nav_to = Some(device_path.clone());
+                        }
+                        if resp.middle_clicked() {
+                            action.open_new_tab = Some(device_path);
                         }
                     }
                 });

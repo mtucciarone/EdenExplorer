@@ -1,31 +1,36 @@
-use super::features::{apply_theme, ThemeMode};
-use super::itemviewer::{
-    draw_item_viewer, ItemViewerAction, ItemViewerFolderSizeState, RenameState,
+use crate::core::drives::get_drive_infos;
+use crate::core::indexer::{load_app_settings, load_favorites};
+use crate::core::networkdevices::NetworkDevicesState;
+use crate::core::state::{FileItem, History, Navigation};
+use crate::gui::icons::IconCache;
+use crate::gui::theme::{ThemeMode, apply_theme, get_palette};
+use crate::gui::utils::SortColumn;
+use crate::gui::utils::clipboard_has_files;
+use crate::gui::windows::containers::enums::ItemViewerAction;
+use crate::gui::windows::containers::itemviewer::draw_item_viewer;
+use crate::gui::windows::containers::sidebar::draw_sidebar;
+use crate::gui::windows::containers::structs::{
+    FavoriteItem, ItemViewerFolderSizeState, RenameState, SidebarAction, TabInfo, TabState,
 };
-use super::sorting::{sort_files, SortColumn};
-use crate::app::customizetheme::ThemeCustomizer;
-use crate::app::explorer_imp::{
-    handle_draw_customizetheme_window, handle_pending_actions, tab_title_for,
+use crate::gui::windows::containers::tabs::{draw_tabbar, draw_tabs};
+use crate::gui::windows::containers::topbar::draw_topbar;
+use crate::gui::windows::customizetheme::ThemeCustomizer;
+use crate::gui::windows::mainwindow_imp::{
+    apply_window_override, handle_draw_customizetheme_window, handle_pending_actions,
+    install_wndproc, tab_title_for,
 };
-use crate::app::icons::IconCache;
-use crate::app::settings::SettingsWindow;
-use crate::app::sidebar::{draw_sidebar, FavoriteItem, SidebarAction};
-use crate::app::tabs::{draw_tabbar, draw_tabs, TabInfo, TabState, TabbarNavAction};
-use crate::app::topbar::draw_topbar;
-use crate::app::utils::clipboard_has_files;
-use crate::drives::get_drive_infos;
-use crate::indexer::{load_app_settings, load_favorites};
-use crate::state::{FileItem, History, Navigation};
+use crate::gui::windows::settings::SettingsWindow;
 use crossbeam_channel::Receiver;
 use crossbeam_channel::Sender;
 use eframe::egui;
 use std::collections::HashMap;
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use windows::Win32::Foundation::HWND;
 
-pub struct ExplorerApp {
+pub struct MainWindow {
     pub(crate) tabs: Vec<TabState>,
     pub(crate) active_tab: usize,
     pub(crate) next_tab_id: u64,
@@ -52,21 +57,23 @@ pub struct ExplorerApp {
     pub(crate) sidebar_default_width: f32,
     pub(crate) file_type_cache: HashMap<String, String>,
     pub(crate) selected_paths: HashSet<PathBuf>,
-    pub(crate) box_selection_start: Option<egui::Pos2>,
-    pub(crate) box_selection_active: bool,
+    // pub(crate) box_selection_start: Option<egui::Pos2>,
+    // pub(crate) box_selection_active: bool,
     pub(crate) theme_customizer: ThemeCustomizer,
     pub(crate) settings_window: SettingsWindow,
     pub(crate) dropped_files: Vec<PathBuf>,
     pub(crate) drag_hover: bool,
-    pub(crate) pending_refresh: bool,
+    pub(crate) dropped_files_pending_ui_refresh: bool,
     pub(crate) action_history: History,
     pub(crate) selection_anchor: Option<usize>,
     pub(crate) selection_focus: Option<usize>,
     pub(crate) shutdown: Arc<AtomicBool>,
     pub(crate) size_threads: Vec<std::thread::JoinHandle<()>>,
+    pub(crate) network_state: crate::core::networkdevices::NetworkDevicesState,
+    pub(crate) hwnd: Option<HWND>,
 }
 
-impl Default for ExplorerApp {
+impl Default for MainWindow {
     fn default() -> Self {
         // Load saved settings
         let (folder_scanning_enabled, window_size_mode) = load_app_settings();
@@ -103,18 +110,20 @@ impl Default for ExplorerApp {
             sidebar_default_width: 250.0,
             file_type_cache: HashMap::new(),
             selected_paths: HashSet::new(), // Multi-selection state
-            box_selection_start: None,      // Box selection start position
-            box_selection_active: false,    // Whether box selection is currently active
+            // box_selection_start: None,      // Box selection start position
+            // box_selection_active: false,    // Whether box selection is currently active
             theme_customizer: Default::default(),
             settings_window: Default::default(),
             dropped_files: Vec::new(), // Files dropped from external drag and drop
             drag_hover: false,         // Whether external drag is hovering over the item viewer
-            pending_refresh: false,
+            dropped_files_pending_ui_refresh: false,
             action_history: History::new(),
             selection_anchor: None, // Anchor index for extended selection
             selection_focus: None,  // Focus index for extended selection
             shutdown: Arc::new(AtomicBool::new(false)),
             size_threads: Vec::new(),
+            network_state: NetworkDevicesState::default(),
+            hwnd: None,
         };
 
         // Initialize settings window with loaded values
@@ -142,22 +151,41 @@ impl Default for ExplorerApp {
     }
 }
 
-impl Drop for ExplorerApp {
+impl MainWindow {
+    pub fn new(hwnd: Option<HWND>) -> Self {
+        let mut app = Self::default();
+
+        // if let Some(hwnd) = hwnd {
+        //     apply_window_style(hwnd, &get_palette()); // 👈 apply once
+        // }
+
+        if let Some(hwnd) = hwnd {
+            unsafe {
+                install_wndproc(hwnd); // 👈 THIS is the key
+            }
+        }
+
+        app.hwnd = hwnd;
+        app
+    }
+}
+
+impl Drop for MainWindow {
     fn drop(&mut self) {
         self.cleanup();
     }
 }
 
-impl eframe::App for ExplorerApp {
+impl eframe::App for MainWindow {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        let palette = get_palette(self.theme);
+
+        if let Some(hwnd) = self.hwnd {
+            apply_window_override(hwnd, &palette);
+        }
         apply_theme(ctx, self.theme);
 
         // Main layout: sidebar + tabs column
-        let sidebar_action: Option<SidebarAction> = None;
-        let tabs_action: Option<crate::app::tabs::TabsAction> = None;
-        let tabbar_action: Option<crate::app::tabs::TabbarNavAction> = None;
-        let nav_snapshot = self.current_nav().clone();
-        let mut search_snapshot = self.search_query.clone();
         let mut pending_action: Option<ItemViewerAction> = None;
 
         // 🔥 Detect external drag-over (files hovering)
@@ -188,101 +216,29 @@ impl eframe::App for ExplorerApp {
             i.smooth_scroll_delta *= 8.0;
         });
 
-        // Init once
         if self.icon_cache.is_none() {
             self.icon_cache = Some(IconCache::new(ctx.clone()));
         }
 
-        // 🔥 TAKE ownership (fixes borrow issues)
         let icon_cache = self.icon_cache.take().unwrap();
 
-        // Batch receive
-        if let Some(rx) = &self.rx {
-            let mut batch = Vec::with_capacity(128);
-
-            for _ in 0..128 {
-                match rx.try_recv() {
-                    Ok(item) => batch.push(item),
-                    Err(_) => break,
-                }
-            }
-
-            if !batch.is_empty() {
-                for item in batch.iter() {
-                    if item.is_dir {
-                        self.folder_sizes.entry(item.path.clone()).or_insert(
-                            ItemViewerFolderSizeState {
-                                bytes: 0,
-                                done: false,
-                            },
-                        );
-                        if self.pending_size_set.insert(item.path.clone()) {
-                            self.pending_size_queue.push_back(item.path.clone());
-                        }
-                    }
-                }
-
-                self.files.extend(batch);
-                sort_files(&mut self.files, self.sort_column, self.sort_ascending);
-                ctx.request_repaint();
-            }
-        }
-
-        // Folder size updates
-        if let Some(size_rx) = &self.size_rx {
-            let mut updated = false;
-
-            for _ in 0..128 {
-                match size_rx.try_recv() {
-                    Ok((path, size, done)) => {
-                        if done {
-                            self.pending_size_set.remove(&path);
-                        }
-                        self.folder_sizes.insert(
-                            path.clone(),
-                            ItemViewerFolderSizeState { bytes: size, done },
-                        );
-                        if let Some(item) = self.files.iter_mut().find(|f| f.path == path) {
-                            item.file_size = Some(size);
-                            updated = true;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-
-            if updated {
-                sort_files(&mut self.files, self.sort_column, self.sort_ascending);
-                ctx.request_repaint();
-            }
-        }
-
-        // Toolbar (left column)
-        let palette = crate::app::features::get_palette(self.theme);
-        let mut topbar_action = None;
-
-        // Throttle size requests to keep UI responsive
-        if let Some(size_req_tx) = &self.size_req_tx {
-            let should_pause =
-                ctx.input(|i| i.pointer.any_down() || i.raw_scroll_delta.y.abs() > 0.0);
-            if !should_pause {
-                for _ in 0..6 {
-                    if let Some(path) = self.pending_size_queue.pop_front() {
-                        let _ = size_req_tx.send(path);
-                    } else {
-                        break;
-                    }
-                }
-            }
-        }
-
         // Main layout: sidebar + tabs column
+        let mut topbar_action = None;
         let mut sidebar_action: Option<SidebarAction> = None;
         let mut tabs_action = None;
         let mut tabbar_action = None;
 
+        let offset = egui::vec2(8.0, 8.0);
+
         egui::CentralPanel::default().show(ctx, |ui| {
-            let avail = ui.available_size();
+    // CentralPanel available rect
+    let rect = ui.min_rect();
+
+    // Shift it to compensate for Windows inset
+    let rect = rect.translate(-offset);
+
+    ui.allocate_ui_at_rect(rect, |ui| {
+        let avail = ui.available_size();
 
             ui.allocate_ui_with_layout(
                 avail,
@@ -291,19 +247,24 @@ impl eframe::App for ExplorerApp {
                     // --- Sidebar column ---
                     let sidebar_width_min = 140.0;
                     let sidebar_width_max = 280.0;
-                    let sidebar_width = self.sidebar_default_width.max(sidebar_width_min).min(sidebar_width_max);
+                    let sidebar_width = self
+                        .sidebar_default_width
+                        .max(sidebar_width_min)
+                        .min(sidebar_width_max);
 
                     let sidebar_frame =
-                        egui::Frame::NONE.inner_margin(egui::Margin::symmetric(12, 0));
+                        // egui::Frame::NONE.inner_margin(egui::Margin::symmetric(12, 0))
+                        egui::Frame::NONE.stroke(egui::Stroke::new(1.0, palette.tab_border_default));
 
                     ui.allocate_ui_with_layout(
-                        egui::vec2(sidebar_width, ui.available_height()),
+                        egui::vec2(sidebar_width, ui.available_height() + 32.0),
                         egui::Layout::top_down(egui::Align::Min),
                         |ui| {
                             egui::Frame::NONE.show(ui, |ui| {
-                    topbar_action =
-                        Some(draw_topbar(ui, self.theme == ThemeMode::Dark, palette));
-                });
+                                ui.add_space(8.0);
+                                topbar_action =
+                                    Some(draw_topbar(ui, self.theme == ThemeMode::Dark, palette));
+                            });
                             sidebar_frame.show(ui, |ui| {
                                 let drives = get_drive_infos();
                                 sidebar_action = Some(draw_sidebar(
@@ -314,6 +275,7 @@ impl eframe::App for ExplorerApp {
                                     &drives,
                                     &palette,
                                     &mut self.dragging_favorite,
+                                    &mut self.network_state,
                                 ));
 
                                 if let Some(action) = &sidebar_action {
@@ -373,7 +335,7 @@ impl eframe::App for ExplorerApp {
                         |ui| {
                             let old_spacing = ui.spacing().item_spacing;
                             ui.spacing_mut().item_spacing.y = 0.0;
-                            ui.add_space(8.0);
+                            // ui.add_space(6.0); // vertical spacing above tabs
 
                             let tab_infos: Vec<TabInfo> = self
                                 .tabs
@@ -390,17 +352,21 @@ impl eframe::App for ExplorerApp {
                                 .collect();
                             let active_id = self.tabs[self.active_tab].id;
 
-                            tabs_action = Some(draw_tabs(ui, &tab_infos, active_id, &palette));
+                            let tab_bar_height = 35.0;
+
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(ui.available_width(), tab_bar_height),
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    tabs_action =
+                                        Some(draw_tabs(ui, &tab_infos, active_id, &palette, self.hwnd));
+                                },
+                            );
 
                             let container = egui::Frame::NONE
-                                .stroke(egui::Stroke::new(1.0, palette.tab_border_default))
-                                .inner_margin(egui::Margin::symmetric(10, 8))
-                                .corner_radius(egui::CornerRadius {
-                                    nw: 0,
-                                    ne: 0,
-                                    sw: 8,
-                                    se: 8,
-                                });
+                                .stroke(egui::Stroke::NONE)
+                                .fill(egui::Color32::TRANSPARENT)
+                                .inner_margin(egui::Margin::symmetric(10, 8));
 
                             let active_index = self.active_tab;
                             let search_active = self.search_active;
@@ -415,13 +381,7 @@ impl eframe::App for ExplorerApp {
                                 tabbar_action = {
                                     let tab = &mut self.tabs[active_index];
 
-                                    Some(draw_tabbar(
-                                        ui,
-                                        &icon_cache,
-                                        tab,
-                                        &mut search_snapshot,
-                                        &palette,
-                                    ))
+                                    Some(draw_tabbar(ui, &icon_cache, tab, &palette))
                                 };
 
                                 ui.add_space(4.0);
@@ -439,7 +399,7 @@ impl eframe::App for ExplorerApp {
                                             self.sort_column,
                                             self.sort_ascending,
                                             &icon_cache,
-                                            self.rename_state.as_mut(),
+                                            &mut self.rename_state,
                                             &palette,
                                             &mut self.file_type_cache,
                                             &mut self.drag_hover,
@@ -456,127 +416,25 @@ impl eframe::App for ExplorerApp {
                 },
             );
         });
+    });
 
-        if let Some(action) = topbar_action {
-            if action.toggle_theme {
-                self.theme = match self.theme {
-                    ThemeMode::Dark => ThemeMode::Light,
-                    ThemeMode::Light => ThemeMode::Dark,
-                };
-                self.theme_dirty = true;
-            }
-
-            if action.customize_theme {
-                self.theme_customizer.open = true;
-            }
-
-            if action.open_settings {
-                self.settings_window.open = true;
-            }
-        }
-
-        if let Some(action) = sidebar_action {
-            if let Some(path) = action.nav_to {
-                self.current_nav_mut().go_to(path);
-                self.load_path();
-            }
-            if let Some(path) = action.open_new_tab {
-                self.open_new_tab(path);
-                self.load_path();
-            }
-            if let Some(path) = action.select_favorite {
-                self.sidebar_selected = Some(path);
-            }
-            if let Some(path) = action.remove_favorite {
-                self.favorites.retain(|fav| fav.path != path);
-                self.persist_favorites();
-                if self
-                    .sidebar_selected
-                    .as_ref()
-                    .map(|p| p == &path)
-                    .unwrap_or(false)
-                {
-                    self.sidebar_selected = None;
-                }
-            }
-        }
-
-        if let Some(action) = tabs_action {
-            if let Some(id) = action.activate {
-                if let Some(idx) = self.tabs.iter().position(|t| t.id == id) {
-                    self.active_tab = idx;
-                    self.load_path();
-                }
-            }
-            if action.open_new {
-                let cloned_nav = self.current_nav().clone();
-                let id = self.next_tab_id;
-                self.next_tab_id += 1;
-                self.tabs.push(TabState {
-                    id,
-                    nav: cloned_nav,
-                    is_editing_path: false,
-                    path_buffer: String::new(),
-                });
-                self.active_tab = self.tabs.len() - 1;
-                self.load_path();
-            }
-            if let Some(id) = action.close {
-                if self.tabs.len() > 1 {
-                    if let Some(idx) = self.tabs.iter().position(|t| t.id == id) {
-                        self.tabs.remove(idx);
-                        if self.active_tab >= self.tabs.len() {
-                            self.active_tab = self.tabs.len() - 1;
-                        }
-                        self.load_path();
-                    }
-                } else {
-                    self.tabs[0].nav = Navigation::new();
-                    self.active_tab = 0;
-                    self.load_path();
-                }
-            }
-        }
-
-        if let Some(action) = tabbar_action {
-            self.search_query = search_snapshot;
-            if let Some(nav_action) = action.nav {
-                match nav_action {
-                    TabbarNavAction::Back => self.current_nav_mut().go_back(),
-                    TabbarNavAction::Forward => self.current_nav_mut().go_forward(),
-                    TabbarNavAction::Up => self.current_nav_mut().go_up(),
-                }
-                self.load_path();
-            }
-            if let Some(path) = action.nav_to {
-                self.current_nav_mut().go_to(path);
-                self.load_path();
-            }
-            if action.refresh_current_directory {
-                self.load_path();
-            }
-            if action.create_folder {
-                self.create_new_folder();
-            }
-            if action.create_file {
-                self.create_new_file();
-            }
-            if action.add_favorite {
-                self.add_favorite();
-            }
-        }
-
+        self.handle_directory_batch_recieve(ctx);
+        self.handle_directory_size_updates(ctx);
+        self.handle_throttle_size_requests(ctx);
+        self.handle_topbar_action(topbar_action);
+        self.handle_sidebar_action(sidebar_action);
+        self.handle_tabs_action(tabs_action);
+        self.handle_tabbar_action(tabbar_action);
         handle_pending_actions(pending_action, self);
         handle_draw_customizetheme_window(ctx, &mut self.theme_customizer);
         self.handle_draw_settings_window(ctx, &palette);
 
         // ✅ Step 5: Apply Deferred Refresh (IMPORTANT)
-        if self.pending_refresh {
+        if self.dropped_files_pending_ui_refresh {
             self.load_path();
-            self.pending_refresh = false;
+            self.dropped_files_pending_ui_refresh = false;
         }
 
-        // 🔥 PUT IT BACK
         self.icon_cache = Some(icon_cache);
     }
 }

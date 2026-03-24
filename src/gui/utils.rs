@@ -1,13 +1,21 @@
+use crate::core::state::FileItem;
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
+use std::path::Path;
 use std::path::PathBuf;
-use windows::core::PCWSTR;
 use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
-use windows::Win32::UI::Shell::{
-    SHGetFileInfoW, SHFILEINFOW, SHGFI_TYPENAME, SHGFI_USEFILEATTRIBUTES,
+use windows::Win32::System::Com::{
+    CLSCTX_ALL, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize,
 };
+use windows::Win32::UI::Shell::{
+    FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
+};
+use windows::Win32::UI::Shell::{
+    SHFILEINFOW, SHGFI_TYPENAME, SHGFI_USEFILEATTRIBUTES, SHGetFileInfoW,
+};
+use windows::core::PCWSTR;
 
 /// Creates a clickable icon with hover color effect
 pub fn clickable_icon(ui: &mut egui::Ui, icon: &str, hover_color: egui::Color32) -> egui::Response {
@@ -47,10 +55,7 @@ pub fn clear_clipboard_files() {
     }
 }
 
-pub fn drive_usage_color(
-    ratio: f32,
-    palette: &crate::app::features::ThemePalette,
-) -> egui::Color32 {
+pub fn drive_usage_color(ratio: f32, palette: &crate::gui::theme::ThemePalette) -> egui::Color32 {
     let base = if ratio > 0.95 {
         palette.drive_usage_critical
     } else if ratio >= 0.85 {
@@ -64,7 +69,7 @@ pub fn drive_usage_color(
 
 pub fn drive_usage_gradient(
     ratio: f32,
-    palette: &crate::app::features::ThemePalette,
+    palette: &crate::gui::theme::ThemePalette,
 ) -> (egui::Color32, egui::Color32) {
     let left = drive_usage_color(ratio, palette);
     let right = left.gamma_multiply(0.8);
@@ -76,7 +81,7 @@ pub fn drive_usage_bar(
     total: u64,
     free: u64,
     height: f32,
-    palette: &crate::app::features::ThemePalette,
+    palette: &crate::gui::theme::ThemePalette,
 ) {
     let used = total.saturating_sub(free);
 
@@ -183,8 +188,8 @@ pub fn copy_dir_recursive(src: &std::path::Path, dest: &std::path::Path) -> std:
 
 pub fn shell_delete_to_recycle_bin(path: &std::path::PathBuf) -> bool {
     use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::UI::Shell::{FO_DELETE, FOF_ALLOWUNDO, SHFILEOPSTRUCTW, SHFileOperationW};
     use windows::core::PCWSTR;
-    use windows::Win32::UI::Shell::{SHFileOperationW, FOF_ALLOWUNDO, FO_DELETE, SHFILEOPSTRUCTW};
 
     let mut wide: Vec<u16> = path.as_os_str().encode_wide().collect();
     wide.push(0);
@@ -204,7 +209,7 @@ pub fn set_clipboard_files(paths: &[std::path::PathBuf], cut: bool) -> bool {
     use windows::Win32::System::DataExchange::{
         CloseClipboard, EmptyClipboard, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
     };
-    use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
+    use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock};
     use windows::Win32::System::Ole::CF_HDROP;
 
     if paths.is_empty() {
@@ -276,7 +281,7 @@ pub fn set_clipboard_files(paths: &[std::path::PathBuf], cut: bool) -> bool {
     let _ = unsafe {
         SetClipboardData(
             CF_HDROP.0 as u32,
-            windows::Win32::Foundation::HANDLE(hglobal.0 as isize),
+            Some(windows::Win32::Foundation::HANDLE(std::ptr::null_mut())),
         )
     };
 
@@ -296,7 +301,7 @@ pub fn set_clipboard_files(paths: &[std::path::PathBuf], cut: bool) -> bool {
                 let _ = GlobalUnlock(hglobal_effect);
                 let _ = SetClipboardData(
                     format,
-                    windows::Win32::Foundation::HANDLE(hglobal_effect.0 as isize),
+                    Some(windows::Win32::Foundation::HANDLE(hglobal_effect.0)),
                 );
             }
         }
@@ -354,7 +359,7 @@ pub fn get_clipboard_files() -> Option<(Vec<std::path::PathBuf>, bool)> {
 
     let mut cut = false;
     if let Ok(hglobal) = unsafe { GetClipboardData(format) } {
-        if hglobal.0 != 0 {
+        if hglobal.0 != std::ptr::null_mut() {
             let ptr =
                 unsafe { GlobalLock(windows::Win32::Foundation::HGLOBAL(hglobal.0 as *mut _)) }
                     as *const u32;
@@ -424,15 +429,6 @@ pub fn get_file_type_name(ext: &str, cache: &mut HashMap<String, String>) -> Str
     type_name
 }
 
-use std::path::Path;
-use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_APARTMENTTHREADED,
-};
-
-use windows::Win32::UI::Shell::{
-    FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
-};
-
 pub fn show_copy_move_dialog(
     sources: Vec<PathBuf>,
     destination: &PathBuf,
@@ -487,4 +483,75 @@ pub fn show_copy_move_dialog(
 
 fn same_drive(a: &Path, b: &Path) -> bool {
     a.components().next() == b.components().next()
+}
+
+pub fn format_size(size: u64) -> String {
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+    let mut size_f = size as f64;
+    let mut unit_index = 0;
+
+    while size_f >= 1024.0 && unit_index < UNITS.len() - 1 {
+        size_f /= 1024.0;
+        unit_index += 1;
+    }
+
+    if unit_index == 0 {
+        format!("{} {}", size, UNITS[unit_index])
+    } else {
+        format!("{:.1} {}", size_f, UNITS[unit_index])
+    }
+}
+
+#[derive(PartialEq, Clone, Copy)]
+pub enum SortColumn {
+    Name,
+    Size,
+    Modified,
+    Created,
+    Type,
+}
+
+pub fn sort_files(files: &mut Vec<FileItem>, column: SortColumn, ascending: bool) {
+    files.sort_by(|a, b| {
+        if a.is_dir != b.is_dir {
+            return if a.is_dir {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            };
+        }
+
+        let ord = match column {
+            SortColumn::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+            SortColumn::Size => a.file_size.unwrap_or(0).cmp(&b.file_size.unwrap_or(0)),
+            SortColumn::Modified => a.modified_time.cmp(&b.modified_time),
+            SortColumn::Created => a.created_time.cmp(&b.created_time),
+            SortColumn::Type => {
+                // Sort by folder/file first, then by file extension
+                match (a.is_dir, b.is_dir) {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    (true, true) => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                    (false, false) => {
+                        // For files, sort by extension
+                        let a_ext = a
+                            .path
+                            .extension()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("")
+                            .to_lowercase();
+                        let b_ext = b
+                            .path
+                            .extension()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("")
+                            .to_lowercase();
+                        a_ext.cmp(&b_ext)
+                    }
+                }
+            }
+        };
+
+        if ascending { ord } else { ord.reverse() }
+    });
 }

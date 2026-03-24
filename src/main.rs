@@ -1,37 +1,45 @@
-mod app;
-mod drives;
-mod fs;
-mod indexer;
-mod state;
+mod core;
+mod gui;
 
+use crate::core::indexer::{WindowSizeMode, load_app_settings};
 use eframe::{NativeOptions, egui};
-use indexer::{load_app_settings, WindowSizeMode};
+
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+use windows::Win32::Foundation::HWND;
+
+fn get_hwnd_from_cc(
+    cc: &eframe::CreationContext<'_>,
+) -> Option<HWND> {
+    let handle = cc.window_handle().ok()?;
+    let raw = handle.as_raw();
+
+    match raw {
+        RawWindowHandle::Win32(h) => {
+            Some(HWND(h.hwnd.get() as *mut std::ffi::c_void))
+        }
+        _ => None,
+    }
+}
 
 fn main() -> eframe::Result<()> {
     let icon = load_icon().expect("Failed to load icon");
-    
-    // Load saved window settings
     let (_folder_scanning_enabled, window_size_mode) = load_app_settings();
-    
-    // Determine window size based on saved settings
     let window_size = match window_size_mode {
         WindowSizeMode::FullScreen => {
-            // For fullscreen, use a large size that will be maximized
             egui::Vec2::new(1920.0, 1080.0)
         }
         WindowSizeMode::HalfScreen => {
-            // Use half of typical screen dimensions
             egui::Vec2::new(960.0, 540.0)
         }
-        WindowSizeMode::Custom { width, height } => {
-            egui::Vec2::new(width, height)
-        }
+        WindowSizeMode::Custom { width, height } => egui::Vec2::new(width, height),
     };
 
     let options = NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size(window_size)
-            .with_icon(icon),
+            .with_icon(icon)
+            .with_title_shown(false)
+            .with_decorations(false),
         ..Default::default()
     };
 
@@ -40,24 +48,20 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(|cc| {
             let mut fonts = egui::FontDefinitions::default();
-
-            // Add Phosphor icons
             egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
-
-            // Add Japanese/Unicode font support
-            // Try to use a system font that supports Japanese characters
             fonts.font_data.insert(
                 "japanese_font".to_owned(),
                 egui::FontData::from_static(include_bytes!("assets/NotoSansJP-Regular.ttf")).into(),
             );
-
-            // Assign the Japanese font to all font families for better Unicode support
             for family in &mut fonts.families.values_mut() {
                 family.insert(0, "japanese_font".to_owned());
             }
 
             cc.egui_ctx.set_fonts(fonts);
-            Ok(Box::new(app::ExplorerApp::default()))
+
+
+            let hwnd = get_hwnd_from_cc(cc);
+            Ok(Box::new(gui::MainWindow::new(hwnd)))
         }),
     )
 }

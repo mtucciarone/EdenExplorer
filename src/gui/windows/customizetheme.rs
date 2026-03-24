@@ -2,7 +2,7 @@ use eframe::egui;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use super::features::{ThemeMode, ThemePalette};
+use crate::gui::theme::{ThemeMode, ThemePalette, get_palette};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CustomTheme {
@@ -16,7 +16,7 @@ impl Default for CustomTheme {
         Self {
             name: "Default".to_string(),
             mode: ThemeMode::Dark,
-            palette: crate::app::features::get_palette(ThemeMode::Dark).clone(),
+            palette: get_palette(ThemeMode::Dark).clone(),
         }
     }
 }
@@ -25,14 +25,13 @@ impl Default for CustomTheme {
 pub struct ThemeCustomizer {
     pub open: bool,
     pub current_theme: CustomTheme,
-    pub custom_themes: Vec<CustomTheme>,
     pub selected_mode: ThemeMode,
     pub has_unsaved_changes: bool,
 }
 
 #[derive(Clone, Debug)]
 pub enum ThemeCustomizerAction {
-    ApplyTheme,
+    //ApplyTheme,
     SaveTheme,
     LoadTheme,
     ResetToDefaults,
@@ -289,17 +288,17 @@ fn draw_radius_section(ui: &mut egui::Ui, palette: &mut ThemePalette) {
     });
 }
 
-pub fn save_theme_to_file(
-    theme: &CustomTheme,
-    path: &PathBuf,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let json = serde_json::to_string_pretty(theme)?;
-    std::fs::write(path, json)?;
-    Ok(())
-}
+// pub fn save_theme_to_file(
+//     theme: &CustomTheme,
+//     path: &PathBuf,
+// ) -> Result<(), Box<dyn std::error::Error>> {
+//     let json = serde_json::to_string_pretty(theme)?;
+//     std::fs::write(path, json)?;
+//     Ok(())
+// }
 
-pub fn load_theme_from_file(path: &PathBuf) -> Result<CustomTheme, Box<dyn std::error::Error>> {
-    let json = std::fs::read_to_string(path)?;
-    let theme: CustomTheme = serde_json::from_str(&json)?;
-    Ok(theme)
-}
+// pub fn load_theme_from_file(path: &PathBuf) -> Result<CustomTheme, Box<dyn std::error::Error>> {
+//     let json = std::fs::read_to_string(path)?;
+//     let theme: CustomTheme = serde_json::from_str(&json)?;
+//     Ok(theme)
+// }

@@ -1,5 +1,5 @@
-use std::path::{PathBuf};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize)]
 struct FavoritesSnapshot {
@@ -21,7 +21,10 @@ pub enum WindowSizeMode {
 
 impl Default for WindowSizeMode {
     fn default() -> Self {
-        Self::Custom { width: 1200.0, height: 800.0 }
+        Self::Custom {
+            width: 1200.0,
+            height: 800.0,
+        }
     }
 }
 
@@ -71,15 +74,37 @@ pub fn save_favorites(drive: char, favorites: &[String]) {
 pub fn load_app_settings() -> (bool, WindowSizeMode) {
     let path = match settings_cache_path() {
         Some(path) => path,
-        None => return (true, WindowSizeMode::Custom { width: 1200.0, height: 800.0 }),
+        None => {
+            return (
+                true,
+                WindowSizeMode::Custom {
+                    width: 1200.0,
+                    height: 800.0,
+                },
+            );
+        }
     };
     let data = match std::fs::read(path) {
         Ok(data) => data,
-        Err(_) => return (true, WindowSizeMode::Custom { width: 1200.0, height: 800.0 }),
+        Err(_) => {
+            return (
+                true,
+                WindowSizeMode::Custom {
+                    width: 1200.0,
+                    height: 800.0,
+                },
+            );
+        }
     };
     match bincode::deserialize::<AppSettingsSnapshot>(&data) {
         Ok(snapshot) => (snapshot.folder_scanning_enabled, snapshot.window_size_mode),
-        Err(_) => (true, WindowSizeMode::Custom { width: 1200.0, height: 800.0 }),
+        Err(_) => (
+            true,
+            WindowSizeMode::Custom {
+                width: 1200.0,
+                height: 800.0,
+            },
+        ),
     }
 }
 

@@ -179,12 +179,8 @@ fn reverse_op(op: &FileOp) -> Option<FileOp> {
 
         // Undo create = delete (move to temp backup)
         FileOp::Create { path } => {
-            let backup = std::env::temp_dir().join(
-                format!(
-                    "{}_undo",
-                    path.file_name()?.to_string_lossy()
-                )
-            );
+            let backup =
+                std::env::temp_dir().join(format!("{}_undo", path.file_name()?.to_string_lossy()));
 
             Some(FileOp::Delete {
                 path: path.clone(),
@@ -223,10 +219,7 @@ pub fn undo(history: &mut History) {
                     history.redo_stack.push(op);
                 }
                 Err(e) => {
-                    eprintln!(
-                        "[UNDO ❌] Failed to apply reverse {:?}: {}",
-                        reverse, e
-                    );
+                    eprintln!("[UNDO ❌] Failed to apply reverse {:?}: {}", reverse, e);
 
                     // push back so we don't lose history on failure
                     history.undo_stack.push(op);

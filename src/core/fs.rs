@@ -1,4 +1,4 @@
-use crate::state::FileItem;
+use crate::core::state::FileItem;
 use crossbeam_channel::Sender;
 use ntapi::ntioapi::{FILE_DIRECTORY_INFORMATION, IO_STATUS_BLOCK, NtQueryDirectoryFile};
 use std::ffi::OsString;
@@ -7,19 +7,14 @@ use std::path::PathBuf;
 use std::thread;
 use std::time::{Duration, Instant};
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
+use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
 use windows::Win32::Storage::FileSystem::{
     CreateFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_FLAG_BACKUP_SEMANTICS, FILE_LIST_DIRECTORY,
     FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, GetDiskFreeSpaceExW, OPEN_EXISTING,
 };
 use windows::core::PCWSTR;
-use windows::Win32::{
-    Storage::FileSystem::{
-        FILE_ATTRIBUTE_REPARSE_POINT
-    }
-};
 
 const STATUS_NO_MORE_FILES: i32 = 0x80000006u32 as i32;
-
 
 /// Convert PathBuf -> UTF-16
 fn path_to_wide(path: &PathBuf) -> Vec<u16> {
@@ -351,8 +346,7 @@ pub fn parallel_directory_scan(path: PathBuf, tx: Sender<(PathBuf, u64, bool)>) 
 
                         if name != "." && name != ".." {
                             let full_path = dir.join(&name);
-                            let is_dir =
-                                (entry.FileAttributes & FILE_ATTRIBUTE_DIRECTORY.0) != 0;
+                            let is_dir = (entry.FileAttributes & FILE_ATTRIBUTE_DIRECTORY.0) != 0;
                             let is_reparse =
                                 (entry.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT.0) != 0;
 
