@@ -73,15 +73,15 @@ If EdenExplorer improves your workflow, consider giving it a ⭐ on GitHub and c
 That's EdenExplorer.
 
 
-### 🔬 Technical Architecture Comparison
+## 🔬 Technical Architecture Comparison
 
 #### **🚀 Performance Architecture**
 **EdenExplorer:**
 - **NT-level filesystem access** via direct NT API calls (`NtQueryDirectoryFile`) bypassing Win32 abstraction layers
-- **USN Journal monitoring** for real-time filesystem changes without polling
-- **MFT (Master File Table) enumeration** for instant directory scanning
-- **Parallel processing** with Rayon for concurrent file operations
-- **Zero-copy operations** where possible to minimize memory allocations
+- **Asynchronous directory scanning** with background threading to prevent UI freezes
+- **Efficient buffer management** using 64KB buffers for streaming directory enumeration
+- **Background file operations** with progress callbacks
+- **Direct Windows API integration** for optimal performance
 
 **Windows File Explorer:**
 - **Win32 API layer** with multiple abstraction overheads
@@ -93,10 +93,10 @@ That's EdenExplorer.
 #### **💾 Memory Efficiency**
 **EdenExplorer:**
 - **Rust's ownership model** ensures memory safety without garbage collection pauses
-- **DashMap concurrent collections** for lock-free data structures
 - **Streaming directory enumeration** with 64KB buffers vs. File Explorer's multiple allocations
 - **Lazy loading** of file metadata only when needed
 - **Binary cache format** using `bincode` for compact, fast serialization
+- **Efficient string handling** with minimal allocations
 
 **Windows File Explorer:**
 - **COM-based architecture** with reference counting overhead
@@ -104,19 +104,19 @@ That's EdenExplorer.
 - **Preloading of thumbnails** and metadata even when not displayed
 - **Shell extensions** loading into process space increasing memory footprint
 
-#### **⚡ Real-time Indexing**
+#### **⚡ Data Management**
 **EdenExplorer:**
-- **USN Journal integration** provides O(1) change detection
-- **Incremental updates** to file index without full rescans
-- **Background indexing** with configurable priority levels
-- **Persistent cache** surviving application restarts
-- **Instant search** across indexed content with parallel filtering
+- **Persistent settings** using binary cache format surviving application restarts
+- **Favorites system** with drive-specific storage for quick access
+- **Background folder size calculation** with progress updates
+- **Efficient drive space queries** with caching
+- **Tab-based navigation** with independent loading states
 
 **Windows File Explorer:**
 - **Windows Search Index** separate process with IPC overhead
 - **Delayed indexing** causing search result staleness
 - **No persistence** of navigation state across sessions
-- **Single-threaded search** operations
+- **Single-threaded operations**
 
 #### **🎯 UI Responsiveness**
 **EdenExplorer:**
@@ -146,16 +146,33 @@ That's EdenExplorer.
 - **Complex shell extensions** adding processing overhead
 - **Legacy compatibility** code paths for older Windows versions
 
-#### **📊 Benchmark Results**
-Based on internal testing with 100,000+ file directories:
+#### **📊 Performance Benchmarking**
 
-| Operation | EdenExplorer | Windows File Explorer | Improvement |
-|-----------|---------------|----------------------|-------------|
-| Directory listing (100k files) | ~200ms | ~2.5s | **12.5x faster** |
-| Search across indexed drive | ~50ms | ~800ms | **16x faster** |
-| Folder size calculation | ~150ms | ~3.2s | **21x faster** |
-| Memory usage (idle) | ~25MB | ~120MB | **4.8x less** |
-| Startup time | ~0.8s | ~2.1s | **2.6x faster** |
+EdenExplorer includes a built-in benchmarking system to measure actual performance metrics:
+
+**Available Benchmarks:**
+- **Directory scanning** - Time to enumerate files and folders
+- **Folder size calculation** - Recursive size computation performance  
+- **Application startup** - Cold start timing
+- **Memory usage** - Resource consumption analysis
+
+**Running Benchmarks:**
+```rust
+use eden_explorer::core::benchmark::run_comprehensive_benchmark;
+
+// Run benchmarks on a test directory
+let results = run_comprehensive_benchmark(PathBuf::from("C:\\Windows\\System32"));
+println!("{}", results);
+```
+
+**Expected Performance Targets:**
+Based on architectural advantages, EdenExplorer targets:
+- **Directory listing**: 10-15x faster than Windows Explorer
+- **Folder size calculation**: 15-25x faster than Windows Explorer  
+- **Memory usage**: 3-5x lower than Windows Explorer
+- **Startup time**: 2-3x faster than Windows Explorer
+
+*Note: Actual performance varies by system specifications and directory complexity. Run the benchmark suite on your system for accurate measurements.*
 
 #### **🛡️ Reliability & Safety**
 **EdenExplorer:**
@@ -182,16 +199,33 @@ EdenExplorer represents a **fundamentally different approach** to file managemen
 - **Intuitive navigation** with **Back / Forward / Up** controls for seamless browsing
 - **Smart sidebar** with quick access to common folders (Desktop, Documents, Downloads) and customizable favorites
 
-### 🛠️ Advanced Features
-- **Modern toolbar** with **New Folder** creation and file operations
-- **High-performance architecture** designed for NT API integration
-- **Low memory footprint** optimized for Windows 11 environments
-- **Responsive design** that adapts to different window sizes
+### User Interface Features
+- **Tabbed navigation** with independent loading states and tab management
+- **Theme customization** with dark/light mode switching and custom theme editor
+- **Responsive design** that adapts to different window sizes and configurations
+- **Modern toolbar** with file operations and folder creation tools
 
-### 🎯 Performance Optimizations
+### Advanced Features
+- **Favorites system** with drive-specific storage and drag-and-drop support
+- **File operations history** with undo/redo functionality
+- **Background folder size calculation** with progress updates
+- **Context menu operations** (cut, copy, paste, rename, delete)
+- **Search and filter capabilities** with real-time file indexing
+- **Portable device support** for iPhone, Android, and connected devices
+- **Raw/unmounted drive detection** for ISO sticks and Linux partitions
+
+### System Integration
+- **Persistent settings** using binary cache format surviving application restarts
+- **Efficient drive space queries** with intelligent caching
+- **Windows API integration** for optimal performance and compatibility
+- **Custom executable icon** with proper Windows file association
+
+### Performance Optimizations
+- **NT-level filesystem access** via direct NT API calls
 - **Background scanning** prevents UI freezing during large directory operations
-- **Efficient caching** for frequently accessed directories
-- **Modular component system** for easy maintenance and upgrades
+- **Efficient caching** for frequently accessed directories and metadata
+- **Streaming directory enumeration** with optimized buffer management
+- **Low memory footprint** optimized for Windows 11 environments
 
 ---
 
@@ -218,8 +252,8 @@ Restart your terminal to ensure cargo is in your PATH.
 ### Build & Run
 Clone the repository:
 ```powershell
-git clone https://github.com/yourusername/explorereden.git
-cd explorereden
+git clone https://github.com/yourusername/EdenExplorer.git
+cd EdenExplorer
 ```
 
 Build and run in debug mode:
@@ -230,7 +264,7 @@ cargo run
 Or build release mode for optimized performance:
 ```powershell
 cargo build --release
-.\target\release\explorereden.exe
+.\target\release\EdenExplorer.exe
 ```
 
 ## Contributing
@@ -261,16 +295,9 @@ Submit a pull request with a description of your changes
   - Minimal CPU overhead
   - Best for "popup over app" with no lag
 - [ ] **Drag and drop files into folders** or move folders into folders
-- [ ] **Fix reordering of favorites** in sidebar
-- [ ] **My Places updates** - add "Control Panel" or "Settings"
 - [ ] **Keyboard filtering** - typing characters should automatically start filtering items in itemviewer
-- [ ] **Network section** in sidebar with network drive and computer access support
 - [ ] **Tab navigation improvements** - multiple tabs should reduce tab size, with left/right arrows for horizontal scrolling when >6 tabs
 - [ ] **Keyboard shortcuts** customization and help system
-- [ ] **Network drive support** and cloud storage integration
-- [ ] **File operations queue** with progress tracking
-- [ ] **Real-time file synchronization** across devices
-- [ ] Remove native min, max, and close icons and replace with your own
 
 ## 🐛 Known Bugs
 
@@ -279,6 +306,9 @@ Submit a pull request with a description of your changes
 - **Ctrl+C/Ctrl+V in breadcrumb path** copies the first file in the itemviewer instead of path text
 - Double-clicking a selected nested folder doesn't always navigate
 - Creating a new folder/file doesn't automatically scroll the viewier to focus on it
+- **Fix reordering of favorites** in sidebar
+- Fix network detection in sidebar
+- Fix raw/unmounted drive detection for ISO sticks and Linux partitions
 
 ## License
 This project is FOSS, released under the MIT License.
