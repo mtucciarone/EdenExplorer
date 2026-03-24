@@ -167,7 +167,7 @@ pub fn drive_usage_bar(
         egui::Align2::CENTER_CENTER,
         percent,
         egui::TextStyle::Small.resolve(ui.style()),
-        palette.icon_color,
+        palette.icon_colored_hover,
     );
 }
 

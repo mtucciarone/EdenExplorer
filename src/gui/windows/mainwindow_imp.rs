@@ -555,6 +555,26 @@ impl MainWindow {
 
     pub fn handle_sidebar_action(&mut self, sidebar_action: Option<SidebarAction>) {
         if let Some(action) = sidebar_action {
+            if let Some((from, to)) = action.reorder {
+                let len = self.favorites.len();
+
+                if from < len {
+                    let item = self.favorites.remove(from);
+
+                    // Clamp target index AFTER removal
+                    let mut target = to;
+
+                    if to > from {
+                        target -= 1;
+                    }
+
+                    target = target.min(self.favorites.len());
+
+                    self.favorites.insert(target, item);
+                }
+
+                self.persist_favorites();
+            }
             if let Some(path) = action.nav_to {
                 self.current_nav_mut().go_to(path);
                 self.load_path();

@@ -622,9 +622,9 @@ fn handle_draw_col_name(
             egui::Rect::from_min_size(icon_pos, icon_size),
             egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1.0, 1.0)),
             if is_cut {
-                palette.icon_color.linear_multiply(0.5)
+                palette.icon_colored_hover.linear_multiply(0.5)
             } else {
-                palette.icon_color
+                palette.icon_colored_hover
             },
         );
 

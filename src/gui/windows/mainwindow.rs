@@ -282,12 +282,6 @@ impl eframe::App for MainWindow {
                                     &mut self.dragging_favorite,
                                     &mut self.network_state,
                                 ));
-
-                                if let Some(action) = &sidebar_action {
-                                    if let Some((from, to)) = action.reorder {
-                                        self.favorites.swap(from, to);
-                                    }
-                                }
                             });
                         },
                     );

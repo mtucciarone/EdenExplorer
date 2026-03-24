@@ -148,7 +148,7 @@ pub fn draw_theme_customizer(
                                     "Box Selection Fill",
                                     &mut palette.box_selection_fill,
                                 );
-                                color_picker(ui, "Icon Color", &mut palette.icon_color);
+                                color_picker(ui, "Icon Color", &mut palette.icon_colored_hover);
                             });
                         },
                     );

@@ -6,6 +6,7 @@ use crate::gui::utils::drive_usage_gradient;
 use crate::gui::windows::containers::structs::{FavoriteItem, SidebarAction};
 use eframe::egui;
 use egui::{FontFamily, FontId, ScrollArea};
+use egui_phosphor::regular;
 use std::path::PathBuf;
 
 /// Draw a single sidebar item (favorite or folder)
@@ -21,8 +22,10 @@ fn sidebar_item(
     let available_width = ui.available_width();
     let height = 18.0;
 
-    let (rect, item_resp) =
-        ui.allocate_exact_size(egui::vec2(available_width, height), egui::Sense::click());
+    let (rect, item_resp) = ui.allocate_exact_size(
+        egui::vec2(available_width, height),
+        egui::Sense::click_and_drag(),
+    );
 
     // Hover background first
     if item_resp.hovered() {
@@ -82,6 +85,103 @@ fn sidebar_item(
     );
 
     item_resp
+}
+
+fn favorites_item_layout(ui: &mut egui::Ui) -> (egui::Rect, egui::Response) {
+    let available_width = ui.available_width();
+    let height = 18.0;
+
+    ui.allocate_exact_size(
+        egui::vec2(available_width, height),
+        egui::Sense::click_and_drag(),
+    )
+}
+
+fn favorites_item_render(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    resp: &egui::Response,
+    icon_cache: &IconCache,
+    path: &PathBuf,
+    label: &str,
+    is_dir: bool,
+    palette: &ThemePalette,
+    _selected: bool,
+) {
+    // Hover background
+    if resp.hovered() {
+        let handle_width = 12.0;
+        let handle_rect = egui::Rect::from_min_size(
+            egui::pos2(rect.right() - handle_width - 4.0, rect.top()),
+            egui::vec2(handle_width, rect.height()),
+        );
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+        ui.painter().rect_filled(
+            rect,
+            egui::CornerRadius::same(palette.medium_radius),
+            palette.primary_hover,
+        );
+        ui.painter().text(
+            handle_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            regular::DOTS_SIX_VERTICAL,
+            FontId::new(14.0, FontFamily::Proportional),
+            palette.icon_color,
+        );
+    }
+
+    // Icon
+    let icon_size = egui::vec2(20.0, 20.0);
+    let icon_padding = 4.0;
+
+    let text_offset_x = if let Some(icon) = icon_cache.get(path, is_dir) {
+        let icon_pos = egui::pos2(rect.min.x + 4.0, rect.center().y - icon_size.y / 2.0);
+
+        ui.painter().image(
+            (&icon).into(),
+            egui::Rect::from_min_size(icon_pos, icon_size),
+            egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+
+        8.0 + icon_size.x + icon_padding
+    } else {
+        8.0 + 16.0 + icon_padding
+    };
+
+    // Text truncation
+    let available_width = rect.width();
+    let text_width = available_width - text_offset_x;
+    let max_chars = (text_width / 7.0) as usize;
+
+    let display_name = if label.len() > max_chars && max_chars > 3 {
+        let mut char_count = 0;
+        let mut byte_end = 0;
+
+        for (i, _) in label.char_indices() {
+            if char_count >= max_chars - 3 {
+                break;
+            }
+            char_count += 1;
+            byte_end = i;
+        }
+
+        format!("{}...", &label[..byte_end])
+    } else {
+        label.to_string()
+    };
+
+    // Text draw
+    let text_pos = egui::pos2(rect.min.x + text_offset_x, rect.center().y);
+    let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
+
+    ui.painter().text(
+        text_pos,
+        egui::Align2::LEFT_CENTER,
+        display_name,
+        font_id,
+        ui.visuals().text_color(),
+    );
 }
 
 /// Draw a drive item with usage bar and size on hover
@@ -231,6 +331,8 @@ pub fn draw_sidebar(
 ) -> SidebarAction {
     let mut action = SidebarAction::default();
     let mut drop_index: Option<usize> = None;
+    let pointer_pos = ui.ctx().input(|i| i.pointer.hover_pos());
+    let pointer_released = ui.ctx().input(|i| i.pointer.primary_released());
 
     ScrollArea::vertical()
         .id_salt("sidebar_scroll")
@@ -295,81 +397,168 @@ pub fn draw_sidebar(
                     ));
                     ui.add_space(4.0);
 
-                    for (i, favorite) in favorites.iter().enumerate() {
-                        let fav_path = favorite.path.clone();
-                        let is_selected = sidebar_selected.map(|p| p == &fav_path).unwrap_or(false);
-                        let resp = sidebar_item(
-                            ui,
-                            icon_cache,
-                            &fav_path,
-                            &favorite.label,
-                            true,
-                            palette,
-                            is_selected,
-                        );
+                    let mut item_layouts = Vec::new();
 
-                        if resp.clicked() {
-                            action.nav_to = Some(fav_path.clone());
-                        }
-                        if resp.secondary_clicked() {
-                            action.select_favorite = Some(fav_path.clone());
-                        }
-                        if resp.middle_clicked() {
-                            action.open_new_tab = Some(fav_path.clone());
-                        }
+                    for (i, _favorite) in favorites.iter().enumerate() {
+                        let (rect, resp) = favorites_item_layout(ui);
 
-                        resp.context_menu(|ui| {
-                            if ui.button("Remove Favorite").clicked() {
-                                action.remove_favorite = Some(fav_path.clone());
-                                ui.close();
-                            }
-                        });
-
-                        // --- Drag logic ---
                         if resp.drag_started() {
                             *dragging_favorite = Some(i);
                         }
 
-                        if resp.hovered()
-                            && dragging_favorite.is_some()
-                            && dragging_favorite.unwrap() != i
-                        {
-                            drop_index = Some(i);
-                        }
+                        item_layouts.push((rect, resp));
+                    }
 
-                        // Draw drag ghost
-                        if let Some(drag_idx) = dragging_favorite {
-                            if *drag_idx == i {
-                                let pointer = ui.ctx().input(|i| i.pointer.hover_pos());
-                                if let Some(pos) = pointer {
-                                    ui.painter().rect_filled(
-                                        egui::Rect::from_center_size(
-                                            pos,
-                                            egui::vec2(ui.available_width(), 22.0),
-                                        ),
-                                        egui::CornerRadius::same(palette.large_radius),
-                                        palette.primary_active,
-                                    );
+                    if let (Some(pos), Some(drag_idx)) = (pointer_pos, *dragging_favorite) {
+                        drop_index = None;
 
-                                    let font_id =
-                                        FontId::new(palette.text_size, FontFamily::Proportional);
+                        for (i, (rect, _)) in item_layouts.iter().enumerate() {
+                            let mid_y = rect.center().y;
 
-                                    ui.painter().text(
-                                        pos,
-                                        egui::Align2::CENTER_CENTER,
-                                        &favorites[*drag_idx].label,
-                                        font_id,
-                                        palette.icon_color,
-                                    );
-                                }
+                            let new_index = if pos.y < mid_y { i } else { i + 1 };
+
+                            if new_index != drag_idx && new_index != drag_idx + 1 {
+                                drop_index = Some(new_index);
+                            }
+
+                            if pos.y < rect.bottom() {
+                                break;
                             }
                         }
 
-                        // Commit reorder on release
-                        if ui.ctx().input(|i| i.pointer.any_released()) {
-                            if let (Some(from), Some(to)) = (*dragging_favorite, drop_index) {
+                        if let Some(last) = item_layouts.last() {
+                            if pos.y > last.0.bottom() {
+                                drop_index = Some(item_layouts.len());
+                            }
+                        }
+                    }
+
+                    for (i, favorite) in favorites.iter().enumerate() {
+                        let (rect, resp) = &item_layouts[i];
+
+                        favorites_item_render(
+                            ui,
+                            *rect,
+                            resp,
+                            icon_cache,
+                            &favorite.path,
+                            &favorite.label,
+                            true,
+                            palette,
+                            false,
+                        );
+
+                        if resp.clicked() {
+                            action.nav_to = Some(favorite.path.clone());
+                        }
+                        if resp.secondary_clicked() {
+                            action.select_favorite = Some(favorite.path.clone());
+                        }
+                        if resp.middle_clicked() {
+                            action.open_new_tab = Some(favorite.path.clone());
+                        }
+
+                        resp.context_menu(|ui| {
+                            if ui.button("Remove Favorite").clicked() {
+                                action.remove_favorite = Some(favorite.path.clone());
+                                ui.close();
+                            }
+                        });
+
+                        if let Some(drop) = drop_index {
+                            if drop == i {
+                                let painter = ui.ctx().layer_painter(egui::LayerId::new(
+                                    egui::Order::Background,
+                                    egui::Id::new(format!("insert_line_{}", i)),
+                                ));
+
+                                let y = resp.rect.top();
+                                let left = resp.rect.left() + 6.0;
+                                let right = resp.rect.right() - 6.0;
+
+                                painter.line_segment(
+                                    [egui::pos2(left, y), egui::pos2(right, y)],
+                                    egui::Stroke::new(2.0, palette.primary_active),
+                                );
+                            }
+                        }
+                    }
+
+                    if let Some(drop) = drop_index {
+                        if drop == favorites.len() {
+                            if let Some(rect) = item_layouts.last().map(|(r, _)| r) {
+                                let painter = ui.ctx().layer_painter(egui::LayerId::new(
+                                    egui::Order::Background,
+                                    egui::Id::new("insert_line_end"),
+                                ));
+
+                                let y = rect.bottom();
+                                let left = rect.left() + 6.0;
+                                let right = rect.right() - 6.0;
+
+                                painter.line_segment(
+                                    [egui::pos2(left, y), egui::pos2(right, y)],
+                                    egui::Stroke::new(2.0, palette.primary_active),
+                                );
+                            }
+                        }
+                    }
+
+                    // Draw drag ghost
+                    if let Some(drag_idx) = dragging_favorite {
+                        if let Some(pos) = ui.ctx().input(|i| i.pointer.hover_pos()) {
+                            let painter = ui.ctx().layer_painter(egui::LayerId::new(
+                                egui::Order::Foreground,
+                                egui::Id::new("drag_ghost"),
+                            ));
+
+                            // --- Background ---
+                            let ghost_rect = egui::Rect::from_center_size(
+                                pos,
+                                egui::vec2(ui.available_width(), 18.0), // same height as item
+                            );
+                            painter.rect_filled(
+                                ghost_rect,
+                                egui::CornerRadius::same(palette.medium_radius),
+                                palette.primary_hover, // same hover background
+                            );
+
+                            // --- Text ---
+                            let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
+                            painter.text(
+                                egui::pos2(ghost_rect.left() + 8.0, ghost_rect.center().y),
+                                egui::Align2::LEFT_CENTER,
+                                &favorites[*drag_idx].label,
+                                font_id,
+                                palette.icon_color.gamma_multiply(0.7), // slightly dim
+                            );
+
+                            // --- Handle on the right ---
+                            let handle_width = 12.0;
+                            let handle_rect = egui::Rect::from_min_size(
+                                egui::pos2(
+                                    ghost_rect.right() - handle_width - 4.0,
+                                    ghost_rect.top(),
+                                ),
+                                egui::vec2(handle_width, ghost_rect.height()),
+                            );
+
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                            painter.text(
+                                handle_rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                regular::DOTS_SIX_VERTICAL, // ⋮⋮ icon
+                                FontId::new(14.0, FontFamily::Proportional),
+                                palette.icon_color,
+                            );
+                        }
+                    }
+                    if let Some(from) = *dragging_favorite {
+                        if pointer_released {
+                            if let Some(to) = drop_index {
                                 action.reorder = Some((from, to));
                             }
+
                             *dragging_favorite = None;
                             drop_index = None;
                         }

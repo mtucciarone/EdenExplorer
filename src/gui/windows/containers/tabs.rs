@@ -280,7 +280,7 @@ fn tab_close_button(
         .rect_filled(rect, palette.tab_button_radius, bg);
 
     let color = if hovered {
-        palette.icon_color
+        palette.icon_colored_hover
     } else {
         ui.visuals().widgets.noninteractive.fg_stroke.color
     };
@@ -322,7 +322,7 @@ fn tab_add_button(
         .rect_filled(rect, palette.tab_button_radius, bg);
 
     let color = if hovered {
-        palette.icon_color
+        palette.icon_colored_hover
     } else {
         ui.visuals().widgets.noninteractive.fg_stroke.color
     };
