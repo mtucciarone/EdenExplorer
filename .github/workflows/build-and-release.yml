@@ -30,10 +30,6 @@ jobs:
       with:
         toolchain: stable
         
-    - name: Install cargo-edit for icon embedding
-      run: cargo install cargo-edit
-      shell: pwsh
-        
     - name: Cache cargo registry
       uses: actions/cache@v4
       with:
@@ -176,10 +172,6 @@ jobs:
         if (Test-Path "LICENSE") { 
           Copy-Item "LICENSE" "release/" 
           echo "📄 Added LICENSE"
-        }
-        if (Test-Path "src/assets/icon.ico") { 
-          Copy-Item "src/assets/icon.ico" "release/" 
-          echo "🎨 Added icon.ico for reference"
         }
         
         # Show what we're releasing

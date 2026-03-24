@@ -7,8 +7,8 @@ edition = "2024"
 name = "EdenExplorer"
 path = "src/main.rs"
 
-[package.metadata.windows_exe]
-icon = "src/assets/icon.ico"
+[build-dependencies]
+winres = "0.1"
 
 [dependencies]
 image = "0.25"
