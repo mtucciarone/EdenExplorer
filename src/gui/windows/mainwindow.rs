@@ -57,6 +57,7 @@ pub struct MainWindow {
     pub(crate) sidebar_default_width: f32,
     pub(crate) file_type_cache: HashMap<String, String>,
     pub(crate) selected_paths: HashSet<PathBuf>,
+    pub(crate) cut_paths: HashSet<PathBuf>,
     // pub(crate) box_selection_start: Option<egui::Pos2>,
     // pub(crate) box_selection_active: bool,
     pub(crate) theme_customizer: ThemeCustomizer,
@@ -82,8 +83,11 @@ impl Default for MainWindow {
             tabs: vec![TabState {
                 id: 1,
                 nav: Navigation::new(),
-                is_editing_path: false,
-                path_buffer: String::new(),
+                breadcrumb_path_editing: false,
+                breadcrumb_path_buffer: String::new(),
+                breadcrumb_just_started_editing: false,
+                breadcrumb_path_error: false,
+                breadcrumb_path_error_animation_time: 0.0,
             }],
             active_tab: 0,
             next_tab_id: 2,
@@ -110,6 +114,7 @@ impl Default for MainWindow {
             sidebar_default_width: 250.0,
             file_type_cache: HashMap::new(),
             selected_paths: HashSet::new(), // Multi-selection state
+            cut_paths: HashSet::new(),      // Cut paths for paste operation
             // box_selection_start: None,      // Box selection start position
             // box_selection_active: false,    // Whether box selection is currently active
             theme_customizer: Default::default(),
@@ -405,6 +410,7 @@ impl eframe::App for MainWindow {
                                             &mut self.drag_hover,
                                             &mut self.selection_anchor,
                                             &mut self.selection_focus,
+                                            &mut tabbar_action,
                                         );
                                         ui.add_space(6.0);
                                     },

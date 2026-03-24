@@ -5,7 +5,9 @@ use crate::gui::utils::{
     SortColumn, drive_usage_bar, format_size, get_cut_paths, get_file_type_name,
 };
 use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
-use crate::gui::windows::containers::structs::{ItemViewerFolderSizeState, RenameState};
+use crate::gui::windows::containers::structs::{
+    ItemViewerFolderSizeState, ItemViewerLayout, RenameState, TabbarAction,
+};
 use eframe::egui;
 use egui::{FontFamily, FontId};
 use egui_extras::{Column, TableBuilder};
@@ -29,6 +31,7 @@ pub fn draw_item_viewer(
     drag_hover: &mut bool,
     selection_anchor: &mut Option<usize>,
     selection_focus: &mut Option<usize>,
+    tabbar_action: &mut Option<TabbarAction>,
 ) -> Option<ItemViewerAction> {
     let cut_paths = get_cut_paths();
 
@@ -57,6 +60,7 @@ pub fn draw_item_viewer(
                 paste_enabled,
                 palette,
                 selection_anchor,
+                tabbar_action,
             ) {
                 action = Some(global_action);
             }
@@ -152,97 +156,19 @@ pub fn draw_item_viewer(
                             });
                         }
 
-                        // Name
                         row.col(|ui| {
-                            let available_width = ui.available_width();
-
-                            let (rect, _) = ui.allocate_exact_size(
-                                egui::vec2(available_width, layout.row_height),
-                                egui::Sense::hover(),
-                            );
-
-                            // --- ICON ---
-                            let icon_size = egui::vec2(18.0, 18.0);
-                            let icon_padding = 4.0;
-
-                            let text_offset_x =
-                                if let Some(icon) = icon_cache.get(&file.path, file.is_dir) {
-                                    let icon_pos = egui::pos2(
-                                        rect.min.x + 4.0,
-                                        rect.center().y - icon_size.y / 2.0,
-                                    );
-
-                                    ui.painter().image(
-                                        (&icon).into(),
-                                        egui::Rect::from_min_size(icon_pos, icon_size),
-                                        egui::Rect::from_min_size(
-                                            egui::pos2(0.0, 0.0),
-                                            egui::vec2(1.0, 1.0),
-                                        ),
-                                        if is_cut {
-                                            palette.icon_color.linear_multiply(0.5)
-                                        } else {
-                                            palette.icon_color
-                                        },
-                                    );
-
-                                    8.0 + icon_size.x + icon_padding
-                                } else {
-                                    8.0 + 16.0 + icon_padding
-                                };
-
-                            // --- TEXT / RENAME ---
-                            let text_rect = egui::Rect::from_min_max(
-                                egui::pos2(rect.min.x + text_offset_x, rect.min.y),
-                                rect.max,
-                            );
-
-                            // Capture the path first
-                            let editing_path = rename_state.as_ref().map(|rs| rs.path.clone());
-
-                            if let Some(path) = editing_path {
-                                if path == file.path {
-                                    if let Some(a) = handle_editing_file_name(
-                                        ui,
-                                        &file,
-                                        is_selected,
-                                        palette,
-                                        text_rect,
-                                        rename_state, // mutable borrow only happens here
-                                    ) {
-                                        action = Some(a);
-                                    }
-                                }
-                            } else {
-                                // --- DISPLAY TEXT ---
-                                let text_width = available_width - text_offset_x;
-                                let max_chars = (text_width / 7.0) as usize;
-
-                                let display_name = if file.name.len() > max_chars && max_chars > 3 {
-                                    let mut char_count = 0;
-                                    let mut byte_end = 0;
-                                    for (i, _) in file.name.char_indices() {
-                                        if char_count >= max_chars - 3 {
-                                            break;
-                                        }
-                                        char_count += 1;
-                                        byte_end = i;
-                                    }
-                                    format!("{}...", &file.name[..byte_end])
-                                } else {
-                                    file.name.clone()
-                                };
-
-                                let text_pos =
-                                    egui::pos2(rect.min.x + text_offset_x, rect.center().y);
-
-                                ui.painter().text(
-                                    text_pos,
-                                    egui::Align2::LEFT_CENTER,
-                                    display_name,
-                                    font_id.clone(),
-                                    get_text_color(is_selected, is_cut, palette),
-                                );
+                            if let Some(a) = handle_draw_col_name(
+                                ui,
+                                file,
+                                &layout,
+                                icon_cache,
+                                is_selected,
+                                is_cut,
+                                palette,
+                                &font_id,
+                                rename_state,
+                            ) {
+                                action = Some(a);
                             }
                         });
 
@@ -297,7 +223,6 @@ pub fn draw_item_viewer(
 
                         let row_resp = row.response();
 
-                        // Row click selection
                         if row_resp.clicked() {
                             if modifiers.shift {
                                 if let Some(anchor_idx) = *selection_anchor {
@@ -314,34 +239,39 @@ pub fn draw_item_viewer(
                                     action = Some(ItemViewerAction::RangeSelect(range_paths));
                                     *selection_focus = Some(current_idx);
                                 } else {
-                                    // First shift-click sets anchor
                                     *selection_anchor = Some(idx);
                                     *selection_focus = Some(idx);
                                     action = Some(ItemViewerAction::Select(file.path.clone()));
                                 }
                             } else if modifiers.ctrl {
-                                // ✅ Ctrl = toggle, DO NOT reset anchor (Explorer behavior)
+                                // Ctrl toggle
                                 if is_selected {
                                     action = Some(ItemViewerAction::Deselect(file.path.clone()));
                                 } else {
                                     action = Some(ItemViewerAction::Select(file.path.clone()));
                                 }
                             } else {
-                                // ✅ Normal click = reset selection + anchor
-                                action =
-                                    Some(ItemViewerAction::ReplaceSelection(file.path.clone()));
-                                *selection_anchor = Some(idx);
-                                *selection_focus = Some(idx);
+                                // 🔥 NEW LOGIC: detect "already selected single item"
+                                let is_single_selected = selected_paths.len() == 1
+                                    && selected_paths.contains(&file.path);
+
+                                if is_single_selected {
+                                    // 🚀 Open instead of re-select
+                                    action = Some(if file.is_dir {
+                                        ItemViewerAction::Open(file.path.clone())
+                                    } else {
+                                        ItemViewerAction::OpenWithDefault(file.path.clone())
+                                    });
+                                } else {
+                                    // Normal selection
+                                    action =
+                                        Some(ItemViewerAction::ReplaceSelection(file.path.clone()));
+                                    *selection_anchor = Some(idx);
+                                    *selection_focus = Some(idx);
+                                }
                             }
                         }
 
-                        if row_resp.double_clicked() {
-                            if file.is_dir {
-                                action = Some(ItemViewerAction::Open(file.path.clone()));
-                            } else {
-                                action = Some(ItemViewerAction::OpenWithDefault(file.path.clone()));
-                            }
-                        }
                         if row_resp.middle_clicked() && file.is_dir {
                             action = Some(ItemViewerAction::OpenInNewTab(file.path.clone()));
                         }
@@ -352,80 +282,22 @@ pub fn draw_item_viewer(
                         }
 
                         row_resp.context_menu(|ui| {
-                            if !is_selected {
-                                action =
-                                    Some(ItemViewerAction::ReplaceSelection(file.path.clone()));
-                            }
-                            // First section: Open
-                            if ui.button("Open in new tab").clicked() {
-                                action = Some(ItemViewerAction::OpenInNewTab(file.path.clone()));
-                                ui.close();
-                            }
-
-                            ui.separator();
-
-                            // Second section: file operations + undo/redo
-                            if ui.button("Cut").clicked() {
-                                action = Some(ItemViewerAction::Context(
-                                    ItemViewerContextAction::Cut(file.path.clone()),
-                                ));
-                                ui.close();
-                            }
-                            if ui.button("Copy").clicked() {
-                                action = Some(ItemViewerAction::Context(
-                                    ItemViewerContextAction::Copy(file.path.clone()),
-                                ));
-                                ui.close();
-                            }
-                            if ui
-                                .add_enabled(paste_enabled, egui::Button::new("Paste"))
-                                .clicked()
-                            {
-                                action =
-                                    Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
-                                ui.close();
-                            }
-
-                            ui.separator();
-
-                            if ui.button("Rename").clicked() {
-                                action = Some(ItemViewerAction::StartEdit(file.path.clone()));
-                                ui.close();
-                            }
-                            if ui.button("Delete").clicked() {
-                                action = Some(ItemViewerAction::Context(
-                                    ItemViewerContextAction::Delete(file.path.clone()),
-                                ));
-                                ui.close();
-                            }
-
-                            ui.separator();
-
-                            if ui.button("Undo").clicked() {
-                                action =
-                                    Some(ItemViewerAction::Context(ItemViewerContextAction::Undo));
-                                ui.close();
-                            }
-                            if ui.button("Redo").clicked() {
-                                action =
-                                    Some(ItemViewerAction::Context(ItemViewerContextAction::Redo));
-                                ui.close();
-                            }
-
-                            ui.separator(); // 🔥 separator before "Properties"
-
-                            // Third section: Properties
-                            if ui.button("Properties").clicked() {
-                                action = Some(ItemViewerAction::Context(
-                                    ItemViewerContextAction::Properties(file.path.clone()),
-                                ));
-                                ui.close();
-                            }
+                            handle_context_menu_actions(
+                                ui,
+                                file,
+                                is_selected,
+                                selected_paths,
+                                paste_enabled,
+                                layout.is_drive_view,
+                                is_cut,
+                                &mut action,
+                            );
                         });
                     });
                 });
 
             ui.add_space(layout.header_gap);
+
             if any_row_hovered {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
             }
@@ -579,14 +451,6 @@ fn draw_drag_overlay(ui: &mut egui::Ui, drag_hover: bool) {
     }
 }
 
-struct ItemViewerLayout {
-    row_height: f32,
-    header_height: f32,
-    header_gap: f32,
-    available_width: f32,
-    is_drive_view: bool,
-}
-
 fn compute_layout(ui: &egui::Ui, files: &Vec<FileItem>) -> ItemViewerLayout {
     let text_height = 14.0;
     let row_padding = 6.0;
@@ -604,6 +468,221 @@ fn compute_layout(ui: &egui::Ui, files: &Vec<FileItem>) -> ItemViewerLayout {
         available_width: ui.available_width(),
         is_drive_view,
     }
+}
+
+fn handle_context_menu_actions(
+    ui: &mut egui::Ui,
+    file: &FileItem,
+    is_selected: bool,
+    selected_paths: &HashSet<PathBuf>,
+    paste_enabled: bool,
+    is_drive_view: bool,
+    is_cut: bool,
+    action: &mut Option<ItemViewerAction>,
+) {
+    // ✅ Match Explorer behavior: right-click selects if not already selected
+    if !is_selected {
+        *action = Some(ItemViewerAction::ReplaceSelection(file.path.clone()));
+    }
+
+    // 🚗 DRIVE VIEW MODE → ONLY PROPERTIES
+    if is_drive_view {
+        if ui.button("Properties").clicked() {
+            let targets: Vec<PathBuf> = if is_selected {
+                selected_paths.iter().cloned().collect()
+            } else {
+                vec![file.path.clone()]
+            };
+
+            *action = Some(ItemViewerAction::Context(
+                ItemViewerContextAction::Properties(targets),
+            ));
+            ui.close();
+        }
+
+        return; // 🔥 Early exit — nothing else allowed
+    }
+
+    // --- NORMAL FILE VIEW ---
+
+    // First section: Open
+    if ui
+        .add_enabled(file.is_dir, egui::Button::new("Open in new tab"))
+        .clicked()
+    {
+        *action = Some(ItemViewerAction::OpenInNewTab(file.path.clone()));
+        ui.close();
+    }
+
+    ui.separator();
+
+    // Second section: file operations + undo/redo
+    let cut_label = if is_cut { "Cut (pending)" } else { "Cut" };
+    if ui
+        .add_enabled(!is_cut, egui::Button::new(cut_label))
+        .clicked()
+    {
+        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Cut(
+            file.path.clone(),
+        )));
+        ui.close();
+    }
+    if is_cut {
+        if ui.button("Cancel Cut").clicked() {
+            *action = Some(ItemViewerAction::Context(
+                ItemViewerContextAction::ClearCut(file.path.clone()),
+            ));
+            ui.close();
+        }
+
+        ui.separator();
+    }
+    if ui.button("Copy").clicked() {
+        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Copy(
+            file.path.clone(),
+        )));
+        ui.close();
+    }
+    if ui
+        .add_enabled(paste_enabled, egui::Button::new("Paste"))
+        .clicked()
+    {
+        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
+        ui.close();
+    }
+
+    ui.separator();
+
+    if ui.button("Rename").clicked() {
+        *action = Some(ItemViewerAction::StartEdit(file.path.clone()));
+        ui.close();
+    }
+    if ui.button("Delete").clicked() {
+        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
+            file.path.clone(),
+        )));
+        ui.close();
+    }
+
+    ui.separator();
+
+    if ui.button("Undo").clicked() {
+        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Undo));
+        ui.close();
+    }
+    if ui.button("Redo").clicked() {
+        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Redo));
+        ui.close();
+    }
+
+    ui.separator();
+
+    // Properties (multi-select aware)
+    if ui.button("Properties").clicked() {
+        let targets: Vec<PathBuf> = if is_selected {
+            selected_paths.iter().cloned().collect()
+        } else {
+            vec![file.path.clone()]
+        };
+
+        *action = Some(ItemViewerAction::Context(
+            ItemViewerContextAction::Properties(targets),
+        ));
+        ui.close();
+    }
+}
+
+fn handle_draw_col_name(
+    ui: &mut egui::Ui,
+    file: &FileItem,
+    layout: &ItemViewerLayout,
+    icon_cache: &IconCache,
+    is_selected: bool,
+    is_cut: bool,
+    palette: &ThemePalette,
+    font_id: &egui::FontId,
+    rename_state: &mut Option<RenameState>,
+) -> Option<ItemViewerAction> {
+    let available_width = ui.available_width();
+
+    let (rect, _) = ui.allocate_exact_size(
+        egui::vec2(available_width, layout.row_height),
+        egui::Sense::hover(),
+    );
+
+    // --- ICON ---
+    let icon_size = egui::vec2(18.0, 18.0);
+    let icon_padding = 4.0;
+
+    let text_offset_x = if let Some(icon) = icon_cache.get(&file.path, file.is_dir) {
+        let icon_pos = egui::pos2(rect.min.x + 4.0, rect.center().y - icon_size.y / 2.0);
+
+        ui.painter().image(
+            (&icon).into(),
+            egui::Rect::from_min_size(icon_pos, icon_size),
+            egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1.0, 1.0)),
+            if is_cut {
+                palette.icon_color.linear_multiply(0.5)
+            } else {
+                palette.icon_color
+            },
+        );
+
+        8.0 + icon_size.x + icon_padding
+    } else {
+        8.0 + 16.0 + icon_padding
+    };
+
+    // --- TEXT / RENAME ---
+    let text_rect =
+        egui::Rect::from_min_max(egui::pos2(rect.min.x + text_offset_x, rect.min.y), rect.max);
+
+    // ⚠️ Important: clone path BEFORE mutable borrow
+    let editing_path = rename_state.as_ref().map(|rs| rs.path.clone());
+
+    if let Some(path) = editing_path {
+        if path == file.path {
+            return handle_editing_file_name(
+                ui,
+                file,
+                is_selected,
+                palette,
+                text_rect,
+                rename_state,
+            );
+        }
+    }
+
+    // --- DISPLAY TEXT ---
+    let text_width = available_width - text_offset_x;
+    let max_chars = (text_width / 7.0) as usize;
+
+    let display_name = if file.name.len() > max_chars && max_chars > 3 {
+        let mut char_count = 0;
+        let mut byte_end = 0;
+        for (i, _) in file.name.char_indices() {
+            if char_count >= max_chars - 3 {
+                break;
+            }
+            char_count += 1;
+            byte_end = i;
+        }
+        format!("{}...", &file.name[..byte_end])
+    } else {
+        file.name.clone()
+    };
+
+    let text_pos = egui::pos2(rect.min.x + text_offset_x, rect.center().y);
+
+    ui.painter().text(
+        text_pos,
+        egui::Align2::LEFT_CENTER,
+        display_name,
+        font_id.clone(),
+        get_text_color(is_selected, is_cut, palette),
+    );
+
+    None
 }
 
 fn handle_draw_col_type(
@@ -901,9 +980,13 @@ fn handle_global_actions(
     paste_enabled: bool,
     palette: &crate::gui::theme::ThemePalette,
     selection_anchor: &mut Option<usize>,
+    tabbar_action: &mut Option<TabbarAction>,
 ) -> Option<ItemViewerAction> {
     // 🔥 TEMP: disable focus blocking for now (fix later with rename_state)
-    let is_text_edit_active = false;
+    let is_text_edit_active = tabbar_action.as_ref().is_some_and(|t| t.is_breadcrumb_path_edit_active);
+    if is_text_edit_active {
+        return None;
+    }
 
     let mut action: Option<ItemViewerAction> = None;
 

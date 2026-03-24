@@ -58,141 +58,6 @@ pub fn draw_tabs(
     action
 }
 
-fn handle_draw_tab(
-    ui: &mut egui::Ui,
-    tab: &TabInfo,
-    active_id: u64,
-    palette: &ThemePalette,
-    action: &mut TabsAction,
-) {
-    let is_active = tab.id == active_id;
-    let corner = if is_active {
-        palette.tab_active_radius
-    } else {
-        palette.tab_inactive_radius
-    };
-    let tab_fill = if is_active {
-        ui.visuals().widgets.active.bg_fill
-    } else {
-        egui::Color32::TRANSPARENT
-    };
-
-    let tab_frame = egui::Frame::NONE
-        .fill(tab_fill)
-        .corner_radius(corner)
-        .stroke(egui::Stroke::NONE);
-
-    let resp = tab_frame
-        .show(ui, |ui| {
-            ui.set_min_width(160.0);
-            ui.set_max_width(200.0);
-            ui.set_min_height(28.0);
-
-            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                ui.add_space(12.0);
-                ui.vertical(|ui| {
-                    ui.add_space(2.0); // fine-tune
-                    ui.add(egui::Label::new(regular::FOLDER_SIMPLE).selectable(false));
-                });
-
-                let label_color = if is_active {
-                    palette.row_label_selected
-                } else {
-                    ui.visuals().widgets.noninteractive.fg_stroke.color
-                };
-
-                let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
-
-                // --- DISPLAY TEXT WITH TRUNCATION ---
-                let available_width = ui.available_width() - 24.0; // Account for spacing
-                let max_chars = (available_width / 7.0) as usize; // Approximate character width
-
-                let display_title = if tab.title.len() > max_chars && max_chars > 3 {
-                    // Use character boundaries instead of byte indices
-                    let mut char_count = 0;
-                    let mut byte_end = 0;
-                    for (i, _) in tab.title.char_indices() {
-                        if char_count >= max_chars - 3 {
-                            break;
-                        }
-                        char_count += 1;
-                        byte_end = i;
-                    }
-                    format!("{}...", &tab.title[..byte_end])
-                } else {
-                    tab.title.clone()
-                };
-
-                let resp = ui.add(egui::Label::new(
-                    egui::RichText::new(display_title)
-                        .color(label_color)
-                        .font(font_id),
-                ));
-
-                // Add tooltip showing full path
-                let resp = resp.on_hover_text(
-                    egui::RichText::new(format!("{}", tab.full_path.display()))
-                        .size(palette.tooltip_text_size)
-                        .color(palette.tooltip_text_color),
-                );
-
-                // Change cursor depending on hover state
-                if resp.hovered() {
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
-                } else {
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
-                }
-            });
-        })
-        .response
-        .interact(egui::Sense::click());
-
-    let rect = resp.rect;
-
-    // 👇 Allow space for outside stroke, but still clip bottom
-    let clip_rect = egui::Rect::from_min_max(
-        egui::pos2(rect.min.x - 10.0, rect.min.y - 1.0),
-        egui::pos2(rect.max.x + 10.0, rect.max.y + 0.5),
-    );
-
-    let painter = ui.painter().with_clip_rect(clip_rect);
-
-    let rounding = egui::CornerRadius {
-        nw: corner.nw,
-        ne: corner.ne,
-        sw: 0,
-        se: 0,
-    };
-
-    let stroke = if is_active {
-        egui::Stroke::new(1.0, palette.tab_border_active)
-    } else {
-        egui::Stroke::new(1.0, palette.tab_border_default)
-    };
-
-    // ✅ Draw border
-    painter.rect_stroke(rect, rounding, stroke, egui::StrokeKind::Outside);
-
-    // 🎯 Active tab blends into panel
-    if is_active {
-        painter.line_segment(
-            [rect.left_bottom(), rect.right_bottom()],
-            egui::Stroke::new(2.0, ui.visuals().panel_fill),
-        );
-    }
-
-    if resp.clicked() {
-        action.activate = Some(tab.id);
-    }
-
-    let close_resp = tab_close_button(ui, resp.rect, tab.id, palette);
-    if close_resp.clicked() {
-        action.close = Some(tab.id);
-    }
-
-    let _ = resp;
-}
-
 fn handle_draw_tab_new(
     ui: &mut egui::Ui,
     tab: &TabInfo,
@@ -546,28 +411,104 @@ pub fn draw_tabbar(
         ui.separator();
 
         // 👇 SWITCH BETWEEN MODES
-        if tab.is_editing_path {
-            let resp = ui.add(
-                egui::TextEdit::singleline(&mut tab.path_buffer)
-                    .desired_width(ui.available_width() - 40.0)
-                    .font(FontId::new(
-                        palette.text_size,
-                        egui::FontFamily::Proportional,
-                    )),
-            );
+        if tab.breadcrumb_path_editing {
+            let text_edit_id = ui.id().with("breadcrumbs_path_edit");
 
-            resp.request_focus();
+            // --- 🔥 Shake animation ---
+            let mut offset_x = 0.0;
+            if tab.breadcrumb_path_error {
+                let t = (ui.input(|i| i.time) - tab.breadcrumb_path_error_animation_time) as f32;
 
+                if t < 0.4 {
+                    let frequency = 30.0_f32;
+                    let amplitude = 4.0 * (1.0 - t / 0.4); // decay
+                    offset_x = (t * frequency).sin() * amplitude;
+                }
+            }
+
+            ui.add_space(offset_x);
+
+            let time_since_error = ui.input(|i| i.time) - tab.breadcrumb_path_error_animation_time;
+            let error_strength = (1.0 - time_since_error * 2.0).clamp(0.0, 1.0);
+
+            let stroke_color = if tab.breadcrumb_path_error {
+                egui::Color32::from_rgba_premultiplied(255, 80, 80, (255.0 * error_strength) as u8)
+            } else {
+                ui.visuals().widgets.inactive.bg_stroke.color
+            };
+
+            let frame = egui::Frame::NONE
+                .stroke(egui::Stroke::new(1.5, stroke_color))
+                .corner_radius(egui::CornerRadius::same(4));
+
+            let mut resp = frame
+                .show(ui, |ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut tab.breadcrumb_path_buffer)
+                            .id(text_edit_id)
+                            .frame(!tab.breadcrumb_path_error)
+                            .desired_width(ui.available_width() - 40.0)
+                            .font(FontId::new(
+                                palette.text_size,
+                                egui::FontFamily::Proportional,
+                            )),
+                    )
+                })
+                .inner;
+
+            if resp.changed() {
+                tab.breadcrumb_path_error = false;
+            }
+
+            if tab.breadcrumb_path_error && resp.hovered() {
+                resp = resp.on_hover_text(egui::RichText::new("Path does not exist")
+                    .size(palette.tooltip_text_size)
+                    .color(palette.tooltip_text_color));
+            }
+
+            if !tab.breadcrumb_just_started_editing || tab.breadcrumb_path_error {
+                resp.request_focus();
+                tab.breadcrumb_just_started_editing = true;
+            }
+
+            // ✅ Track focus for global shortcut blocking
+            action.is_breadcrumb_path_edit_active = resp.has_focus();
+
+            // ✅ Handle input behavior (DON’T REMOVE THIS)
             let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
             let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
+            let mut exit_edit_mode = false;
+
             if enter {
-                action.nav_to = Some(PathBuf::from(tab.path_buffer.clone()));
-                tab.is_editing_path = false;
+                let input = tab.breadcrumb_path_buffer.trim().trim_matches('"');
+                let new_path = PathBuf::from(input);
+
+                if new_path.exists() {
+                    action.nav_to = Some(new_path);
+                    exit_edit_mode = true;
+                } else {
+                    println!("Invalid path: {}", tab.breadcrumb_path_buffer);
+                    tab.breadcrumb_path_error = true;
+                    tab.breadcrumb_path_error_animation_time = ui.input(|i| i.time);
+                }
             } else if escape {
-                tab.is_editing_path = false;
+                tab.breadcrumb_path_buffer = tab.nav.current.to_string_lossy().to_string();
+                exit_edit_mode = true;
             } else if resp.lost_focus() {
-                tab.is_editing_path = false;
+                tab.breadcrumb_path_buffer = tab.nav.current.to_string_lossy().to_string();
+                exit_edit_mode = true;
+            }
+
+            if exit_edit_mode {
+                tab.breadcrumb_path_editing = false;
+                tab.breadcrumb_just_started_editing = false;
+
+                // 🔥 Reset error state
+                tab.breadcrumb_path_error = false;
+                tab.breadcrumb_path_error_animation_time = 0.0;
+
+                ui.memory_mut(|mem| mem.surrender_focus(text_edit_id));
             }
         } else if tab.nav.is_root() {
             let pc_icon_path = PathBuf::from("C:\\");
@@ -590,7 +531,6 @@ pub fn draw_tabbar(
                 build_breadcrumbs(&tab.nav.current, ui.available_width(), palette.text_size);
             let mut first = true;
 
-            // Track right-most x-coordinate of breadcrumbs
             let mut breadcrumbs_right = 0.0;
 
             for (_idx, (label, path)) in segments.iter().enumerate() {
@@ -665,8 +605,8 @@ pub fn draw_tabbar(
                 )
                 .clicked()
             {
-                tab.is_editing_path = true;
-                tab.path_buffer = tab.nav.current.to_string_lossy().to_string();
+                tab.breadcrumb_path_editing = true;
+                tab.breadcrumb_path_buffer = tab.nav.current.to_string_lossy().to_string();
             }
         }
     });
