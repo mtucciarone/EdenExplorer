@@ -461,9 +461,11 @@ pub fn draw_tabbar(
             }
 
             if tab.breadcrumb_path_error && resp.hovered() {
-                resp = resp.on_hover_text(egui::RichText::new("Path does not exist")
-                    .size(palette.tooltip_text_size)
-                    .color(palette.tooltip_text_color));
+                resp = resp.on_hover_text(
+                    egui::RichText::new("Path does not exist")
+                        .size(palette.tooltip_text_size)
+                        .color(palette.tooltip_text_color),
+                );
             }
 
             if !tab.breadcrumb_just_started_editing || tab.breadcrumb_path_error {

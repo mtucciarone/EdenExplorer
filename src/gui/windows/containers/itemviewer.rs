@@ -983,7 +983,9 @@ fn handle_global_actions(
     tabbar_action: &mut Option<TabbarAction>,
 ) -> Option<ItemViewerAction> {
     // 🔥 TEMP: disable focus blocking for now (fix later with rename_state)
-    let is_text_edit_active = tabbar_action.as_ref().is_some_and(|t| t.is_breadcrumb_path_edit_active);
+    let is_text_edit_active = tabbar_action
+        .as_ref()
+        .is_some_and(|t| t.is_breadcrumb_path_edit_active);
     if is_text_edit_active {
         return None;
     }
