@@ -1,20 +1,82 @@
 <p align="center">
-  <img src="src/assets/icon.ico" alt="Eden Explorer Icon" width="128" height="128">
+  <img src="src/assets/icon.ico" alt="EdenExplorer Icon" width="128" height="128">
 </p>
 
-# FOSS Windows 11 Explorer - Eden Explorer
+# EdenExplorer — The Ultimate Open Source Windows File Manager 🚀
 
-**Eden Explorer** is a blazing-fast, FOSS (Fully Open Source Software) minimal Windows 11 file explorer built in Rust with egui.  
-It is designed for performance, direct NT-level filesystem scanning, and low memory overhead.  
+**EdenExplorer** is a next-generation, **blazing-fast**, fully open-source file explorer built for Windows 11+ using **Rust** and **egui**.
+Designed from the ground up for **performance, efficiency, and modern workflows**, EdenExplorer is the **best FOSS alternative** to the default Windows File Explorer.
+
 ---
-## Why Eden Explorer and not the native File Explorer?
 
-The native File Explorer in Windows 11 is bloated and slow. Eden Explorer is designed to be fast, minimal, and efficient.
+## ⚡ Why EdenExplorer?
+
+Windows File Explorer hasn't kept up with power users. It's slow, bloated, and resource-heavy.
+
+**EdenExplorer changes that.**
+
+* ⚡ **Lightning-fast performance** — Direct NT-level filesystem scanning with minimal overhead
+* 🧠 **Efficient by design** — Built in Rust for memory safety and speed
+* 🎯 **Minimal, modern UI** — Clean, distraction-free interface that just works
+* 🔓 **100% Free & Open Source** — No telemetry, no lock-in, no nonsense
+* 🪶 **Lightweight footprint** — Uses a fraction of the resources of Explorer
+* 🧰 **Built for daily use** — Your new go-to file manager for everything
+
+---
+
+## 🚀 A True Windows Explorer Replacement
+
+EdenExplorer isn't just an alternative — it's a **drop-in upgrade**.
+
+Whether you're:
+
+* Navigating large directories
+* Managing files at scale
+* Working with development environments
+* Or just browsing your system daily
+
+EdenExplorer delivers a **consistently fast, smooth experience** without the lag.
+
+---
+
+## 🧩 Built With Modern Technology
+
+* 🦀 **Rust** — Safe, fast, and reliable systems programming
+* 🎨 **egui** — Immediate mode GUI for ultra-responsive interfaces
+* ⚙️ **NT-level filesystem access** — Maximum performance, minimal abstraction
+
+---
+
+## 💡 Designed for Power Users (Without Feeling Heavy)
+
+EdenExplorer strikes the perfect balance:
+
+* Not overly complex
+* Not overly minimal
+* Just the **right amount of power and simplicity**
+
+---
+
+## 🌱 The Future of File Management
+
+EdenExplorer is actively evolving to become the **best open-source file manager on Windows**.
+
+If you're tired of slow file operations and unnecessary UI clutter, it's time to switch.
+
+---
+
+## ⭐ Try It. Star It. Replace Explorer.
+
+If EdenExplorer improves your workflow, consider giving it a ⭐ on GitHub and contributing to the project.
+
+**Fast. Clean. Open. Powerful.**
+That's EdenExplorer.
+
 
 ### 🔬 Technical Architecture Comparison
 
 #### **🚀 Performance Architecture**
-**Eden Explorer:**
+**EdenExplorer:**
 - **NT-level filesystem access** via direct NT API calls (`NtQueryDirectoryFile`) bypassing Win32 abstraction layers
 - **USN Journal monitoring** for real-time filesystem changes without polling
 - **MFT (Master File Table) enumeration** for instant directory scanning
@@ -29,7 +91,7 @@ The native File Explorer in Windows 11 is bloated and slow. Eden Explorer is des
 - **Multiple memory copies** through various API boundaries
 
 #### **💾 Memory Efficiency**
-**Eden Explorer:**
+**EdenExplorer:**
 - **Rust's ownership model** ensures memory safety without garbage collection pauses
 - **DashMap concurrent collections** for lock-free data structures
 - **Streaming directory enumeration** with 64KB buffers vs. File Explorer's multiple allocations
@@ -43,7 +105,7 @@ The native File Explorer in Windows 11 is bloated and slow. Eden Explorer is des
 - **Shell extensions** loading into process space increasing memory footprint
 
 #### **⚡ Real-time Indexing**
-**Eden Explorer:**
+**EdenExplorer:**
 - **USN Journal integration** provides O(1) change detection
 - **Incremental updates** to file index without full rescans
 - **Background indexing** with configurable priority levels
@@ -57,7 +119,7 @@ The native File Explorer in Windows 11 is bloated and slow. Eden Explorer is des
 - **Single-threaded search** operations
 
 #### **🎯 UI Responsiveness**
-**Eden Explorer:**
+**EdenExplorer:**
 - **egui immediate mode GUI** with single-pass rendering
 - **Asynchronous directory scanning** preventing UI freezes
 - **Background file operations** with progress callbacks
@@ -71,7 +133,7 @@ The native File Explorer in Windows 11 is bloated and slow. Eden Explorer is des
 - **Single-window interface** forcing context switches
 
 #### **🔧 Low-level Optimizations**
-**Eden Explorer:**
+**EdenExplorer:**
 - **Direct NTFS access** reading file records without path resolution
 - **Batch I/O operations** minimizing system call overhead
 - **Custom time formatting** avoiding expensive locale operations
@@ -87,7 +149,7 @@ The native File Explorer in Windows 11 is bloated and slow. Eden Explorer is des
 #### **📊 Benchmark Results**
 Based on internal testing with 100,000+ file directories:
 
-| Operation | Eden Explorer | Windows File Explorer | Improvement |
+| Operation | EdenExplorer | Windows File Explorer | Improvement |
 |-----------|---------------|----------------------|-------------|
 | Directory listing (100k files) | ~200ms | ~2.5s | **12.5x faster** |
 | Search across indexed drive | ~50ms | ~800ms | **16x faster** |
@@ -96,7 +158,7 @@ Based on internal testing with 100,000+ file directories:
 | Startup time | ~0.8s | ~2.1s | **2.6x faster** |
 
 #### **🛡️ Reliability & Safety**
-**Eden Explorer:**
+**EdenExplorer:**
 - **Rust's memory safety** eliminates entire classes of bugs
 - **Error propagation** through `Result` types preventing silent failures
 - **Resource management** via RAII preventing handle leaks
@@ -110,7 +172,7 @@ Based on internal testing with 100,000+ file directories:
 - **Legacy compatibility** code with security implications
 
 ### 🎯 Bottom Line
-Eden Explorer represents a **fundamentally different approach** to file management, leveraging modern systems programming principles and direct OS integration to deliver performance that simply isn't possible with Windows File Explorer's legacy architecture.
+EdenExplorer represents a **fundamentally different approach** to file management, leveraging modern systems programming principles and direct OS integration to deliver performance that simply isn't possible with Windows File Explorer's legacy architecture.
 
 ## ✨ Features
 
@@ -133,7 +195,7 @@ Eden Explorer represents a **fundamentally different approach** to file manageme
 
 ---
 
-## Requirements
+## Installation
 
 - **Windows 11** (or Windows 10+)
 - **Rust** (latest stable or nightly)
@@ -142,7 +204,7 @@ Eden Explorer represents a **fundamentally different approach** to file manageme
 
 ---
 
-## Installation
+### Installation Requirements
 1. Install Rust:
 ```powershell
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
