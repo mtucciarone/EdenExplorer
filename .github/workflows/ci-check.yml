@@ -1,0 +1,69 @@
+name: CI Build Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]  # Trigger on PR open, new commits, and reopen
+    branches:
+      - main  # Only run for PRs targeting main branch
+
+jobs:
+  build-check:
+    runs-on: windows-latest  # Using Windows since this is a Windows-specific application
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        components: rustfmt, clippy  # Include formatting and linting tools
+        
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-ci-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-ci-
+          ${{ runner.os }}-cargo-
+    
+    - name: Check Rust formatting
+      run: cargo fmt --all -- --check
+      
+    - name: Run Clippy lints
+      run: cargo clippy --all-targets --all-features -- -D warnings
+      
+    - name: Build in debug mode (faster check)
+      run: cargo build --verbose
+      
+    - name: Build in release mode (final check)
+      run: cargo build --release --verbose
+      
+    - name: Run tests
+      run: cargo test --verbose
+      
+    - name: Check for unused dependencies
+      run: |
+        cargo install cargo-machete
+        cargo machete
+      continue-on-error: true  # Don't fail the build for unused deps, just warn
+      
+    - name: Build summary
+      run: |
+        echo "✅ Build completed successfully!"
+        echo "📦 Binary size:"
+        if (Test-Path "target/release/EdenExplorer.exe") {
+          $size = (Get-Item "target/release/EdenExplorer.exe").Length / 1MB
+          echo "EdenExplorer.exe: $([math]::Round($size, 2)) MB"
+        } elseif (Test-Path "target/release/eden_explorer.exe") {
+          $size = (Get-Item "target/release/eden_explorer.exe").Length / 1MB
+          echo "eden_explorer.exe: $([math]::Round($size, 2)) MB"
+        } else {
+          echo "Binary not found with expected names"
+        }
+      shell: pwsh

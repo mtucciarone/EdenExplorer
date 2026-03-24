@@ -432,12 +432,12 @@ fn get_drive_infos_internal() -> Vec<DriveInfo> {
 
 unsafe fn wcslen(mut ptr: *const u16) -> usize {
     unsafe {
-    let mut len = 0;
-    while *ptr != 0 {
-        len += 1;
-        ptr = ptr.add(1);
-    }
-    len
+        let mut len = 0;
+        while *ptr != 0 {
+            len += 1;
+            ptr = ptr.add(1);
+        }
+        len
     }
 }
 

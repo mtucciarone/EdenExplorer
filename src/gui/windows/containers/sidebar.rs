@@ -3,10 +3,10 @@ use crate::core::networkdevices::NetworkDevicesState;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::drive_usage_gradient;
+use crate::gui::windows::containers::structs::{FavoriteItem, SidebarAction};
 use eframe::egui;
 use egui::{FontFamily, FontId, ScrollArea};
 use std::path::PathBuf;
-use crate::gui::windows::containers::structs::{FavoriteItem, SidebarAction};
 
 /// Draw a single sidebar item (favorite or folder)
 fn sidebar_item(

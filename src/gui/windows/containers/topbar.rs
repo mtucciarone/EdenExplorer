@@ -1,8 +1,8 @@
 use crate::gui::utils::clickable_icon;
+use crate::gui::windows::containers::structs::TopbarAction;
 use eframe::egui;
 use egui::Pos2;
 use egui_phosphor::regular;
-use crate::gui::windows::containers::structs::TopbarAction;
 
 pub fn draw_topbar(
     ui: &mut egui::Ui,
@@ -61,55 +61,55 @@ pub fn draw_topbar(
 }
 
 fn menu_item(
-        ui: &mut egui::Ui,
-        icon: &str,
-        label: &str,
-        palette: &crate::gui::theme::ThemePalette,
-    ) -> egui::Response {
-        let text_galley = ui.fonts_mut(|fonts| {
-            fonts.layout_no_wrap(
-                label.to_owned(),
-                egui::FontId::proportional(palette.text_size),
-                ui.visuals().text_color(),
-            )
-        });
-        let text_width = text_galley.size().x;
-        let row_height = 18.0;
-        let icon_width = 18.0;
-        let spacing = 4.0;
-
-        let total_size = egui::vec2(icon_width + spacing + text_width, row_height);
-
-        let (rect, response) = ui.allocate_exact_size(total_size, egui::Sense::click());
-        let mut x = rect.min.x;
-        let center_y = rect.center().y;
-
-        let icon_color = if response.hovered() {
-            palette.primary
-        } else {
-            ui.visuals().text_color()
-        };
-        ui.painter().text(
-            egui::pos2(x, center_y),
-            egui::Align2::LEFT_CENTER,
-            icon,
-            egui::FontId::default(),
-            icon_color,
-        );
-        x += icon_width + spacing;
-
-        let text_color = if response.hovered() {
-            palette.primary
-        } else {
-            ui.visuals().text_color()
-        };
-        ui.painter().text(
-            egui::pos2(x, center_y),
-            egui::Align2::LEFT_CENTER,
-            label,
+    ui: &mut egui::Ui,
+    icon: &str,
+    label: &str,
+    palette: &crate::gui::theme::ThemePalette,
+) -> egui::Response {
+    let text_galley = ui.fonts_mut(|fonts| {
+        fonts.layout_no_wrap(
+            label.to_owned(),
             egui::FontId::proportional(palette.text_size),
-            text_color,
-        );
+            ui.visuals().text_color(),
+        )
+    });
+    let text_width = text_galley.size().x;
+    let row_height = 18.0;
+    let icon_width = 18.0;
+    let spacing = 4.0;
 
-        response
-    }
+    let total_size = egui::vec2(icon_width + spacing + text_width, row_height);
+
+    let (rect, response) = ui.allocate_exact_size(total_size, egui::Sense::click());
+    let mut x = rect.min.x;
+    let center_y = rect.center().y;
+
+    let icon_color = if response.hovered() {
+        palette.primary
+    } else {
+        ui.visuals().text_color()
+    };
+    ui.painter().text(
+        egui::pos2(x, center_y),
+        egui::Align2::LEFT_CENTER,
+        icon,
+        egui::FontId::default(),
+        icon_color,
+    );
+    x += icon_width + spacing;
+
+    let text_color = if response.hovered() {
+        palette.primary
+    } else {
+        ui.visuals().text_color()
+    };
+    ui.painter().text(
+        egui::pos2(x, center_y),
+        egui::Align2::LEFT_CENTER,
+        label,
+        egui::FontId::proportional(palette.text_size),
+        text_color,
+    );
+
+    response
+}

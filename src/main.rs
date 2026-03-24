@@ -7,16 +7,12 @@ use eframe::{NativeOptions, egui};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use windows::Win32::Foundation::HWND;
 
-fn get_hwnd_from_cc(
-    cc: &eframe::CreationContext<'_>,
-) -> Option<HWND> {
+fn get_hwnd_from_cc(cc: &eframe::CreationContext<'_>) -> Option<HWND> {
     let handle = cc.window_handle().ok()?;
     let raw = handle.as_raw();
 
     match raw {
-        RawWindowHandle::Win32(h) => {
-            Some(HWND(h.hwnd.get() as *mut std::ffi::c_void))
-        }
+        RawWindowHandle::Win32(h) => Some(HWND(h.hwnd.get() as *mut std::ffi::c_void)),
         _ => None,
     }
 }
@@ -25,12 +21,8 @@ fn main() -> eframe::Result<()> {
     let icon = load_icon().expect("Failed to load icon");
     let (_folder_scanning_enabled, window_size_mode) = load_app_settings();
     let window_size = match window_size_mode {
-        WindowSizeMode::FullScreen => {
-            egui::Vec2::new(1920.0, 1080.0)
-        }
-        WindowSizeMode::HalfScreen => {
-            egui::Vec2::new(960.0, 540.0)
-        }
+        WindowSizeMode::FullScreen => egui::Vec2::new(1920.0, 1080.0),
+        WindowSizeMode::HalfScreen => egui::Vec2::new(960.0, 540.0),
         WindowSizeMode::Custom { width, height } => egui::Vec2::new(width, height),
     };
 
@@ -58,7 +50,6 @@ fn main() -> eframe::Result<()> {
             }
 
             cc.egui_ctx.set_fonts(fonts);
-
 
             let hwnd = get_hwnd_from_cc(cc);
             Ok(Box::new(gui::MainWindow::new(hwnd)))

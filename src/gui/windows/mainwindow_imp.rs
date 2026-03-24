@@ -1,11 +1,12 @@
 use crate::core::drives::{get_drives, parse_drive_display};
 use crate::core::fs::{get_drive_space, parallel_directory_scan, scan_dir_async};
 use crate::core::indexer::{save_app_settings, save_favorites};
-use crate::core::state::{execute_op, redo, undo, FileItem, FileOp, Navigation};
+use crate::core::state::{FileItem, FileOp, Navigation, execute_op, redo, undo};
+use crate::gui::MainWindow;
 use crate::gui::theme::{ThemeMode, ThemePalette};
 use crate::gui::utils::{
-    clear_clipboard_files, copy_dir_recursive, get_clipboard_files, set_clipboard_files,
-    shell_delete_to_recycle_bin, show_copy_move_dialog, sort_files, SortColumn,
+    SortColumn, clear_clipboard_files, copy_dir_recursive, get_clipboard_files,
+    set_clipboard_files, shell_delete_to_recycle_bin, show_copy_move_dialog, sort_files,
 };
 use crate::gui::windows::containers::enums::{
     ItemViewerAction, ItemViewerContextAction, TabbarNavAction,
@@ -15,18 +16,17 @@ use crate::gui::windows::containers::structs::{
     TabsAction, TopbarAction,
 };
 use crate::gui::windows::customizetheme::{
-    draw_theme_customizer, ThemeCustomizer, ThemeCustomizerAction,
+    ThemeCustomizer, ThemeCustomizerAction, draw_theme_customizer,
 };
-use crate::gui::windows::settings::{draw_settings_window, SettingsAction};
-use crate::gui::MainWindow;
+use crate::gui::windows::settings::{SettingsAction, draw_settings_window};
 use crossbeam_channel::Receiver;
-use crossbeam_channel::{unbounded, Sender};
+use crossbeam_channel::{Sender, unbounded};
 use eframe::egui;
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Foundation::*;
@@ -34,7 +34,7 @@ use windows::Win32::Graphics::Dwm::*;
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows::Win32::UI::Shell::ShellExecuteW;
-use windows::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_INVOKEIDLIST, SHELLEXECUTEINFOW};
+use windows::Win32::UI::Shell::{SEE_MASK_INVOKEIDLIST, SHELLEXECUTEINFOW, ShellExecuteExW};
 use windows::Win32::UI::WindowsAndMessaging::*;
 // use windows::Win32::UI::WindowsAndMessaging::{SW_SHOW, SW_SHOWNORMAL};
 use windows::core::PCWSTR;

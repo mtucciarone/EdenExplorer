@@ -340,8 +340,7 @@ fn handle_draw_add_new_tab_button(
 
         let add_resp = add_frame.show(ui, |ui| {
             ui.set_min_width(25.0);
-            let (rect, resp) =
-                ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
+            let (rect, resp) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
             (rect, resp)
         });
 
