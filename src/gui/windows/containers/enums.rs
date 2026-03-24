@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use crate::gui::utils::SortColumn;
+use std::path::PathBuf;
 
 pub enum TabbarNavAction {
     Back,

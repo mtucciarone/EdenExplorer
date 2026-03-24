@@ -1,6 +1,6 @@
 use crate::core::state::Navigation;
-use std::path::{PathBuf};
 use crate::gui::windows::containers::enums::TabbarNavAction;
+use std::path::PathBuf;
 
 #[derive(Clone)]
 pub struct TabInfo {
@@ -64,5 +64,5 @@ pub struct SidebarAction {
 pub struct TopbarAction {
     pub toggle_theme: bool,
     pub customize_theme: bool,
-    pub open_settings: bool
+    pub open_settings: bool,
 }
