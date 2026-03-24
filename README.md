@@ -73,15 +73,18 @@ If EdenExplorer improves your workflow, consider giving it a ⭐ on GitHub and c
 That's EdenExplorer.
 
 
-## 🔬 Technical Architecture Comparison
+## Technical Architecture Comparison
 
-#### **🚀 Performance Architecture**
+#### **Performance Architecture**
 **EdenExplorer:**
-- **NT-level filesystem access** via direct NT API calls (`NtQueryDirectoryFile`) bypassing Win32 abstraction layers
-- **Asynchronous directory scanning** with background threading to prevent UI freezes
-- **Efficient buffer management** using 64KB buffers for streaming directory enumeration
-- **Background file operations** with progress callbacks
-- **Direct Windows API integration** for optimal performance
+- **NT-level filesystem access** via direct `NtQueryDirectoryFile` API calls with `FILE_DIRECTORY_INFORMATION` structures
+- **Zero-copy directory enumeration** using 64KB buffers with `IO_STATUS_BLOCK` for minimal allocations
+- **Asynchronous directory scanning** via `crossbeam-channel` for thread-safe communication preventing UI freezes
+- **Background file operations** with progress callbacks using concurrent message passing
+- **Direct Windows API integration** via `windows` crate for optimal performance and compatibility
+- **Parallel folder size calculation** with recursive directory traversal and progress emission
+- **Efficient drive space queries** using `GetDiskFreeSpaceExW` with intelligent caching
+- **Icon caching system** with background loading using `SHGetFileInfoW` and `SHGetImageList`
 
 **Windows File Explorer:**
 - **Win32 API layer** with multiple abstraction overheads
@@ -93,10 +96,12 @@ That's EdenExplorer.
 #### **💾 Memory Efficiency**
 **EdenExplorer:**
 - **Rust's ownership model** ensures memory safety without garbage collection pauses
-- **Streaming directory enumeration** with 64KB buffers vs. File Explorer's multiple allocations
-- **Lazy loading** of file metadata only when needed
-- **Binary cache format** using `bincode` for compact, fast serialization
-- **Efficient string handling** with minimal allocations
+- **Streaming directory enumeration** using 64KB buffers vs. File Explorer's multiple allocations
+- **Lazy loading** of file metadata only when needed with on-demand computation
+- **Binary cache format** using `bincode` for compact, fast serialization of settings and favorites
+- **Efficient string handling** with UTF-16 to UTF-8 conversion only when necessary
+- **Icon caching system** using `Arc<Mutex<HashMap>>` for thread-safe shared texture storage
+- **Background icon loading** via `crossbeam-channel` to prevent UI memory spikes
 
 **Windows File Explorer:**
 - **COM-based architecture** with reference counting overhead
@@ -281,12 +286,15 @@ Submit a pull request with a description of your changes
 - [x] **Dark/Light theme switching** with toggle controls
 - [x] **Comprehensive navigation** with back/forward/up controls
 - [x] **Favorites system** with drag-and-drop support
+- [x] **Favorites management** with reset and reorganization capabilities
 - [x] **Context menu operations** (cut, copy, paste, rename, delete)
 - [x] **Enhanced drive caching** with 30-second cache duration for improved UI performance
 - [x] **Optimized icon caching** with metadata-based cache keys and background loading
 - [x] **Folder size scanning control** with user setting to enable/disable performance-heavy operations
+- [x] **Window size customization** with fullscreen, half-screen, and custom dimension modes
 - [x] **Portable device support** for iPhone, Android, and other connected devices
 - [x] **Raw/unmounted drive detection** for ISO sticks and Linux partitions
+- [x] **Performance benchmarking system** with real-time measurement and comparison tools
 
 ### 🚀 Upcoming Features
 - [ ] **Image previews using Spacebar** - GPU texture via wgpu / egui_wgpu_backend

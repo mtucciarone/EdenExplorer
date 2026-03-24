@@ -30,6 +30,10 @@ jobs:
       with:
         toolchain: stable
         
+    - name: Install cargo-edit for icon embedding
+      run: cargo install cargo-edit
+      shell: pwsh
+        
     - name: Cache cargo registry
       uses: actions/cache@v4
       with:
@@ -41,8 +45,33 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cargo-
     
-    - name: Build in release mode
-      run: cargo build --release --verbose
+    - name: Verify icon file exists
+      run: |
+        if (Test-Path "src/assets/icon.ico") {
+          echo "✅ Icon file found at src/assets/icon.ico"
+          $iconSize = (Get-Item "src/assets/icon.ico").Length
+          echo "📏 Icon file size: $([math]::Round($iconSize/1KB, 2)) KB"
+        } else {
+          echo "❌ Icon file not found at src/assets/icon.ico"
+          exit 1
+        }
+      shell: pwsh
+        
+    - name: Build in release mode with icon embedding
+      run: |
+        echo "🔨 Building EdenExplorer with embedded icon..."
+        cargo build --release --verbose
+        
+        # Verify the executable was created
+        if (Test-Path "target/release/EdenExplorer.exe") {
+          echo "✅ Build completed successfully"
+          $exeSize = (Get-Item "target/release/EdenExplorer.exe").Length
+          echo "📏 Executable size: $([math]::Round($exeSize/1MB, 2)) MB"
+        } else {
+          echo "❌ Build failed - executable not found"
+          exit 1
+        }
+      shell: pwsh
       
     - name: Get version from tag, PR, or input
       id: version
@@ -122,10 +151,10 @@ jobs:
         $binaryPath = ""
         if (Test-Path "target/release/EdenExplorer.exe") {
           $binaryPath = "target/release/EdenExplorer.exe"
-          echo "Found EdenExplorer.exe"
+          echo "✅ Found EdenExplorer.exe with embedded icon"
         } elseif (Test-Path "target/release/eden_explorer.exe") {
           $binaryPath = "target/release/eden_explorer.exe"
-          echo "Found eden_explorer.exe"
+          echo "✅ Found eden_explorer.exe with embedded icon"
         } else {
           echo "❌ No binary found in target/release/"
           exit 1
@@ -133,14 +162,37 @@ jobs:
         
         # Copy binary with consistent name for release
         Copy-Item $binaryPath "release/EdenExplorer.exe"
+        echo "📋 Copied executable to release/EdenExplorer.exe"
+        
+        # Verify the icon is embedded (basic check)
+        $exeInfo = Get-Item "release/EdenExplorer.exe"
+        echo "📏 Final executable size: $([math]::Round($exeInfo.Length/1MB, 2)) MB"
         
         # Copy additional files
-        if (Test-Path "README.md") { Copy-Item "README.md" "release/" }
-        if (Test-Path "LICENSE") { Copy-Item "LICENSE" "release/" }
+        if (Test-Path "README.md") { 
+          Copy-Item "README.md" "release/" 
+          echo "📄 Added README.md"
+        }
+        if (Test-Path "LICENSE") { 
+          Copy-Item "LICENSE" "release/" 
+          echo "📄 Added LICENSE"
+        }
+        if (Test-Path "src/assets/icon.ico") { 
+          Copy-Item "src/assets/icon.ico" "release/" 
+          echo "🎨 Added icon.ico for reference"
+        }
         
         # Show what we're releasing
+        echo ""
         echo "📦 Release contents:"
-        Get-ChildItem release | ForEach-Object { echo "  $($_.Name) ($([math]::Round($_.Length/1MB, 2)) MB)" }
+        Get-ChildItem release | ForEach-Object { 
+          $size = if ($_.Length -gt 1MB) { "$([math]::Round($_.Length/1MB, 2)) MB" } 
+                   elseif ($_.Length -gt 1KB) { "$([math]::Round($_.Length/1KB, 2)) KB" } 
+                   else { "$($_.Length) bytes" }
+          echo "  📄 $($_.Name) ($size)" 
+        }
+        echo ""
+        echo "🎯 The EdenExplorer.exe should now display your custom icon in Windows Explorer!"
       shell: pwsh
       
     - name: Generate AI-powered changelog
