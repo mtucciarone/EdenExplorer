@@ -32,10 +32,11 @@ pub enum ItemViewerContextAction {
     Cut(PathBuf),
     Copy(PathBuf),
     Paste,
+    ClearCut(PathBuf),
     // CopyPath(PathBuf),
     Rename(PathBuf),
     Delete(PathBuf),
-    Properties(PathBuf),
+    Properties(Vec<PathBuf>),
     Undo,
     Redo,
 }

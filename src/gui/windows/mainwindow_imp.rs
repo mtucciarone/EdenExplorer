@@ -33,11 +33,12 @@ use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Dwm::*;
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
+use windows::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::Shell::{SEE_MASK_INVOKEIDLIST, SHELLEXECUTEINFOW, ShellExecuteExW};
 use windows::Win32::UI::WindowsAndMessaging::*;
-// use windows::Win32::UI::WindowsAndMessaging::{SW_SHOW, SW_SHOWNORMAL};
-use windows::core::PCWSTR;
+use windows::{Win32::System::Com::*, Win32::UI::Shell::*, core::*};
+
 static mut ORIGINAL_WNDPROC: Option<WNDPROC> = None;
 
 impl MainWindow {
@@ -57,8 +58,11 @@ impl MainWindow {
         self.tabs.push(TabState {
             id,
             nav,
-            is_editing_path: false,
-            path_buffer: String::new(),
+            breadcrumb_path_editing: false,
+            breadcrumb_path_buffer: String::new(),
+            breadcrumb_just_started_editing: false,
+            breadcrumb_path_error: false,
+            breadcrumb_path_error_animation_time: 0.0,
         });
         self.active_tab = self.tabs.len() - 1;
     }
@@ -254,7 +258,16 @@ impl MainWindow {
         match action {
             ItemViewerContextAction::Cut(path) => {
                 let _ = set_clipboard_files(&[path.clone()], true);
+
+                // ✅ Update UI state
+                self.cut_paths.clear();
+                self.cut_paths.insert(path.clone());
+
                 self.selected_path = Some(path);
+            }
+            ItemViewerContextAction::ClearCut(_) => {
+                // Clear cut state
+                self.cut_paths.clear();
             }
             ItemViewerContextAction::Copy(path) => {
                 println!("Copy action received for: {:?}", path);
@@ -264,6 +277,7 @@ impl MainWindow {
             ItemViewerContextAction::Paste => {
                 println!("Paste action received");
                 self.paste_clipboard();
+                self.cut_paths.clear();
             }
             ItemViewerContextAction::Rename(path) => {
                 let name = path
@@ -280,8 +294,8 @@ impl MainWindow {
                 self.delete_path(&path);
                 self.load_path();
             }
-            ItemViewerContextAction::Properties(path) => {
-                self.open_properties(&path);
+            ItemViewerContextAction::Properties(paths) => {
+                self.open_properties_multi(&paths);
             }
             ItemViewerContextAction::Undo => {
                 self.undo();
@@ -358,6 +372,23 @@ impl MainWindow {
                 let _ = std::fs::remove_dir_all(path);
             } else {
                 let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+
+    pub fn open_properties_multi(&self, paths: &[PathBuf]) {
+        if paths.is_empty() {
+            return;
+        }
+
+        if paths.len() == 1 {
+            self.open_properties(&paths[0]);
+            return;
+        }
+
+        if let Some(data_object) = create_data_object(paths) {
+            unsafe {
+                let _ = SHMultiFileProperties(&data_object, 0);
             }
         }
     }
@@ -495,8 +526,11 @@ impl MainWindow {
                 self.tabs.push(TabState {
                     id,
                     nav: cloned_nav,
-                    is_editing_path: false,
-                    path_buffer: String::new(),
+                    breadcrumb_path_editing: false,
+                    breadcrumb_path_buffer: String::new(),
+                    breadcrumb_just_started_editing: false,
+                    breadcrumb_path_error: false,
+                    breadcrumb_path_error_animation_time: 0.0,
                 });
                 self.active_tab = self.tabs.len() - 1;
                 self.load_path();
@@ -654,6 +688,61 @@ impl MainWindow {
                 ctx.request_repaint();
             }
         }
+    }
+}
+
+fn split_parent(paths: &[PathBuf]) -> Option<(PathBuf, Vec<PathBuf>)> {
+    if paths.is_empty() {
+        return None;
+    }
+
+    let parent = paths[0].parent()?.to_path_buf();
+
+    // Ensure all share same parent (Explorer requirement)
+    if !paths.iter().all(|p| p.parent() == Some(parent.as_path())) {
+        return None;
+    }
+
+    let children: Vec<PathBuf> = paths
+        .iter()
+        .filter_map(|p| p.file_name().map(PathBuf::from))
+        .collect();
+
+    Some((parent, children))
+}
+
+pub fn create_data_object(paths: &[PathBuf]) -> Option<IDataObject> {
+    let (parent, children) = split_parent(paths)?;
+
+    unsafe {
+        // Parent PIDL
+        let parent_w: Vec<u16> = parent.as_os_str().encode_wide().chain(Some(0)).collect();
+        let parent_pidl = ILCreateFromPathW(PCWSTR(parent_w.as_ptr()));
+        if parent_pidl.is_null() {
+            return None;
+        }
+
+        let mut child_pidls: Vec<*const ITEMIDLIST> = Vec::new();
+
+        for child in children {
+            let full = parent.join(child);
+            let wide: Vec<u16> = full.as_os_str().encode_wide().chain(Some(0)).collect();
+
+            let full_pidl = ILCreateFromPathW(PCWSTR(wide.as_ptr()));
+            if !full_pidl.is_null() {
+                // 🔥 Convert to relative PIDL
+                let rel = ILFindLastID(full_pidl);
+                child_pidls.push(rel);
+                CoTaskMemFree(Some(full_pidl as _));
+            }
+        }
+
+        let result: Result<IDataObject> =
+            SHCreateDataObject(Some(parent_pidl), Some(&child_pidls), None);
+
+        CoTaskMemFree(Some(parent_pidl as _));
+
+        result.ok()
     }
 }
 

@@ -310,13 +310,12 @@ Submit a pull request with a description of your changes
 ## 🐛 Known Bugs
 
 ### **Critical Issues:**
-- **Multiple files/folders selected opening properties** just opens the file property
-- **Ctrl+C/Ctrl+V in breadcrumb path** copies the first file in the itemviewer instead of path text
-- Double-clicking a selected nested folder doesn't always navigate
 - Creating a new folder/file doesn't automatically scroll the viewier to focus on it
 - **Fix reordering of favorites** in sidebar
 - Fix network detection in sidebar
 - Fix raw/unmounted drive detection for ISO sticks and Linux partitions
+- cut/clear/cutpaste not working as expected and not working for multiple files
+- copy/paste not working as expected
 
 ## License
 This project is FOSS, released under the MIT License.

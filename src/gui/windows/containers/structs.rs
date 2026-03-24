@@ -19,8 +19,11 @@ pub struct TabsAction {
 pub struct TabState {
     pub id: u64,
     pub nav: Navigation,
-    pub is_editing_path: bool,
-    pub path_buffer: String,
+    pub breadcrumb_path_editing: bool,
+    pub breadcrumb_path_buffer: String,
+    pub breadcrumb_just_started_editing: bool,
+    pub breadcrumb_path_error: bool,
+    pub breadcrumb_path_error_animation_time: f64,
 }
 
 #[derive(Default)]
@@ -31,6 +34,7 @@ pub struct TabbarAction {
     pub add_favorite: bool,
     pub nav_to: Option<PathBuf>,
     pub refresh_current_directory: bool,
+    pub is_breadcrumb_path_edit_active: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -65,4 +69,13 @@ pub struct TopbarAction {
     pub toggle_theme: bool,
     pub customize_theme: bool,
     pub open_settings: bool,
+}
+
+#[derive(Default)]
+pub struct ItemViewerLayout {
+    pub row_height: f32,
+    pub header_height: f32,
+    pub header_gap: f32,
+    pub available_width: f32,
+    pub is_drive_view: bool,
 }
