@@ -1,4 +1,5 @@
 use crate::core::state::FileItem;
+use crate::gui::theme::ThemePalette;
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
@@ -16,6 +17,7 @@ use windows::Win32::UI::Shell::{
     SHFILEINFOW, SHGFI_TYPENAME, SHGFI_USEFILEATTRIBUTES, SHGetFileInfoW,
 };
 use windows::core::PCWSTR;
+use egui::{Ui, FontId, Sense, Response, Align2};
 
 /// Creates a clickable icon with hover color effect
 pub fn clickable_icon(ui: &mut egui::Ui, icon: &str, hover_color: egui::Color32) -> egui::Response {
@@ -167,7 +169,7 @@ pub fn drive_usage_bar(
         egui::Align2::CENTER_CENTER,
         percent,
         egui::TextStyle::Small.resolve(ui.style()),
-        palette.icon_color,
+        palette.icon_colored_hover,
     );
 }
 
@@ -554,4 +556,44 @@ pub fn sort_files(files: &mut Vec<FileItem>, column: SortColumn, ascending: bool
 
         if ascending { ord } else { ord.reverse() }
     });
+}
+
+pub fn styled_button(ui: &mut Ui, label: impl Into<String>, palette: &ThemePalette) -> Response {
+    let label = label.into();
+    let font_id = FontId::new(palette.text_size, egui::FontFamily::Proportional);
+
+    // Calculate button size
+    let desired_height = ui.spacing().interact_size.y;
+    let desired_width = ui.available_width(); // full width
+    let size = egui::vec2(desired_width, desired_height);
+
+    // Allocate space and get response
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+
+    // Draw the background and stroke
+    ui.painter().rect(
+        rect,
+        egui::CornerRadius::same(palette.medium_radius),
+        palette.button_background,
+        egui::Stroke::new(1.0, palette.tab_border_default),
+        egui::StrokeKind::Inside,
+    );
+
+    ui.centered_and_justified(|ui| {
+        let text_label = egui::Label::new(
+            egui::RichText::new(label).color(palette.button_stroke).font(font_id),
+        );
+        ui.add(text_label);
+    });
+
+    // // Draw the text, centered
+    // ui.painter().text(
+    //     rect.center(),
+    //     Align2::CENTER_CENTER,
+    //     label,
+    //     font_id,
+    //     palette.button_stroke,
+    // );
+
+    response
 }

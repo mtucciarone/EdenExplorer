@@ -110,8 +110,8 @@ fn handle_draw_tab_new(
                 // Use character boundaries instead of byte indices
                 let mut char_count = 0;
                 let mut byte_end = 0;
-                for (i, _) in tab.title.char_indices() {
-                    if char_count >= max_chars - 3 {
+                for (char_idx, (i, _)) in tab.title.char_indices().enumerate() {
+                    if char_idx >= max_chars - 3 {
                         break;
                     }
                     char_count += 1;
@@ -136,11 +136,7 @@ fn handle_draw_tab_new(
             );
 
             // Change cursor depending on hover state
-            if label_resp.hovered() {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
-            } else {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
-            }
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
         });
     });
 
@@ -229,8 +225,10 @@ fn handle_draw_windows_buttons(ui: &mut egui::Ui, hwnd: Option<HWND>, palette: &
         if clickable_icon(ui, regular::SQUARE, palette.primary).clicked() {
             unsafe {
                 use windows::Win32::UI::WindowsAndMessaging::*;
-                let mut placement = WINDOWPLACEMENT::default();
-                placement.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
+                let mut placement = WINDOWPLACEMENT {
+                    length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+                    ..Default::default()
+                };
 
                 if GetWindowPlacement(hwnd, &mut placement).is_ok() {
                     if placement.showCmd == SW_SHOWMAXIMIZED.0 as u32 {
@@ -280,7 +278,7 @@ fn tab_close_button(
         .rect_filled(rect, palette.tab_button_radius, bg);
 
     let color = if hovered {
-        palette.icon_color
+        palette.icon_colored_hover
     } else {
         ui.visuals().widgets.noninteractive.fg_stroke.color
     };
@@ -322,7 +320,7 @@ fn tab_add_button(
         .rect_filled(rect, palette.tab_button_radius, bg);
 
     let color = if hovered {
-        palette.icon_color
+        palette.icon_colored_hover
     } else {
         ui.visuals().widgets.noninteractive.fg_stroke.color
     };
@@ -461,9 +459,11 @@ pub fn draw_tabbar(
             }
 
             if tab.breadcrumb_path_error && resp.hovered() {
-                resp = resp.on_hover_text(egui::RichText::new("Path does not exist")
-                    .size(palette.tooltip_text_size)
-                    .color(palette.tooltip_text_color));
+                resp = resp.on_hover_text(
+                    egui::RichText::new("Path does not exist")
+                        .size(palette.tooltip_text_size)
+                        .color(palette.tooltip_text_color),
+                );
             }
 
             if !tab.breadcrumb_just_started_editing || tab.breadcrumb_path_error {
@@ -492,10 +492,7 @@ pub fn draw_tabbar(
                     tab.breadcrumb_path_error = true;
                     tab.breadcrumb_path_error_animation_time = ui.input(|i| i.time);
                 }
-            } else if escape {
-                tab.breadcrumb_path_buffer = tab.nav.current.to_string_lossy().to_string();
-                exit_edit_mode = true;
-            } else if resp.lost_focus() {
+            } else if escape || resp.lost_focus() {
                 tab.breadcrumb_path_buffer = tab.nav.current.to_string_lossy().to_string();
                 exit_edit_mode = true;
             }
@@ -533,7 +530,7 @@ pub fn draw_tabbar(
 
             let mut breadcrumbs_right = 0.0;
 
-            for (_idx, (label, path)) in segments.iter().enumerate() {
+            for (label, path) in segments.iter() {
                 if !first {
                     let old_spacing = ui.spacing().item_spacing;
                     ui.spacing_mut().item_spacing.x = 10.0;

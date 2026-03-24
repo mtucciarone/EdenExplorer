@@ -24,7 +24,7 @@ use crossbeam_channel::{Sender, unbounded};
 use eframe::egui;
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
@@ -257,7 +257,7 @@ impl MainWindow {
         println!("Handling context action: {:?}", action);
         match action {
             ItemViewerContextAction::Cut(path) => {
-                let _ = set_clipboard_files(&[path.clone()], true);
+                let _ = set_clipboard_files(std::slice::from_ref(&path), true);
 
                 // ✅ Update UI state
                 self.cut_paths.clear();
@@ -271,7 +271,7 @@ impl MainWindow {
             }
             ItemViewerContextAction::Copy(path) => {
                 println!("Copy action received for: {:?}", path);
-                let _ = set_clipboard_files(&[path.clone()], false);
+                let _ = set_clipboard_files(std::slice::from_ref(&path), false);
                 self.selected_path = Some(path);
             }
             ItemViewerContextAction::Paste => {
@@ -393,7 +393,7 @@ impl MainWindow {
         }
     }
 
-    pub fn open_properties(&self, path: &PathBuf) {
+    pub fn open_properties(&self, path: &Path) {
         let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
         let verb: Vec<u16> = OsStr::new("properties")
             .encode_wide()
@@ -401,12 +401,14 @@ impl MainWindow {
             .collect();
 
         unsafe {
-            let mut info = SHELLEXECUTEINFOW::default();
-            info.cbSize = std::mem::size_of::<SHELLEXECUTEINFOW>() as u32;
-            info.fMask = SEE_MASK_INVOKEIDLIST;
-            info.lpVerb = PCWSTR(verb.as_ptr());
-            info.lpFile = PCWSTR(wide.as_ptr());
-            info.nShow = SW_SHOW.0 as i32;
+            let mut info = SHELLEXECUTEINFOW {
+                cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+                fMask: SEE_MASK_INVOKEIDLIST,
+                lpVerb: PCWSTR(verb.as_ptr()),
+                lpFile: PCWSTR(wide.as_ptr()),
+                nShow: SW_SHOW.0,
+                ..Default::default()
+            };
             let _ = ShellExecuteExW(&mut info);
         }
     }
@@ -555,6 +557,26 @@ impl MainWindow {
 
     pub fn handle_sidebar_action(&mut self, sidebar_action: Option<SidebarAction>) {
         if let Some(action) = sidebar_action {
+            if let Some((from, to)) = action.reorder {
+                let len = self.favorites.len();
+
+                if from < len {
+                    let item = self.favorites.remove(from);
+
+                    // Clamp target index AFTER removal
+                    let mut target = to;
+
+                    if to > from {
+                        target -= 1;
+                    }
+
+                    target = target.min(self.favorites.len());
+
+                    self.favorites.insert(target, item);
+                }
+
+                self.persist_favorites();
+            }
             if let Some(path) = action.nav_to {
                 self.current_nav_mut().go_to(path);
                 self.load_path();
@@ -823,28 +845,26 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 }
                 // Set the current position to the target edge of the range
                 // The target should be the item that was just moved to
-                if let Some(anchor_idx) = explorer.selection_anchor {
-                    if let Some(current_selected) = explorer.selected_path.as_ref() {
-                        if let Some(current_idx) = explorer
-                            .files
-                            .iter()
-                            .position(|f| &f.path == current_selected)
-                        {
-                            // Determine which edge was just selected
-                            if current_idx > anchor_idx {
-                                // Moving down - set current to the bottom of range
-                                if let Some(bottom_path) = paths.last() {
-                                    explorer.selected_path = Some(bottom_path.clone());
-                                }
-                            } else if current_idx < anchor_idx {
-                                // Moving up - set current to the top of range
-                                if let Some(top_path) = paths.first() {
-                                    explorer.selected_path = Some(top_path.clone());
-                                }
-                            }
-                            // If current_idx == anchor_idx, no change needed
+                if let Some(anchor_idx) = explorer.selection_anchor
+                    && let Some(current_selected) = explorer.selected_path.as_ref()
+                    && let Some(current_idx) = explorer
+                        .files
+                        .iter()
+                        .position(|f| &f.path == current_selected)
+                {
+                    // Determine which edge was just selected
+                    if current_idx > anchor_idx {
+                        // Moving down - set current to the bottom of range
+                        if let Some(bottom_path) = paths.last() {
+                            explorer.selected_path = Some(bottom_path.clone());
+                        }
+                    } else if current_idx < anchor_idx {
+                        // Moving up - set current to the top of range
+                        if let Some(top_path) = paths.first() {
+                            explorer.selected_path = Some(top_path.clone());
                         }
                     }
+                    // If current_idx == anchor_idx, no change needed
                 }
             }
             ItemViewerAction::Open(path) => {
@@ -997,116 +1017,6 @@ pub fn tab_title_for(nav: &Navigation) -> String {
         .unwrap_or_else(|| nav.current.display().to_string())
 }
 
-pub fn handle_draw_draggable_toolbar(
-    ui: &mut egui::Ui,
-    hwnd: Option<windows::Win32::Foundation::HWND>,
-    height: f32,
-) {
-    use egui::*;
-    // use windows::Win32::Foundation::{LPARAM, WPARAM};
-    use windows::Win32::UI::WindowsAndMessaging::*;
-
-    let full_rect = ui.max_rect();
-
-    let edge_margin = 6.0;
-    let right_block = 80.0; // width of your window buttons area
-
-    let rect = egui::Rect::from_min_max(
-        egui::pos2(full_rect.min.x + edge_margin, full_rect.min.y),
-        egui::pos2(
-            full_rect.max.x - edge_margin - right_block,
-            full_rect.min.y + height,
-        ),
-    );
-
-    // let resp = ui.interact(rect, ui.id().with("window_drag"), Sense::click_and_drag());
-
-    let resp = ui.interact(
-        rect,
-        ui.id().with("window_drag"),
-        egui::Sense::hover(), // 👈 no click, no drag
-    );
-
-    let pointer_pressed = ui.input(|i| i.pointer.primary_pressed());
-
-    if pointer_pressed && resp.hovered() {
-        if let Some(hwnd) = hwnd {
-            unsafe {
-                use windows::Win32::Foundation::{LPARAM, WPARAM};
-                use windows::Win32::UI::WindowsAndMessaging::*;
-
-                let _ = ReleaseCapture();
-                let _ = SendMessageW(
-                    hwnd,
-                    WM_NCLBUTTONDOWN,
-                    Some(WPARAM(HTCAPTION as usize)),
-                    Some(LPARAM(0)),
-                );
-            }
-        }
-    }
-
-    // 👇 TEMP DEBUG VISUAL (very visible)
-    ui.painter().rect_filled(
-        rect,
-        0.0,
-        Color32::from_rgba_unmultiplied(255, 0, 0, 80), // translucent red
-    );
-
-    // Optional: draw border for clarity
-    ui.painter().rect_stroke(
-        rect,
-        0.0,
-        Stroke::new(1.0, Color32::RED),
-        StrokeKind::Outside,
-    );
-
-    // Optional: label it
-    ui.painter().text(
-        rect.center(),
-        Align2::CENTER_CENTER,
-        "DRAG AREA",
-        FontId::proportional(14.0),
-        Color32::WHITE,
-    );
-
-    // --- Drag ---
-    // if resp.drag_started() {
-    //     if let Some(hwnd) = hwnd {
-    //         unsafe {
-    //             ReleaseCapture();
-    //             SendMessageW(
-    //                 hwnd,
-    //                 WM_NCLBUTTONDOWN,
-    //                 WPARAM(HTCAPTION as usize),
-    //                 LPARAM(0),
-    //             );
-    //         }
-
-    //         // 👇 THIS is the real fix
-    //         ui.ctx().memory_mut(|mem| mem.interaction = Default::default());
-    //     }
-    // }
-
-    // --- Double click maximize ---
-    if resp.double_clicked() {
-        if let Some(hwnd) = hwnd {
-            unsafe {
-                let mut placement = WINDOWPLACEMENT::default();
-                placement.length = std::mem::size_of::<WINDOWPLACEMENT>() as u32;
-
-                if GetWindowPlacement(hwnd, &mut placement).is_ok() {
-                    if placement.showCmd == SW_SHOWMAXIMIZED.0 as u32 {
-                        let _ = ShowWindow(hwnd, SW_RESTORE);
-                    } else {
-                        let _ = ShowWindow(hwnd, SW_MAXIMIZE);
-                    }
-                }
-            }
-        }
-    }
-}
-
 fn color32_to_dwm(color: egui::Color32) -> u32 {
     let r = color.r() as u32;
     let g = color.g() as u32;
@@ -1199,7 +1109,7 @@ pub fn apply_window_override(hwnd: HWND, palette: &ThemePalette) {
 
 pub unsafe fn install_wndproc(hwnd: HWND) {
     unsafe {
-        ORIGINAL_WNDPROC = Some(std::mem::transmute(SetWindowLongPtrW(
+        ORIGINAL_WNDPROC = Some(std::mem::transmute::<isize, WNDPROC>(SetWindowLongPtrW(
             hwnd,
             GWLP_WNDPROC,
             custom_wndproc as *const () as isize,
@@ -1220,7 +1130,7 @@ unsafe extern "system" fn custom_wndproc(
 
             let mut rect = RECT::default();
             unsafe {
-                GetWindowRect(hwnd, &mut rect);
+                let _ = GetWindowRect(hwnd, &mut rect);
             }
 
             let width = rect.right - rect.left;
@@ -1266,15 +1176,15 @@ unsafe extern "system" fn custom_wndproc(
             }
 
             // everything else is client
-            return LRESULT(HTCLIENT as _);
+            LRESULT(HTCLIENT as _)
         }
         _ => {
             unsafe {
                 // forward everything else to original WNDPROC
                 if let Some(orig) = ORIGINAL_WNDPROC {
-                    return CallWindowProcW(orig, hwnd, msg, wparam, lparam);
+                    CallWindowProcW(orig, hwnd, msg, wparam, lparam)
                 } else {
-                    return DefWindowProcW(hwnd, msg, wparam, lparam);
+                    DefWindowProcW(hwnd, msg, wparam, lparam)
                 }
             }
         }

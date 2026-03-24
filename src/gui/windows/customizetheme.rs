@@ -83,11 +83,10 @@ pub fn draw_theme_customizer(
                 ui.heading("Theme Configuration");
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if customizer.has_unsaved_changes {
-                        if ui.button("💾 Save").clicked() {
+                    if customizer.has_unsaved_changes
+                        && ui.button("💾 Save").clicked() {
                             action = Some(ThemeCustomizerAction::SaveTheme);
                         }
-                    }
 
                     if ui.button("📁 Load").clicked() {
                         action = Some(ThemeCustomizerAction::LoadTheme);
@@ -148,7 +147,7 @@ pub fn draw_theme_customizer(
                                     "Box Selection Fill",
                                     &mut palette.box_selection_fill,
                                 );
-                                color_picker(ui, "Icon Color", &mut palette.icon_color);
+                                color_picker(ui, "Icon Color", &mut palette.icon_colored_hover);
                             });
                         },
                     );

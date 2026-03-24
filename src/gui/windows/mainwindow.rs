@@ -186,7 +186,7 @@ impl eframe::App for MainWindow {
         let palette = get_palette(self.theme);
 
         if let Some(hwnd) = self.hwnd {
-            apply_window_override(hwnd, &palette);
+            apply_window_override(hwnd, palette);
         }
         apply_theme(ctx, self.theme);
 
@@ -278,16 +278,10 @@ impl eframe::App for MainWindow {
                                     &mut self.favorites,
                                     self.sidebar_selected.as_ref(),
                                     &drives,
-                                    &palette,
+                                    palette,
                                     &mut self.dragging_favorite,
                                     &mut self.network_state,
                                 ));
-
-                                if let Some(action) = &sidebar_action {
-                                    if let Some((from, to)) = action.reorder {
-                                        self.favorites.swap(from, to);
-                                    }
-                                }
                             });
                         },
                     );
@@ -364,7 +358,7 @@ impl eframe::App for MainWindow {
                                 egui::Layout::left_to_right(egui::Align::Center),
                                 |ui| {
                                     tabs_action =
-                                        Some(draw_tabs(ui, &tab_infos, active_id, &palette, self.hwnd));
+                                        Some(draw_tabs(ui, &tab_infos, active_id, palette, self.hwnd));
                                 },
                             );
 
@@ -386,7 +380,7 @@ impl eframe::App for MainWindow {
                                 tabbar_action = {
                                     let tab = &mut self.tabs[active_index];
 
-                                    Some(draw_tabbar(ui, &icon_cache, tab, &palette))
+                                    Some(draw_tabbar(ui, &icon_cache, tab, palette))
                                 };
 
                                 ui.add_space(4.0);
@@ -405,7 +399,7 @@ impl eframe::App for MainWindow {
                                             self.sort_ascending,
                                             &icon_cache,
                                             &mut self.rename_state,
-                                            &palette,
+                                            palette,
                                             &mut self.file_type_cache,
                                             &mut self.drag_hover,
                                             &mut self.selection_anchor,
@@ -434,7 +428,7 @@ impl eframe::App for MainWindow {
         self.handle_tabbar_action(tabbar_action);
         handle_pending_actions(pending_action, self);
         handle_draw_customizetheme_window(ctx, &mut self.theme_customizer);
-        self.handle_draw_settings_window(ctx, &palette);
+        self.handle_draw_settings_window(ctx, palette);
 
         // ✅ Step 5: Apply Deferred Refresh (IMPORTANT)
         if self.dropped_files_pending_ui_refresh {

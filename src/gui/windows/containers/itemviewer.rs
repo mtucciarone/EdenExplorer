@@ -2,7 +2,7 @@ use crate::core::state::FileItem;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::{ThemePalette, apply_checkbox_colors};
 use crate::gui::utils::{
-    SortColumn, drive_usage_bar, format_size, get_cut_paths, get_file_type_name,
+    SortColumn, drive_usage_bar, format_size, get_cut_paths, get_file_type_name, styled_button,
 };
 use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
 use crate::gui::windows::containers::structs::{
@@ -291,6 +291,7 @@ pub fn draw_item_viewer(
                                 layout.is_drive_view,
                                 is_cut,
                                 &mut action,
+                                palette,
                             );
                         });
                     });
@@ -479,6 +480,7 @@ fn handle_context_menu_actions(
     is_drive_view: bool,
     is_cut: bool,
     action: &mut Option<ItemViewerAction>,
+    palette: &ThemePalette,
 ) {
     // ✅ Match Explorer behavior: right-click selects if not already selected
     if !is_selected {
@@ -557,6 +559,7 @@ fn handle_context_menu_actions(
         *action = Some(ItemViewerAction::StartEdit(file.path.clone()));
         ui.close();
     }
+
     if ui.button("Delete").clicked() {
         *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
             file.path.clone(),
@@ -622,9 +625,9 @@ fn handle_draw_col_name(
             egui::Rect::from_min_size(icon_pos, icon_size),
             egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1.0, 1.0)),
             if is_cut {
-                palette.icon_color.linear_multiply(0.5)
+                palette.icon_colored_hover.linear_multiply(0.5)
             } else {
-                palette.icon_color
+                palette.icon_colored_hover
             },
         );
 
@@ -983,7 +986,9 @@ fn handle_global_actions(
     tabbar_action: &mut Option<TabbarAction>,
 ) -> Option<ItemViewerAction> {
     // 🔥 TEMP: disable focus blocking for now (fix later with rename_state)
-    let is_text_edit_active = tabbar_action.as_ref().is_some_and(|t| t.is_breadcrumb_path_edit_active);
+    let is_text_edit_active = tabbar_action
+        .as_ref()
+        .is_some_and(|t| t.is_breadcrumb_path_edit_active);
     if is_text_edit_active {
         return None;
     }

@@ -29,6 +29,7 @@ pub struct ThemePalette {
     pub box_selection_stroke: egui::Color32,
     pub box_selection_fill: egui::Color32,
     pub icon_color: egui::Color32,
+    pub icon_colored_hover: egui::Color32,
     pub row_label_selected: egui::Color32,
     pub row_label_default: egui::Color32,
     pub row_selected_bg: egui::Color32,
@@ -65,6 +66,10 @@ pub struct ThemePalette {
     pub checkbox_checkmark_color: egui::Color32,
     pub checkbox_bg_hover: egui::Color32,
     pub checkbox_bg_active: egui::Color32,
+
+    // Button colors
+    pub button_background: egui::Color32,
+    pub button_stroke: egui::Color32,
 }
 
 // 🎯 Single base color (your purple)
@@ -86,6 +91,7 @@ pub static PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         box_selection_stroke: egui::Color32::from_rgba_unmultiplied(95, 75, 135, 60),
         box_selection_fill: base,
         icon_color: egui::Color32::WHITE,
+        icon_colored_hover: egui::Color32::WHITE,
         row_label_selected: egui::Color32::WHITE,
         row_label_default: egui::Color32::from_rgb(160, 170, 180),
         row_selected_bg: egui::Color32::from_rgb(70, 78, 86),
@@ -122,6 +128,8 @@ pub static PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         checkbox_checkmark_color: egui::Color32::WHITE,
         checkbox_bg_hover: base,
         checkbox_bg_active: base,
+        button_background: egui::Color32::from_rgba_unmultiplied(160, 170, 180, 20),
+        button_stroke: egui::Color32::from_rgba_unmultiplied(160, 170, 180, 60),
     }
 });
 
@@ -138,7 +146,8 @@ pub static PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         secondary: egui::Color32::from_rgb(0, 0, 0),
         box_selection_stroke: egui::Color32::from_rgba_unmultiplied(110, 85, 160, 40),
         box_selection_fill: base,
-        icon_color: egui::Color32::WHITE,
+        icon_color: egui::Color32::from_rgb(40, 40, 40),
+        icon_colored_hover: egui::Color32::WHITE,
         row_label_selected: egui::Color32::from_rgb(0, 0, 0),
         row_label_default: egui::Color32::from_rgb(70, 78, 86),
         row_selected_bg: egui::Color32::from_rgb(70, 78, 86),
@@ -175,6 +184,8 @@ pub static PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         checkbox_checkmark_color: egui::Color32::WHITE,
         checkbox_bg_hover: base,
         checkbox_bg_active: base,
+        button_background: egui::Color32::from_rgba_unmultiplied(160, 170, 180, 95),
+        button_stroke: egui::Color32::from_rgba_unmultiplied(160, 170, 180, 60),
     }
 });
 
