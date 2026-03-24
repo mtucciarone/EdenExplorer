@@ -2,7 +2,7 @@ use crate::core::state::FileItem;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::{ThemePalette, apply_checkbox_colors};
 use crate::gui::utils::{
-    SortColumn, drive_usage_bar, format_size, get_cut_paths, get_file_type_name,
+    SortColumn, drive_usage_bar, format_size, get_cut_paths, get_file_type_name, styled_button,
 };
 use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
 use crate::gui::windows::containers::structs::{
@@ -291,6 +291,7 @@ pub fn draw_item_viewer(
                                 layout.is_drive_view,
                                 is_cut,
                                 &mut action,
+                                palette,
                             );
                         });
                     });
@@ -479,6 +480,7 @@ fn handle_context_menu_actions(
     is_drive_view: bool,
     is_cut: bool,
     action: &mut Option<ItemViewerAction>,
+    palette: &ThemePalette,
 ) {
     // ✅ Match Explorer behavior: right-click selects if not already selected
     if !is_selected {
@@ -557,6 +559,7 @@ fn handle_context_menu_actions(
         *action = Some(ItemViewerAction::StartEdit(file.path.clone()));
         ui.close();
     }
+
     if ui.button("Delete").clicked() {
         *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
             file.path.clone(),

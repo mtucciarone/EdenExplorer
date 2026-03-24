@@ -302,7 +302,7 @@ pub fn get_icon_sharpest(path: &std::path::Path, is_dir: bool) -> Option<(Vec<u8
         // 5️⃣ Convert HICON -> RGBA bitmap
         let mut icon_info = ICONINFO::default();
         if GetIconInfo(hicon, &mut icon_info).is_err() {
-            DestroyIcon(hicon);
+            let _ = DestroyIcon(hicon).is_ok();
             return None;
         }
 
@@ -313,7 +313,7 @@ pub fn get_icon_sharpest(path: &std::path::Path, is_dir: bool) -> Option<(Vec<u8
             Some(&mut bmp as *mut _ as _),
         ) == 0
         {
-            DestroyIcon(hicon);
+            let _ = DestroyIcon(hicon).is_ok();
             return None;
         }
 
@@ -341,7 +341,7 @@ pub fn get_icon_sharpest(path: &std::path::Path, is_dir: bool) -> Option<(Vec<u8
         ) == 0
         {
             ReleaseDC(None, hdc);
-            DestroyIcon(hicon);
+            let _ = DestroyIcon(hicon).is_ok();
             return None;
         }
 
@@ -350,7 +350,7 @@ pub fn get_icon_sharpest(path: &std::path::Path, is_dir: bool) -> Option<(Vec<u8
         // 6️⃣ Cleanup
         let _ = DeleteObject(HGDIOBJ(icon_info.hbmColor.0));
         let _ = DeleteObject(HGDIOBJ(icon_info.hbmMask.0));
-        DestroyIcon(hicon);
+        let _ = DestroyIcon(hicon).is_ok();
 
         // 7️⃣ Convert BGRA -> RGBA
         for px in pixels.chunks_exact_mut(4) {

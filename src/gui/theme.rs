@@ -66,6 +66,10 @@ pub struct ThemePalette {
     pub checkbox_checkmark_color: egui::Color32,
     pub checkbox_bg_hover: egui::Color32,
     pub checkbox_bg_active: egui::Color32,
+
+    // Button colors
+    pub button_background: egui::Color32,
+    pub button_stroke: egui::Color32,
 }
 
 // 🎯 Single base color (your purple)
@@ -124,6 +128,8 @@ pub static PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         checkbox_checkmark_color: egui::Color32::WHITE,
         checkbox_bg_hover: base,
         checkbox_bg_active: base,
+        button_background: egui::Color32::from_rgba_unmultiplied(160, 170, 180, 20),
+        button_stroke: egui::Color32::from_rgba_unmultiplied(160, 170, 180, 60),
     }
 });
 
@@ -178,6 +184,8 @@ pub static PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         checkbox_checkmark_color: egui::Color32::WHITE,
         checkbox_bg_hover: base,
         checkbox_bg_active: base,
+        button_background: egui::Color32::from_rgba_unmultiplied(160, 170, 180, 95),
+        button_stroke: egui::Color32::from_rgba_unmultiplied(160, 170, 180, 60),
     }
 });
 

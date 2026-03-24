@@ -158,23 +158,17 @@ pub fn draw_settings_window(
                         let mut full_screen = matches!(settings.current_settings.window_size_mode, WindowSizeMode::FullScreen);
                         let mut half_screen = matches!(settings.current_settings.window_size_mode, WindowSizeMode::HalfScreen);
                         let mut custom = matches!(settings.current_settings.window_size_mode, WindowSizeMode::Custom { .. });
-                        if ui.checkbox(&mut full_screen, "Fullscreen").changed() {
-                            if full_screen {
-                                settings.current_settings.window_size_mode = WindowSizeMode::FullScreen;
-                                action = Some(SettingsAction::ApplySettings);
-                            }
+                        if ui.checkbox(&mut full_screen, "Fullscreen").changed() & half_screen {
+                            settings.current_settings.window_size_mode = WindowSizeMode::FullScreen;
+                            action = Some(SettingsAction::ApplySettings);
                         }
-                        if ui.checkbox(&mut half_screen, "Half Screen").changed() {
-                            if half_screen {
-                                settings.current_settings.window_size_mode = WindowSizeMode::HalfScreen;
-                                action = Some(SettingsAction::ApplySettings);
-                            }
+                        if ui.checkbox(&mut half_screen, "Half Screen").changed() & half_screen {
+                            settings.current_settings.window_size_mode = WindowSizeMode::HalfScreen;
+                            action = Some(SettingsAction::ApplySettings);
                         }
-                        if ui.checkbox(&mut custom, "Custom").changed() {
-                            if custom {
-                                settings.current_settings.window_size_mode = WindowSizeMode::Custom { width: 1200.0, height: 800.0 };
-                                action = Some(SettingsAction::ApplySettings);
-                            }
+                        if ui.checkbox(&mut custom, "Custom").changed() & custom {
+                            settings.current_settings.window_size_mode = WindowSizeMode::Custom { width: 1200.0, height: 800.0 };
+                            action = Some(SettingsAction::ApplySettings);
                         }
                     });
                     // Custom size inputs

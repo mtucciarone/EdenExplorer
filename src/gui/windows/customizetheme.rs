@@ -83,11 +83,10 @@ pub fn draw_theme_customizer(
                 ui.heading("Theme Configuration");
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if customizer.has_unsaved_changes {
-                        if ui.button("💾 Save").clicked() {
+                    if customizer.has_unsaved_changes
+                        && ui.button("💾 Save").clicked() {
                             action = Some(ThemeCustomizerAction::SaveTheme);
                         }
-                    }
 
                     if ui.button("📁 Load").clicked() {
                         action = Some(ThemeCustomizerAction::LoadTheme);
