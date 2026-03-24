@@ -118,9 +118,29 @@ jobs:
     - name: Create release directory
       run: |
         mkdir release
-        cp target/release/EdenExplorer.exe release/ 2>$null || cp target/release/eden_explorer.exe release/ 2>$null || echo "Binary not found with expected names"
-        cp README.md release/
-        cp LICENSE release/
+        # Find the actual binary name and copy it
+        $binaryPath = ""
+        if (Test-Path "target/release/EdenExplorer.exe") {
+          $binaryPath = "target/release/EdenExplorer.exe"
+          echo "Found EdenExplorer.exe"
+        } elseif (Test-Path "target/release/eden_explorer.exe") {
+          $binaryPath = "target/release/eden_explorer.exe"
+          echo "Found eden_explorer.exe"
+        } else {
+          echo "❌ No binary found in target/release/"
+          exit 1
+        }
+        
+        # Copy binary with consistent name for release
+        Copy-Item $binaryPath "release/EdenExplorer.exe"
+        
+        # Copy additional files
+        if (Test-Path "README.md") { Copy-Item "README.md" "release/" }
+        if (Test-Path "LICENSE") { Copy-Item "LICENSE" "release/" }
+        
+        # Show what we're releasing
+        echo "📦 Release contents:"
+        Get-ChildItem release | ForEach-Object { echo "  $($_.Name) ($([math]::Round($_.Length/1MB, 2)) MB)" }
       shell: pwsh
       
     - name: Generate AI-powered changelog
@@ -202,10 +222,7 @@ jobs:
         tag_name: v${{ steps.version.outputs.version }}
         body: ${{ steps.changelog.outputs.changelog }}
         files: |
-          release/EdenExplorer.exe
-          release/eden_explorer.exe
-          release/README.md
-          release/LICENSE
+          release/**
         draft: false
         prerelease: false
       env:

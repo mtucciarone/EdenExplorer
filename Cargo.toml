@@ -3,6 +3,13 @@ name = "EdenExplorer"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "EdenExplorer"
+path = "src/main.rs"
+
+[package.metadata.windows_exe]
+icon = "src/assets/icon.ico"
+
 [dependencies]
 image = "0.25"
 eframe = "0.33.3"
