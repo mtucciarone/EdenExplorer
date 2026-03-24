@@ -311,7 +311,6 @@ Submit a pull request with a description of your changes
 
 ### **Critical Issues:**
 - Creating a new folder/file doesn't automatically scroll the viewier to focus on it
-- **Fix reordering of favorites** in sidebar
 - Fix network detection in sidebar
 - Fix raw/unmounted drive detection for ISO sticks and Linux partitions
 - cut/clear/cutpaste not working as expected and not working for multiple files
