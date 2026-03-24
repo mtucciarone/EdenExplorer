@@ -69,6 +69,52 @@ jobs:
         }
       shell: pwsh
       
+    - name: Update Cargo.toml version
+      if: steps.version.outputs.is_tag_release == 'true' || steps.version.outputs.is_manual_release == 'true'
+      run: |
+        $version = "${{ steps.version.outputs.version }}"
+        echo "🔄 Updating Cargo.toml version to $version"
+        
+        # Update version in Cargo.toml
+        (Get-Content Cargo.toml) -replace '^version = ".*"', "version = `"$version`"" | Set-Content Cargo.toml
+        
+        # Verify the change
+        $newVersion = Select-String -Path Cargo.toml -Pattern '^version = "(.+)"' | ForEach-Object { $_.Matches.Groups[1].Value }
+        echo "✅ Updated version to: $newVersion"
+        
+        if ($newVersion -ne $version) {
+          echo "❌ Version update failed!"
+          exit 1
+        }
+      shell: pwsh
+      
+    - name: Commit and push version change
+      if: steps.version.outputs.is_tag_release == 'true' || steps.version.outputs.is_manual_release == 'true'
+      run: |
+        $version = "${{ steps.version.outputs.version }}"
+        echo "📤 Committing version change to repository"
+        
+        # Configure git
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        
+        # Add and commit the version change
+        git add Cargo.toml
+        git commit -m "chore: bump version to v$version"
+        
+        # Push the change back to the repository
+        if ("${{ github.event_name }}" -eq "push" -and "${{ github.ref_type }}" -eq "tag") {
+          # For tag releases, push to the same branch the tag points to
+          $branch = git rev-parse --abbrev-ref HEAD
+          git push origin $branch
+        } elseif ("${{ github.event_name }}" -eq "workflow_dispatch") {
+          # For manual releases, push to main branch
+          git push origin main
+        }
+        
+        echo "✅ Version change committed and pushed"
+      shell: pwsh
+      
     - name: Create release directory
       run: |
         mkdir release
