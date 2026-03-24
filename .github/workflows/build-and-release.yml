@@ -1,0 +1,182 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Trigger on version tags like v1.0.0, v1.2.3, etc.
+  pull_request:
+    types: [closed]
+    branches:
+      - main  # Trigger when PRs to main are closed/merged
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 1.0.0)'
+        required: true
+        type: string
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest  # Using Windows since this is a Windows-specific application
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch full history for changelog generation
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        
+    - name: Cache cargo registry
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+    
+    - name: Build in release mode
+      run: cargo build --release --verbose
+      
+    - name: Get version from tag, PR, or input
+      id: version
+      run: |
+        if ("${{ github.event_name }}" -eq "push" -and "${{ github.ref_type }}" -eq "tag") {
+          # Tag-based release
+          $version = "${{ github.ref_name }}" -replace "v", ""
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+          echo "is_tag_release=true" >> $env:GITHUB_OUTPUT
+        } elseif ("${{ github.event_name }}" -eq "pull_request" -and "${{ github.event.pull_request.merged }}" -eq "true") {
+          # PR-based release - generate version from timestamp
+          $timestamp = Get-Date -Format "yyyy.MM.dd"
+          $prNumber = "${{ github.event.pull_request.number }}"
+          $version = "$timestamp-pr$prNumber"
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+          echo "is_pr_release=true" >> $env:GITHUB_OUTPUT
+        } elseif ("${{ github.event_name }}" -eq "workflow_dispatch") {
+          # Manual release
+          echo "version=${{ github.event.inputs.version }}" >> $env:GITHUB_OUTPUT
+          echo "is_manual_release=true" >> $env:GITHUB_OUTPUT
+        } else {
+          echo "version=dev-build" >> $env:GITHUB_OUTPUT
+          echo "is_dev_build=true" >> $env:GITHUB_OUTPUT
+        }
+      shell: pwsh
+      
+    - name: Create release directory
+      run: |
+        mkdir release
+        cp target/release/EdenExplorer.exe release/ 2>$null || cp target/release/eden_explorer.exe release/ 2>$null || echo "Binary not found with expected names"
+        cp README.md release/
+        cp LICENSE release/
+      shell: pwsh
+      
+    - name: Generate AI-powered changelog
+      id: changelog
+      run: |
+        $version = "${{ steps.version.outputs.version }}"
+        $releaseType = "${{ steps.version.outputs.is_tag_release }}"
+        
+        if ("${{ steps.version.outputs.is_pr_release }}" -eq "true") {
+          # PR-based release
+          $prNumber = "${{ github.event.pull_request.number }}"
+          $prTitle = "${{ github.event.pull_request.title }}"
+          $prBody = "${{ github.event.pull_request.body }}"
+          
+          echo "changelog<<EOF" >> $env:GITHUB_OUTPUT
+          echo "# Auto Release v$version" >> $env:GITHUB_OUTPUT
+          echo "" >> $env:GITHUB_OUTPUT
+          echo "🔄 **Automated Release from PR #$prNumber**" >> $env:GITHUB_OUTPUT
+          echo "" >> $env:GITHUB_OUTPUT
+          echo "**PR Title:** $prTitle" >> $env:GITHUB_OUTPUT
+          echo "" >> $env:GITHUB_OUTPUT
+          echo "## Changes" >> $env:GITHUB_OUTPUT
+          echo "$prBody" >> $env:GITHUB_OUTPUT
+          echo "" >> $env:GITHUB_OUTPUT
+          echo "This release was automatically created when PR #$prNumber was merged into main." >> $env:GITHUB_OUTPUT
+          echo "EOF" >> $env:GITHUB_OUTPUT
+        } elseif ("${{ steps.version.outputs.is_tag_release }}" -eq "true") {
+          # Tag-based release (original logic)
+          $prevTag = git describe --tags --abbrev=0 HEAD^ 2>$null || echo ""
+          
+          if ($prevTag) {
+            $changes = git log --pretty=format:"- %s (%h)" $prevTag..HEAD
+            $changeList = $changes -join "`n"
+            
+            echo "changelog<<EOF" >> $env:GITHUB_OUTPUT
+            echo "# Changes in v$version" >> $env:GITHUB_OUTPUT
+            echo "" >> $env:GITHUB_OUTPUT
+            echo "🤖 **AI-Generated Release Notes**" >> $env:GITHUB_OUTPUT
+            echo "" >> $env:GITHUB_OUTPUT
+            echo "This release includes the following improvements and fixes:" >> $env:GITHUB_OUTPUT
+            echo "" >> $env:GITHUB_OUTPUT
+            echo "## Recent Changes" >> $env:GITHUB_OUTPUT
+            echo "$changeList" >> $env:GITHUB_OUTPUT
+            echo "" >> $env:GITHUB_OUTPUT
+            echo "---" >> $env:GITHUB_OUTPUT
+            echo "*Generated automatically from git commit history*" >> $env:GITHUB_OUTPUT
+            echo "EOF" >> $env:GITHUB_OUTPUT
+          } else {
+            echo "changelog<<EOF" >> $env:GITHUB_OUTPUT
+            echo "# Initial Release v$version" >> $env:GITHUB_OUTPUT
+            echo "" >> $env:GITHUB_OUTPUT
+            echo "🎉 **First release of EdenExplorer!**" >> $env:GITHUB_OUTPUT
+            echo "" >> $env:GITHUB_OUTPUT
+            echo "EdenExplorer is a Windows file explorer application built with Rust and egui." >> $env:GITHUB_OUTPUT
+            echo "" >> $env:GITHUB_OUTPUT
+            echo "## Features" >> $env:GITHUB_OUTPUT
+            echo "- Modern file exploration interface" >> $env:GITHUB_OUTPUT
+            echo "- Windows-specific optimizations" >> $env:GITHUB_OUTPUT
+            echo "- Fast and responsive UI" >> $env:GITHUB_OUTPUT
+            echo "EOF" >> $env:GITHUB_OUTPUT
+          }
+        } else {
+          # Manual or dev build
+          echo "changelog<<EOF" >> $env:GITHUB_OUTPUT
+          echo "# Release v$version" >> $env:GITHUB_OUTPUT
+          echo "" >> $env:GITHUB_OUTPUT
+          echo "📦 **Manual Release**" >> $env:GITHUB_OUTPUT
+          echo "" >> $env:GITHUB_OUTPUT
+          echo "This release was created manually." >> $env:GITHUB_OUTPUT
+          echo "EOF" >> $env:GITHUB_OUTPUT
+        }
+      shell: pwsh
+      
+    - name: Create GitHub Release
+      if: steps.version.outputs.is_tag_release == 'true' || steps.version.outputs.is_manual_release == 'true'
+      uses: softprops/action-gh-release@v2
+      with:
+        name: EdenExplorer v${{ steps.version.outputs.version }}
+        tag_name: v${{ steps.version.outputs.version }}
+        body: ${{ steps.changelog.outputs.changelog }}
+        files: |
+          release/EdenExplorer.exe
+          release/eden_explorer.exe
+          release/README.md
+          release/LICENSE
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Create PR Release (no GitHub release)
+      if: steps.version.outputs.is_pr_release == 'true'
+      run: |
+        echo "🚀 PR-based release completed!"
+        echo "Version: ${{ steps.version.outputs.version }}"
+        echo "Binary built and uploaded as artifact"
+        echo "No GitHub release created for PR-based builds"
+      shell: pwsh
+        
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: eden-explorer-v${{ steps.version.outputs.version }}
+        path: release/
+        retention-days: 30
