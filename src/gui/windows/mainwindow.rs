@@ -406,6 +406,7 @@ impl eframe::App for MainWindow {
                                             &mut self.selection_anchor,
                                             &mut self.selection_focus,
                                         );
+                                        ui.add_space(6.0);
                                     },
                                 );
                             });
