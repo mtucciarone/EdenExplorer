@@ -5,7 +5,7 @@ use crate::core::indexer::{save_app_settings, save_favorites};
 use crate::gui::MainWindow;
 use crate::gui::theme::{ThemeMode, ThemePalette};
 use crate::gui::utils::{
-    SortColumn, clear_clipboard_files, copy_dir_recursive, generate_non_conflicting_path,
+    SortColumn,
     get_clipboard_files, is_clipboard_cut, set_clipboard_files, shell_delete_to_recycle_bin,
     show_copy_move_dialog, sort_files,
 };
@@ -30,17 +30,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use windows::Win32::Foundation::HWND;
-use windows::Win32::Foundation::*;
-use windows::Win32::Graphics::Dwm::*;
-use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::Shell::{SEE_MASK_INVOKEIDLIST, SHELLEXECUTEINFOW, ShellExecuteExW};
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::{Win32::System::Com::*, Win32::UI::Shell::*, core::*};
-
-static mut ORIGINAL_WNDPROC: Option<WNDPROC> = None;
 
 impl MainWindow {
     pub fn current_nav(&self) -> &Navigation {
@@ -564,6 +558,10 @@ impl MainWindow {
 
     pub fn handle_tabs_action(&mut self, tabs_action: Option<TabsAction>) {
         if let Some(action) = tabs_action {
+            if let Some(id) = action.activate {
+                self.active_tab = self.tabs.iter().position(|t| t.id == id).unwrap();
+                self.load_path();
+            }
             if action.open_new {
                 let cloned_nav = self.current_nav().clone();
                 let id = self.next_tab_id;
@@ -1071,186 +1069,4 @@ pub fn tab_title_for(nav: &Navigation) -> String {
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| nav.current.display().to_string())
-}
-
-fn color32_to_dwm(color: egui::Color32) -> u32 {
-    let r = color.r() as u32;
-    let g = color.g() as u32;
-    let b = color.b() as u32;
-
-    // Windows expects 0x00BBGGRR
-    (b << 16) | (g << 8) | r
-}
-
-pub fn apply_window_override(hwnd: HWND, palette: &ThemePalette) {
-    unsafe {
-        // --- 1. Keep minimal frame ---
-        let style = GetWindowLongW(hwnd, GWL_STYLE);
-
-        let new_style = (style & !(WS_CAPTION.0 as i32)) // remove title bar
-            | (WS_THICKFRAME.0 as i32)
-            | (WS_MINIMIZEBOX.0 as i32)
-            | (WS_MAXIMIZEBOX.0 as i32)
-            | (WS_SYSMENU.0 as i32);
-
-        let _ = SetWindowLongW(hwnd, GWL_STYLE, new_style);
-
-        // --- 2. Disable DWM non-client rendering ---
-        let policy = DWMNCRENDERINGPOLICY(2); // 👈 DWMNCRP_DISABLED
-
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWINDOWATTRIBUTE(2), // 👈 DWMWA_NCRENDERING_POLICY
-            &policy as *const _ as _,
-            std::mem::size_of::<DWMNCRENDERINGPOLICY>() as u32,
-        );
-
-        const DWMWA_WINDOW_CORNER_PREFERENCE: DWMWINDOWATTRIBUTE = DWMWINDOWATTRIBUTE(33);
-        let preference: u32 = 2; // DWMWCP_ROUND
-
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_WINDOW_CORNER_PREFERENCE,
-            &preference as *const _ as _,
-            std::mem::size_of::<u32>() as u32,
-        );
-
-        // --- 3. Remove frame insets (fix top gap) ---
-        let margins = MARGINS {
-            cxLeftWidth: 0,
-            cxRightWidth: 0,
-            cyTopHeight: 0,
-            cyBottomHeight: 0,
-        };
-
-        let border_color = color32_to_dwm(palette.application_bg_color);
-        let caption_color = color32_to_dwm(palette.application_bg_color);
-        let text_color = color32_to_dwm(palette.application_bg_color);
-
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWINDOWATTRIBUTE(34),
-            &border_color as *const _ as _,
-            std::mem::size_of::<u32>() as u32,
-        );
-
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWINDOWATTRIBUTE(35),
-            &caption_color as *const _ as _,
-            std::mem::size_of::<u32>() as u32,
-        );
-
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWINDOWATTRIBUTE(36),
-            &text_color as *const _ as _,
-            std::mem::size_of::<u32>() as u32,
-        );
-
-        let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
-
-        // --- 4. Apply changes ---
-        let _ = SetWindowPos(
-            hwnd,
-            None,
-            0,
-            0,
-            0,
-            0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
-        );
-    }
-}
-
-pub unsafe fn install_wndproc(hwnd: HWND) {
-    unsafe {
-        ORIGINAL_WNDPROC = Some(std::mem::transmute::<isize, WNDPROC>(SetWindowLongPtrW(
-            hwnd,
-            GWLP_WNDPROC,
-            custom_wndproc as *const () as isize,
-        )));
-    }
-}
-
-unsafe extern "system" fn custom_wndproc(
-    hwnd: HWND,
-    msg: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-) -> LRESULT {
-    match msg {
-        WM_NCHITTEST => {
-            let x = get_x_lparam(lparam);
-            let y = get_y_lparam(lparam);
-
-            let mut rect = RECT::default();
-            unsafe {
-                let _ = GetWindowRect(hwnd, &mut rect);
-            }
-
-            let width = rect.right - rect.left;
-            let height = rect.bottom - rect.top;
-
-            let local_x = x - rect.left;
-            let local_y = y - rect.top;
-
-            const RESIZE_BORDER: i32 = 6;
-            const DRAG_HEIGHT: i32 = 15;
-
-            // 8 resize corners
-            if local_x < RESIZE_BORDER && local_y < RESIZE_BORDER {
-                return LRESULT(HTTOPLEFT as _);
-            }
-            if local_x >= width - RESIZE_BORDER && local_y < RESIZE_BORDER {
-                return LRESULT(HTTOPRIGHT as _);
-            }
-            if local_x < RESIZE_BORDER && local_y >= height - RESIZE_BORDER {
-                return LRESULT(HTBOTTOMLEFT as _);
-            }
-            if local_x >= width - RESIZE_BORDER && local_y >= height - RESIZE_BORDER {
-                return LRESULT(HTBOTTOMRIGHT as _);
-            }
-
-            // edges
-            if local_x < RESIZE_BORDER {
-                return LRESULT(HTLEFT as _);
-            }
-            if local_x >= width - RESIZE_BORDER {
-                return LRESULT(HTRIGHT as _);
-            }
-            if local_y < RESIZE_BORDER {
-                return LRESULT(HTTOP as _);
-            }
-            if local_y >= height - RESIZE_BORDER {
-                return LRESULT(HTBOTTOM as _);
-            }
-
-            // drag zone
-            if local_y < DRAG_HEIGHT {
-                return LRESULT(HTCAPTION as _);
-            }
-
-            // everything else is client
-            LRESULT(HTCLIENT as _)
-        }
-        _ => {
-            unsafe {
-                // forward everything else to original WNDPROC
-                if let Some(orig) = ORIGINAL_WNDPROC {
-                    CallWindowProcW(orig, hwnd, msg, wparam, lparam)
-                } else {
-                    DefWindowProcW(hwnd, msg, wparam, lparam)
-                }
-            }
-        }
-    }
-}
-
-// helper
-fn get_x_lparam(lparam: LPARAM) -> i32 {
-    (lparam.0 & 0xFFFF) as i16 as i32
-}
-fn get_y_lparam(lparam: LPARAM) -> i32 {
-    ((lparam.0 >> 16) & 0xFFFF) as i16 as i32
 }

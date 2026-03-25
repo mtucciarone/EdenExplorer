@@ -17,9 +17,10 @@ use crate::gui::windows::containers::tabs::{draw_tabbar, draw_tabs};
 use crate::gui::windows::containers::topbar::draw_topbar;
 use crate::gui::windows::customizetheme::ThemeCustomizer;
 use crate::gui::windows::mainwindow_imp::{
-    apply_window_override, handle_draw_customizetheme_window, handle_pending_actions,
-    install_wndproc, tab_title_for,
+    handle_draw_customizetheme_window, handle_pending_actions,
+    tab_title_for,
 };
+use crate::gui::windows::windowsoverrides::{apply_window_override, install_wndproc};
 use crate::gui::windows::settings::SettingsWindow;
 use crossbeam_channel::Receiver;
 use crossbeam_channel::Sender;
@@ -30,13 +31,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use windows::Win32::Foundation::HWND;
-
-enum FileAction {
-    Move,
-    Copy,
-    Delete,
-    Rename,
-}
 
 pub struct MainWindow {
     pub(crate) tabs: Vec<TabState>,
@@ -165,14 +159,9 @@ impl Default for MainWindow {
 impl MainWindow {
     pub fn new(hwnd: Option<HWND>) -> Self {
         let mut app = Self::default();
-
-        // if let Some(hwnd) = hwnd {
-        //     apply_window_style(hwnd, &get_palette()); // 👈 apply once
-        // }
-
         if let Some(hwnd) = hwnd {
             unsafe {
-                install_wndproc(hwnd); // 👈 THIS is the key
+                install_wndproc(hwnd);
             }
         }
 
@@ -335,12 +324,11 @@ impl eframe::App for MainWindow {
                     // --- Tabs column ---
                     let tabs_width = ui.available_width();
                     ui.allocate_ui_with_layout(
-                        egui::vec2(tabs_width, ui.available_height()),
+                        egui::vec2(tabs_width, ui.available_height() - 16.0),
                         egui::Layout::top_down(egui::Align::Min),
                         |ui| {
                             let old_spacing = ui.spacing().item_spacing;
                             ui.spacing_mut().item_spacing.y = 0.0;
-                            // ui.add_space(6.0); // vertical spacing above tabs
 
                             let tab_infos: Vec<TabInfo> = self
                                 .tabs
@@ -357,16 +345,11 @@ impl eframe::App for MainWindow {
                                 .collect();
                             let active_id = self.tabs[self.active_tab].id;
 
-                            let tab_bar_height = 35.0;
-
-                            ui.allocate_ui_with_layout(
-                                egui::vec2(ui.available_width(), tab_bar_height),
-                                egui::Layout::left_to_right(egui::Align::Center),
-                                |ui| {
-                                    tabs_action =
-                                        Some(draw_tabs(ui, &tab_infos, active_id, palette, self.hwnd));
-                                },
-                            );
+                            egui::Frame::NONE.show(ui, |ui| {
+                                ui.add_space(8.0);
+                                tabs_action =
+                                    Some(draw_tabs(ui, &tab_infos, active_id, palette, self.hwnd));
+                            });
 
                             let container = egui::Frame::NONE
                                 .stroke(egui::Stroke::NONE)
@@ -413,9 +396,10 @@ impl eframe::App for MainWindow {
                                             &mut tabbar_action,
                                             &mut self.drag_state,
                                         );
-                                        ui.add_space(6.0);
                                     },
                                 );
+
+                                ui.add_space(16.0);
                             });
 
                             ui.spacing_mut().item_spacing = old_spacing;

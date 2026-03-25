@@ -295,7 +295,8 @@ Submit a pull request with a description of your changes
 - [x] **Portable device support** for iPhone, Android, and other connected devices
 - [x] **Raw/unmounted drive detection** for ISO sticks and Linux partitions
 - [x] **Performance benchmarking system** with real-time measurement and comparison tools
-- [x] **File dragging and dropping inside viewer**
+- [x] **Drag and drop files/folders** - Move one or more items into folders shown in the item viewer
+- [x] **Window management improvements** with proper maximization bounds and minimum size constraints
 
 ### 🚀 Upcoming Features
 - [ ] **Image previews using Spacebar** - GPU texture via wgpu / egui_wgpu_backend
@@ -309,7 +310,7 @@ Submit a pull request with a description of your changes
 - [ ] **Keyboard shortcuts** customization and help system
 
 ## 🐛 Known Bugs
-- Creating a new folder/file doesn't automatically scroll the viewier to focus on it
+- Creating a new folder/file doesn't automatically scroll the viewer to focus on it
 - Fix network detection in sidebar
 - Fix raw/unmounted drive detection for ISO sticks and Linux partitions
 

@@ -1,6 +1,6 @@
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
-use crate::gui::utils::clickable_icon;
+use crate::gui::utils::{clickable_icon, truncate_text};
 use crate::gui::windows::containers::enums::TabbarNavAction;
 use crate::gui::windows::containers::structs::{TabInfo, TabState, TabbarAction, TabsAction};
 use eframe::egui;
@@ -19,7 +19,7 @@ pub fn draw_tabs(
     let mut action: TabsAction = TabsAction::default();
     let controls_width = 64.0;
     let full_width = ui.available_width();
-    let tabs_width = full_width - controls_width;
+    let tabs_width = (full_width - controls_width).max(0.0);
 
     ui.allocate_ui_with_layout(
         egui::vec2(ui.available_width(), 32.0),
@@ -37,7 +37,21 @@ pub fn draw_tabs(
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 for tab in tabs {
-                                    handle_draw_tab_new(ui, tab, active_id, palette, &mut action);
+                                    // Compute tab width dynamically
+                                    let tab_width = 140.0;
+                                    let (rect, resp) = ui.allocate_exact_size(
+                                        egui::vec2(tab_width, 28.0),
+                                        egui::Sense::click(),
+                                    );
+                                    handle_draw_tab_new_allocated(
+                                        ui,
+                                        tab,
+                                        rect,
+                                        resp,
+                                        active_id,
+                                        palette,
+                                        &mut action,
+                                    );
                                 }
                             });
                             handle_draw_add_new_tab_button(ui, palette, &mut action);
@@ -58,9 +72,11 @@ pub fn draw_tabs(
     action
 }
 
-fn handle_draw_tab_new(
+fn handle_draw_tab_new_allocated(
     ui: &mut egui::Ui,
     tab: &TabInfo,
+    rect: egui::Rect,
+    resp: egui::Response,
     active_id: u64,
     palette: &ThemePalette,
     action: &mut TabsAction,
@@ -77,78 +93,54 @@ fn handle_draw_tab_new(
         egui::Color32::TRANSPARENT
     };
 
-    // 🔥 1. Allocate clickable region FIRST
-    let width = 200.0;
-    let desired_size = egui::vec2(width, 28.0);
-    let (rect, resp) = ui.allocate_exact_size(desired_size, egui::Sense::click());
-
-    // 🔥 2. Paint background manually
     let painter = ui.painter();
+
+    // --- Paint background ---
     painter.rect_filled(rect, corner, tab_fill);
 
-    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-            ui.add_space(12.0);
-            ui.vertical(|ui| {
-                ui.add_space(2.0); // fine-tune
-                ui.add(egui::Label::new(regular::FOLDER_SIMPLE).selectable(false));
-            });
+    // --- Font and colors ---
+    let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
+    let label_color = if is_active {
+        palette.row_label_selected
+    } else {
+        ui.visuals().widgets.noninteractive.fg_stroke.color
+    };
 
-            let label_color = if is_active {
-                palette.row_label_selected
-            } else {
-                ui.visuals().widgets.noninteractive.fg_stroke.color
-            };
+    // --- Layout parameters ---
+    let icon_size = 16.0;
+    let spacing = 6.0;
+    let padding = 8.0; // distance from left edge of tab
 
-            let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
+    let icon_pos = egui::pos2(rect.left() + padding, rect.center().y);
+    let text_pos = egui::pos2(rect.left() + padding + icon_size + spacing, rect.center().y);
 
-            // --- DISPLAY TEXT WITH TRUNCATION ---
-            let available_width = ui.available_width() - 24.0; // Account for spacing
-            let max_chars = (available_width / 7.0) as usize; // Approximate character width
-
-            let display_title = if tab.title.len() > max_chars && max_chars > 3 {
-                // Use character boundaries instead of byte indices
-                let mut char_count = 0;
-                let mut byte_end = 0;
-                for (char_idx, (i, _)) in tab.title.char_indices().enumerate() {
-                    if char_idx >= max_chars - 3 {
-                        break;
-                    }
-                    char_count += 1;
-                    byte_end = i;
-                }
-                format!("{}...", &tab.title[..byte_end])
-            } else {
-                tab.title.clone()
-            };
-
-            let label_resp = ui.add(egui::Label::new(
-                egui::RichText::new(display_title)
-                    .color(label_color)
-                    .font(font_id),
-            ));
-
-            // Add tooltip showing full path
-            let label_resp = label_resp.on_hover_text(
-                egui::RichText::new(format!("{}", tab.full_path.display()))
-                    .size(palette.tooltip_text_size)
-                    .color(palette.tooltip_text_color),
-            );
-
-            // Change cursor depending on hover state
-            ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
-        });
-    });
-
-    // let rect = resp.rect;
-
-    // 👇 Allow space for outside stroke, but still clip bottom
-    let clip_rect = egui::Rect::from_min_max(
-        egui::pos2(rect.min.x - 10.0, rect.min.y - 1.0),
-        egui::pos2(rect.max.x + 10.0, rect.max.y + 0.5),
+    // --- Draw folder icon (left-aligned) ---
+    painter.text(
+        icon_pos,
+        egui::Align2::LEFT_CENTER,
+        regular::FOLDER_SIMPLE,
+        font_id.clone(),
+        label_color,
     );
 
-    let clipped = ui.painter().with_clip_rect(clip_rect);
+    // --- Draw tab text (left-aligned) ---
+    painter.text(
+        text_pos,
+        egui::Align2::LEFT_CENTER,
+        truncate_text(
+            &tab.title,
+            ((rect.width() - icon_size - spacing - 2.0 * padding) / 7.0) as usize,
+        ),
+        font_id.clone(),
+        label_color,
+    );
+
+    // --- Draw border ---
+    let stroke = if is_active {
+        egui::Stroke::new(1.0, palette.tab_border_active)
+    } else {
+        egui::Stroke::new(1.0, palette.tab_border_default)
+    };
 
     let rounding = egui::CornerRadius {
         nw: corner.nw,
@@ -157,28 +149,27 @@ fn handle_draw_tab_new(
         se: 0,
     };
 
-    let stroke = if is_active {
-        egui::Stroke::new(1.0, palette.tab_border_active)
-    } else {
-        egui::Stroke::new(1.0, palette.tab_border_default)
-    };
+    painter.rect_stroke(rect, rounding, stroke, egui::StrokeKind::Outside);
 
-    // ✅ Draw border
-    clipped.rect_stroke(rect, rounding, stroke, egui::StrokeKind::Outside);
-
-    // 🎯 Active tab blends into panel
+    // Active tab blends into panel
     if is_active {
-        clipped.line_segment(
+        painter.line_segment(
             [rect.left_bottom(), rect.right_bottom()],
             egui::Stroke::new(2.0, ui.visuals().panel_fill),
         );
     }
 
-    let close_resp = tab_close_button(ui, resp.rect, tab.id, palette);
+    // --- Handle clicks ---
+    let close_resp = tab_close_button(ui, rect, tab.id, palette);
     if close_resp.clicked() {
         action.close = Some(tab.id);
     } else if resp.clicked() {
         action.activate = Some(tab.id);
+    }
+
+    // --- Hover cursor ---
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
 }
 
@@ -187,30 +178,28 @@ fn handle_draw_add_new_tab_button(
     palette: &ThemePalette,
     action: &mut TabsAction,
 ) {
-    let desired_size = egui::vec2(32.0, 32.0); // give it a bit more vertical room
-    let (rect, _outer_resp) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+    let size = egui::vec2(28.0, 28.0);
 
-    // 🔥 Shrink the rect from the top by 12px
-    let inner_rect = rect.shrink2(egui::vec2(0.0, 4.0));
+    let frame = egui::Frame::NONE
+        .inner_margin(egui::Margin::same(0)) // 👈 controls padding inside border
+        .corner_radius(palette.tab_inactive_radius)
+        .stroke(egui::Stroke::new(1.0, palette.tab_border_default));
 
-    ui.scope_builder(egui::UiBuilder::new().max_rect(inner_rect), |ui| {
-        let add_frame = egui::Frame::NONE
-            .inner_margin(egui::Margin::symmetric(6, 6))
-            .corner_radius(palette.tab_inactive_radius)
-            .stroke(egui::Stroke::new(1.0, palette.tab_border_default));
+    let response = frame
+        .show(ui, |ui| {
+            let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
 
-        let add_resp = add_frame.show(ui, |ui| {
-            ui.set_min_width(25.0);
-            let (rect, resp) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
-            (rect, resp)
-        });
+            // ✅ shrink AFTER allocation
+            let rect = rect.shrink(1.5);
 
-        let add_resp = tab_add_button(ui, add_resp.inner.0, add_resp.inner.1, palette);
+            let resp = tab_add_button(ui, rect, resp, palette);
+            resp
+        })
+        .inner;
 
-        if add_resp.clicked() {
-            action.open_new = true;
-        }
-    });
+    if response.clicked() {
+        action.open_new = true;
+    }
 }
 
 fn handle_draw_windows_buttons(ui: &mut egui::Ui, hwnd: Option<HWND>, palette: &ThemePalette) {
@@ -307,8 +296,6 @@ fn tab_add_button(
     palette: &ThemePalette,
 ) -> egui::Response {
     let hovered = resp.hovered();
-    let nudge = egui::vec2(4.0, 0.0);
-    let rect = rect.translate(nudge);
 
     let bg = if hovered {
         palette.tab_add_hover
@@ -316,8 +303,10 @@ fn tab_add_button(
         egui::Color32::TRANSPARENT
     };
 
+    let visual_rect = rect.shrink(4.0);
+
     ui.painter()
-        .rect_filled(rect, palette.tab_button_radius, bg);
+        .rect_filled(visual_rect, palette.tab_button_radius, bg);
 
     let color = if hovered {
         palette.icon_colored_hover

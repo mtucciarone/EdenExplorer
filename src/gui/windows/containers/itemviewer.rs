@@ -70,6 +70,8 @@ pub fn draw_item_viewer(
     // Wrap table in a scroll area for horizontal scrolling
     egui::ScrollArea::both()
         .show(ui, |ui| {
+            ui.set_min_height(ui.available_height() - 16.0);
+
             if let Some(global_action) = handle_global_actions(
                 ui,
                 files,
@@ -108,8 +110,8 @@ pub fn draw_item_viewer(
                         .resizable(true),
                 ) // Type
                 .column(
-                    Column::initial(layout.available_width * 0.15)
-                        .at_least(80.0)
+                    Column::initial(layout.available_width * 0.075)
+                        .at_least(50.0)
                         .resizable(true),
                 ); // Size
 
