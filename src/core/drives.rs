@@ -58,17 +58,11 @@ pub fn list_portable_devices() -> Vec<String> {
     let mut devices = Vec::new();
 
     unsafe {
-        // Initialize COM
-        if CoInitializeEx(None, COINIT_APARTMENTTHREADED).is_err() {
-            return devices;
-        }
-
         // Create IPortableDeviceManager
         let device_manager: IPortableDeviceManager =
             match CoCreateInstance(&PortableDeviceManager, None, CLSCTX_INPROC_SERVER) {
                 Ok(dm) => dm,
                 Err(_) => {
-                    CoUninitialize();
                     return devices;
                 }
             };
@@ -80,7 +74,6 @@ pub fn list_portable_devices() -> Vec<String> {
             .is_err()
             || count == 0
         {
-            CoUninitialize();
             return devices;
         }
 
@@ -93,7 +86,6 @@ pub fn list_portable_devices() -> Vec<String> {
             .GetDevices(device_ids.as_mut_ptr(), &mut count)
             .is_err()
         {
-            CoUninitialize();
             return devices;
         }
 
@@ -115,8 +107,6 @@ pub fn list_portable_devices() -> Vec<String> {
                 }
             }
         }
-
-        CoUninitialize();
     }
 
     devices

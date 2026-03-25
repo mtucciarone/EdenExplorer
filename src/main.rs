@@ -2,22 +2,14 @@ mod core;
 mod gui;
 
 use crate::core::indexer::{WindowSizeMode, load_app_settings};
+use crate::gui::windows::windowsoverrides::{get_hwnd_from_cc, set_egui_ctx};
 use eframe::{NativeOptions, egui};
-
-use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use windows::Win32::Foundation::HWND;
-
-fn get_hwnd_from_cc(cc: &eframe::CreationContext<'_>) -> Option<HWND> {
-    let handle = cc.window_handle().ok()?;
-    let raw = handle.as_raw();
-
-    match raw {
-        RawWindowHandle::Win32(h) => Some(HWND(h.hwnd.get() as *mut std::ffi::c_void)),
-        _ => None,
-    }
-}
+use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
 
 fn main() -> eframe::Result<()> {
+    unsafe {
+        CoInitializeEx(None, COINIT_APARTMENTTHREADED).unwrap();
+    }
     let icon = load_icon().expect("Failed to load icon");
     let (_folder_scanning_enabled, window_size_mode) = load_app_settings();
     let window_size = match window_size_mode {
@@ -52,6 +44,7 @@ fn main() -> eframe::Result<()> {
             cc.egui_ctx.set_fonts(fonts);
 
             let hwnd = get_hwnd_from_cc(cc);
+            set_egui_ctx(&cc.egui_ctx);
             Ok(Box::new(gui::MainWindow::new(hwnd)))
         }),
     )

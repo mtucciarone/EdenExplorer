@@ -1,4 +1,4 @@
-use crate::core::state::Navigation;
+use crate::gui::windows::navigation::Navigation;
 use crate::gui::windows::containers::enums::TabbarNavAction;
 use std::path::PathBuf;
 
@@ -78,4 +78,11 @@ pub struct ItemViewerLayout {
     pub header_gap: f32,
     pub available_width: f32,
     pub is_drive_view: bool,
+}
+
+#[derive(Default)]
+pub struct DragState {
+    pub active: bool,
+    pub source_items: Vec<PathBuf>,
+    pub start_pos: Option<egui::Pos2>,
 }

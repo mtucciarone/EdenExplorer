@@ -1,15 +1,28 @@
-use crate::core::state::FileItem;
+use crate::core::fs::FileItem;
 use crate::gui::theme::ThemePalette;
-use eframe::egui;
+use eframe::egui::*;
+use egui_phosphor::regular::DOTS_SIX_VERTICAL;
+use std::cmp::Ordering::{Greater, Less};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
+use std::fs::{copy, create_dir_all, read_dir};
+use std::mem::size_of;
 use std::os::windows::ffi::OsStrExt;
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
 use windows::Win32::System::Com::{
-    CLSCTX_ALL, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize,
+    CLSCTX_ALL, CoCreateInstance
 };
+use windows::Win32::System::DataExchange::{CloseClipboard, GetClipboardData, OpenClipboard};
+use windows::Win32::System::DataExchange::{
+    EmptyClipboard, RegisterClipboardFormatW, SetClipboardData,
+};
+use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock};
+use windows::Win32::System::Ole::CF_HDROP;
+use windows::Win32::UI::Shell::DragQueryFileW;
+use windows::Win32::UI::Shell::FILEOPERATION_FLAGS;
+use windows::Win32::UI::Shell::{FO_DELETE, FOF_ALLOWUNDO, SHFILEOPSTRUCTW, SHFileOperationW};
 use windows::Win32::UI::Shell::{
     FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
 };
@@ -17,18 +30,18 @@ use windows::Win32::UI::Shell::{
     SHFILEINFOW, SHGFI_TYPENAME, SHGFI_USEFILEATTRIBUTES, SHGetFileInfoW,
 };
 use windows::core::PCWSTR;
-use egui::{Ui, FontId, Sense, Response, Align2};
+use windows::core::Result;
 
 /// Creates a clickable icon with hover color effect
-pub fn clickable_icon(ui: &mut egui::Ui, icon: &str, hover_color: egui::Color32) -> egui::Response {
-    let resp = ui.add(egui::Label::new(icon).sense(egui::Sense::click()));
+pub fn clickable_icon(ui: &mut Ui, icon: &str, hover_color: Color32) -> Response {
+    let resp = ui.add(Label::new(icon).sense(Sense::click()));
 
     if resp.hovered() {
         ui.painter().text(
             resp.rect.center(),
-            egui::Align2::CENTER_CENTER,
+            Align2::CENTER_CENTER,
             icon,
-            egui::FontId::default(),
+            FontId::default(),
             hover_color,
         );
     }
@@ -36,28 +49,7 @@ pub fn clickable_icon(ui: &mut egui::Ui, icon: &str, hover_color: egui::Color32)
     resp
 }
 
-pub fn get_cut_paths() -> HashSet<PathBuf> {
-    if let Some((paths, cut)) = get_clipboard_files() {
-        if cut {
-            return paths.into_iter().collect();
-        }
-    }
-    HashSet::new()
-}
-
-pub fn clear_clipboard_files() {
-    use windows::Win32::System::DataExchange::{CloseClipboard, OpenClipboard, SetClipboardData};
-    use windows::Win32::System::Ole::CF_HDROP;
-
-    unsafe {
-        if OpenClipboard(None).is_ok() {
-            let _ = SetClipboardData(CF_HDROP.0 as u32, None);
-            let _ = CloseClipboard();
-        }
-    }
-}
-
-pub fn drive_usage_color(ratio: f32, palette: &crate::gui::theme::ThemePalette) -> egui::Color32 {
+pub fn drive_usage_color(ratio: f32, palette: &ThemePalette) -> Color32 {
     let base = if ratio > 0.95 {
         palette.drive_usage_critical
     } else if ratio >= 0.85 {
@@ -69,22 +61,13 @@ pub fn drive_usage_color(ratio: f32, palette: &crate::gui::theme::ThemePalette) 
     base.gamma_multiply(0.6)
 }
 
-pub fn drive_usage_gradient(
-    ratio: f32,
-    palette: &crate::gui::theme::ThemePalette,
-) -> (egui::Color32, egui::Color32) {
+pub fn drive_usage_gradient(ratio: f32, palette: &ThemePalette) -> (Color32, Color32) {
     let left = drive_usage_color(ratio, palette);
     let right = left.gamma_multiply(0.8);
     (left, right)
 }
 
-pub fn drive_usage_bar(
-    ui: &mut egui::Ui,
-    total: u64,
-    free: u64,
-    height: f32,
-    palette: &crate::gui::theme::ThemePalette,
-) {
+pub fn drive_usage_bar(ui: &mut Ui, total: u64, free: u64, height: f32, palette: &ThemePalette) {
     let used = total.saturating_sub(free);
 
     let target_ratio = if total == 0 {
@@ -103,21 +86,20 @@ pub fn drive_usage_bar(
 
     let max_bar_width = 180.0;
     let bar_width = (ui.available_width() - 8.0).min(max_bar_width);
-    let (outer_rect, _) =
-        ui.allocate_exact_size(egui::vec2(bar_width, height), egui::Sense::hover());
+    let (outer_rect, _) = ui.allocate_exact_size(vec2(bar_width, height), Sense::hover());
     let painter = ui.painter();
 
     let bar_height = outer_rect.height() * 0.65;
     let y_offset = (outer_rect.height() - bar_height) / 2.0;
 
-    let rect = egui::Rect::from_min_size(
-        egui::pos2(outer_rect.min.x, outer_rect.min.y + y_offset),
-        egui::vec2(outer_rect.width(), bar_height),
+    let rect = Rect::from_min_size(
+        pos2(outer_rect.min.x, outer_rect.min.y + y_offset),
+        vec2(outer_rect.width(), bar_height),
     );
     // background track
     painter.rect_filled(
         rect,
-        egui::CornerRadius::same(palette.small_radius),
+        CornerRadius::same(palette.small_radius),
         palette.drive_usage_background,
     );
 
@@ -125,16 +107,16 @@ pub fn drive_usage_bar(
     let fill_width = rect.width() * animated_ratio;
 
     if fill_width > 0.0 {
-        let fill_rect = egui::Rect::from_min_size(rect.min, egui::vec2(fill_width, rect.height()));
+        let fill_rect = Rect::from_min_size(rect.min, vec2(fill_width, rect.height()));
         let (left, _right) = drive_usage_gradient(target_ratio, palette);
 
         let radius = palette.small_radius;
 
         // Only round right side if nearly full
         let fill_rounding = if animated_ratio >= 0.999 {
-            egui::CornerRadius::same(radius)
+            CornerRadius::same(radius)
         } else {
-            egui::CornerRadius {
+            CornerRadius {
                 nw: radius,
                 sw: radius,
                 ne: 0,
@@ -145,20 +127,16 @@ pub fn drive_usage_bar(
         painter.rect_filled(
             fill_rect,
             fill_rounding,
-            egui::Color32::from_rgb(left.r(), left.g(), left.b()),
+            Color32::from_rgb(left.r(), left.g(), left.b()),
         );
 
         // 🔥 subtle highlight strip (fake gradient feel)
-        let highlight_rect = egui::Rect::from_min_size(
+        let highlight_rect = Rect::from_min_size(
             fill_rect.min,
-            egui::vec2(fill_rect.width(), fill_rect.height() * 0.25),
+            vec2(fill_rect.width(), fill_rect.height() * 0.25),
         );
 
-        painter.rect_filled(
-            highlight_rect,
-            fill_rounding,
-            egui::Color32::from_white_alpha(20),
-        );
+        painter.rect_filled(highlight_rect, fill_rounding, Color32::from_white_alpha(20));
     }
 
     // percentage text
@@ -166,33 +144,29 @@ pub fn drive_usage_bar(
 
     painter.text(
         rect.center(),
-        egui::Align2::CENTER_CENTER,
+        Align2::CENTER_CENTER,
         percent,
-        egui::TextStyle::Small.resolve(ui.style()),
+        TextStyle::Small.resolve(ui.style()),
         palette.icon_colored_hover,
     );
 }
 
-pub fn copy_dir_recursive(src: &std::path::Path, dest: &std::path::Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(dest)?;
-    for entry in std::fs::read_dir(src)? {
+pub fn copy_dir_recursive(src: &Path, dest: &Path) -> std::io::Result<()> {
+    create_dir_all(dest)?;
+    for entry in read_dir(src)? {
         let entry = entry?;
         let file_type = entry.file_type()?;
         let new_path = dest.join(entry.file_name());
         if file_type.is_dir() {
             copy_dir_recursive(&entry.path(), &new_path)?;
         } else {
-            std::fs::copy(entry.path(), new_path)?;
+            copy(entry.path(), new_path)?;
         }
     }
     Ok(())
 }
 
-pub fn shell_delete_to_recycle_bin(path: &std::path::PathBuf) -> bool {
-    use std::os::windows::ffi::OsStrExt;
-    use windows::Win32::UI::Shell::{FO_DELETE, FOF_ALLOWUNDO, SHFILEOPSTRUCTW, SHFileOperationW};
-    use windows::core::PCWSTR;
-
+pub fn shell_delete_to_recycle_bin(path: &PathBuf) -> bool {
     let mut wide: Vec<u16> = path.as_os_str().encode_wide().collect();
     wide.push(0);
     wide.push(0);
@@ -205,15 +179,19 @@ pub fn shell_delete_to_recycle_bin(path: &std::path::PathBuf) -> bool {
     unsafe { SHFileOperationW(&mut op) == 0 }
 }
 
-pub fn set_clipboard_files(paths: &[std::path::PathBuf], cut: bool) -> bool {
-    use std::ffi::OsStr;
-    use std::os::windows::ffi::OsStrExt;
-    use windows::Win32::System::DataExchange::{
-        CloseClipboard, EmptyClipboard, OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
-    };
-    use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock};
+pub fn clear_clipboard_files() {
+    use windows::Win32::System::DataExchange::{CloseClipboard, OpenClipboard, SetClipboardData};
     use windows::Win32::System::Ole::CF_HDROP;
 
+    unsafe {
+        if OpenClipboard(None).is_ok() {
+            let _ = SetClipboardData(CF_HDROP.0 as u32, None);
+            let _ = CloseClipboard();
+        }
+    }
+}
+
+pub fn set_clipboard_files(paths: &[PathBuf], cut: bool) -> bool {
     if paths.is_empty() {
         return false;
     }
@@ -233,7 +211,7 @@ pub fn set_clipboard_files(paths: &[std::path::PathBuf], cut: bool) -> bool {
         f_wide: i32,
     }
 
-    let size = std::mem::size_of::<DropFiles>() + wide.len() * std::mem::size_of::<u16>();
+    let size = size_of::<DropFiles>() + wide.len() * size_of::<u16>();
 
     let hglobal = match unsafe { GlobalAlloc(GMEM_MOVEABLE, size) } {
         Ok(h) => h,
@@ -248,7 +226,7 @@ pub fn set_clipboard_files(paths: &[std::path::PathBuf], cut: bool) -> bool {
         }
 
         let drop_files = DropFiles {
-            p_files: std::mem::size_of::<DropFiles>() as u32,
+            p_files: size_of::<DropFiles>() as u32,
             pt: windows::Win32::Foundation::POINT { x: 0, y: 0 },
             f_nc: 0,
             f_wide: 1,
@@ -257,13 +235,13 @@ pub fn set_clipboard_files(paths: &[std::path::PathBuf], cut: bool) -> bool {
         std::ptr::copy_nonoverlapping(
             &drop_files as *const _ as *const u8,
             ptr,
-            std::mem::size_of::<DropFiles>(),
+            size_of::<DropFiles>(),
         );
 
         std::ptr::copy_nonoverlapping(
             wide.as_ptr() as *const u8,
-            ptr.add(std::mem::size_of::<DropFiles>()),
-            wide.len() * std::mem::size_of::<u16>(),
+            ptr.add(size_of::<DropFiles>()),
+            wide.len() * size_of::<u16>(),
         );
 
         let _ = GlobalUnlock(hglobal);
@@ -274,21 +252,16 @@ pub fn set_clipboard_files(paths: &[std::path::PathBuf], cut: bool) -> bool {
         .chain(std::iter::once(0))
         .collect();
 
-    let format = unsafe { RegisterClipboardFormatW(windows::core::PCWSTR(format_name.as_ptr())) };
+    let format = unsafe { RegisterClipboardFormatW(PCWSTR(format_name.as_ptr())) };
 
     if unsafe { OpenClipboard(None).is_err() } {
         return false;
     }
     let _ = unsafe { EmptyClipboard() };
-    let _ = unsafe {
-        SetClipboardData(
-            CF_HDROP.0 as u32,
-            Some(windows::Win32::Foundation::HANDLE(std::ptr::null_mut())),
-        )
-    };
+    let _ = unsafe { SetClipboardData(CF_HDROP.0 as u32, Some(HANDLE(hglobal.0))); };
 
     let effect: u32 = if cut { 2 } else { 5 };
-    let hglobal_effect = match unsafe { GlobalAlloc(GMEM_MOVEABLE, std::mem::size_of::<u32>()) } {
+    let hglobal_effect = match unsafe { GlobalAlloc(GMEM_MOVEABLE, size_of::<u32>()) } {
         Ok(h) => h,
         Err(_) => {
             let _ = unsafe { CloseClipboard() };
@@ -301,10 +274,7 @@ pub fn set_clipboard_files(paths: &[std::path::PathBuf], cut: bool) -> bool {
             if !ptr.is_null() {
                 *ptr = effect;
                 let _ = GlobalUnlock(hglobal_effect);
-                let _ = SetClipboardData(
-                    format,
-                    Some(windows::Win32::Foundation::HANDLE(hglobal_effect.0)),
-                );
+                let _ = SetClipboardData(format, Some(HANDLE(hglobal_effect.0)));
             }
         }
     }
@@ -313,16 +283,7 @@ pub fn set_clipboard_files(paths: &[std::path::PathBuf], cut: bool) -> bool {
     true
 }
 
-pub fn get_clipboard_files() -> Option<(Vec<std::path::PathBuf>, bool)> {
-    use std::ffi::OsStr;
-    use std::os::windows::ffi::OsStrExt;
-    use windows::Win32::System::DataExchange::{
-        CloseClipboard, GetClipboardData, OpenClipboard, RegisterClipboardFormatW,
-    };
-    use windows::Win32::System::Memory::{GlobalLock, GlobalUnlock};
-    use windows::Win32::System::Ole::CF_HDROP;
-    use windows::Win32::UI::Shell::DragQueryFileW;
-
+pub fn get_clipboard_files() -> Option<Vec<PathBuf>> {
     if unsafe { OpenClipboard(None).is_err() } {
         return None;
     }
@@ -340,49 +301,67 @@ pub fn get_clipboard_files() -> Option<(Vec<std::path::PathBuf>, bool)> {
     let count = unsafe { DragQueryFileW(hdrop, 0xFFFFFFFF, None) };
 
     let mut paths = Vec::new();
+
     for i in 0..count {
         let len = unsafe { DragQueryFileW(hdrop, i, None) };
         if len == 0 {
             continue;
         }
+
         let mut buf = vec![0u16; (len + 1) as usize];
         let copied = unsafe { DragQueryFileW(hdrop, i, Some(&mut buf)) };
+
         if copied > 0 {
             let path = String::from_utf16_lossy(&buf[..copied as usize]);
-            paths.push(std::path::PathBuf::from(path));
+            paths.push(PathBuf::from(path));
         }
+    }
+
+    let _ = unsafe { CloseClipboard() };
+
+    Some(paths)
+}
+
+pub fn is_clipboard_cut() -> bool {
+    if unsafe { OpenClipboard(None).is_err() } {
+        return false;
     }
 
     let format_name: Vec<u16> = OsStr::new("Preferred DropEffect")
         .encode_wide()
         .chain(std::iter::once(0))
         .collect();
-    let format = unsafe { RegisterClipboardFormatW(windows::core::PCWSTR(format_name.as_ptr())) };
 
-    let mut cut = false;
+    let format = unsafe { RegisterClipboardFormatW(PCWSTR(format_name.as_ptr())) };
+
+    let mut is_cut = false;
+
     if let Ok(hglobal) = unsafe { GetClipboardData(format) } {
-        if hglobal.0 != std::ptr::null_mut() {
-            let ptr =
-                unsafe { GlobalLock(windows::Win32::Foundation::HGLOBAL(hglobal.0 as *mut _)) }
-                    as *const u32;
+        if !hglobal.0.is_null() {
+            let ptr = unsafe {
+                GlobalLock(windows::Win32::Foundation::HGLOBAL(hglobal.0 as *mut _))
+            } as *const u32;
+
             if !ptr.is_null() {
                 let val = unsafe { *ptr };
-                cut = val == 2;
-                let _ = unsafe {
-                    GlobalUnlock(windows::Win32::Foundation::HGLOBAL(hglobal.0 as *mut _))
-                };
+
+                // 2 = DROPEFFECT_MOVE (cut)
+                // 5 = DROPEFFECT_COPY | DROPEFFECT_LINK (rare combos)
+                is_cut = val == 2;
+
+                unsafe {
+                    GlobalUnlock(windows::Win32::Foundation::HGLOBAL(hglobal.0 as *mut _));
+                }
             }
         }
     }
 
     let _ = unsafe { CloseClipboard() };
-    Some((paths, cut))
+
+    is_cut
 }
 
 pub fn clipboard_has_files() -> bool {
-    use windows::Win32::System::DataExchange::{CloseClipboard, GetClipboardData, OpenClipboard};
-    use windows::Win32::System::Ole::CF_HDROP;
-
     if unsafe { OpenClipboard(None).is_err() } {
         return false;
     }
@@ -416,7 +395,7 @@ pub fn get_file_type_name(ext: &str, cache: &mut HashMap<String, String>) -> Str
             PCWSTR(wide.as_ptr()),
             FILE_ATTRIBUTE_NORMAL,
             Some(&mut info),
-            std::mem::size_of::<SHFILEINFOW>() as u32,
+            size_of::<SHFILEINFOW>() as u32,
             SHGFI_TYPENAME | SHGFI_USEFILEATTRIBUTES,
         )
     };
@@ -431,23 +410,17 @@ pub fn get_file_type_name(ext: &str, cache: &mut HashMap<String, String>) -> Str
     type_name
 }
 
-pub fn show_copy_move_dialog(
-    sources: Vec<PathBuf>,
-    destination: &PathBuf,
-) -> windows::core::Result<()> {
+pub fn show_copy_move_dialog(sources: Vec<PathBuf>, destination: &PathBuf) -> Result<()> {
     if sources.is_empty() {
         return Ok(());
     }
 
     unsafe {
-        // ✅ FIX: HRESULT → Result
-        CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok()?;
-
         let result = (|| {
             let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
 
             // Minimal flags (safe default)
-            file_op.SetOperationFlags(windows::Win32::UI::Shell::FILEOPERATION_FLAGS(0))?;
+            file_op.SetOperationFlags(FILEOPERATION_FLAGS(0))?;
 
             // Destination
             let dest_w: Vec<u16> = destination
@@ -476,8 +449,6 @@ pub fn show_copy_move_dialog(
 
             Ok(())
         })();
-
-        CoUninitialize();
 
         result
     }
@@ -516,11 +487,7 @@ pub enum SortColumn {
 pub fn sort_files(files: &mut Vec<FileItem>, column: SortColumn, ascending: bool) {
     files.sort_by(|a, b| {
         if a.is_dir != b.is_dir {
-            return if a.is_dir {
-                std::cmp::Ordering::Less
-            } else {
-                std::cmp::Ordering::Greater
-            };
+            return if a.is_dir { Less } else { Greater };
         }
 
         let ord = match column {
@@ -531,8 +498,8 @@ pub fn sort_files(files: &mut Vec<FileItem>, column: SortColumn, ascending: bool
             SortColumn::Type => {
                 // Sort by folder/file first, then by file extension
                 match (a.is_dir, b.is_dir) {
-                    (true, false) => std::cmp::Ordering::Less,
-                    (false, true) => std::cmp::Ordering::Greater,
+                    (true, false) => Less,
+                    (false, true) => Greater,
                     (true, true) => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
                     (false, false) => {
                         // For files, sort by extension
@@ -558,14 +525,67 @@ pub fn sort_files(files: &mut Vec<FileItem>, column: SortColumn, ascending: bool
     });
 }
 
+pub fn draw_object_drag_ghost(
+    ui: &Ui,
+    palette: &ThemePalette,
+    label: &str,
+    show_reordering_handle: bool,
+) {
+    if let Some(pos) = ui.ctx().input(|i| i.pointer.hover_pos()) {
+        let painter = ui
+            .ctx()
+            .layer_painter(LayerId::new(Order::Foreground, Id::new("drag_ghost")));
+
+        // --- Background ---
+        let ghost_rect = Rect::from_center_size(pos, vec2(ui.available_width(), 18.0));
+
+        painter.rect_filled(
+            ghost_rect,
+            CornerRadius::same(palette.medium_radius),
+            palette.primary_hover,
+        );
+
+        // --- Text ---
+        let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
+
+        painter.text(
+            pos2(ghost_rect.left() + 8.0, ghost_rect.center().y),
+            Align2::LEFT_CENTER,
+            label,
+            font_id,
+            palette.icon_color.gamma_multiply(0.7),
+        );
+
+        ui.ctx().set_cursor_icon(CursorIcon::Grab);
+
+        if show_reordering_handle {
+            // --- Handle on the right ---
+            let handle_width = 12.0;
+
+            let handle_rect = Rect::from_min_size(
+                pos2(ghost_rect.right() - handle_width - 4.0, ghost_rect.top()),
+                vec2(handle_width, ghost_rect.height()),
+            );
+
+            painter.text(
+                handle_rect.center(),
+                Align2::CENTER_CENTER,
+                DOTS_SIX_VERTICAL,
+                FontId::new(14.0, FontFamily::Proportional),
+                palette.icon_color,
+            );
+        }
+    }
+}
+
 pub fn styled_button(ui: &mut Ui, label: impl Into<String>, palette: &ThemePalette) -> Response {
     let label = label.into();
-    let font_id = FontId::new(palette.text_size, egui::FontFamily::Proportional);
+    let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
 
     // Calculate button size
     let desired_height = ui.spacing().interact_size.y;
     let desired_width = ui.available_width(); // full width
-    let size = egui::vec2(desired_width, desired_height);
+    let size = vec2(desired_width, desired_height);
 
     // Allocate space and get response
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
@@ -573,15 +593,17 @@ pub fn styled_button(ui: &mut Ui, label: impl Into<String>, palette: &ThemePalet
     // Draw the background and stroke
     ui.painter().rect(
         rect,
-        egui::CornerRadius::same(palette.medium_radius),
+        CornerRadius::same(palette.medium_radius),
         palette.button_background,
-        egui::Stroke::new(1.0, palette.tab_border_default),
-        egui::StrokeKind::Inside,
+        Stroke::new(1.0, palette.tab_border_default),
+        StrokeKind::Inside,
     );
 
     ui.centered_and_justified(|ui| {
-        let text_label = egui::Label::new(
-            egui::RichText::new(label).color(palette.button_stroke).font(font_id),
+        let text_label = Label::new(
+            RichText::new(label)
+                .color(palette.button_stroke)
+                .font(font_id),
         );
         ui.add(text_label);
     });
@@ -596,4 +618,49 @@ pub fn styled_button(ui: &mut Ui, label: impl Into<String>, palette: &ThemePalet
     // );
 
     response
+}
+
+pub fn truncate_text(label: &str, max_chars: usize) -> String {
+    if label.len() > max_chars && max_chars > 3 {
+        let mut char_count = 0;
+        let mut byte_end = 0;
+
+        for (i, _) in label.char_indices() {
+            if char_count >= max_chars - 3 {
+                break;
+            }
+            char_count += 1;
+            byte_end = i;
+        }
+
+        format!("{}...", &label[..byte_end])
+    } else {
+        label.to_string()
+    }
+}
+
+pub fn generate_non_conflicting_path(dir: &Path, file_name: &OsStr) -> PathBuf {
+    let mut counter = 1;
+
+    let file_name_str = file_name.to_string_lossy();
+
+    let (base, ext) = match file_name_str.rsplit_once('.') {
+        Some((b, e)) => (b.to_string(), Some(e.to_string())),
+        None => (file_name_str.to_string(), None),
+    };
+
+    loop {
+        let new_name = match &ext {
+            Some(ext) => format!("{} ({}).{}", base, counter, ext),
+            None => format!("{} ({})", base, counter),
+        };
+
+        let candidate = dir.join(new_name);
+
+        if !candidate.exists() {
+            return candidate;
+        }
+
+        counter += 1;
+    }
 }

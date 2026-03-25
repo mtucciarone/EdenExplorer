@@ -1,4 +1,3 @@
-use crate::core::state::FileItem;
 use crossbeam_channel::Sender;
 use ntapi::ntioapi::{FILE_DIRECTORY_INFORMATION, IO_STATUS_BLOCK, NtQueryDirectoryFile};
 use std::ffi::OsString;
@@ -379,4 +378,62 @@ pub fn parallel_directory_scan(path: PathBuf, tx: Sender<(PathBuf, u64, bool)>) 
 
     // Final emit
     let _ = tx.send((path, total_size, true));
+}
+
+#[derive(Clone, Debug)]
+pub struct FileItem {
+    pub name: String,
+    pub path: PathBuf,
+    pub is_dir: bool,
+    pub file_size: Option<u64>,
+    pub modified_time: Option<String>,
+    pub created_time: Option<String>,
+
+    // Optional drive info (only populated for drive roots)
+    pub total_space: Option<u64>,
+    pub free_space: Option<u64>,
+}
+
+impl FileItem {
+    pub fn new(
+        name: String,
+        path: PathBuf,
+        is_dir: bool,
+        file_size: Option<u64>,
+        modified_time: Option<String>,
+        created_time: Option<String>,
+    ) -> Self {
+        Self {
+            name,
+            path,
+            is_dir,
+            file_size,
+            modified_time,
+            created_time,
+            total_space: None,
+            free_space: None,
+        }
+    }
+
+    pub fn with_drive_info(
+        name: String,
+        path: PathBuf,
+        is_dir: bool,
+        file_size: Option<u64>,
+        modified_time: Option<String>,
+        created_time: Option<String>,
+        total: u64,
+        free: u64,
+    ) -> Self {
+        Self {
+            name,
+            path,
+            is_dir,
+            file_size,
+            modified_time,
+            created_time,
+            total_space: Some(total),
+            free_space: Some(free),
+        }
+    }
 }

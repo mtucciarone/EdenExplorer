@@ -1,12 +1,13 @@
 use crate::core::drives::{get_drives, parse_drive_display};
+use crate::core::fs::FileItem;
 use crate::core::fs::{get_drive_space, parallel_directory_scan, scan_dir_async};
 use crate::core::indexer::{save_app_settings, save_favorites};
-use crate::core::state::{FileItem, FileOp, Navigation, execute_op, redo, undo};
 use crate::gui::MainWindow;
 use crate::gui::theme::{ThemeMode, ThemePalette};
 use crate::gui::utils::{
-    SortColumn, clear_clipboard_files, copy_dir_recursive, get_clipboard_files,
-    set_clipboard_files, shell_delete_to_recycle_bin, show_copy_move_dialog, sort_files,
+    SortColumn,
+    get_clipboard_files, is_clipboard_cut, set_clipboard_files, shell_delete_to_recycle_bin,
+    show_copy_move_dialog, sort_files,
 };
 use crate::gui::windows::containers::enums::{
     ItemViewerAction, ItemViewerContextAction, TabbarNavAction,
@@ -18,6 +19,7 @@ use crate::gui::windows::containers::structs::{
 use crate::gui::windows::customizetheme::{
     ThemeCustomizer, ThemeCustomizerAction, draw_theme_customizer,
 };
+use crate::gui::windows::navigation::Navigation;
 use crate::gui::windows::settings::{SettingsAction, draw_settings_window};
 use crossbeam_channel::Receiver;
 use crossbeam_channel::{Sender, unbounded};
@@ -28,18 +30,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use windows::Win32::Foundation::HWND;
-use windows::Win32::Foundation::*;
-use windows::Win32::Graphics::Dwm::*;
-use windows::Win32::UI::Controls::MARGINS;
-use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::Shell::{SEE_MASK_INVOKEIDLIST, SHELLEXECUTEINFOW, ShellExecuteExW};
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::{Win32::System::Com::*, Win32::UI::Shell::*, core::*};
-
-static mut ORIGINAL_WNDPROC: Option<WNDPROC> = None;
 
 impl MainWindow {
     pub fn current_nav(&self) -> &Navigation {
@@ -256,114 +251,138 @@ impl MainWindow {
     pub fn handle_context_action(&mut self, action: ItemViewerContextAction) {
         println!("Handling context action: {:?}", action);
         match action {
-            ItemViewerContextAction::Cut(path) => {
-                let _ = set_clipboard_files(std::slice::from_ref(&path), true);
-
-                // ✅ Update UI state
-                self.cut_paths.clear();
-                self.cut_paths.insert(path.clone());
-
-                self.selected_path = Some(path);
+            ItemViewerContextAction::Cut(paths) => {
+                let _ = set_clipboard_files(&paths, true);
+                if let Some(first) = paths.first() {
+                    self.selected_path = Some(first.clone());
+                }
             }
-            ItemViewerContextAction::ClearCut(_) => {
-                // Clear cut state
-                self.cut_paths.clear();
-            }
-            ItemViewerContextAction::Copy(path) => {
-                println!("Copy action received for: {:?}", path);
-                let _ = set_clipboard_files(std::slice::from_ref(&path), false);
-                self.selected_path = Some(path);
+            ItemViewerContextAction::Copy(paths) => {
+                println!("Copy action received: {:?}", paths);
+
+                let _ = set_clipboard_files(&paths, false);
+
+                // optional: update selection
+                if let Some(first) = paths.first() {
+                    self.selected_path = Some(first.clone());
+                }
             }
             ItemViewerContextAction::Paste => {
                 println!("Paste action received");
-                self.paste_clipboard();
-                self.cut_paths.clear();
+
+                if let Err(e) = self.paste_clipboard_native() {
+                    eprintln!("Paste failed: {}", e);
+                }
             }
-            ItemViewerContextAction::Rename(path) => {
-                let name = path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| path.display().to_string());
-                self.rename_state = Some(RenameState {
-                    path,
-                    new_name: name,
-                    should_focus: true,
-                });
+            ItemViewerContextAction::RenameRequest(path, new_name) => {
+                let trimmed = new_name.trim();
+
+                if trimmed.is_empty() {
+                    self.rename_state = None;
+                    return;
+                }
+
+                if let Some(parent) = path.parent() {
+                    let target = parent.join(trimmed);
+
+                    // Avoid no-op rename
+                    if path != target {
+                        unsafe {
+                            use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+                            use windows::Win32::UI::Shell::{
+                                FOF_ALLOWUNDO, FileOperation, IFileOperation, IShellItem,
+                                SHCreateItemFromParsingName,
+                            };
+                            use windows::core::HSTRING;
+
+                            let file_op: IFileOperation =
+                                CoCreateInstance(&FileOperation, None, CLSCTX_ALL).unwrap();
+
+                            file_op.SetOperationFlags(FOF_ALLOWUNDO).ok();
+
+                            let source_item: IShellItem = SHCreateItemFromParsingName(
+                                &HSTRING::from(path.to_string_lossy().to_string()),
+                                None,
+                            )
+                            .unwrap();
+
+                            // Rename keeps same parent, so only pass new name
+                            file_op
+                                .RenameItem(&source_item, &HSTRING::from(trimmed), None)
+                                .ok();
+
+                            file_op.PerformOperations().ok();
+                        }
+                    }
+                }
+
+                self.rename_state = None;
+                self.load_path();
             }
-            ItemViewerContextAction::Delete(path) => {
-                self.delete_path(&path);
+
+            ItemViewerContextAction::RenameCancel => {
+                self.rename_state = None;
+            }
+            ItemViewerContextAction::Delete(paths) => {
+                if let Err(e) = self.delete_paths_native(paths.clone()) {
+                    eprintln!("Native delete failed: {:?}", e);
+
+                    // fallback (rare, but safe)
+                    for path in paths {
+                        self.delete_path(&path);
+                    }
+                }
+
                 self.load_path();
             }
             ItemViewerContextAction::Properties(paths) => {
                 self.open_properties_multi(&paths);
             }
-            ItemViewerContextAction::Undo => {
-                self.undo();
-            }
-            ItemViewerContextAction::Redo => {
-                self.redo();
-            }
         }
     }
 
-    pub fn paste_clipboard(&mut self) {
-        let dest_dir = if self.current_nav().is_root() {
-            return;
-        } else {
-            self.current_nav().current.clone()
+    pub fn paste_clipboard_native(&mut self) -> windows::core::Result<()> {
+        use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+        use windows::Win32::UI::Shell::{
+            FOF_ALLOWUNDO, FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
+        };
+        use windows::core::HSTRING;
+
+        let paths = match get_clipboard_files() {
+            Some(p) if !p.is_empty() => p,
+            _ => return Ok(()),
         };
 
-        let (paths, cut) = match get_clipboard_files() {
-            Some(val) => val,
-            None => return,
-        };
+        let is_cut = is_clipboard_cut();
 
-        for path in paths {
-            let name = match path.file_name() {
-                Some(name) => name.to_string_lossy().to_string(),
-                None => continue,
-            };
+        unsafe {
+            let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
 
-            let stem = path
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| name.clone());
+            file_op.SetOperationFlags(FOF_ALLOWUNDO)?;
 
-            let ext = path.extension().map(|e| e.to_string_lossy().to_string());
+            let target_item: IShellItem = SHCreateItemFromParsingName(
+                &HSTRING::from(self.current_nav().current.to_string_lossy().to_string()),
+                None,
+            )?;
 
-            let mut dest = dest_dir.join(&name);
-            let mut counter = 1;
+            for path in paths {
+                let source_item: IShellItem = SHCreateItemFromParsingName(
+                    &HSTRING::from(path.to_string_lossy().to_string()),
+                    None,
+                )?;
 
-            while dest.exists() {
-                counter += 1;
-
-                let new_name = match &ext {
-                    Some(ext) => format!("{} ({}).{}", stem, counter, ext),
-                    None => format!("{} ({})", stem, counter),
-                };
-
-                dest = dest_dir.join(new_name);
+                if is_cut {
+                    file_op.MoveItem(&source_item, &target_item, None, None)?;
+                } else {
+                    file_op.CopyItem(&source_item, &target_item, None, None)?;
+                }
             }
 
-            let res = if cut {
-                std::fs::rename(&path, &dest)
-            } else if path.is_dir() {
-                copy_dir_recursive(&path, &dest)
-            } else {
-                std::fs::copy(&path, &dest).map(|_| ())
-            };
-
-            if res.is_err() {
-                continue;
-            }
-        }
-
-        // ✅ Only clear clipboard if it was a CUT (move)
-        if cut {
-            clear_clipboard_files();
+            file_op.PerformOperations()?;
         }
 
         self.load_path();
+        Ok(())
     }
 
     pub fn delete_path(&self, path: &PathBuf) {
@@ -374,6 +393,34 @@ impl MainWindow {
                 let _ = std::fs::remove_file(path);
             }
         }
+    }
+
+    pub fn delete_paths_native(&self, paths: Vec<PathBuf>) -> windows::core::Result<()> {
+        use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+        use windows::Win32::UI::Shell::{
+            FOF_ALLOWUNDO, FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
+        };
+        use windows::core::HSTRING;
+
+        unsafe {
+            let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
+
+            // ✅ This enables recycle bin + undo
+            file_op.SetOperationFlags(FOF_ALLOWUNDO | FOF_WANTNUKEWARNING)?;
+
+            for path in paths {
+                let item: IShellItem = SHCreateItemFromParsingName(
+                    &HSTRING::from(path.to_string_lossy().to_string()),
+                    None,
+                )?;
+
+                file_op.DeleteItem(&item, None)?;
+            }
+
+            file_op.PerformOperations()?;
+        }
+
+        Ok(())
     }
 
     pub fn open_properties_multi(&self, paths: &[PathBuf]) {
@@ -411,16 +458,6 @@ impl MainWindow {
             };
             let _ = ShellExecuteExW(&mut info);
         }
-    }
-
-    pub fn undo(&mut self) {
-        undo(&mut self.action_history);
-        self.load_path(); // refresh UI after filesystem change
-    }
-
-    pub fn redo(&mut self) {
-        redo(&mut self.action_history);
-        self.load_path(); // refresh UI
     }
 
     pub fn cleanup(&mut self) {
@@ -521,6 +558,10 @@ impl MainWindow {
 
     pub fn handle_tabs_action(&mut self, tabs_action: Option<TabsAction>) {
         if let Some(action) = tabs_action {
+            if let Some(id) = action.activate {
+                self.active_tab = self.tabs.iter().position(|t| t.id == id).unwrap();
+                self.load_path();
+            }
             if action.open_new {
                 let cloned_nav = self.current_nav().clone();
                 let id = self.next_tab_id;
@@ -914,34 +955,6 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     should_focus: true,
                 });
             }
-            ItemViewerAction::RenameRequest(path, new_name) => {
-                if let Some(parent) = path.parent() {
-                    let target = parent.join(new_name.trim());
-
-                    if new_name.is_empty() {
-                        explorer.rename_state = None;
-                        return;
-                    }
-
-                    // Avoid no-op rename
-                    if path != target {
-                        execute_op(
-                            &mut explorer.action_history,
-                            FileOp::Rename {
-                                from: path.clone(),
-                                to: target.clone(),
-                            },
-                        );
-                    }
-
-                    explorer.rename_state = None;
-                    explorer.load_path();
-                }
-            }
-
-            ItemViewerAction::RenameCancel => {
-                explorer.rename_state = None;
-            }
             ItemViewerAction::ReplaceSelection(path) => {
                 explorer.selected_paths.clear();
                 explorer.selected_paths.insert(path.clone());
@@ -972,6 +985,47 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             }
             ItemViewerAction::BackNavigation => {
                 explorer.current_nav_mut().go_back();
+                explorer.load_path();
+            }
+            ItemViewerAction::MoveItems {
+                sources,
+                target_dir,
+            } => {
+                unsafe {
+                    let file_op: IFileOperation =
+                        CoCreateInstance(&FileOperation, None, CLSCTX_ALL).unwrap();
+
+                    // Optional: show UI + allow TeraCopy hooks
+                    file_op
+                        .SetOperationFlags(
+                            FOF_SIMPLEPROGRESS | FOF_ALLOWUNDO | FOFX_SHOWELEVATIONPROMPT,
+                        )
+                        .ok();
+
+                    // Convert target dir to IShellItem
+                    let target_item: IShellItem = SHCreateItemFromParsingName(
+                        &HSTRING::from(target_dir.to_string_lossy().to_string()),
+                        None,
+                    )
+                    .unwrap();
+
+                    for source in sources {
+                        let source_item: IShellItem = SHCreateItemFromParsingName(
+                            &HSTRING::from(source.to_string_lossy().to_string()),
+                            None,
+                        )
+                        .unwrap();
+
+                        file_op
+                            .MoveItem(&source_item, &target_item, None, None)
+                            .ok();
+                    }
+
+                    file_op.PerformOperations().ok();
+                }
+
+                explorer.selected_paths.clear();
+                explorer.selected_path = None;
                 explorer.load_path();
             }
         }
@@ -1015,186 +1069,4 @@ pub fn tab_title_for(nav: &Navigation) -> String {
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| nav.current.display().to_string())
-}
-
-fn color32_to_dwm(color: egui::Color32) -> u32 {
-    let r = color.r() as u32;
-    let g = color.g() as u32;
-    let b = color.b() as u32;
-
-    // Windows expects 0x00BBGGRR
-    (b << 16) | (g << 8) | r
-}
-
-pub fn apply_window_override(hwnd: HWND, palette: &ThemePalette) {
-    unsafe {
-        // --- 1. Keep minimal frame ---
-        let style = GetWindowLongW(hwnd, GWL_STYLE);
-
-        let new_style = (style & !(WS_CAPTION.0 as i32)) // remove title bar
-            | (WS_THICKFRAME.0 as i32)
-            | (WS_MINIMIZEBOX.0 as i32)
-            | (WS_MAXIMIZEBOX.0 as i32)
-            | (WS_SYSMENU.0 as i32);
-
-        let _ = SetWindowLongW(hwnd, GWL_STYLE, new_style);
-
-        // --- 2. Disable DWM non-client rendering ---
-        let policy = DWMNCRENDERINGPOLICY(2); // 👈 DWMNCRP_DISABLED
-
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWINDOWATTRIBUTE(2), // 👈 DWMWA_NCRENDERING_POLICY
-            &policy as *const _ as _,
-            std::mem::size_of::<DWMNCRENDERINGPOLICY>() as u32,
-        );
-
-        const DWMWA_WINDOW_CORNER_PREFERENCE: DWMWINDOWATTRIBUTE = DWMWINDOWATTRIBUTE(33);
-        let preference: u32 = 2; // DWMWCP_ROUND
-
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_WINDOW_CORNER_PREFERENCE,
-            &preference as *const _ as _,
-            std::mem::size_of::<u32>() as u32,
-        );
-
-        // --- 3. Remove frame insets (fix top gap) ---
-        let margins = MARGINS {
-            cxLeftWidth: 0,
-            cxRightWidth: 0,
-            cyTopHeight: 0,
-            cyBottomHeight: 0,
-        };
-
-        let border_color = color32_to_dwm(palette.application_bg_color);
-        let caption_color = color32_to_dwm(palette.application_bg_color);
-        let text_color = color32_to_dwm(palette.application_bg_color);
-
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWINDOWATTRIBUTE(34),
-            &border_color as *const _ as _,
-            std::mem::size_of::<u32>() as u32,
-        );
-
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWINDOWATTRIBUTE(35),
-            &caption_color as *const _ as _,
-            std::mem::size_of::<u32>() as u32,
-        );
-
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWINDOWATTRIBUTE(36),
-            &text_color as *const _ as _,
-            std::mem::size_of::<u32>() as u32,
-        );
-
-        let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
-
-        // --- 4. Apply changes ---
-        let _ = SetWindowPos(
-            hwnd,
-            None,
-            0,
-            0,
-            0,
-            0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
-        );
-    }
-}
-
-pub unsafe fn install_wndproc(hwnd: HWND) {
-    unsafe {
-        ORIGINAL_WNDPROC = Some(std::mem::transmute::<isize, WNDPROC>(SetWindowLongPtrW(
-            hwnd,
-            GWLP_WNDPROC,
-            custom_wndproc as *const () as isize,
-        )));
-    }
-}
-
-unsafe extern "system" fn custom_wndproc(
-    hwnd: HWND,
-    msg: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-) -> LRESULT {
-    match msg {
-        WM_NCHITTEST => {
-            let x = get_x_lparam(lparam);
-            let y = get_y_lparam(lparam);
-
-            let mut rect = RECT::default();
-            unsafe {
-                let _ = GetWindowRect(hwnd, &mut rect);
-            }
-
-            let width = rect.right - rect.left;
-            let height = rect.bottom - rect.top;
-
-            let local_x = x - rect.left;
-            let local_y = y - rect.top;
-
-            const RESIZE_BORDER: i32 = 6;
-            const DRAG_HEIGHT: i32 = 15;
-
-            // 8 resize corners
-            if local_x < RESIZE_BORDER && local_y < RESIZE_BORDER {
-                return LRESULT(HTTOPLEFT as _);
-            }
-            if local_x >= width - RESIZE_BORDER && local_y < RESIZE_BORDER {
-                return LRESULT(HTTOPRIGHT as _);
-            }
-            if local_x < RESIZE_BORDER && local_y >= height - RESIZE_BORDER {
-                return LRESULT(HTBOTTOMLEFT as _);
-            }
-            if local_x >= width - RESIZE_BORDER && local_y >= height - RESIZE_BORDER {
-                return LRESULT(HTBOTTOMRIGHT as _);
-            }
-
-            // edges
-            if local_x < RESIZE_BORDER {
-                return LRESULT(HTLEFT as _);
-            }
-            if local_x >= width - RESIZE_BORDER {
-                return LRESULT(HTRIGHT as _);
-            }
-            if local_y < RESIZE_BORDER {
-                return LRESULT(HTTOP as _);
-            }
-            if local_y >= height - RESIZE_BORDER {
-                return LRESULT(HTBOTTOM as _);
-            }
-
-            // drag zone
-            if local_y < DRAG_HEIGHT {
-                return LRESULT(HTCAPTION as _);
-            }
-
-            // everything else is client
-            LRESULT(HTCLIENT as _)
-        }
-        _ => {
-            unsafe {
-                // forward everything else to original WNDPROC
-                if let Some(orig) = ORIGINAL_WNDPROC {
-                    CallWindowProcW(orig, hwnd, msg, wparam, lparam)
-                } else {
-                    DefWindowProcW(hwnd, msg, wparam, lparam)
-                }
-            }
-        }
-    }
-}
-
-// helper
-fn get_x_lparam(lparam: LPARAM) -> i32 {
-    (lparam.0 & 0xFFFF) as i16 as i32
-}
-fn get_y_lparam(lparam: LPARAM) -> i32 {
-    ((lparam.0 >> 16) & 0xFFFF) as i16 as i32
 }
