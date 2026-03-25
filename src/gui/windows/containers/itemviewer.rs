@@ -1,12 +1,13 @@
-use crate::core::state::FileItem;
+use crate::core::fs::FileItem;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::{ThemePalette, apply_checkbox_colors};
 use crate::gui::utils::{
-    SortColumn, drive_usage_bar, format_size, get_cut_paths, get_file_type_name, styled_button,
+    SortColumn, draw_object_drag_ghost, drive_usage_bar, format_size, get_clipboard_files,
+    get_file_type_name, is_clipboard_cut, styled_button,
 };
 use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
 use crate::gui::windows::containers::structs::{
-    ItemViewerFolderSizeState, ItemViewerLayout, RenameState, TabbarAction,
+    DragState, ItemViewerFolderSizeState, ItemViewerLayout, RenameState, TabbarAction,
 };
 use eframe::egui;
 use egui::{FontFamily, FontId};
@@ -32,8 +33,11 @@ pub fn draw_item_viewer(
     selection_anchor: &mut Option<usize>,
     selection_focus: &mut Option<usize>,
     tabbar_action: &mut Option<TabbarAction>,
+    drag_state: &mut DragState,
 ) -> Option<ItemViewerAction> {
-    let cut_paths = get_cut_paths();
+    let clipboard_paths = get_clipboard_files().unwrap_or_default();
+    let is_cut_mode = is_clipboard_cut();
+    let mut hovered_drop_target: Option<PathBuf> = None;
 
     draw_drag_overlay(ui, *drag_hover);
 
@@ -49,6 +53,20 @@ pub fn draw_item_viewer(
         return action;
     }
 
+    if drag_state.active {
+        let label = if drag_state.source_items.len() == 1 {
+            drag_state.source_items[0]
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("Unknown")
+                .to_string()
+        } else {
+            format!("{} items", drag_state.source_items.len())
+        };
+
+        draw_object_drag_ghost(ui, palette, &label, false);
+    }
+
     // Wrap table in a scroll area for horizontal scrolling
     egui::ScrollArea::both()
         .show(ui, |ui| {
@@ -57,10 +75,9 @@ pub fn draw_item_viewer(
                 files,
                 selected_path,
                 selected_paths,
-                paste_enabled,
                 palette,
-                selection_anchor,
                 tabbar_action,
+                rename_state,
             ) {
                 action = Some(global_action);
             }
@@ -125,6 +142,7 @@ pub fn draw_item_viewer(
                     }
                 })
                 .body(|body| {
+                    let hovered_drop_target = &mut hovered_drop_target;
                     body.rows(layout.row_height, files.len(), |mut row| {
                         let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
                         let idx = row.index();
@@ -135,7 +153,7 @@ pub fn draw_item_viewer(
                         row.set_selected(is_selected);
 
                         // ✅ Step 3: Detect if file is cut
-                        let is_cut = cut_paths.contains(&file.path);
+                        let is_cut = is_cut_mode && clipboard_paths.contains(&file.path);
 
                         // Checkbox column (only show for non-drive views)
                         if !layout.is_drive_view {
@@ -223,7 +241,53 @@ pub fn draw_item_viewer(
 
                         let row_resp = row.response();
 
-                        if row_resp.clicked() {
+                        if row_resp.drag_started() {
+                            drag_state.start_pos = row_resp.interact_pointer_pos();
+                            drag_state.active = false; // threshold not passed yet
+                            drag_state.source_items.clear();
+
+                            // ✅ LOCK drag payload immediately
+                            drag_state.source_items = if selected_paths.contains(&file.path) {
+                                selected_paths.iter().cloned().collect()
+                            } else {
+                                vec![file.path.clone()]
+                            };
+                        }
+
+                        if let (Some(start), Some(current)) = (
+                            drag_state.start_pos,
+                            row_resp.ctx.input(|i| i.pointer.hover_pos()),
+                        ) {
+                            if !drag_state.active && start.distance(current) > 4.0 {
+                                drag_state.active = true;
+                            }
+                        }
+
+                        if drag_state.active && row_resp.hovered() && file.is_dir {
+                            *hovered_drop_target = Some(file.path.clone());
+
+                            let painter = row_resp.ctx.layer_painter(egui::LayerId::new(
+                                egui::Order::Foreground,
+                                egui::Id::new("drop_highlight"),
+                            ));
+
+                            painter.rect_stroke(
+                                row_resp.rect,
+                                egui::CornerRadius::same(palette.medium_radius),
+                                egui::Stroke::new(1.5, palette.primary_active),
+                                egui::StrokeKind::Inside,
+                            );
+
+                            row_resp.ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                            // ui.painter().rect_stroke(
+                            //     row_resp.rect,
+                            //     egui::CornerRadius::same(palette.medium_radius),
+                            //     egui::Stroke::new(1.5, palette.primary_active),
+                            //     egui::StrokeKind::Inside,
+                            // );
+                        }
+
+                        if row_resp.clicked() && !drag_state.active {
                             if modifiers.shift {
                                 if let Some(anchor_idx) = *selection_anchor {
                                     let current_idx = idx;
@@ -294,6 +358,19 @@ pub fn draw_item_viewer(
                                 palette,
                             );
                         });
+
+                        // if drag_state.active && row_resp.hovered() && file.is_dir {
+                        //     // ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+
+                        //     if row_resp.drag_stopped() {
+                        //         action = Some(ItemViewerAction::MoveItems {
+                        //             sources: drag_state.source_items.clone(),
+                        //             target_dir: file.path.clone(),
+                        //         });
+
+                        //         drag_state.active = false;
+                        //     }
+                        // }
                     });
                 });
 
@@ -306,6 +383,30 @@ pub fn draw_item_viewer(
             if let Some(_pos) = ui.ctx().pointer_hover_pos() {
                 // Optionally, check if pos is inside table rect if you want
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
+            }
+
+            let pointer_released = ui
+                .ctx()
+                .input(|i| i.pointer.any_released() && i.pointer.interact_pos().is_some());
+
+            if drag_state.active && pointer_released {
+                if let Some(target_dir) = hovered_drop_target {
+                    // Drop into hovered folder
+                    action = Some(ItemViewerAction::MoveItems {
+                        sources: drag_state.source_items.clone(),
+                        target_dir,
+                    });
+                } else {
+                    // Optional: drop into current directory
+                    // action = Some(ItemViewerAction::MoveItems {
+                    //     sources: drag_state.source_items.clone(),
+                    //     target_dir: current_directory.clone(),
+                    // });
+                }
+
+                drag_state.active = false;
+                drag_state.start_pos = None;
+                drag_state.source_items.clear();
             }
 
             let input_state = ui.ctx().input(|i| i.clone());
@@ -427,6 +528,31 @@ pub fn draw_item_viewer(
                 .iter()
                 .any(|file| file.path.is_some());
 
+            // 👇 Fill remaining space so empty area is interactable
+            let remaining_rect = ui.available_rect_before_wrap();
+
+            let bg_response = ui.allocate_rect(
+                remaining_rect,
+                egui::Sense::click(), // 👈 important: enables right-click
+            );
+
+            if bg_response.clicked() {
+                action = Some(ItemViewerAction::DeselectAll);
+            }
+
+            bg_response.context_menu(|ui| {
+                // 👇 Only show when NOT clicking on a row
+                if !any_row_hovered {
+                    if ui
+                        .add_enabled(paste_enabled, egui::Button::new("Paste"))
+                        .clicked()
+                    {
+                        action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
+                        ui.close();
+                    }
+                }
+            });
+
             action
         })
         .inner
@@ -518,30 +644,27 @@ fn handle_context_menu_actions(
 
     ui.separator();
 
-    // Second section: file operations + undo/redo
-    let cut_label = if is_cut { "Cut (pending)" } else { "Cut" };
-    if ui
-        .add_enabled(!is_cut, egui::Button::new(cut_label))
-        .clicked()
-    {
+    if ui.add_enabled(!is_cut, egui::Button::new("Cut")).clicked() {
+        let paths = if !selected_paths.is_empty() {
+            selected_paths.iter().cloned().collect()
+        } else {
+            vec![file.path.clone()]
+        };
+
         *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Cut(
-            file.path.clone(),
+            paths,
         )));
         ui.close();
     }
-    if is_cut {
-        if ui.button("Cancel Cut").clicked() {
-            *action = Some(ItemViewerAction::Context(
-                ItemViewerContextAction::ClearCut(file.path.clone()),
-            ));
-            ui.close();
-        }
-
-        ui.separator();
-    }
     if ui.button("Copy").clicked() {
+        let paths = if !selected_paths.is_empty() {
+            selected_paths.iter().cloned().collect()
+        } else {
+            vec![file.path.clone()]
+        };
+
         *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Copy(
-            file.path.clone(),
+            paths,
         )));
         ui.close();
     }
@@ -561,20 +684,15 @@ fn handle_context_menu_actions(
     }
 
     if ui.button("Delete").clicked() {
+        let paths = if !selected_paths.is_empty() {
+            selected_paths.iter().cloned().collect()
+        } else {
+            vec![file.path.clone()]
+        };
+
         *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
-            file.path.clone(),
+            paths,
         )));
-        ui.close();
-    }
-
-    ui.separator();
-
-    if ui.button("Undo").clicked() {
-        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Undo));
-        ui.close();
-    }
-    if ui.button("Redo").clicked() {
-        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Redo));
         ui.close();
     }
 
@@ -912,6 +1030,69 @@ fn get_row_color(
     }
 }
 
+// fn handle_editing_file_name(
+//     ui: &mut egui::Ui,
+//     file: &FileItem,
+//     is_selected: bool,
+//     palette: &ThemePalette,
+//     text_rect: egui::Rect,
+//     rename_state: &mut Option<RenameState>,
+// ) -> Option<ItemViewerAction> {
+//     let Some(rename_state) = rename_state else {
+//         return None;
+//     };
+//     if rename_state.path != file.path {
+//         return None;
+//     }
+
+//     let mut action: Option<ItemViewerAction> = None;
+//     let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(text_rect));
+
+//     child_ui.scope(|ui| {
+//         let visuals = ui.visuals_mut();
+//         let bg = if is_selected {
+//             palette.row_selected_bg
+//         } else {
+//             palette.row_bg
+//         };
+
+//         visuals.widgets.inactive.bg_fill = bg;
+//         visuals.widgets.hovered.bg_fill = bg;
+//         visuals.widgets.active.bg_fill = bg;
+//         visuals.widgets.inactive.bg_stroke.width = 0.0;
+//         visuals.widgets.hovered.bg_stroke.width = 0.0;
+//         visuals.widgets.active.bg_stroke.width = 0.0;
+
+//         visuals.override_text_color = Some(get_row_color(is_selected, palette));
+
+//         let edit_response = ui.add(
+//             egui::TextEdit::singleline(&mut rename_state.new_name)
+//                 .desired_width(f32::INFINITY)
+//                 .font(FontId::new(palette.text_size, FontFamily::Proportional)),
+//         );
+
+//         if rename_state.should_focus {
+//             edit_response.request_focus();
+//             rename_state.should_focus = false;
+//         }
+
+//         if edit_response.lost_focus() {
+//             let input = edit_response.ctx.input(|i| i.clone());
+
+//             if input.key_pressed(egui::Key::Enter) {
+//                 let new_name = rename_state.new_name.trim().to_string();
+//                 action = Some(ItemViewerAction::Context(ItemViewerContextAction::RenameRequest(file.path.clone(), new_name)));
+//             } else if input.key_pressed(egui::Key::Escape) {
+//                 action = Some(ItemViewerAction::Context(ItemViewerContextAction::RenameCancel));
+//             } else {
+//                 action = Some(ItemViewerAction::Context(ItemViewerContextAction::RenameCancel));
+//             }
+//         }
+//     });
+
+//     action
+// }
+
 fn handle_editing_file_name(
     ui: &mut egui::Ui,
     file: &FileItem,
@@ -923,6 +1104,7 @@ fn handle_editing_file_name(
     let Some(rename_state) = rename_state else {
         return None;
     };
+
     if rename_state.path != file.path {
         return None;
     }
@@ -932,6 +1114,7 @@ fn handle_editing_file_name(
 
     child_ui.scope(|ui| {
         let visuals = ui.visuals_mut();
+
         let bg = if is_selected {
             palette.row_selected_bg
         } else {
@@ -953,22 +1136,31 @@ fn handle_editing_file_name(
                 .font(FontId::new(palette.text_size, FontFamily::Proportional)),
         );
 
+        // ✅ Focus once
         if rename_state.should_focus {
             edit_response.request_focus();
             rename_state.should_focus = false;
         }
 
-        if edit_response.lost_focus() {
-            let input = edit_response.ctx.input(|i| i.clone());
+        // ✅ Input handling (same pattern as tabs)
+        let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
-            if input.key_pressed(egui::Key::Enter) {
-                let new_name = rename_state.new_name.trim().to_string();
-                action = Some(ItemViewerAction::RenameRequest(file.path.clone(), new_name));
-            } else if input.key_pressed(egui::Key::Escape) {
-                action = Some(ItemViewerAction::RenameCancel);
-            } else {
-                action = Some(ItemViewerAction::RenameCancel);
-            }
+        if enter {
+            let new_name = rename_state.new_name.trim().to_string();
+
+            action = Some(ItemViewerAction::Context(
+                ItemViewerContextAction::RenameRequest(file.path.clone(), new_name),
+            ));
+        } else if escape {
+            action = Some(ItemViewerAction::Context(
+                ItemViewerContextAction::RenameCancel,
+            ));
+        } else if edit_response.lost_focus() {
+            // 👈 matches Windows: clicking away cancels rename
+            action = Some(ItemViewerAction::Context(
+                ItemViewerContextAction::RenameCancel,
+            ));
         }
     });
 
@@ -980,16 +1172,18 @@ fn handle_global_actions(
     files: &Vec<FileItem>,
     selected_path: &mut Option<PathBuf>,
     selected_paths: &HashSet<PathBuf>,
-    paste_enabled: bool,
     palette: &crate::gui::theme::ThemePalette,
-    selection_anchor: &mut Option<usize>,
     tabbar_action: &mut Option<TabbarAction>,
+    rename_state: &mut Option<RenameState>,
 ) -> Option<ItemViewerAction> {
     // 🔥 TEMP: disable focus blocking for now (fix later with rename_state)
     let is_text_edit_active = tabbar_action
         .as_ref()
         .is_some_and(|t| t.is_breadcrumb_path_edit_active);
     if is_text_edit_active {
+        return None;
+    }
+    if rename_state.is_some() {
         return None;
     }
 
@@ -1003,59 +1197,6 @@ fn handle_global_actions(
             // println!("EVENT: {:?}", event); // keep debug
 
             match event {
-                // =========================
-                // 🔥 CLIPBOARD EVENTS (CORRECT WAY)
-                // =========================
-                egui::Event::Copy => {
-                    if is_text_edit_active {
-                        continue;
-                    }
-
-                    let copy_path = if let Some(selected) = selected_path {
-                        selected.clone()
-                    } else if !files.is_empty() {
-                        files[0].path.clone()
-                    } else {
-                        continue;
-                    };
-
-                    println!("🔥 Copy event detected");
-                    action = Some(ItemViewerAction::Context(ItemViewerContextAction::Copy(
-                        copy_path,
-                    )));
-                }
-
-                egui::Event::Cut => {
-                    if is_text_edit_active {
-                        continue;
-                    }
-
-                    let cut_path = if let Some(selected) = selected_path {
-                        selected.clone()
-                    } else if !files.is_empty() {
-                        files[0].path.clone()
-                    } else {
-                        continue;
-                    };
-
-                    println!("🔥 Cut event detected");
-                    action = Some(ItemViewerAction::Context(ItemViewerContextAction::Cut(
-                        cut_path,
-                    )));
-                }
-
-                // Fegui::Event::Paste(content) => {
-                //     action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
-                // }
-
-                // egui::Event::Paste(_) => {
-                //     if is_text_edit_active || !paste_enabled {
-                //         continue;
-                //     }
-
-                //     action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
-                // }
-
                 // =========================
                 // 🔥 FALLBACK: KEY EVENTS (YOUR CASE)
                 // =========================
@@ -1073,44 +1214,47 @@ fn handle_global_actions(
                                     Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
                             }
                             egui::Key::C => {
-                                println!("🔥 Ctrl+C detected (fallback)");
+                                if is_text_edit_active {
+                                    continue;
+                                }
 
-                                let copy_path = if let Some(selected) = selected_path {
-                                    selected.clone()
+                                let paths: Vec<PathBuf> = if !selected_paths.is_empty() {
+                                    selected_paths.iter().cloned().collect()
+                                } else if let Some(selected) = selected_path {
+                                    vec![selected.clone()]
                                 } else if !files.is_empty() {
-                                    files[0].path.clone()
+                                    vec![files[0].path.clone()]
                                 } else {
                                     continue;
                                 };
 
+                                println!("🔥 Copy event detected");
                                 action = Some(ItemViewerAction::Context(
-                                    ItemViewerContextAction::Copy(copy_path),
+                                    ItemViewerContextAction::Copy(paths),
                                 ));
                             }
                             egui::Key::X => {
                                 println!("🔥 Ctrl+X detected (fallback)");
 
-                                let cut_path = if let Some(selected) = selected_path {
-                                    selected.clone()
+                                if is_text_edit_active {
+                                    continue;
+                                }
+
+                                let paths: Vec<PathBuf> = if !selected_paths.is_empty() {
+                                    selected_paths.iter().cloned().collect()
+                                } else if let Some(selected) = selected_path {
+                                    vec![selected.clone()]
                                 } else if !files.is_empty() {
-                                    files[0].path.clone()
+                                    vec![files[0].path.clone()]
                                 } else {
                                     continue;
                                 };
 
+                                println!("🔥 Cut event detected");
+
                                 action = Some(ItemViewerAction::Context(
-                                    ItemViewerContextAction::Cut(cut_path),
+                                    ItemViewerContextAction::Cut(paths),
                                 ));
-                            }
-                            egui::Key::Z => {
-                                println!("🔥 Ctrl+Z detected");
-                                action =
-                                    Some(ItemViewerAction::Context(ItemViewerContextAction::Undo));
-                            }
-                            egui::Key::Y => {
-                                println!("🔥 Ctrl+Y detected");
-                                action =
-                                    Some(ItemViewerAction::Context(ItemViewerContextAction::Redo));
                             }
                             egui::Key::A => {
                                 println!("🔥 Ctrl+A detected");
@@ -1133,12 +1277,20 @@ fn handle_global_actions(
             action = Some(ItemViewerAction::DeselectAll);
         }
 
-        if let Some(selected) = selected_path {
-            if i.key_pressed(egui::Key::Delete) {
-                action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
-                    selected.clone(),
-                )));
-            }
+        if i.key_pressed(egui::Key::Delete) {
+            let paths: Vec<PathBuf> = if !selected_paths.is_empty() {
+                selected_paths.iter().cloned().collect()
+            } else if let Some(selected) = selected_path {
+                vec![selected.clone()]
+            } else if !files.is_empty() {
+                vec![files[0].path.clone()]
+            } else {
+                return;
+            };
+
+            action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
+                paths,
+            )));
         }
 
         if i.key_pressed(egui::Key::Backspace) {
@@ -1150,7 +1302,7 @@ fn handle_global_actions(
         // =========================
 
         if !files.is_empty() {
-            if let Some(current) = selected_path {
+            if let Some(current) = selected_path.as_ref() {
                 if let Some(idx) = files.iter().position(|f| &f.path == current) {
                     if i.key_pressed(egui::Key::ArrowDown) && idx + 1 < files.len() {
                         action = Some(ItemViewerAction::Select(files[idx + 1].path.clone()));

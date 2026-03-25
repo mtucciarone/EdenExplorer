@@ -1,0 +1,59 @@
+use std::path::PathBuf;
+
+#[derive(Debug, Clone)]
+pub struct Navigation {
+    pub current: PathBuf,
+    pub back: Vec<PathBuf>,
+    pub forward: Vec<PathBuf>,
+}
+
+impl Navigation {
+    pub fn new() -> Self {
+        Self {
+            current: PathBuf::from("::MY_PC::"),
+            back: Vec::new(),
+            forward: Vec::new(),
+        }
+    }
+
+    pub fn go_to(&mut self, path: PathBuf) {
+        if self.current != path {
+            self.back.push(self.current.clone());
+            self.current = path;
+            self.forward.clear();
+        }
+    }
+
+    pub fn go_back(&mut self) {
+        if let Some(prev) = self.back.pop() {
+            self.forward.push(self.current.clone());
+            self.current = prev;
+        }
+    }
+
+    pub fn go_forward(&mut self) {
+        if let Some(next) = self.forward.pop() {
+            self.back.push(self.current.clone());
+            self.current = next;
+        }
+    }
+
+    pub fn go_up(&mut self) {
+        // Prevent breaking virtual root
+        if self.current.to_string_lossy() == "::MY_PC::" {
+            return;
+        }
+
+        if let Some(parent) = self.current.parent() {
+            self.go_to(parent.to_path_buf());
+        } else {
+            // Drive root (e.g., "C:\\") has no parent in PathBuf.
+            self.go_to(PathBuf::from("::MY_PC::"));
+        }
+    }
+
+    /// Helper: are we at virtual root?
+    pub fn is_root(&self) -> bool {
+        self.current.to_string_lossy() == "::MY_PC::"
+    }
+}

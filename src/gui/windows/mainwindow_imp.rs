@@ -1,12 +1,13 @@
 use crate::core::drives::{get_drives, parse_drive_display};
+use crate::core::fs::FileItem;
 use crate::core::fs::{get_drive_space, parallel_directory_scan, scan_dir_async};
 use crate::core::indexer::{save_app_settings, save_favorites};
-use crate::core::state::{FileItem, FileOp, Navigation, execute_op, redo, undo};
 use crate::gui::MainWindow;
 use crate::gui::theme::{ThemeMode, ThemePalette};
 use crate::gui::utils::{
-    SortColumn, clear_clipboard_files, copy_dir_recursive, get_clipboard_files,
-    set_clipboard_files, shell_delete_to_recycle_bin, show_copy_move_dialog, sort_files,
+    SortColumn, clear_clipboard_files, copy_dir_recursive, generate_non_conflicting_path,
+    get_clipboard_files, is_clipboard_cut, set_clipboard_files, shell_delete_to_recycle_bin,
+    show_copy_move_dialog, sort_files,
 };
 use crate::gui::windows::containers::enums::{
     ItemViewerAction, ItemViewerContextAction, TabbarNavAction,
@@ -18,6 +19,7 @@ use crate::gui::windows::containers::structs::{
 use crate::gui::windows::customizetheme::{
     ThemeCustomizer, ThemeCustomizerAction, draw_theme_customizer,
 };
+use crate::gui::windows::navigation::Navigation;
 use crate::gui::windows::settings::{SettingsAction, draw_settings_window};
 use crossbeam_channel::Receiver;
 use crossbeam_channel::{Sender, unbounded};
@@ -32,7 +34,6 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Dwm::*;
 use windows::Win32::UI::Controls::MARGINS;
-use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::Shell::{SEE_MASK_INVOKEIDLIST, SHELLEXECUTEINFOW, ShellExecuteExW};
@@ -256,114 +257,138 @@ impl MainWindow {
     pub fn handle_context_action(&mut self, action: ItemViewerContextAction) {
         println!("Handling context action: {:?}", action);
         match action {
-            ItemViewerContextAction::Cut(path) => {
-                let _ = set_clipboard_files(std::slice::from_ref(&path), true);
-
-                // ✅ Update UI state
-                self.cut_paths.clear();
-                self.cut_paths.insert(path.clone());
-
-                self.selected_path = Some(path);
+            ItemViewerContextAction::Cut(paths) => {
+                let _ = set_clipboard_files(&paths, true);
+                if let Some(first) = paths.first() {
+                    self.selected_path = Some(first.clone());
+                }
             }
-            ItemViewerContextAction::ClearCut(_) => {
-                // Clear cut state
-                self.cut_paths.clear();
-            }
-            ItemViewerContextAction::Copy(path) => {
-                println!("Copy action received for: {:?}", path);
-                let _ = set_clipboard_files(std::slice::from_ref(&path), false);
-                self.selected_path = Some(path);
+            ItemViewerContextAction::Copy(paths) => {
+                println!("Copy action received: {:?}", paths);
+
+                let _ = set_clipboard_files(&paths, false);
+
+                // optional: update selection
+                if let Some(first) = paths.first() {
+                    self.selected_path = Some(first.clone());
+                }
             }
             ItemViewerContextAction::Paste => {
                 println!("Paste action received");
-                self.paste_clipboard();
-                self.cut_paths.clear();
+
+                if let Err(e) = self.paste_clipboard_native() {
+                    eprintln!("Paste failed: {}", e);
+                }
             }
-            ItemViewerContextAction::Rename(path) => {
-                let name = path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| path.display().to_string());
-                self.rename_state = Some(RenameState {
-                    path,
-                    new_name: name,
-                    should_focus: true,
-                });
+            ItemViewerContextAction::RenameRequest(path, new_name) => {
+                let trimmed = new_name.trim();
+
+                if trimmed.is_empty() {
+                    self.rename_state = None;
+                    return;
+                }
+
+                if let Some(parent) = path.parent() {
+                    let target = parent.join(trimmed);
+
+                    // Avoid no-op rename
+                    if path != target {
+                        unsafe {
+                            use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+                            use windows::Win32::UI::Shell::{
+                                FOF_ALLOWUNDO, FileOperation, IFileOperation, IShellItem,
+                                SHCreateItemFromParsingName,
+                            };
+                            use windows::core::HSTRING;
+
+                            let file_op: IFileOperation =
+                                CoCreateInstance(&FileOperation, None, CLSCTX_ALL).unwrap();
+
+                            file_op.SetOperationFlags(FOF_ALLOWUNDO).ok();
+
+                            let source_item: IShellItem = SHCreateItemFromParsingName(
+                                &HSTRING::from(path.to_string_lossy().to_string()),
+                                None,
+                            )
+                            .unwrap();
+
+                            // Rename keeps same parent, so only pass new name
+                            file_op
+                                .RenameItem(&source_item, &HSTRING::from(trimmed), None)
+                                .ok();
+
+                            file_op.PerformOperations().ok();
+                        }
+                    }
+                }
+
+                self.rename_state = None;
+                self.load_path();
             }
-            ItemViewerContextAction::Delete(path) => {
-                self.delete_path(&path);
+
+            ItemViewerContextAction::RenameCancel => {
+                self.rename_state = None;
+            }
+            ItemViewerContextAction::Delete(paths) => {
+                if let Err(e) = self.delete_paths_native(paths.clone()) {
+                    eprintln!("Native delete failed: {:?}", e);
+
+                    // fallback (rare, but safe)
+                    for path in paths {
+                        self.delete_path(&path);
+                    }
+                }
+
                 self.load_path();
             }
             ItemViewerContextAction::Properties(paths) => {
                 self.open_properties_multi(&paths);
             }
-            ItemViewerContextAction::Undo => {
-                self.undo();
-            }
-            ItemViewerContextAction::Redo => {
-                self.redo();
-            }
         }
     }
 
-    pub fn paste_clipboard(&mut self) {
-        let dest_dir = if self.current_nav().is_root() {
-            return;
-        } else {
-            self.current_nav().current.clone()
+    pub fn paste_clipboard_native(&mut self) -> windows::core::Result<()> {
+        use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+        use windows::Win32::UI::Shell::{
+            FOF_ALLOWUNDO, FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
+        };
+        use windows::core::HSTRING;
+
+        let paths = match get_clipboard_files() {
+            Some(p) if !p.is_empty() => p,
+            _ => return Ok(()),
         };
 
-        let (paths, cut) = match get_clipboard_files() {
-            Some(val) => val,
-            None => return,
-        };
+        let is_cut = is_clipboard_cut();
 
-        for path in paths {
-            let name = match path.file_name() {
-                Some(name) => name.to_string_lossy().to_string(),
-                None => continue,
-            };
+        unsafe {
+            let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
 
-            let stem = path
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| name.clone());
+            file_op.SetOperationFlags(FOF_ALLOWUNDO)?;
 
-            let ext = path.extension().map(|e| e.to_string_lossy().to_string());
+            let target_item: IShellItem = SHCreateItemFromParsingName(
+                &HSTRING::from(self.current_nav().current.to_string_lossy().to_string()),
+                None,
+            )?;
 
-            let mut dest = dest_dir.join(&name);
-            let mut counter = 1;
+            for path in paths {
+                let source_item: IShellItem = SHCreateItemFromParsingName(
+                    &HSTRING::from(path.to_string_lossy().to_string()),
+                    None,
+                )?;
 
-            while dest.exists() {
-                counter += 1;
-
-                let new_name = match &ext {
-                    Some(ext) => format!("{} ({}).{}", stem, counter, ext),
-                    None => format!("{} ({})", stem, counter),
-                };
-
-                dest = dest_dir.join(new_name);
+                if is_cut {
+                    file_op.MoveItem(&source_item, &target_item, None, None)?;
+                } else {
+                    file_op.CopyItem(&source_item, &target_item, None, None)?;
+                }
             }
 
-            let res = if cut {
-                std::fs::rename(&path, &dest)
-            } else if path.is_dir() {
-                copy_dir_recursive(&path, &dest)
-            } else {
-                std::fs::copy(&path, &dest).map(|_| ())
-            };
-
-            if res.is_err() {
-                continue;
-            }
-        }
-
-        // ✅ Only clear clipboard if it was a CUT (move)
-        if cut {
-            clear_clipboard_files();
+            file_op.PerformOperations()?;
         }
 
         self.load_path();
+        Ok(())
     }
 
     pub fn delete_path(&self, path: &PathBuf) {
@@ -374,6 +399,34 @@ impl MainWindow {
                 let _ = std::fs::remove_file(path);
             }
         }
+    }
+
+    pub fn delete_paths_native(&self, paths: Vec<PathBuf>) -> windows::core::Result<()> {
+        use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+        use windows::Win32::UI::Shell::{
+            FOF_ALLOWUNDO, FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
+        };
+        use windows::core::HSTRING;
+
+        unsafe {
+            let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
+
+            // ✅ This enables recycle bin + undo
+            file_op.SetOperationFlags(FOF_ALLOWUNDO | FOF_WANTNUKEWARNING)?;
+
+            for path in paths {
+                let item: IShellItem = SHCreateItemFromParsingName(
+                    &HSTRING::from(path.to_string_lossy().to_string()),
+                    None,
+                )?;
+
+                file_op.DeleteItem(&item, None)?;
+            }
+
+            file_op.PerformOperations()?;
+        }
+
+        Ok(())
     }
 
     pub fn open_properties_multi(&self, paths: &[PathBuf]) {
@@ -411,16 +464,6 @@ impl MainWindow {
             };
             let _ = ShellExecuteExW(&mut info);
         }
-    }
-
-    pub fn undo(&mut self) {
-        undo(&mut self.action_history);
-        self.load_path(); // refresh UI after filesystem change
-    }
-
-    pub fn redo(&mut self) {
-        redo(&mut self.action_history);
-        self.load_path(); // refresh UI
     }
 
     pub fn cleanup(&mut self) {
@@ -914,34 +957,6 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     should_focus: true,
                 });
             }
-            ItemViewerAction::RenameRequest(path, new_name) => {
-                if let Some(parent) = path.parent() {
-                    let target = parent.join(new_name.trim());
-
-                    if new_name.is_empty() {
-                        explorer.rename_state = None;
-                        return;
-                    }
-
-                    // Avoid no-op rename
-                    if path != target {
-                        execute_op(
-                            &mut explorer.action_history,
-                            FileOp::Rename {
-                                from: path.clone(),
-                                to: target.clone(),
-                            },
-                        );
-                    }
-
-                    explorer.rename_state = None;
-                    explorer.load_path();
-                }
-            }
-
-            ItemViewerAction::RenameCancel => {
-                explorer.rename_state = None;
-            }
             ItemViewerAction::ReplaceSelection(path) => {
                 explorer.selected_paths.clear();
                 explorer.selected_paths.insert(path.clone());
@@ -972,6 +987,47 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             }
             ItemViewerAction::BackNavigation => {
                 explorer.current_nav_mut().go_back();
+                explorer.load_path();
+            }
+            ItemViewerAction::MoveItems {
+                sources,
+                target_dir,
+            } => {
+                unsafe {
+                    let file_op: IFileOperation =
+                        CoCreateInstance(&FileOperation, None, CLSCTX_ALL).unwrap();
+
+                    // Optional: show UI + allow TeraCopy hooks
+                    file_op
+                        .SetOperationFlags(
+                            FOF_SIMPLEPROGRESS | FOF_ALLOWUNDO | FOFX_SHOWELEVATIONPROMPT,
+                        )
+                        .ok();
+
+                    // Convert target dir to IShellItem
+                    let target_item: IShellItem = SHCreateItemFromParsingName(
+                        &HSTRING::from(target_dir.to_string_lossy().to_string()),
+                        None,
+                    )
+                    .unwrap();
+
+                    for source in sources {
+                        let source_item: IShellItem = SHCreateItemFromParsingName(
+                            &HSTRING::from(source.to_string_lossy().to_string()),
+                            None,
+                        )
+                        .unwrap();
+
+                        file_op
+                            .MoveItem(&source_item, &target_item, None, None)
+                            .ok();
+                    }
+
+                    file_op.PerformOperations().ok();
+                }
+
+                explorer.selected_paths.clear();
+                explorer.selected_path = None;
                 explorer.load_path();
             }
         }

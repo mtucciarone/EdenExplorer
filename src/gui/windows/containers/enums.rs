@@ -19,24 +19,20 @@ pub enum ItemViewerAction {
     OpenWithDefault(PathBuf),
     OpenInNewTab(PathBuf),
     Context(ItemViewerContextAction),
-    RenameRequest(PathBuf, String),
-    RenameCancel,
     StartEdit(PathBuf),
     FilesDropped(Vec<PathBuf>),
     ReplaceSelection(PathBuf),
     BackNavigation,
+    MoveItems { sources: Vec<PathBuf>, target_dir: PathBuf },
 }
 
 #[derive(Clone, Debug)]
 pub enum ItemViewerContextAction {
-    Cut(PathBuf),
-    Copy(PathBuf),
+    Copy(Vec<PathBuf>),
+    Cut(Vec<PathBuf>),
     Paste,
-    ClearCut(PathBuf),
-    // CopyPath(PathBuf),
-    Rename(PathBuf),
-    Delete(PathBuf),
+    RenameRequest(PathBuf, String),
+    RenameCancel,
+    Delete(Vec<PathBuf>),
     Properties(Vec<PathBuf>),
-    Undo,
-    Redo,
 }

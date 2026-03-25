@@ -295,6 +295,7 @@ Submit a pull request with a description of your changes
 - [x] **Portable device support** for iPhone, Android, and other connected devices
 - [x] **Raw/unmounted drive detection** for ISO sticks and Linux partitions
 - [x] **Performance benchmarking system** with real-time measurement and comparison tools
+- [x] **File dragging and dropping inside viewer**
 
 ### 🚀 Upcoming Features
 - [ ] **Image previews using Spacebar** - GPU texture via wgpu / egui_wgpu_backend
@@ -302,19 +303,15 @@ Submit a pull request with a description of your changes
   - Even very large images (>10k×10k) show instantly
   - Minimal CPU overhead
   - Best for "popup over app" with no lag
-- [ ] **Drag and drop files into folders** or move folders into folders
+- [ ] Drag and drop files into breadcrumb folders
 - [ ] **Keyboard filtering** - typing characters should automatically start filtering items in itemviewer
 - [ ] **Tab navigation improvements** - multiple tabs should reduce tab size, with left/right arrows for horizontal scrolling when >6 tabs
 - [ ] **Keyboard shortcuts** customization and help system
 
 ## 🐛 Known Bugs
-
-### **Critical Issues:**
 - Creating a new folder/file doesn't automatically scroll the viewier to focus on it
 - Fix network detection in sidebar
 - Fix raw/unmounted drive detection for ISO sticks and Linux partitions
-- cut/clear/cutpaste not working as expected and not working for multiple files
-- copy/paste not working as expected
 
 ## License
 This project is FOSS, released under the MIT License.

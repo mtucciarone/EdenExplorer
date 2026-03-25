@@ -1,7 +1,8 @@
 use crate::core::drives::get_drive_infos;
 use crate::core::indexer::{load_app_settings, load_favorites};
 use crate::core::networkdevices::NetworkDevicesState;
-use crate::core::state::{FileItem, History, Navigation};
+use crate::core::fs::FileItem;
+use crate::gui::windows::navigation::Navigation;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::{ThemeMode, apply_theme, get_palette};
 use crate::gui::utils::SortColumn;
@@ -10,7 +11,7 @@ use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::itemviewer::draw_item_viewer;
 use crate::gui::windows::containers::sidebar::draw_sidebar;
 use crate::gui::windows::containers::structs::{
-    FavoriteItem, ItemViewerFolderSizeState, RenameState, SidebarAction, TabInfo, TabState,
+    DragState, FavoriteItem, ItemViewerFolderSizeState, RenameState, SidebarAction, TabInfo, TabState
 };
 use crate::gui::windows::containers::tabs::{draw_tabbar, draw_tabs};
 use crate::gui::windows::containers::topbar::draw_topbar;
@@ -29,6 +30,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use windows::Win32::Foundation::HWND;
+
+enum FileAction {
+    Move,
+    Copy,
+    Delete,
+    Rename,
+}
 
 pub struct MainWindow {
     pub(crate) tabs: Vec<TabState>,
@@ -52,12 +60,12 @@ pub struct MainWindow {
     pub(crate) theme: ThemeMode,
     pub(crate) theme_dirty: bool,
     pub(crate) sort_column: SortColumn,
+    pub(crate) drag_state: DragState,
     pub(crate) sort_ascending: bool,
     pub(crate) icon_cache: Option<IconCache>,
     pub(crate) sidebar_default_width: f32,
     pub(crate) file_type_cache: HashMap<String, String>,
     pub(crate) selected_paths: HashSet<PathBuf>,
-    pub(crate) cut_paths: HashSet<PathBuf>,
     // pub(crate) box_selection_start: Option<egui::Pos2>,
     // pub(crate) box_selection_active: bool,
     pub(crate) theme_customizer: ThemeCustomizer,
@@ -65,7 +73,6 @@ pub struct MainWindow {
     pub(crate) dropped_files: Vec<PathBuf>,
     pub(crate) drag_hover: bool,
     pub(crate) dropped_files_pending_ui_refresh: bool,
-    pub(crate) action_history: History,
     pub(crate) selection_anchor: Option<usize>,
     pub(crate) selection_focus: Option<usize>,
     pub(crate) shutdown: Arc<AtomicBool>,
@@ -108,13 +115,13 @@ impl Default for MainWindow {
             pending_size_set: HashSet::new(),
             theme: ThemeMode::Dark,
             theme_dirty: false,
+            drag_state: DragState::default(),
             sort_column: SortColumn::Name,
             sort_ascending: true,
             icon_cache: None,
             sidebar_default_width: 250.0,
             file_type_cache: HashMap::new(),
             selected_paths: HashSet::new(), // Multi-selection state
-            cut_paths: HashSet::new(),      // Cut paths for paste operation
             // box_selection_start: None,      // Box selection start position
             // box_selection_active: false,    // Whether box selection is currently active
             theme_customizer: Default::default(),
@@ -122,7 +129,6 @@ impl Default for MainWindow {
             dropped_files: Vec::new(), // Files dropped from external drag and drop
             drag_hover: false,         // Whether external drag is hovering over the item viewer
             dropped_files_pending_ui_refresh: false,
-            action_history: History::new(),
             selection_anchor: None, // Anchor index for extended selection
             selection_focus: None,  // Focus index for extended selection
             shutdown: Arc::new(AtomicBool::new(false)),
@@ -405,6 +411,7 @@ impl eframe::App for MainWindow {
                                             &mut self.selection_anchor,
                                             &mut self.selection_focus,
                                             &mut tabbar_action,
+                                            &mut self.drag_state,
                                         );
                                         ui.add_space(6.0);
                                     },
