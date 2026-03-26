@@ -1,3 +1,4 @@
+use crate::core::fs::MY_PC_PATH;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{clickable_icon, truncate_text};
@@ -335,32 +336,81 @@ fn toolbar_buttons(ui: &mut egui::Ui, palette: &ThemePalette) -> TabbarAction {
     let mut action = TabbarAction::default();
 
     // Navigation buttons
-    if clickable_icon(ui, regular::ARROW_LEFT, palette.primary).clicked() {
+    if clickable_icon(ui, regular::ARROW_LEFT, palette.primary)
+        .on_hover_text(
+            egui::RichText::new("Navigate to previous directory")
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+        .clicked()
+    {
         action.nav = Some(TabbarNavAction::Back);
     }
 
-    if clickable_icon(ui, regular::ARROW_RIGHT, palette.primary).clicked() {
+    if clickable_icon(ui, regular::ARROW_RIGHT, palette.primary)
+        .on_hover_text(
+            egui::RichText::new("Navigate to next directory")
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+        .clicked()
+    {
         action.nav = Some(TabbarNavAction::Forward);
     }
 
-    if clickable_icon(ui, regular::ARROW_UP, palette.primary).clicked() {
+    if clickable_icon(ui, regular::ARROW_UP, palette.primary)
+        .on_hover_text(
+            egui::RichText::new("Navigate to parent directory")
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+        .clicked()
+    {
         action.nav = Some(TabbarNavAction::Up);
     }
 
-    if clickable_icon(ui, regular::ARROWS_CLOCKWISE, palette.primary).clicked() {
+    if clickable_icon(ui, regular::ARROWS_CLOCKWISE, palette.primary)
+        .on_hover_text(
+            egui::RichText::new("Refresh current directory")
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+        .clicked()
+    {
         action.refresh_current_directory = true;
     }
 
     // Action buttons
-    if clickable_icon(ui, regular::FOLDER_PLUS, palette.primary).clicked() {
+    if clickable_icon(ui, regular::FOLDER_PLUS, palette.primary)
+        .on_hover_text(
+            egui::RichText::new("Create new folder")
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+        .clicked()
+    {
         action.create_folder = true;
     }
 
-    if clickable_icon(ui, regular::FILE_PLUS, palette.primary).clicked() {
+    if clickable_icon(ui, regular::FILE_PLUS, palette.primary)
+        .on_hover_text(
+            egui::RichText::new("Create new file")
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+        .clicked()
+    {
         action.create_file = true;
     }
 
-    if clickable_icon(ui, regular::STAR, palette.primary).clicked() {
+    if clickable_icon(ui, regular::STAR, palette.primary)
+        .on_hover_text(
+            egui::RichText::new("Add current directory to favorites")
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+        .clicked()
+    {
         action.add_favorite = true;
     }
 
@@ -510,7 +560,7 @@ pub fn draw_tabbar(
                 )
                 .clicked()
             {
-                action.nav_to = Some(PathBuf::from("::MY_PC::"));
+                action.nav_to = Some(PathBuf::from(MY_PC_PATH));
             }
         } else {
             let segments =

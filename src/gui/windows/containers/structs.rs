@@ -1,6 +1,16 @@
-use crate::gui::windows::navigation::Navigation;
+use std::collections::{HashSet};
+
 use crate::gui::windows::containers::enums::TabbarNavAction;
+use crate::gui::windows::navigation::Navigation;
 use std::path::PathBuf;
+
+#[derive(Default)]
+pub struct ExplorerState {
+    pub selected_path: Option<PathBuf>,
+    pub selected_paths: HashSet<PathBuf>,
+    pub selection_anchor: Option<usize>,
+    pub selection_focus: Option<usize>
+}
 
 #[derive(Clone)]
 pub struct TabInfo {
@@ -69,6 +79,7 @@ pub struct TopbarAction {
     pub toggle_theme: bool,
     pub customize_theme: bool,
     pub open_settings: bool,
+    pub about: bool,
 }
 
 #[derive(Default)]
@@ -85,4 +96,22 @@ pub struct DragState {
     pub active: bool,
     pub source_items: Vec<PathBuf>,
     pub start_pos: Option<egui::Pos2>,
+}
+
+pub struct FilterState {
+    pub active: bool,
+    pub query: String,
+    pub last_input_time: f64,
+    pub focus_requested: bool,
+}
+
+impl Default for FilterState {
+    fn default() -> Self {
+        Self {
+            active: false,
+            query: String::new(),
+            last_input_time: 0.0,
+            focus_requested: false,
+        }
+    }
 }

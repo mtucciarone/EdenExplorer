@@ -17,7 +17,12 @@ pub fn draw_topbar(
 
         let menu_open = ui.memory(|mem| mem.data.get_temp::<bool>(menu_id).unwrap_or(false));
 
-        if clickable_icon(ui, regular::LIST, palette.primary).clicked() {
+        if clickable_icon(ui, regular::LIST, palette.primary)
+        .on_hover_text(
+            egui::RichText::new("Menu")
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        ).clicked() {
             ui.memory_mut(|mem| mem.data.insert_temp(menu_id, !menu_open));
         }
 
@@ -31,10 +36,10 @@ pub fn draw_topbar(
                     egui::containers::Frame::popup(ui.style()).show(ui, |ui| {
                         ui.set_min_width(120.0);
 
-                        if menu_item(ui, regular::PALETTE, "Theme", palette).clicked() {
-                            action.customize_theme = true;
-                            ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
-                        }
+                        // if menu_item(ui, regular::PALETTE, "Theme", palette).clicked() {
+                        //     action.customize_theme = true;
+                        //     ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
+                        // }
 
                         if menu_item(ui, regular::SLIDERS, "Settings", palette).clicked() {
                             action.open_settings = true;
@@ -42,6 +47,7 @@ pub fn draw_topbar(
                         }
 
                         if menu_item(ui, regular::QUESTION, "About", palette).clicked() {
+                            action.about = true;
                             ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
                         }
                     });
@@ -51,7 +57,14 @@ pub fn draw_topbar(
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
             let icon = if is_dark { regular::SUN } else { regular::MOON };
 
-            if clickable_icon(ui, icon, palette.primary).clicked() {
+            if clickable_icon(ui, icon, palette.primary)
+                .on_hover_text(
+                    egui::RichText::new("Toggle theme")
+                        .size(palette.tooltip_text_size)
+                        .color(palette.tooltip_text_color),
+                )
+                .clicked()
+            {
                 action.toggle_theme = true;
             }
         });

@@ -1,14 +1,14 @@
 use crate::core::drives::{get_drives, parse_drive_display};
 use crate::core::fs::FileItem;
 use crate::core::fs::{get_drive_space, parallel_directory_scan, scan_dir_async};
-use crate::core::indexer::{save_app_settings, save_favorites};
+use crate::core::indexer::{load_app_settings, save_app_settings, save_favorites};
 use crate::gui::MainWindow;
 use crate::gui::theme::{ThemeMode, ThemePalette};
 use crate::gui::utils::{
-    SortColumn,
-    get_clipboard_files, is_clipboard_cut, set_clipboard_files, shell_delete_to_recycle_bin,
-    show_copy_move_dialog, sort_files,
+    SortColumn, compute_range, get_clipboard_files, is_clipboard_cut, set_clipboard_files,
+    shell_delete_to_recycle_bin, show_copy_move_dialog, sort_files,
 };
+use crate::gui::windows::about::draw_about_window;
 use crate::gui::windows::containers::enums::{
     ItemViewerAction, ItemViewerContextAction, TabbarNavAction,
 };
@@ -46,8 +46,7 @@ impl MainWindow {
     }
 
     pub fn open_new_tab(&mut self, path: PathBuf) {
-        let mut nav = Navigation::new();
-        nav.go_to(path);
+        let nav = Navigation::new(path);
         let id = self.next_tab_id;
         self.next_tab_id += 1;
         self.tabs.push(TabState {
@@ -108,7 +107,7 @@ impl MainWindow {
         self.folder_sizes.clear();
         self.search_active = false;
         self.search_results.clear();
-        self.selected_path = None;
+        self.explorer_state.selected_path = None;
         self.pending_size_queue.clear();
         self.pending_size_set.clear();
 
@@ -182,9 +181,9 @@ impl MainWindow {
                 should_focus: true,
             });
             // Select the new folder
-            self.selected_path = Some(path_for_selection.clone());
-            self.selected_paths.clear();
-            self.selected_paths.insert(path_for_selection);
+            self.explorer_state.selected_path = Some(path_for_selection.clone());
+            self.explorer_state.selected_paths.clear();
+            self.explorer_state.selected_paths.insert(path_for_selection);
         }
     }
 
@@ -214,9 +213,9 @@ impl MainWindow {
                 should_focus: true,
             });
             // Select the new file
-            self.selected_path = Some(path_for_selection.clone());
-            self.selected_paths.clear();
-            self.selected_paths.insert(path_for_selection);
+            self.explorer_state.selected_path = Some(path_for_selection.clone());
+            self.explorer_state.selected_paths.clear();
+            self.explorer_state.selected_paths.insert(path_for_selection);
         }
     }
 
@@ -254,7 +253,7 @@ impl MainWindow {
             ItemViewerContextAction::Cut(paths) => {
                 let _ = set_clipboard_files(&paths, true);
                 if let Some(first) = paths.first() {
-                    self.selected_path = Some(first.clone());
+                    self.explorer_state.selected_path = Some(first.clone());
                 }
             }
             ItemViewerContextAction::Copy(paths) => {
@@ -264,7 +263,7 @@ impl MainWindow {
 
                 // optional: update selection
                 if let Some(first) = paths.first() {
-                    self.selected_path = Some(first.clone());
+                    self.explorer_state.selected_path = Some(first.clone());
                 }
             }
             ItemViewerContextAction::Paste => {
@@ -478,7 +477,7 @@ impl MainWindow {
         self.folder_sizes.clear();
         self.files.clear();
         self.search_results.clear();
-        self.selected_paths.clear();
+        self.explorer_state.selected_paths.clear();
         self.pending_size_queue.clear();
         self.pending_size_set.clear();
         self.file_type_cache.clear();
@@ -496,6 +495,7 @@ impl MainWindow {
                             .current_settings
                             .folder_scanning_enabled,
                         &self.settings_window.current_settings.window_size_mode,
+                        &self.settings_window.current_settings.start_path,
                     );
                     self.settings_window.has_unsaved_changes = false;
                 }
@@ -509,6 +509,11 @@ impl MainWindow {
                 }
             }
         }
+    }
+
+    pub fn handle_draw_about_window(&mut self, ctx: &egui::Context, palette: &ThemePalette) {
+        // TODO: Implement about window
+        draw_about_window(ctx, &mut self.about_window, palette);
     }
 
     pub fn handle_tabbar_action(&mut self, tabbar_action: Option<TabbarAction>) {
@@ -588,7 +593,9 @@ impl MainWindow {
                         self.load_path();
                     }
                 } else {
-                    self.tabs[0].nav = Navigation::new();
+                    let (_folder_scanning_enabled, _window_size_mode, start_path) =
+                        load_app_settings();
+                    self.tabs[0].nav = Navigation::new(start_path);
                     self.active_tab = 0;
                     self.load_path();
                 }
@@ -660,6 +667,11 @@ impl MainWindow {
 
             if action.open_settings {
                 self.settings_window.open = true;
+            }
+
+            if action.about {
+                self.about_window.open = true
+                // TODO: Open about dialog
             }
         }
     }
@@ -856,38 +868,48 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
         match action {
             ItemViewerAction::Sort(col) => explorer.toggle_sort(col),
             ItemViewerAction::Select(path) => {
-                explorer.selected_path = Some(path.clone());
-                explorer.selected_paths.insert(path);
+                explorer.explorer_state.selected_path = Some(path.clone());
+
+                explorer.explorer_state.selected_paths.clear();
+                explorer.explorer_state.selected_paths.insert(path.clone());
+
+                if let Some(idx) = explorer.files.iter().position(|f| f.path == path) {
+                    explorer.explorer_state.selection_anchor = Some(idx);
+                    explorer.explorer_state.selection_focus = Some(idx);
+                }
             }
             ItemViewerAction::Deselect(path) => {
-                explorer.selected_paths.remove(&path);
+                explorer.explorer_state.selected_paths.remove(&path);
             }
             ItemViewerAction::SelectAll => {
-                explorer.selected_paths.clear();
+                explorer.explorer_state.selected_paths.clear();
                 for file in &explorer.files {
-                    explorer.selected_paths.insert(file.path.clone());
+                    explorer
+                        .explorer_state
+                        .selected_paths
+                        .insert(file.path.clone());
                 }
             }
             ItemViewerAction::DeselectAll => {
-                explorer.selected_paths.clear();
+                explorer.explorer_state.selected_paths.clear();
             }
             ItemViewerAction::BoxSelect(paths) => {
                 // Clear current selection and add box-selected files
-                explorer.selected_paths.clear();
+                explorer.explorer_state.selected_paths.clear();
                 for path in paths {
-                    explorer.selected_paths.insert(path);
+                    explorer.explorer_state.selected_paths.insert(path);
                 }
             }
             ItemViewerAction::RangeSelect(paths) => {
                 // Clear current selection and add range-selected files
-                explorer.selected_paths.clear();
+                explorer.explorer_state.selected_paths.clear();
                 for path in &paths {
-                    explorer.selected_paths.insert(path.clone());
+                    explorer.explorer_state.selected_paths.insert(path.clone());
                 }
                 // Set the current position to the target edge of the range
                 // The target should be the item that was just moved to
-                if let Some(anchor_idx) = explorer.selection_anchor
-                    && let Some(current_selected) = explorer.selected_path.as_ref()
+                if let Some(anchor_idx) = explorer.explorer_state.selection_anchor
+                    && let Some(current_selected) = explorer.explorer_state.selected_path.as_ref()
                     && let Some(current_idx) = explorer
                         .files
                         .iter()
@@ -897,19 +919,19 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     if current_idx > anchor_idx {
                         // Moving down - set current to the bottom of range
                         if let Some(bottom_path) = paths.last() {
-                            explorer.selected_path = Some(bottom_path.clone());
+                            explorer.explorer_state.selected_path = Some(bottom_path.clone());
                         }
                     } else if current_idx < anchor_idx {
                         // Moving up - set current to the top of range
                         if let Some(top_path) = paths.first() {
-                            explorer.selected_path = Some(top_path.clone());
+                            explorer.explorer_state.selected_path = Some(top_path.clone());
                         }
                     }
                     // If current_idx == anchor_idx, no change needed
                 }
             }
             ItemViewerAction::Open(path) => {
-                explorer.selected_path = Some(path.clone());
+                explorer.explorer_state.selected_path = Some(path.clone());
                 explorer.current_nav_mut().go_to(path);
                 explorer.load_path();
             }
@@ -936,6 +958,10 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                         eprintln!("Failed to open file: {}", path.display());
                     }
                 }
+                explorer.explorer_state.selection_anchor = None;
+                explorer.explorer_state.selected_path = None;
+                explorer.explorer_state.selected_paths.clear();
+                explorer.explorer_state.selection_focus = None;
             }
             ItemViewerAction::OpenInNewTab(path) => {
                 explorer.open_new_tab(path);
@@ -956,12 +982,12 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 });
             }
             ItemViewerAction::ReplaceSelection(path) => {
-                explorer.selected_paths.clear();
-                explorer.selected_paths.insert(path.clone());
-                explorer.selected_path = Some(path.clone());
+                explorer.explorer_state.selected_paths.clear();
+                explorer.explorer_state.selected_paths.insert(path.clone());
+                explorer.explorer_state.selected_path = Some(path.clone());
                 // Set anchor index for extended selection
                 if let Some(anchor_idx) = explorer.files.iter().position(|f| f.path == path) {
-                    explorer.selection_anchor = Some(anchor_idx);
+                    explorer.explorer_state.selection_anchor = Some(anchor_idx);
                 }
             }
             ItemViewerAction::FilesDropped(dropped_files) => {
@@ -986,6 +1012,10 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             ItemViewerAction::BackNavigation => {
                 explorer.current_nav_mut().go_back();
                 explorer.load_path();
+                explorer.explorer_state.selection_anchor = None;
+                explorer.explorer_state.selected_path = None;
+                explorer.explorer_state.selected_paths.clear();
+                explorer.explorer_state.selection_focus = None;
             }
             ItemViewerAction::MoveItems {
                 sources,
@@ -1024,8 +1054,10 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     file_op.PerformOperations().ok();
                 }
 
-                explorer.selected_paths.clear();
-                explorer.selected_path = None;
+                explorer.explorer_state.selected_paths.clear();
+                explorer.explorer_state.selected_path = None;
+                explorer.explorer_state.selection_anchor = None;
+                explorer.explorer_state.selection_focus = None;
                 explorer.load_path();
             }
         }

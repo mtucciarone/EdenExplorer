@@ -11,9 +11,7 @@ use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
-use windows::Win32::System::Com::{
-    CLSCTX_ALL, CoCreateInstance
-};
+use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
 use windows::Win32::System::DataExchange::{CloseClipboard, GetClipboardData, OpenClipboard};
 use windows::Win32::System::DataExchange::{
     EmptyClipboard, RegisterClipboardFormatW, SetClipboardData,
@@ -258,7 +256,9 @@ pub fn set_clipboard_files(paths: &[PathBuf], cut: bool) -> bool {
         return false;
     }
     let _ = unsafe { EmptyClipboard() };
-    let _ = unsafe { SetClipboardData(CF_HDROP.0 as u32, Some(HANDLE(hglobal.0))); };
+    let _ = unsafe {
+        SetClipboardData(CF_HDROP.0 as u32, Some(HANDLE(hglobal.0)));
+    };
 
     let effect: u32 = if cut { 2 } else { 5 };
     let hglobal_effect = match unsafe { GlobalAlloc(GMEM_MOVEABLE, size_of::<u32>()) } {
@@ -338,9 +338,9 @@ pub fn is_clipboard_cut() -> bool {
 
     if let Ok(hglobal) = unsafe { GetClipboardData(format) } {
         if !hglobal.0.is_null() {
-            let ptr = unsafe {
-                GlobalLock(windows::Win32::Foundation::HGLOBAL(hglobal.0 as *mut _))
-            } as *const u32;
+            let ptr =
+                unsafe { GlobalLock(windows::Win32::Foundation::HGLOBAL(hglobal.0 as *mut _)) }
+                    as *const u32;
 
             if !ptr.is_null() {
                 let val = unsafe { *ptr };
@@ -663,4 +663,42 @@ pub fn generate_non_conflicting_path(dir: &Path, file_name: &OsStr) -> PathBuf {
 
         counter += 1;
     }
+}
+
+pub fn fuzzy_match(name: &str, query: &str) -> bool {
+    let mut query_chars = query.chars().map(|c| c.to_ascii_lowercase());
+    let mut current = query_chars.next();
+
+    for c in name.chars().map(|c| c.to_ascii_lowercase()) {
+        if let Some(q) = current {
+            if c == q {
+                current = query_chars.next();
+            }
+        } else {
+            return true;
+        }
+    }
+
+    current.is_none()
+}
+
+pub fn compute_range(
+    files: &Vec<FileItem>,
+    a: &PathBuf,
+    b: &PathBuf,
+) -> HashSet<PathBuf> {
+    let mut result = HashSet::new();
+
+    let idx_a = files.iter().position(|f| &f.path == a);
+    let idx_b = files.iter().position(|f| &f.path == b);
+
+    if let (Some(a), Some(b)) = (idx_a, idx_b) {
+        let (start, end) = if a <= b { (a, b) } else { (b, a) };
+
+        for i in start..=end {
+            result.insert(files[i].path.clone());
+        }
+    }
+
+    result
 }

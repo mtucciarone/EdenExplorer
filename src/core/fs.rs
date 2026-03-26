@@ -14,6 +14,7 @@ use windows::Win32::Storage::FileSystem::{
 use windows::core::PCWSTR;
 
 const STATUS_NO_MORE_FILES: i32 = 0x80000006u32 as i32;
+pub const MY_PC_PATH: &str = "::MY_PC::";
 
 /// Convert PathBuf -> UTF-16
 fn path_to_wide(path: &PathBuf) -> Vec<u16> {
@@ -154,7 +155,7 @@ pub fn calculate_folder_size_fast(path: PathBuf) -> u64 {
 /// 🚀 Async directory scan
 pub fn scan_dir_async(path: PathBuf, tx: Sender<FileItem>) {
     thread::spawn(move || {
-        if path.to_string_lossy() == "::MY_PC::" {
+        if path.to_string_lossy() == MY_PC_PATH {
             return;
         }
 

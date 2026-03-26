@@ -297,6 +297,7 @@ Submit a pull request with a description of your changes
 - [x] **Performance benchmarking system** with real-time measurement and comparison tools
 - [x] **Drag and drop files/folders** - Move one or more items into folders shown in the item viewer
 - [x] **Window management improvements** with proper maximization bounds and minimum size constraints
+- [x] **File/Directory filtering** - typing characters automatically start filtering items in the item viewer
 
 ### 🚀 Upcoming Features
 - [ ] **Image previews using Spacebar** - GPU texture via wgpu / egui_wgpu_backend
@@ -305,14 +306,17 @@ Submit a pull request with a description of your changes
   - Minimal CPU overhead
   - Best for "popup over app" with no lag
 - [ ] Drag and drop files into breadcrumb folders
-- [ ] **Keyboard filtering** - typing characters should automatically start filtering items in itemviewer
 - [ ] **Tab navigation improvements** - multiple tabs should reduce tab size, with left/right arrows for horizontal scrolling when >6 tabs
-- [ ] **Keyboard shortcuts** customization and help system
 
 ## 🐛 Known Bugs
 - Creating a new folder/file doesn't automatically scroll the viewer to focus on it
 - Fix network detection in sidebar
 - Fix raw/unmounted drive detection for ISO sticks and Linux partitions
+- Window drag handler some times bugs out and causes the egui elements to be unselectable or positioned incorrectly
+- selection dragging box doesn't select anything
+- ctrl+click selection is currently broken
+- dragging and dropping files into directories shows 3 highlighted drop borders
+- While filtering is active, doing shift+home, deleting all the content, then hitting Escape places the input cursor on next filter at -1 position
 
 ## License
 This project is FOSS, released under the MIT License.

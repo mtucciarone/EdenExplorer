@@ -1,4 +1,5 @@
 use crate::core::drives::DriveInfo;
+use crate::core::fs::MY_PC_PATH;
 use crate::core::networkdevices::NetworkDevicesState;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
@@ -73,18 +74,12 @@ pub fn draw_sidebar_item(
     let icon_padding = 4.0;
 
     let text_offset_x = if let Some(icon) = icon_cache.get(path, is_dir) {
-        let icon_pos = egui::pos2(
-            rect.min.x + 4.0,
-            rect.center().y - icon_size.y / 2.0,
-        );
+        let icon_pos = egui::pos2(rect.min.x + 4.0, rect.center().y - icon_size.y / 2.0);
 
         ui.painter().image(
             (&icon).into(),
             egui::Rect::from_min_size(icon_pos, icon_size),
-            egui::Rect::from_min_size(
-                egui::pos2(0.0, 0.0),
-                egui::vec2(1.0, 1.0),
-            ),
+            egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1.0, 1.0)),
             egui::Color32::WHITE,
         );
 
@@ -99,15 +94,9 @@ pub fn draw_sidebar_item(
 
     let display_name = truncate_text(label, max_chars);
 
-    let text_pos = egui::pos2(
-        rect.min.x + text_offset_x,
-        rect.center().y - 2.0,
-    );
+    let text_pos = egui::pos2(rect.min.x + text_offset_x, rect.center().y - 2.0);
 
-    let font_id = egui::FontId::new(
-        palette.text_size,
-        egui::FontFamily::Proportional,
-    );
+    let font_id = egui::FontId::new(palette.text_size, egui::FontFamily::Proportional);
 
     ui.painter().text(
         text_pos,
@@ -248,7 +237,7 @@ fn sidebar_drive_item(
             egui::CornerRadius::same(palette.small_radius),
             bar_fill,
         );
-        
+
         let gb = 1024.0 * 1024.0 * 1024.0;
         let used_gb = (total - free) as f64 / gb;
         let total_gb = total as f64 / gb;
@@ -308,10 +297,10 @@ pub fn draw_sidebar(
                         None,
                     );
                     if resp.clicked() {
-                        action.nav_to = Some(PathBuf::from("::MY_PC::"));
+                        action.nav_to = Some(PathBuf::from(MY_PC_PATH));
                     }
                     if resp.middle_clicked() {
-                        action.open_new_tab = Some(PathBuf::from("::MY_PC::"));
+                        action.open_new_tab = Some(PathBuf::from(MY_PC_PATH));
                     }
 
                     if let Some(home) = dirs::home_dir() {
@@ -523,8 +512,6 @@ pub fn draw_sidebar(
                     //         action.open_new_tab = Some(device_path);
                     //     }
                     // }
-
-
                 });
                 ui.add_space(2.0);
             });

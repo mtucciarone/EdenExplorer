@@ -1,27 +1,28 @@
 use crate::core::drives::get_drive_infos;
+use crate::core::fs::{FileItem, MY_PC_PATH};
 use crate::core::indexer::{load_app_settings, load_favorites};
 use crate::core::networkdevices::NetworkDevicesState;
-use crate::core::fs::FileItem;
-use crate::gui::windows::navigation::Navigation;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::{ThemeMode, apply_theme, get_palette};
 use crate::gui::utils::SortColumn;
 use crate::gui::utils::clipboard_has_files;
+use crate::gui::windows::about::AboutWindow;
 use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::itemviewer::draw_item_viewer;
 use crate::gui::windows::containers::sidebar::draw_sidebar;
 use crate::gui::windows::containers::structs::{
-    DragState, FavoriteItem, ItemViewerFolderSizeState, RenameState, SidebarAction, TabInfo, TabState
+    DragState, FavoriteItem, FilterState, ItemViewerFolderSizeState, RenameState, SidebarAction,
+    TabInfo, TabState, ExplorerState
 };
 use crate::gui::windows::containers::tabs::{draw_tabbar, draw_tabs};
 use crate::gui::windows::containers::topbar::draw_topbar;
 use crate::gui::windows::customizetheme::ThemeCustomizer;
 use crate::gui::windows::mainwindow_imp::{
-    handle_draw_customizetheme_window, handle_pending_actions,
-    tab_title_for,
+    handle_draw_customizetheme_window, handle_pending_actions, tab_title_for,
 };
+use crate::gui::windows::navigation::Navigation;
+use crate::gui::windows::settings::{AppSettings, SettingsWindow};
 use crate::gui::windows::windowsoverrides::{apply_window_override, install_wndproc};
-use crate::gui::windows::settings::SettingsWindow;
 use crossbeam_channel::Receiver;
 use crossbeam_channel::Sender;
 use eframe::egui;
@@ -47,7 +48,6 @@ pub struct MainWindow {
     pub(crate) favorites: Vec<FavoriteItem>,
     pub(crate) dragging_favorite: Option<usize>,
     pub(crate) sidebar_selected: Option<PathBuf>,
-    pub(crate) selected_path: Option<PathBuf>,
     pub(crate) rename_state: Option<RenameState>,
     pub(crate) pending_size_queue: VecDeque<PathBuf>,
     pub(crate) pending_size_set: HashSet<PathBuf>,
@@ -59,31 +59,34 @@ pub struct MainWindow {
     pub(crate) icon_cache: Option<IconCache>,
     pub(crate) sidebar_default_width: f32,
     pub(crate) file_type_cache: HashMap<String, String>,
-    pub(crate) selected_paths: HashSet<PathBuf>,
-    // pub(crate) box_selection_start: Option<egui::Pos2>,
-    // pub(crate) box_selection_active: bool,
+    pub(crate) explorer_state: ExplorerState,
     pub(crate) theme_customizer: ThemeCustomizer,
     pub(crate) settings_window: SettingsWindow,
+    pub(crate) about_window: AboutWindow,
     pub(crate) dropped_files: Vec<PathBuf>,
     pub(crate) drag_hover: bool,
     pub(crate) dropped_files_pending_ui_refresh: bool,
-    pub(crate) selection_anchor: Option<usize>,
-    pub(crate) selection_focus: Option<usize>,
     pub(crate) shutdown: Arc<AtomicBool>,
     pub(crate) size_threads: Vec<std::thread::JoinHandle<()>>,
     pub(crate) network_state: crate::core::networkdevices::NetworkDevicesState,
     pub(crate) hwnd: Option<HWND>,
+    pub(crate) item_viewer_filter_state: FilterState
 }
 
 impl Default for MainWindow {
     fn default() -> Self {
         // Load saved settings
-        let (folder_scanning_enabled, window_size_mode) = load_app_settings();
+        let (folder_scanning_enabled, window_size_mode, start_path) = load_app_settings();
+        let loaded_settings = AppSettings {
+            folder_scanning_enabled,
+            window_size_mode: window_size_mode.clone(),
+            start_path: Some(start_path.clone()), // 👈 important
+        };
 
         let mut app = Self {
             tabs: vec![TabState {
                 id: 1,
-                nav: Navigation::new(),
+                nav: Navigation::new(start_path),
                 breadcrumb_path_editing: false,
                 breadcrumb_path_buffer: String::new(),
                 breadcrumb_just_started_editing: false,
@@ -103,7 +106,6 @@ impl Default for MainWindow {
             favorites: vec![],
             dragging_favorite: None,
             sidebar_selected: None,
-            selected_path: None,
             rename_state: None,
             pending_size_queue: VecDeque::new(),
             pending_size_set: HashSet::new(),
@@ -115,25 +117,22 @@ impl Default for MainWindow {
             icon_cache: None,
             sidebar_default_width: 250.0,
             file_type_cache: HashMap::new(),
-            selected_paths: HashSet::new(), // Multi-selection state
-            // box_selection_start: None,      // Box selection start position
-            // box_selection_active: false,    // Whether box selection is currently active
+            explorer_state: Default::default(),
             theme_customizer: Default::default(),
             settings_window: Default::default(),
+            about_window: Default::default(),
             dropped_files: Vec::new(), // Files dropped from external drag and drop
             drag_hover: false,         // Whether external drag is hovering over the item viewer
             dropped_files_pending_ui_refresh: false,
-            selection_anchor: None, // Anchor index for extended selection
-            selection_focus: None,  // Focus index for extended selection
             shutdown: Arc::new(AtomicBool::new(false)),
             size_threads: Vec::new(),
             network_state: NetworkDevicesState::default(),
             hwnd: None,
+            item_viewer_filter_state: FilterState::default(),
         };
 
         // Initialize settings window with loaded values
-        app.settings_window.current_settings.folder_scanning_enabled = folder_scanning_enabled;
-        app.settings_window.current_settings.window_size_mode = window_size_mode;
+        app.settings_window.current_settings = loaded_settings;
         let stored = load_favorites('C');
         if stored.is_empty() {
             app.favorites = app.default_favorites();
@@ -337,7 +336,7 @@ impl eframe::App for MainWindow {
                                     id: tab.id,
                                     title: tab_title_for(&tab.nav),
                                     full_path: if tab.nav.is_root() {
-                                        PathBuf::from("::MY_PC::")
+                                        PathBuf::from(MY_PC_PATH)
                                     } else {
                                         tab.nav.current.clone()
                                     },
@@ -381,8 +380,6 @@ impl eframe::App for MainWindow {
                                             ui,
                                             display_files,
                                             &self.folder_sizes,
-                                            &mut self.selected_path,
-                                            &self.selected_paths,
                                             clipboard_has_files(),
                                             self.sort_column,
                                             self.sort_ascending,
@@ -391,10 +388,10 @@ impl eframe::App for MainWindow {
                                             palette,
                                             &mut self.file_type_cache,
                                             &mut self.drag_hover,
-                                            &mut self.selection_anchor,
-                                            &mut self.selection_focus,
                                             &mut tabbar_action,
                                             &mut self.drag_state,
+                                            &mut self.item_viewer_filter_state,
+                                            &mut self.explorer_state,
                                         );
                                     },
                                 );
@@ -420,6 +417,7 @@ impl eframe::App for MainWindow {
         handle_pending_actions(pending_action, self);
         handle_draw_customizetheme_window(ctx, &mut self.theme_customizer);
         self.handle_draw_settings_window(ctx, palette);
+        self.handle_draw_about_window(ctx, palette);
 
         // ✅ Step 5: Apply Deferred Refresh (IMPORTANT)
         if self.dropped_files_pending_ui_refresh {

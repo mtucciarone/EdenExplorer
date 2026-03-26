@@ -1,3 +1,4 @@
+use crate::core::fs::MY_PC_PATH;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
@@ -8,9 +9,9 @@ pub struct Navigation {
 }
 
 impl Navigation {
-    pub fn new() -> Self {
+    pub fn new(start: PathBuf) -> Self {
         Self {
-            current: PathBuf::from("::MY_PC::"),
+            current: start,
             back: Vec::new(),
             forward: Vec::new(),
         }
@@ -40,7 +41,7 @@ impl Navigation {
 
     pub fn go_up(&mut self) {
         // Prevent breaking virtual root
-        if self.current.to_string_lossy() == "::MY_PC::" {
+        if self.current.to_string_lossy() == MY_PC_PATH {
             return;
         }
 
@@ -48,12 +49,12 @@ impl Navigation {
             self.go_to(parent.to_path_buf());
         } else {
             // Drive root (e.g., "C:\\") has no parent in PathBuf.
-            self.go_to(PathBuf::from("::MY_PC::"));
+            self.go_to(PathBuf::from(MY_PC_PATH));
         }
     }
 
     /// Helper: are we at virtual root?
     pub fn is_root(&self) -> bool {
-        self.current.to_string_lossy() == "::MY_PC::"
+        self.current.to_string_lossy() == MY_PC_PATH
     }
 }

@@ -4,14 +4,14 @@ mod gui;
 use crate::core::indexer::{WindowSizeMode, load_app_settings};
 use crate::gui::windows::windowsoverrides::{get_hwnd_from_cc, set_egui_ctx};
 use eframe::{NativeOptions, egui};
-use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
+use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
 
 fn main() -> eframe::Result<()> {
     unsafe {
         CoInitializeEx(None, COINIT_APARTMENTTHREADED).unwrap();
     }
     let icon = load_icon().expect("Failed to load icon");
-    let (_folder_scanning_enabled, window_size_mode) = load_app_settings();
+    let (_folder_scanning_enabled, window_size_mode, _start_path) = load_app_settings();
     let window_size = match window_size_mode {
         WindowSizeMode::FullScreen => egui::Vec2::new(1920.0, 1080.0),
         WindowSizeMode::HalfScreen => egui::Vec2::new(960.0, 540.0),

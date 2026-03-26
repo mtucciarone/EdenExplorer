@@ -23,7 +23,10 @@ pub enum ItemViewerAction {
     FilesDropped(Vec<PathBuf>),
     ReplaceSelection(PathBuf),
     BackNavigation,
-    MoveItems { sources: Vec<PathBuf>, target_dir: PathBuf },
+    MoveItems {
+        sources: Vec<PathBuf>,
+        target_dir: PathBuf,
+    },
 }
 
 #[derive(Clone, Debug)]

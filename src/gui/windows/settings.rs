@@ -1,4 +1,4 @@
-use crate::core::indexer::WindowSizeMode;
+use crate::core::{fs::MY_PC_PATH, indexer::WindowSizeMode};
 use crate::gui::theme::ThemePalette;
 use eframe::egui;
 use egui_phosphor::regular;
@@ -8,7 +8,7 @@ use std::path::PathBuf;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AppSettings {
     pub folder_scanning_enabled: bool,
-    pub starting_path: Option<PathBuf>,
+    pub start_path: Option<PathBuf>,
     pub window_size_mode: WindowSizeMode,
 }
 
@@ -16,7 +16,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             folder_scanning_enabled: true,
-            starting_path: None,
+            start_path: Some(PathBuf::from(MY_PC_PATH)),
             window_size_mode: WindowSizeMode::default(),
         }
     }
@@ -131,25 +131,61 @@ pub fn draw_settings_window(
                         }
                         info_icon(ui, "When enabled, the application will scan folders to calculate their sizes. This may impact performance on large directories.", palette);
                     });
-                    ui.add_space(12.0);
+                    ui.add_space(8.0);
                     // Starting Path
+                    ui.label("Startup Directory:");
                     ui.horizontal(|ui| {
-                        ui.label("Startup Directory Path:");
-                        let path_text = settings.current_settings.starting_path
+                        let path_text = settings.current_settings.start_path
                             .as_ref()
-                            .map_or("Default (system)".to_string(), |p| p.to_string_lossy().to_string());
-                        ui.label(path_text);
-                        if ui.button(regular::FOLDER_OPEN).clicked() {
-                            // TODO: Implement file dialog for path selection
-                            action = Some(SettingsAction::ApplySettings);
-                        }
-                        if ui.button(regular::ARROW_CLOCKWISE).clicked() {
-                            settings.current_settings.starting_path = None;
-                            action = Some(SettingsAction::ApplySettings);
-                        }
-                        info_icon(ui, "Set the default directory that opens when the application starts.", palette);
+                            .map(|p| {
+                                if p.as_os_str() == MY_PC_PATH {
+                                    return "Default (My PC)".to_string();
+                                }
+
+                                let s = p.to_string_lossy();
+
+                                if s.len() > 40 {
+                                    format!("...{}", &s[s.len() - 40..])
+                                } else {
+                                    s.to_string()
+                                }
+                            })
+                            .unwrap_or_else(|| "Default (My PC)".to_string());
+
+                        ui.add_sized(
+                            [200.0, 18.0],
+                            egui::Label::new(path_text),
+                        ).on_hover_text(
+                            settings.current_settings.start_path
+                                .as_ref()
+                                .map(|p| p.to_string_lossy().to_string())
+                                .unwrap_or_default()
+                        );
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(regular::QUESTION)
+                                .on_hover_text("Set the default directory...");
+
+                            if ui.button(regular::ARROW_COUNTER_CLOCKWISE)
+                                .on_hover_text("Reset to default")
+                                .clicked()
+                            {
+                                settings.current_settings.start_path = Some(PathBuf::from(MY_PC_PATH));
+                                action = Some(SettingsAction::ApplySettings);
+                            }
+
+                            if ui.button(regular::FOLDER_OPEN)
+                                .on_hover_text("Choose a folder")
+                                .clicked()
+                            {
+                                if let Some(path) = rfd::FileDialog::new().pick_folder() {
+                                    settings.current_settings.start_path = Some(path);
+                                    action = Some(SettingsAction::ApplySettings);
+                                }
+                            }
+                        });
                     });
-                    ui.add_space(12.0);
+                    ui.add_space(8.0);
                     // Display Settings Section
                     ui.heading(format!("{} Display Settings", regular::MONITOR));
                     ui.add_space(8.0);
@@ -186,10 +222,14 @@ pub fn draw_settings_window(
                             info_icon(ui, "Configure the window size when the application launches.", palette);
                         });
                     }
-                    ui.add_space(12.0);
+                    ui.add_space(8.0);
                     // Favorites Reset
                     ui.horizontal(|ui| {
-                        if ui.button(format!("{} Reset Sidebar Favorites", regular::TRASH)).clicked() {
+                        if ui.button(format!("{} Reset Sidebar Favorites", regular::TRASH))
+                            .on_hover_text( egui::RichText::new("Reset favorites to default")
+                                    .size(palette.tooltip_text_size)
+                                    .color(palette.tooltip_text_color))
+                            .clicked() {
                             settings.show_reset_favorites_confirmation = true;
                         }
                         info_icon(ui, "Clear all saved favourite locations and restore defaults.", palette);
