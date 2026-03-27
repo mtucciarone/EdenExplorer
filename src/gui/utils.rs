@@ -536,8 +536,12 @@ pub fn draw_object_drag_ghost(
             .ctx()
             .layer_painter(LayerId::new(Order::Foreground, Id::new("drag_ghost")));
 
+        // Get Ui's width in screen coordinates
+        let ui_rect = ui.min_rect();
+        let ghost_width = ui_rect.width(); // full width of the UI block
+
         // --- Background ---
-        let ghost_rect = Rect::from_center_size(pos, vec2(ui.available_width(), 18.0));
+        let ghost_rect = Rect::from_center_size(pos, vec2(ghost_width, 18.0));
 
         painter.rect_filled(
             ghost_rect,
