@@ -37,8 +37,7 @@ pub fn draw_item_viewer(
     let clipboard_paths = get_clipboard_files().unwrap_or_default();
     let is_cut_mode = is_clipboard_cut();
     let mut hovered_drop_target: Option<PathBuf> = None;
-    let pointer_pos = ui.ctx().input(|i| i.pointer.hover_pos());
-
+    let mut hovered_drop_target_rect: Option<egui::Rect> = None;
     draw_external_to_internal_drag_overlay(ui, *external_drag_to_internal_hover);
 
     let layout = compute_layout(ui, files);
@@ -99,6 +98,18 @@ pub fn draw_item_viewer(
     }
 
     let mut current_hovered_drop_target: Option<PathBuf> = None;
+    let mut current_hovered_drop_target_rect: Option<egui::Rect> = None;
+    let mut best_hovered_row: Option<(f32, bool, PathBuf, egui::Rect)> = None;
+    let drag_hover_active = ui.ctx().input(|i| {
+        drag_state.active
+            || i.raw
+                .hovered_files
+                .iter()
+                .any(|file| file.path.is_some())
+    });
+    let pointer_pos = ui
+        .ctx()
+        .input(|i| i.pointer.interact_pos().or_else(|| i.pointer.hover_pos()));
 
     if !files.is_empty() {
                 let modifiers = ui.ctx().input(|i| i.modifiers);
@@ -273,16 +284,30 @@ pub fn draw_item_viewer(
 
                             let row_resp = row.response();
 
-                            if drag_state.active {
+                            if drag_hover_active {
                                 if let Some(pointer) = pointer_pos {
-                                    if file.is_dir && row_resp.rect.contains(pointer) {
-                                        println!(
-                                            "Row {} is hovered with path {}",
-                                            idx,
-                                            file.path.display()
-                                        );
-                                        current_hovered_drop_target = Some(file.path.clone());
-                                        return;
+                                    if row_resp.rect.contains(pointer) {
+                                        let is_dir = file.is_dir && file.path.is_dir();
+                                        let row_top = row_resp.rect.top();
+                                        let row_rect = {
+                                            let row_min = row_resp.rect.min;
+                                            let row_max = egui::pos2(
+                                                row_resp.rect.max.x,
+                                                row_resp.rect.min.y + layout.row_height,
+                                            );
+                                            egui::Rect::from_min_max(row_min, row_max)
+                                        };
+                                        match &best_hovered_row {
+                                            Some((best_top, _, _, _)) if *best_top >= row_top => {}
+                                            _ => {
+                                                best_hovered_row = Some((
+                                                    row_top,
+                                                    is_dir,
+                                                    file.path.clone(),
+                                                    row_rect,
+                                                ));
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -327,20 +352,13 @@ pub fn draw_item_viewer(
                                 action = Some(ItemViewerAction::OpenInNewTab(file.path.clone()));
                             }
 
-                            if row_resp.hovered() {
+                            if drag_hover_active {
+                                // Avoid double-hover visuals during drag; rely on drop highlight.
+                                row.set_hovered(false);
+                            } else if row_resp.hovered() {
                                 row.set_hovered(true);
                                 any_row_hovered = true;
                             }
-
-                            // --- Hover detection ---
-                            //                             if drag_state.active && file.is_dir && row_resp.rect.contains(pointer_pos.unwrap_or_default()) {
-                            //     println!(
-                            //         "Row {} is hovered with path {}",
-                            //         idx,
-                            //         file.path.display()
-                            //     );
-                            //     *hovered_drop_target = Some(file.path.clone());
-                            // }
 
                             row_resp.context_menu(|ui| {
                                 handle_context_menu_actions(
@@ -356,27 +374,39 @@ pub fn draw_item_viewer(
                                 );
                             });
                         });
+                        if let Some((_, is_dir, path, rect)) = best_hovered_row.take() {
+                            if is_dir {
+                                println!("Hovered drop target: {}", path.display());
+                                current_hovered_drop_target = Some(path);
+                                current_hovered_drop_target_rect = Some(rect);
+                            }
+                        }
+
                         *hovered_drop_target = current_hovered_drop_target;
+                        hovered_drop_target_rect = current_hovered_drop_target_rect;
                     });
 
                 ui.add_space(layout.header_gap);
 
-                // if let Some(rect) = hovered_drop_target_rect {
-                //     let painter = ui
-                //         .ctx()
-                //         .layer_painter(LayerId::new(Order::Foreground, Id::new("drop_highlight")));
-                //     painter.rect_filled(
-                //         rect,
-                //         CornerRadius::same(palette.medium_radius),
-                //         palette.primary.linear_multiply(0.1),
-                //     );
-                //     painter.rect_stroke(
-                //         rect,
-                //         CornerRadius::same(palette.medium_radius),
-                //         Stroke::new(1.5, palette.primary_active),
-                //         StrokeKind::Inside,
-                //     );
-                // }
+                if let Some(rect) = hovered_drop_target_rect {
+                    let painter = ui
+                        .ctx()
+                        .layer_painter(egui::LayerId::new(
+                            egui::Order::Foreground,
+                            egui::Id::new("drop_highlight"),
+                        ));
+                    painter.rect_filled(
+                        rect,
+                        egui::CornerRadius::same(palette.medium_radius),
+                        palette.primary.linear_multiply(0.1),
+                    );
+                    painter.rect_stroke(
+                        rect,
+                        egui::CornerRadius::same(palette.medium_radius),
+                        egui::Stroke::new(1.5, palette.primary_active),
+                        egui::StrokeKind::Inside,
+                    );
+                }
 
                 let pointer_released = ui
                     .ctx()

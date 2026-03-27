@@ -315,7 +315,6 @@ Submit a pull request with a description of your changes
 - Window drag handler some times bugs out and causes the egui elements to be unselectable or positioned incorrectly
 - selection dragging box doesn't select anything
 - navigating files with arrow keys when there's no selection doesn't automatically scroll the table to the index of the navigation
-- dragging and dropping files into directories shows 3 highlighted drop borders
 - While filtering is active, doing shift+home, deleting all the content, then hitting Escape places the input cursor on next filter at -1 position
 - Opening an external drive, like an IPhone, shows "this folder is empty". trying to navigate "up" breaks the interface.
 
