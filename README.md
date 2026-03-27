@@ -307,6 +307,7 @@ Submit a pull request with a description of your changes
   - Best for "popup over app" with no lag
 - [ ] Drag and drop files into breadcrumb folders
 - [ ] **Tab navigation improvements** - multiple tabs should reduce tab size, with left/right arrows for horizontal scrolling when >6 tabs
+- [ ] Self-signed executable
 
 ## 🐛 Known Bugs
 - Fix network detection in sidebar

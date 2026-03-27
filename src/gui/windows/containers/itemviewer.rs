@@ -38,7 +38,6 @@ pub fn draw_item_viewer(
     let is_cut_mode = is_clipboard_cut();
     let mut hovered_drop_target: Option<PathBuf> = None;
     let pointer_pos = ui.ctx().input(|i| i.pointer.hover_pos());
-    let mut hovered_row_idx: Option<usize> = None;
 
     draw_external_to_internal_drag_overlay(ui, *external_drag_to_internal_hover);
 
@@ -99,11 +98,9 @@ pub fn draw_item_viewer(
         action = Some(global_action);
     }
 
-    if !files.is_empty() {
-        return egui::ScrollArea::both()
-            .show(ui, |ui| {
-                ui.set_min_height(ui.available_height() - 16.0);
+    let mut current_hovered_drop_target: Option<PathBuf> = None;
 
+    if !files.is_empty() {
                 let modifiers = ui.ctx().input(|i| i.modifiers);
 
                 let mut table = TableBuilder::new(ui)
@@ -276,6 +273,20 @@ pub fn draw_item_viewer(
 
                             let row_resp = row.response();
 
+                            if drag_state.active {
+                                if let Some(pointer) = pointer_pos {
+                                    if file.is_dir && row_resp.rect.contains(pointer) {
+                                        println!(
+                                            "Row {} is hovered with path {}",
+                                            idx,
+                                            file.path.display()
+                                        );
+                                        current_hovered_drop_target = Some(file.path.clone());
+                                        return;
+                                    }
+                                }
+                            }
+
                             if row_resp.drag_started() {
                                 drag_state.start_pos = row_resp.interact_pointer_pos();
                                 drag_state.active = false; // threshold not passed yet
@@ -321,35 +332,15 @@ pub fn draw_item_viewer(
                                 any_row_hovered = true;
                             }
 
-                            if drag_state.active && file.is_dir {
-                                if let Some(pointer_pos) = pointer_pos {
-                                    if row_resp.rect.contains(pointer_pos) {
-                                        hovered_row_idx = Some(idx);
-                                    }
-                                }
-                            }
-
-                            if drag_state.active && hovered_row_idx == Some(idx) && file.is_dir {
-                                *hovered_drop_target = Some(file.path.clone());
-
-                                let painter = row_resp.ctx.layer_painter(egui::LayerId::new(
-                                    egui::Order::Foreground,
-                                    egui::Id::new(("drop_highlight", idx)),
-                                ));
-
-                                painter.rect_stroke(
-                                    row_resp.rect,
-                                    egui::CornerRadius::same(palette.medium_radius),
-                                    egui::Stroke::new(1.5, palette.primary_active),
-                                    egui::StrokeKind::Inside,
-                                );
-
-                                painter.rect_filled(
-                                    row_resp.rect,
-                                    egui::CornerRadius::same(palette.medium_radius),
-                                    palette.primary.linear_multiply(0.1),
-                                );
-                            }
+                            // --- Hover detection ---
+                            //                             if drag_state.active && file.is_dir && row_resp.rect.contains(pointer_pos.unwrap_or_default()) {
+                            //     println!(
+                            //         "Row {} is hovered with path {}",
+                            //         idx,
+                            //         file.path.display()
+                            //     );
+                            //     *hovered_drop_target = Some(file.path.clone());
+                            // }
 
                             row_resp.context_menu(|ui| {
                                 handle_context_menu_actions(
@@ -365,9 +356,27 @@ pub fn draw_item_viewer(
                                 );
                             });
                         });
+                        *hovered_drop_target = current_hovered_drop_target;
                     });
 
                 ui.add_space(layout.header_gap);
+
+                // if let Some(rect) = hovered_drop_target_rect {
+                //     let painter = ui
+                //         .ctx()
+                //         .layer_painter(LayerId::new(Order::Foreground, Id::new("drop_highlight")));
+                //     painter.rect_filled(
+                //         rect,
+                //         CornerRadius::same(palette.medium_radius),
+                //         palette.primary.linear_multiply(0.1),
+                //     );
+                //     painter.rect_stroke(
+                //         rect,
+                //         CornerRadius::same(palette.medium_radius),
+                //         Stroke::new(1.5, palette.primary_active),
+                //         StrokeKind::Inside,
+                //     );
+                // }
 
                 let pointer_released = ui
                     .ctx()
@@ -429,7 +438,7 @@ pub fn draw_item_viewer(
 
                 let bg_response = ui.allocate_rect(
                     remaining_rect,
-                    egui::Sense::click(), // 👈 important: enables right-click
+                    egui::Sense::click(),
                 );
 
                 if bg_response.clicked() {
@@ -449,10 +458,8 @@ pub fn draw_item_viewer(
                         }
                     }
                 });
-
-                action
-            })
-            .inner;
+            
+            action
     } else {
         return action;
     }
@@ -785,7 +792,7 @@ fn handle_draw_col_type(
 
     let label = egui::Label::new(rich_text.font(font_id.clone())).sense(egui::Sense::hover());
 
-    let resp = ui.add(label);
+    let resp = ui.add(label).on_hover_cursor(egui::CursorIcon::Default);
 
     if resp.hovered() && type_text.len() > max_chars && max_chars > 3 {
         resp.on_hover_text(
@@ -858,7 +865,7 @@ fn handle_draw_col_size(
                 .size(palette.text_size)
                 .color(text_color)
                 .font(font_id.clone()),
-        );
+        ).on_hover_cursor(egui::CursorIcon::Default);
     } else {
         draw_placeholder(ui, palette, font_id, text_color);
     }
@@ -895,7 +902,7 @@ fn handle_draw_col_modified(
                     .size(palette.text_size)
                     .color(text_color)
                     .font(font_id.clone()),
-            );
+            ).on_hover_cursor(egui::CursorIcon::Default);
         } else {
             draw_placeholder(ui, palette, font_id, text_color);
         }
@@ -917,14 +924,14 @@ fn handle_draw_col_created(
                 .size(palette.text_size)
                 .color(text_color)
                 .font(font_id.clone()),
-        );
+        ).on_hover_cursor(egui::CursorIcon::Default);
     } else {
         ui.label(
             egui::RichText::new("—")
                 .size(palette.text_size)
                 .color(text_color)
                 .font(font_id.clone()),
-        );
+        ).on_hover_cursor(egui::CursorIcon::Default);
     }
 }
 
@@ -939,7 +946,7 @@ fn draw_placeholder(
             .size(palette.text_size)
             .color(color)
             .font(font_id.clone()),
-    );
+    ).on_hover_cursor(egui::CursorIcon::Default);
 }
 
 fn get_text_color(is_selected: bool, is_cut: bool, palette: &ThemePalette) -> egui::Color32 {

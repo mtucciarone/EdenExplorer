@@ -373,10 +373,7 @@ impl eframe::App for MainWindow {
 
                                 ui.add_space(4.0);
 
-                                egui::ScrollArea::vertical().auto_shrink([false; 2]).show(
-                                    ui,
-                                    |ui| {
-                                        pending_action = draw_item_viewer(
+                                pending_action = draw_item_viewer(
                                             ui,
                                             display_files,
                                             &self.folder_sizes,
@@ -393,8 +390,6 @@ impl eframe::App for MainWindow {
                                             &mut self.item_viewer_filter_state,
                                             &mut self.explorer_state,
                                         );
-                                    },
-                                );
 
                                 ui.add_space(16.0);
                             });
