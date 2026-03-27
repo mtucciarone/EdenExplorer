@@ -106,7 +106,12 @@ pub fn draw_sidebar_item(
         ui.visuals().text_color(),
     );
 
-    resp
+    resp.on_hover_text(
+        egui::RichText::new(path.to_string_lossy())
+            .size(palette.tooltip_text_size)
+            .color(palette.tooltip_text_color),
+    )
+    .on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 fn favorites_item_layout(ui: &mut egui::Ui) -> (egui::Rect, egui::Response) {
@@ -153,7 +158,7 @@ fn sidebar_drive_item(
     }
 
     if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
 
     // --- Top row: icon + label ---

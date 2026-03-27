@@ -64,7 +64,7 @@ pub struct MainWindow {
     pub(crate) settings_window: SettingsWindow,
     pub(crate) about_window: AboutWindow,
     pub(crate) dropped_files: Vec<PathBuf>,
-    pub(crate) drag_hover: bool,
+    pub(crate) external_drag_to_internal_hover: bool,
     pub(crate) dropped_files_pending_ui_refresh: bool,
     pub(crate) shutdown: Arc<AtomicBool>,
     pub(crate) size_threads: Vec<std::thread::JoinHandle<()>>,
@@ -122,7 +122,7 @@ impl Default for MainWindow {
             settings_window: Default::default(),
             about_window: Default::default(),
             dropped_files: Vec::new(), // Files dropped from external drag and drop
-            drag_hover: false,         // Whether external drag is hovering over the item viewer
+            external_drag_to_internal_hover: false,         // Whether external drag is hovering over the item viewer
             dropped_files_pending_ui_refresh: false,
             shutdown: Arc::new(AtomicBool::new(false)),
             size_threads: Vec::new(),
@@ -188,7 +188,7 @@ impl eframe::App for MainWindow {
         let mut pending_action: Option<ItemViewerAction> = None;
 
         // 🔥 Detect external drag-over (files hovering)
-        self.drag_hover = ctx.input(|i| !i.raw.hovered_files.is_empty());
+        self.external_drag_to_internal_hover = ctx.input(|i| !i.raw.hovered_files.is_empty());
 
         // 🔥 Detect dropped files from OS
         let dropped_files: Vec<PathBuf> = ctx.input(|i| {
@@ -387,7 +387,7 @@ impl eframe::App for MainWindow {
                                             &mut self.rename_state,
                                             palette,
                                             &mut self.file_type_cache,
-                                            &mut self.drag_hover,
+                                            &mut self.external_drag_to_internal_hover,
                                             &mut tabbar_action,
                                             &mut self.drag_state,
                                             &mut self.item_viewer_filter_state,

@@ -18,11 +18,14 @@ pub fn draw_topbar(
         let menu_open = ui.memory(|mem| mem.data.get_temp::<bool>(menu_id).unwrap_or(false));
 
         if clickable_icon(ui, regular::LIST, palette.primary)
-        .on_hover_text(
-            egui::RichText::new("Menu")
-                .size(palette.tooltip_text_size)
-                .color(palette.tooltip_text_color),
-        ).clicked() {
+            .on_hover_text(
+                egui::RichText::new("Menu")
+                    .size(palette.tooltip_text_size)
+                    .color(palette.tooltip_text_color),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
             ui.memory_mut(|mem| mem.data.insert_temp(menu_id, !menu_open));
         }
 
@@ -63,6 +66,7 @@ pub fn draw_topbar(
                         .size(palette.tooltip_text_size)
                         .color(palette.tooltip_text_color),
                 )
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
                 .clicked()
             {
                 action.toggle_theme = true;

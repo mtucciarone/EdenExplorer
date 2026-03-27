@@ -1,6 +1,8 @@
 use crate::gui::theme::ThemePalette;
+use crate::gui::utils::clickable_icon;
 use eframe::egui;
 use egui::Context;
+use egui_phosphor::regular;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::sync::RwLock;
 use windows::Win32::Foundation::HWND;
@@ -256,4 +258,61 @@ fn get_x_lparam(lparam: LPARAM) -> i32 {
 }
 fn get_y_lparam(lparam: LPARAM) -> i32 {
     ((lparam.0 >> 16) & 0xFFFF) as i16 as i32
+}
+
+pub fn handle_draw_windows_buttons(ui: &mut egui::Ui, hwnd: Option<HWND>, palette: &ThemePalette) {
+    if let Some(hwnd) = hwnd {
+        if clickable_icon(ui, regular::X, palette.primary)
+        .on_hover_text(
+            egui::RichText::new("Close")
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked() {
+            unsafe {
+                use windows::Win32::UI::WindowsAndMessaging::*;
+                let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
+            }
+        }
+
+        if clickable_icon(ui, regular::SQUARE, palette.primary)
+        .on_hover_text(
+            egui::RichText::new("Maximize")
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked() {
+            unsafe {
+                use windows::Win32::UI::WindowsAndMessaging::*;
+                let mut placement = WINDOWPLACEMENT {
+                    length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+                    ..Default::default()
+                };
+
+                if GetWindowPlacement(hwnd, &mut placement).is_ok() {
+                    if placement.showCmd == SW_SHOWMAXIMIZED.0 as u32 {
+                        let _ = ShowWindow(hwnd, SW_RESTORE);
+                    } else {
+                        let _ = ShowWindow(hwnd, SW_MAXIMIZE);
+                    }
+                }
+            }
+        }
+
+        if clickable_icon(ui, regular::MINUS, palette.primary)
+        .on_hover_text(
+            egui::RichText::new("Minimize")
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked() {
+            unsafe {
+                use windows::Win32::UI::WindowsAndMessaging::*;
+                let _ = ShowWindow(hwnd, SW_MINIMIZE);
+            }
+        }
+    }
 }

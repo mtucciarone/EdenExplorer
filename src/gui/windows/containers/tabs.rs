@@ -4,11 +4,12 @@ use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{clickable_icon, truncate_text};
 use crate::gui::windows::containers::enums::TabbarNavAction;
 use crate::gui::windows::containers::structs::{TabInfo, TabState, TabbarAction, TabsAction};
+use crate::gui::windows::windowsoverrides::handle_draw_windows_buttons;
 use eframe::egui;
 use egui::{FontFamily, FontId};
 use egui_phosphor::regular;
 use std::path::{Path, PathBuf};
-use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+use windows::Win32::Foundation::{HWND};
 
 pub fn draw_tabs(
     ui: &mut egui::Ui,
@@ -171,6 +172,12 @@ fn handle_draw_tab_new_allocated(
     // --- Hover cursor ---
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+
+        resp.on_hover_text(
+            egui::RichText::new(tab.full_path.to_string_lossy())
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        );
     }
 }
 
@@ -200,42 +207,6 @@ fn handle_draw_add_new_tab_button(
 
     if response.clicked() {
         action.open_new = true;
-    }
-}
-
-fn handle_draw_windows_buttons(ui: &mut egui::Ui, hwnd: Option<HWND>, palette: &ThemePalette) {
-    if let Some(hwnd) = hwnd {
-        if clickable_icon(ui, regular::X, palette.primary).clicked() {
-            unsafe {
-                use windows::Win32::UI::WindowsAndMessaging::*;
-                let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
-            }
-        }
-
-        if clickable_icon(ui, regular::SQUARE, palette.primary).clicked() {
-            unsafe {
-                use windows::Win32::UI::WindowsAndMessaging::*;
-                let mut placement = WINDOWPLACEMENT {
-                    length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
-                    ..Default::default()
-                };
-
-                if GetWindowPlacement(hwnd, &mut placement).is_ok() {
-                    if placement.showCmd == SW_SHOWMAXIMIZED.0 as u32 {
-                        let _ = ShowWindow(hwnd, SW_RESTORE);
-                    } else {
-                        let _ = ShowWindow(hwnd, SW_MAXIMIZE);
-                    }
-                }
-            }
-        }
-
-        if clickable_icon(ui, regular::MINUS, palette.primary).clicked() {
-            unsafe {
-                use windows::Win32::UI::WindowsAndMessaging::*;
-                let _ = ShowWindow(hwnd, SW_MINIMIZE);
-            }
-        }
     }
 }
 
@@ -342,6 +313,7 @@ fn toolbar_buttons(ui: &mut egui::Ui, palette: &ThemePalette) -> TabbarAction {
                 .size(palette.tooltip_text_size)
                 .color(palette.tooltip_text_color),
         )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
     {
         action.nav = Some(TabbarNavAction::Back);
@@ -353,6 +325,7 @@ fn toolbar_buttons(ui: &mut egui::Ui, palette: &ThemePalette) -> TabbarAction {
                 .size(palette.tooltip_text_size)
                 .color(palette.tooltip_text_color),
         )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
     {
         action.nav = Some(TabbarNavAction::Forward);
@@ -364,6 +337,7 @@ fn toolbar_buttons(ui: &mut egui::Ui, palette: &ThemePalette) -> TabbarAction {
                 .size(palette.tooltip_text_size)
                 .color(palette.tooltip_text_color),
         )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
     {
         action.nav = Some(TabbarNavAction::Up);
@@ -375,6 +349,7 @@ fn toolbar_buttons(ui: &mut egui::Ui, palette: &ThemePalette) -> TabbarAction {
                 .size(palette.tooltip_text_size)
                 .color(palette.tooltip_text_color),
         )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
     {
         action.refresh_current_directory = true;
@@ -387,6 +362,7 @@ fn toolbar_buttons(ui: &mut egui::Ui, palette: &ThemePalette) -> TabbarAction {
                 .size(palette.tooltip_text_size)
                 .color(palette.tooltip_text_color),
         )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
     {
         action.create_folder = true;
@@ -398,6 +374,7 @@ fn toolbar_buttons(ui: &mut egui::Ui, palette: &ThemePalette) -> TabbarAction {
                 .size(palette.tooltip_text_size)
                 .color(palette.tooltip_text_color),
         )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
     {
         action.create_file = true;
@@ -409,6 +386,7 @@ fn toolbar_buttons(ui: &mut egui::Ui, palette: &ThemePalette) -> TabbarAction {
                 .size(palette.tooltip_text_size)
                 .color(palette.tooltip_text_color),
         )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
     {
         action.add_favorite = true;

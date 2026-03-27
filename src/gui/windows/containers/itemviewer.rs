@@ -14,7 +14,7 @@ use eframe::egui;
 use egui::{FontFamily, FontId};
 use egui_extras::{Column, TableBuilder};
 use egui_phosphor::regular;
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub fn draw_item_viewer(
@@ -28,7 +28,7 @@ pub fn draw_item_viewer(
     rename_state: &mut Option<RenameState>,
     palette: &ThemePalette,
     file_type_cache: &mut HashMap<String, String>,
-    drag_hover: &mut bool,
+    external_drag_to_internal_hover: &mut bool,
     tabbar_action: &mut Option<TabbarAction>,
     drag_state: &mut DragState,
     filter_state: &mut FilterState,
@@ -40,7 +40,7 @@ pub fn draw_item_viewer(
     let pointer_pos = ui.ctx().input(|i| i.pointer.hover_pos());
     let mut hovered_row_idx: Option<usize> = None;
 
-    draw_drag_overlay(ui, *drag_hover);
+    draw_external_to_internal_drag_overlay(ui, *external_drag_to_internal_hover);
 
     let layout = compute_layout(ui, files);
 
@@ -64,9 +64,9 @@ pub fn draw_item_viewer(
     };
 
     // 🔥 Ensure selection is valid within filtered view
-    if let Some(selected) = &explorer_state.selected_path {
+    if let Some(selected) = explorer_state.selected_paths.iter().next() {
         if !filtered_files.iter().any(|f| &f.path == selected) {
-            explorer_state.selected_path = None;
+            explorer_state.selected_paths.clear();
             explorer_state.selection_anchor = None;
             explorer_state.selection_focus = None;
         }
@@ -93,6 +93,7 @@ pub fn draw_item_viewer(
         tabbar_action,
         rename_state,
         filter_state,
+        drag_state,
         explorer_state,
     ) {
         action = Some(global_action);
@@ -115,6 +116,14 @@ pub fn draw_item_viewer(
                     .animate_scrolling(true)
                     .resizable(true)
                     .id_salt("item_viewer_table");
+
+                // If we have a newly created row, scroll to it
+                if let Some(new_path) = &explorer_state.newly_created_path {
+                    if let Some(idx) = filtered_files.iter().position(|f| f.path == *new_path) {
+                        table = table.scroll_to_row(idx, Some(egui::Align::Center));
+                        explorer_state.newly_created_path = None;
+                    }
+                }
 
                 if !layout.is_drive_view {
                     table = table.column(Column::exact(20.0));
@@ -291,66 +300,15 @@ pub fn draw_item_viewer(
                             }
 
                             if row_resp.clicked() && !drag_state.active {
-                                if modifiers.shift {
-                                    if let Some(anchor_idx) = explorer_state.selection_anchor {
-                                        let current_idx = idx;
-
-                                        let range_start = anchor_idx.min(current_idx);
-                                        let range_end = anchor_idx.max(current_idx);
-
-                                        let range_paths: Vec<PathBuf> = filtered_files
-                                            [range_start..=range_end]
-                                            .iter()
-                                            .map(|f| f.path.clone())
-                                            .collect();
-
-                                        action = Some(ItemViewerAction::RangeSelect(range_paths));
-                                        explorer_state.selection_focus = Some(current_idx);
-                                    } else {
-                                        explorer_state.selection_anchor = Some(idx);
-                                        explorer_state.selection_focus = Some(idx);
-                                        action = Some(ItemViewerAction::Select(file.path.clone()));
-                                    }
-                                } else if modifiers.ctrl {
-                                    // 🔥 FIXED Ctrl toggle
-                                    if is_selected {
-                                        action =
-                                            Some(ItemViewerAction::Deselect(file.path.clone()));
-
-                                        // Optional: clear focus if we removed the focused item
-                                        if explorer_state.selected_path.as_ref() == Some(&file.path)
-                                        {
-                                            explorer_state.selected_path = None;
-                                        }
-                                    } else {
-                                        action = Some(ItemViewerAction::Select(file.path.clone()));
-
-                                        // 🔥 IMPORTANT: keep navigation + shift working
-                                        explorer_state.selected_path = Some(file.path.clone());
-                                        explorer_state.selection_anchor = Some(idx);
-                                        explorer_state.selection_focus = Some(idx);
-                                    }
-                                } else {
-                                    // 🔥 NEW LOGIC: detect "already selected single item"
-                                    let is_single_selected = explorer_state.selected_paths.len()
-                                        == 1
-                                        && explorer_state.selected_paths.contains(&file.path);
-
-                                    if is_single_selected {
-                                        // 🚀 Open instead of re-select
-                                        action = Some(if file.is_dir {
-                                            ItemViewerAction::Open(file.path.clone())
-                                        } else {
-                                            ItemViewerAction::OpenWithDefault(file.path.clone())
-                                        });
-                                    } else {
-                                        // Normal selection
-                                        action = Some(ItemViewerAction::ReplaceSelection(
-                                            file.path.clone(),
-                                        ));
-                                        explorer_state.selection_anchor = Some(idx);
-                                        explorer_state.selection_focus = Some(idx);
-                                    }
+                                if let Some(a) = handle_row_click(
+                                    idx,
+                                    file,
+                                    modifiers,
+                                    &filtered_files,
+                                    drag_state,
+                                    explorer_state,
+                                ) {
+                                    action = Some(a);
                                 }
                             }
 
@@ -391,8 +349,6 @@ pub fn draw_item_viewer(
                                     egui::CornerRadius::same(palette.medium_radius),
                                     palette.primary.linear_multiply(0.1),
                                 );
-
-                                row_resp.ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
                             }
 
                             row_resp.context_menu(|ui| {
@@ -412,15 +368,6 @@ pub fn draw_item_viewer(
                     });
 
                 ui.add_space(layout.header_gap);
-
-                if any_row_hovered {
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
-                }
-
-                if let Some(_pos) = ui.ctx().pointer_hover_pos() {
-                    // Optionally, check if pos is inside table rect if you want
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
-                }
 
                 let pointer_released = ui
                     .ctx()
@@ -448,25 +395,6 @@ pub fn draw_item_viewer(
 
                 let input_state = ui.ctx().input(|i| i.clone());
 
-                if !filtered_files.is_empty() {
-                    let current_index =
-                        explorer_state.selected_path.as_ref().and_then(|selected| {
-                            filtered_files.iter().position(|f| &f.path == selected)
-                        });
-
-                    // 🔽 If nothing selected → ArrowDown selects first
-                    if current_index.is_none() {
-                        if input_state.key_pressed(egui::Key::ArrowDown) {
-                            let first = filtered_files[0].path.clone();
-                            action = Some(ItemViewerAction::ReplaceSelection(first.clone()));
-
-                            explorer_state.selection_anchor = Some(0);
-                            explorer_state.selection_focus = Some(0);
-                        }
-                        return action;
-                    }
-                }
-
                 if let Some(a) =
                     handle_keyboard_navigation(&filtered_files, explorer_state, &input_state)
                 {
@@ -490,7 +418,7 @@ pub fn draw_item_viewer(
                 }
 
                 // Update drag hover state
-                *drag_hover = input_state
+                *external_drag_to_internal_hover = input_state
                     .raw
                     .hovered_files
                     .iter()
@@ -530,8 +458,11 @@ pub fn draw_item_viewer(
     }
 }
 
-fn draw_drag_overlay(ui: &mut egui::Ui, drag_hover: bool) {
-    if drag_hover {
+fn draw_external_to_internal_drag_overlay(
+    ui: &mut egui::Ui,
+    external_drag_to_internal_hover: bool,
+) {
+    if external_drag_to_internal_hover {
         let rect = ui.max_rect();
 
         ui.painter().rect_filled(
@@ -605,12 +536,41 @@ fn handle_context_menu_actions(
 
     // --- NORMAL FILE VIEW ---
 
-    // First section: Open
+    // Determine if "Open in new tab" should be enabled
+    // Enable only if a single path is selected
+    let enable_open_in_tab = explorer_state.selected_paths.len() == 1;
+
+    // Add the button
     if ui
-        .add_enabled(file.is_dir, egui::Button::new("Open in new tab"))
+        .add_enabled(enable_open_in_tab, egui::Button::new("Open in new tab"))
         .clicked()
     {
-        *action = Some(ItemViewerAction::OpenInNewTab(file.path.clone()));
+        if let Some(path) = explorer_state.selected_paths.iter().next() {
+            *action = Some(ItemViewerAction::OpenInNewTab(path.clone()));
+            ui.close();
+        }
+    }
+
+    // Determine button label based on selection count
+    let label = if explorer_state.selected_paths.len() == 1 {
+        "Open in Default Program"
+    } else {
+        "Open Files in Default Program"
+    };
+
+    // Check if all selected files are not directories
+    let all_files = explorer_state
+        .selected_paths
+        .iter()
+        .all(|path| !path.is_dir());
+
+    // Add the button with dynamic label
+    if ui
+        .add_enabled(all_files, egui::Button::new(label))
+        .clicked()
+    {
+        let paths: Vec<PathBuf> = explorer_state.selected_paths.iter().cloned().collect();
+        *action = Some(ItemViewerAction::OpenWithDefault(paths));
         ui.close();
     }
 
@@ -1083,6 +1043,7 @@ fn handle_global_actions(
     tabbar_action: &mut Option<TabbarAction>,
     rename_state: &mut Option<RenameState>,
     filter_state: &mut FilterState,
+    drag_state: &mut DragState,
     explorer_state: &mut ExplorerState,
 ) -> Option<ItemViewerAction> {
     let mut action: Option<ItemViewerAction> = None;
@@ -1102,16 +1063,13 @@ fn handle_global_actions(
     // 🥈 PRIORITY 2: FILTER MODE (TextEdit owns input)
     // =====================================================
     if filter_state.active {
-        // Check first if we should cancel the filter entirely
         let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
         if cancel {
-            // Deactivate and completely reset filter_state
             *filter_state = FilterState::default();
-            return None; // TextEdit won’t even be drawn this frame
+            return None;
         }
 
-        // Draw the TextEdit only if filter is active
         let text_edit_id = ui.id().with("filter_input");
 
         let response = ui.add(
@@ -1124,13 +1082,11 @@ fn handle_global_actions(
                 )),
         );
 
-        // Request focus on first frame
         if !filter_state.focus_requested {
             response.request_focus();
             filter_state.focus_requested = true;
         }
 
-        // Click-away also cancels filter
         if response.clicked_elsewhere() {
             *filter_state = FilterState::default();
         }
@@ -1139,10 +1095,19 @@ fn handle_global_actions(
     }
 
     // =====================================================
-    // 🥉 PRIORITY 3: GLOBAL INPUT (navigation + shortcuts)
+    // 🥉 PRIORITY 3: DRAG STATE
     // =====================================================
+    if drag_state.active {
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            drag_state.active = false;
+            drag_state.source_items.clear();
+            drag_state.start_pos = None;
+        }
+    }
 
-    // 🔥 Step 1: detect typing → activate filter mode
+    // =====================================================
+    // PRIORITY 4: GLOBAL INPUT (navigation + shortcuts)
+    // =====================================================
     let mut start_filter = String::new();
 
     ui.input(|i| {
@@ -1159,34 +1124,40 @@ fn handle_global_actions(
         filter_state.active = true;
         filter_state.query.push_str(&start_filter);
         filter_state.last_input_time = ui.input(|i| i.time);
-        return None; // 🔥 immediately switch to filter mode
+        return None;
     }
 
     // =====================================================
     // 🔹 GLOBAL SHORTCUTS
     // =====================================================
     ui.input(|i| {
-        // 🔙 Back navigation
         if i.key_pressed(egui::Key::Backspace) {
             action = Some(ItemViewerAction::BackNavigation);
         }
-        // Open file or directory
         if i.key_pressed(egui::Key::Enter) {
-            if let Some(selected_path) = &explorer_state.selected_path {
-                action = Some(ItemViewerAction::Open(selected_path.clone()));
+            let selected_paths: Vec<PathBuf> = explorer_state
+                .selected_paths
+                .iter()
+                .filter(|p| !p.is_dir())
+                .cloned()
+                .collect();
+
+            if !selected_paths.is_empty() {
+                action = Some(ItemViewerAction::OpenWithDefault(selected_paths));
+            }
+
+            // Optionally handle directories separately:
+            for dir_path in explorer_state.selected_paths.iter().filter(|p| p.is_dir()) {
+                action = Some(ItemViewerAction::Open(dir_path.clone()));
             }
         }
-
-        // 🔥 Ctrl + A → Select All
         if i.modifiers.command && i.key_pressed(egui::Key::A) {
             action = Some(ItemViewerAction::SelectAll);
         }
-
-        // 🗑 Delete
         if i.key_pressed(egui::Key::Delete) {
             let paths: Vec<PathBuf> = if !explorer_state.selected_paths.is_empty() {
                 explorer_state.selected_paths.iter().cloned().collect()
-            } else if let Some(selected) = &explorer_state.selected_path {
+            } else if let Some(selected) = explorer_state.selected_paths.iter().next() {
                 vec![selected.clone()]
             } else if !files.is_empty() {
                 vec![files[0].path.clone()]
@@ -1207,7 +1178,6 @@ fn draw_item_viewer_header(
     header: &mut egui_extras::TableRow<'_, '_>,
     is_drive_view: bool,
     files: &Vec<FileItem>,
-    // selected_paths: &HashSet<PathBuf>,
     sort_column: SortColumn,
     sort_ascending: bool,
     palette: &crate::gui::theme::ThemePalette,
@@ -1215,10 +1185,8 @@ fn draw_item_viewer_header(
 ) -> Option<ItemViewerAction> {
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let mut action: Option<ItemViewerAction> = None;
-    // Checkbox column (only show for non-drive views)
     if !is_drive_view {
         header.col(|ui| {
-            // Add a small checkbox in header for select all functionality
             let mut all_selected = files
                 .iter()
                 .all(|f| explorer_state.selected_paths.contains(&f.path));
@@ -1227,10 +1195,8 @@ fn draw_item_viewer_header(
                 apply_checkbox_colors(ui, palette, all_selected);
                 if ui.checkbox(&mut all_selected, "").clicked() {
                     if all_selected {
-                        // Select all
                         action = Some(ItemViewerAction::SelectAll);
                     } else {
-                        // Deselect all
                         action = Some(ItemViewerAction::DeselectAll);
                     }
                 }
@@ -1238,7 +1204,6 @@ fn draw_item_viewer_header(
         });
     }
 
-    // Name column
     header.col(|ui| {
         let (label, arrow) = match sort_column {
             SortColumn::Name => (
@@ -1266,7 +1231,6 @@ fn draw_item_viewer_header(
         }
     });
 
-    // Type column
     header.col(|ui| {
         let (label, arrow) = match sort_column {
             SortColumn::Type => (
@@ -1294,7 +1258,6 @@ fn draw_item_viewer_header(
         }
     });
 
-    // Size column
     header.col(|ui| {
         let (label, arrow) = match sort_column {
             SortColumn::Size => (
@@ -1325,7 +1288,6 @@ fn draw_item_viewer_header(
         }
     });
 
-    // Usage / Modified column
     if is_drive_view {
         header.col(|ui| {
             ui.add(
@@ -1367,7 +1329,6 @@ fn draw_item_viewer_header(
             }
         });
 
-        // Created column
         header.col(|ui| {
             let (label, arrow) = match sort_column {
                 SortColumn::Created => (
@@ -1412,8 +1373,9 @@ fn handle_keyboard_navigation(
     let mut action: Option<ItemViewerAction> = None;
 
     let current_index = explorer_state
-        .selected_path
-        .as_ref()
+        .selected_paths
+        .iter()
+        .next()
         .and_then(|selected| filtered_files.iter().position(|f| &f.path == selected));
 
     // 🔥 IMPORTANT FIX:
@@ -1504,4 +1466,60 @@ fn handle_keyboard_navigation(
     }
 
     action
+}
+
+fn handle_row_click(
+    row_idx: usize,
+    file: &FileItem,
+    modifiers: egui::Modifiers,
+    filtered_files: &[FileItem],
+    drag_state: &DragState,
+    explorer_state: &mut ExplorerState,
+) -> Option<ItemViewerAction> {
+    if drag_state.active {
+        return None;
+    }
+
+    if modifiers.shift {
+        if let Some(anchor_idx) = explorer_state.selection_anchor {
+            let current_idx = row_idx;
+            let range_start = anchor_idx.min(current_idx);
+            let range_end = anchor_idx.max(current_idx);
+
+            let range_paths: Vec<PathBuf> = filtered_files[range_start..=range_end]
+                .iter()
+                .map(|f| f.path.clone())
+                .collect();
+
+            explorer_state.selection_focus = Some(current_idx);
+            return Some(ItemViewerAction::RangeSelect(range_paths));
+        } else {
+            explorer_state.selection_anchor = Some(row_idx);
+            explorer_state.selection_focus = Some(row_idx);
+            return Some(ItemViewerAction::Select(file.path.clone()));
+        }
+    } else if modifiers.ctrl {
+        if !explorer_state.selected_paths.contains(&file.path) {
+            explorer_state.selected_paths.insert(file.path.clone());
+        }
+        explorer_state.selection_anchor = Some(row_idx);
+        explorer_state.selection_focus = Some(row_idx);
+
+        return Some(ItemViewerAction::Select(file.path.clone()));
+    } else {
+        let is_single_selected = explorer_state.selected_paths.len() == 1
+            && explorer_state.selected_paths.contains(&file.path);
+
+        if is_single_selected {
+            return Some(if file.is_dir {
+                ItemViewerAction::Open(file.path.clone())
+            } else {
+                ItemViewerAction::OpenWithDefault(vec![file.path.clone()])
+            });
+        } else {
+            explorer_state.selection_anchor = Some(row_idx);
+            explorer_state.selection_focus = Some(row_idx);
+            return Some(ItemViewerAction::ReplaceSelection(file.path.clone()));
+        }
+    }
 }

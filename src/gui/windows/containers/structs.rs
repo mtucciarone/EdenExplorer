@@ -6,10 +6,10 @@ use std::path::PathBuf;
 
 #[derive(Default)]
 pub struct ExplorerState {
-    pub selected_path: Option<PathBuf>,
     pub selected_paths: HashSet<PathBuf>,
     pub selection_anchor: Option<usize>,
-    pub selection_focus: Option<usize>
+    pub selection_focus: Option<usize>,
+    pub newly_created_path: Option<PathBuf>, // new folder or file
 }
 
 #[derive(Clone)]
