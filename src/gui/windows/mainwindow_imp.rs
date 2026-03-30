@@ -16,12 +16,10 @@ use crate::gui::windows::containers::structs::{
     FavoriteItem, ItemViewerFolderSizeState, RenameState, SidebarAction, TabState, TabbarAction,
     TabsAction, TopbarAction,
 };
-use crate::gui::windows::customizetheme::{
-    draw_theme_customizer,
-};
-use crate::gui::windows::enums::{ThemeCustomizerAction, SettingsAction};
-use crate::gui::windows::structs::{ThemeCustomizer, Navigation};
-use crate::gui::windows::settings::{draw_settings_window};
+use crate::gui::windows::customizetheme::draw_theme_customizer;
+use crate::gui::windows::enums::{SettingsAction, ThemeCustomizerAction};
+use crate::gui::windows::settings::draw_settings_window;
+use crate::gui::windows::structs::{Navigation, ThemeCustomizer};
 use crossbeam_channel::Receiver;
 use crossbeam_channel::{Sender, unbounded};
 use eframe::egui;
@@ -232,7 +230,12 @@ impl MainWindow {
         }
 
         let path = self.current_nav().current.clone();
-        if self.sidebar_state.favorites.iter().any(|fav| fav.path == path) {
+        if self
+            .sidebar_state
+            .favorites
+            .iter()
+            .any(|fav| fav.path == path)
+        {
             return;
         }
 
@@ -241,7 +244,9 @@ impl MainWindow {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| path.display().to_string());
 
-        self.sidebar_state.favorites.push(FavoriteItem { path, label });
+        self.sidebar_state
+            .favorites
+            .push(FavoriteItem { path, label });
         self.persist_favorites();
     }
 
@@ -343,7 +348,8 @@ impl MainWindow {
     pub fn paste_clipboard_native(&mut self) -> windows::core::Result<()> {
         use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
         use windows::Win32::UI::Shell::{
-            FOF_ALLOWUNDO, FOF_RENAMEONCOLLISION, FOF_NOCONFIRMMKDIR, FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
+            FOF_ALLOWUNDO, FOF_NOCONFIRMMKDIR, FOF_RENAMEONCOLLISION, FileOperation,
+            IFileOperation, IShellItem, SHCreateItemFromParsingName,
         };
         use windows::core::HSTRING;
 
@@ -357,7 +363,8 @@ impl MainWindow {
         unsafe {
             let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
 
-            file_op.SetOperationFlags(FOF_ALLOWUNDO | FOF_RENAMEONCOLLISION | FOF_NOCONFIRMMKDIR)?;
+            file_op
+                .SetOperationFlags(FOF_ALLOWUNDO | FOF_RENAMEONCOLLISION | FOF_NOCONFIRMMKDIR)?;
 
             let target_item: IShellItem = SHCreateItemFromParsingName(
                 &HSTRING::from(self.current_nav().current.to_string_lossy().to_string()),
@@ -638,7 +645,8 @@ impl MainWindow {
                 self.sidebar_state.favorites.retain(|fav| fav.path != path);
                 self.persist_favorites();
                 if self
-                    .sidebar_state.item_clicked
+                    .sidebar_state
+                    .item_clicked
                     .as_ref()
                     .map(|p| p == &path)
                     .unwrap_or(false)

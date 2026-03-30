@@ -1,4 +1,4 @@
-use std::collections::{HashSet};
+use std::collections::HashSet;
 use std::time::Instant;
 
 use crate::gui::windows::containers::enums::TabbarNavAction;

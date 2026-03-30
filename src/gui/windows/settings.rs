@@ -1,7 +1,7 @@
 use crate::core::{fs::MY_PC_PATH, indexer::WindowSizeMode};
 use crate::gui::theme::ThemePalette;
-use crate::gui::windows::structs::{AppSettings, SettingsWindow};
 use crate::gui::windows::enums::SettingsAction;
+use crate::gui::windows::structs::{AppSettings, SettingsWindow};
 use eframe::egui;
 use egui_phosphor::regular;
 use std::path::PathBuf;

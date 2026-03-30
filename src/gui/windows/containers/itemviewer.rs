@@ -2,7 +2,8 @@ use crate::core::fs::FileItem;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::{ThemePalette, apply_checkbox_colors};
 use crate::gui::utils::{
-    SortColumn, clear_clipboard_files, draw_object_drag_ghost, drive_usage_bar, format_size, fuzzy_match, get_clipboard_files, get_file_type_name, is_clipboard_cut, truncate_item_text
+    SortColumn, clear_clipboard_files, draw_object_drag_ghost, drive_usage_bar, format_size,
+    fuzzy_match, get_clipboard_files, get_file_type_name, is_clipboard_cut, truncate_item_text,
 };
 use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
 use crate::gui::windows::containers::structs::{
@@ -746,13 +747,7 @@ fn handle_draw_col_name(
     let text_width = available_width - text_offset_x;
     let color = get_text_color(is_selected, is_cut, palette);
 
-    let (display_name, _) = truncate_item_text(
-        ui,
-        &file.name,
-        text_width,
-        font_id,
-        color,
-    );
+    let (display_name, _) = truncate_item_text(ui, &file.name, text_width, font_id, color);
 
     let text_pos = egui::pos2(rect.min.x + text_offset_x, rect.center().y);
 

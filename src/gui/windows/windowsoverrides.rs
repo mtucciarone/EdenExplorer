@@ -263,13 +263,14 @@ fn get_y_lparam(lparam: LPARAM) -> i32 {
 pub fn handle_draw_windows_buttons(ui: &mut egui::Ui, hwnd: Option<HWND>, palette: &ThemePalette) {
     if let Some(hwnd) = hwnd {
         if clickable_icon(ui, regular::X, palette.primary)
-        .on_hover_text(
-            egui::RichText::new("Close")
-                .size(palette.tooltip_text_size)
-                .color(palette.tooltip_text_color),
-        )
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .clicked() {
+            .on_hover_text(
+                egui::RichText::new("Close")
+                    .size(palette.tooltip_text_size)
+                    .color(palette.tooltip_text_color),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
             unsafe {
                 use windows::Win32::UI::WindowsAndMessaging::*;
                 let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
@@ -277,13 +278,14 @@ pub fn handle_draw_windows_buttons(ui: &mut egui::Ui, hwnd: Option<HWND>, palett
         }
 
         if clickable_icon(ui, regular::SQUARE, palette.primary)
-        .on_hover_text(
-            egui::RichText::new("Maximize")
-                .size(palette.tooltip_text_size)
-                .color(palette.tooltip_text_color),
-        )
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .clicked() {
+            .on_hover_text(
+                egui::RichText::new("Maximize")
+                    .size(palette.tooltip_text_size)
+                    .color(palette.tooltip_text_color),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
             unsafe {
                 use windows::Win32::UI::WindowsAndMessaging::*;
                 let mut placement = WINDOWPLACEMENT {
@@ -302,13 +304,14 @@ pub fn handle_draw_windows_buttons(ui: &mut egui::Ui, hwnd: Option<HWND>, palett
         }
 
         if clickable_icon(ui, regular::MINUS, palette.primary)
-        .on_hover_text(
-            egui::RichText::new("Minimize")
-                .size(palette.tooltip_text_size)
-                .color(palette.tooltip_text_color),
-        )
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .clicked() {
+            .on_hover_text(
+                egui::RichText::new("Minimize")
+                    .size(palette.tooltip_text_size)
+                    .color(palette.tooltip_text_color),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
             unsafe {
                 use windows::Win32::UI::WindowsAndMessaging::*;
                 let _ = ShowWindow(hwnd, SW_MINIMIZE);

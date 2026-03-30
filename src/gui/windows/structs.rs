@@ -1,9 +1,9 @@
-use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
+use crate::core::indexer::WindowSizeMode;
 use crate::core::networkdevices::NetworkDevicesState;
 use crate::gui::theme::{ThemeMode, ThemePalette};
-use crate::core::{indexer::WindowSizeMode};
 use crate::gui::windows::containers::structs::FavoriteItem;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Default)]
 pub struct AboutWindow {
@@ -39,7 +39,6 @@ pub struct AppSettings {
     pub window_size_mode: WindowSizeMode,
 }
 
-
 #[derive(Default)]
 pub struct SettingsWindow {
     pub open: bool,
@@ -48,13 +47,12 @@ pub struct SettingsWindow {
     pub show_reset_favorites_confirmation: bool,
 }
 
-
 pub struct SidebarState {
     pub favorites: Vec<FavoriteItem>,
     pub item_clicked: Option<PathBuf>,
     pub dragging_favorite: Option<usize>,
     pub sidebar_default_width: f32,
-    pub network_state: NetworkDevicesState
+    pub network_state: NetworkDevicesState,
 }
 
 impl Default for SidebarState {

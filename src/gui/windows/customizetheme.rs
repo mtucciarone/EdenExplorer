@@ -1,7 +1,7 @@
-use eframe::egui;
 use crate::gui::theme::{ThemeMode, ThemePalette, get_palette};
-use crate::gui::windows::structs::{CustomTheme, ThemeCustomizer};
 use crate::gui::windows::enums::ThemeCustomizerAction;
+use crate::gui::windows::structs::{CustomTheme, ThemeCustomizer};
+use eframe::egui;
 
 impl Default for CustomTheme {
     fn default() -> Self {

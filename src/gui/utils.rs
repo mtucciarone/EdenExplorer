@@ -2,13 +2,16 @@ use crate::core::fs::FileItem;
 use crate::gui::theme::ThemePalette;
 use eframe::egui::*;
 use egui_phosphor::regular::DOTS_SIX_VERTICAL;
+use lru::LruCache;
 use std::cmp::Ordering::{Greater, Less};
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::{copy, create_dir_all, read_dir};
 use std::mem::size_of;
+use std::num::NonZeroUsize;
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
+use std::sync::RwLock;
 use std::time::Instant;
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
@@ -30,9 +33,6 @@ use windows::Win32::UI::Shell::{
 };
 use windows::core::PCWSTR;
 use windows::core::Result;
-use std::sync::RwLock;
-use lru::LruCache;
-use std::num::NonZeroUsize;
 
 type TruncKey = (String, u32, u32); // (text, width_bucket, font_size_bucket)
 
@@ -697,7 +697,10 @@ fn truncate_text_binary_search(
                 buffer.push(*ch);
             }
 
-            let width = f.layout_no_wrap(buffer.clone(), font_id.clone(), color).size().x;
+            let width = f
+                .layout_no_wrap(buffer.clone(), font_id.clone(), color)
+                .size()
+                .x;
 
             if width <= target_width {
                 low = mid + 1;

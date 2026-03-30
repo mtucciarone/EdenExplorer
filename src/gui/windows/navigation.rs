@@ -1,6 +1,6 @@
 use crate::core::fs::MY_PC_PATH;
-use std::path::PathBuf;
 use crate::gui::windows::structs::Navigation;
+use std::path::PathBuf;
 
 impl Navigation {
     pub fn new(start: PathBuf) -> Self {

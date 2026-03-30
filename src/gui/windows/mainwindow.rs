@@ -11,13 +11,13 @@ use crate::gui::windows::containers::structs::{
     DragState, ExplorerState, FavoriteItem, FilterState, ItemViewerFolderSizeState, RenameState,
     SidebarAction, TabInfo, TabState,
 };
-use crate::gui::windows::structs::{
-    AboutWindow, AppSettings, Navigation, SettingsWindow, SidebarState, ThemeCustomizer
-};
 use crate::gui::windows::containers::tabs::{draw_tabbar, draw_tabs};
 use crate::gui::windows::containers::topbar::draw_topbar;
 use crate::gui::windows::mainwindow_imp::{
     handle_draw_customizetheme_window, handle_pending_actions, tab_title_for,
+};
+use crate::gui::windows::structs::{
+    AboutWindow, AppSettings, Navigation, SettingsWindow, SidebarState, ThemeCustomizer,
 };
 use crate::gui::windows::windowsoverrides::{apply_window_override, install_wndproc};
 use crossbeam_channel::Receiver;
@@ -68,7 +68,7 @@ pub struct MainWindow {
     pub(crate) size_rx: Option<Receiver<(PathBuf, u64, bool)>>,
     pub(crate) pending_size_queue: VecDeque<PathBuf>,
     pub(crate) pending_size_set: HashSet<PathBuf>,
-    pub(crate) icon_cache: Option<IconCache>,    
+    pub(crate) icon_cache: Option<IconCache>,
 }
 
 impl Default for MainWindow {
@@ -111,7 +111,7 @@ impl Default for MainWindow {
             sort_column: SortColumn::Name,
             sort_ascending: true,
             icon_cache: None,
-            
+
             file_type_cache: HashMap::new(),
             explorer_state: Default::default(),
             theme_customizer: Default::default(),
@@ -122,7 +122,7 @@ impl Default for MainWindow {
             dropped_files_pending_ui_refresh: false,
             shutdown: Arc::new(AtomicBool::new(false)),
             size_threads: Vec::new(),
-            
+
             hwnd: None,
             item_viewer_filter_state: FilterState::default(),
         };
