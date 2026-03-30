@@ -34,6 +34,7 @@ use windows::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::Shell::{SEE_MASK_INVOKEIDLIST, SHELLEXECUTEINFOW, ShellExecuteExW};
 use windows::Win32::UI::WindowsAndMessaging::*;
+use windows::Win32::Foundation::{WPARAM, LPARAM};
 use windows::{Win32::System::Com::*, Win32::UI::Shell::*, core::*};
 
 impl MainWindow {
@@ -608,6 +609,7 @@ impl MainWindow {
         if let Some(action) = tabs_action {
             if let Some(id) = action.activate {
                 self.active_tab = self.tabs.iter().position(|t| t.id == id).unwrap();
+                self.pending_tab_scroll_id = Some(id);
                 self.load_path();
             }
             if action.open_new {
@@ -624,6 +626,7 @@ impl MainWindow {
                     breadcrumb_path_error_animation_time: 0.0,
                 });
                 self.active_tab = self.tabs.len() - 1;
+                self.pending_tab_scroll_id = Some(id);
                 self.mark_tab_infos_dirty();
                 self.load_path();
             }
@@ -633,6 +636,9 @@ impl MainWindow {
                         self.tabs.remove(idx);
                         if self.active_tab >= self.tabs.len() {
                             self.active_tab = self.tabs.len() - 1;
+                        }
+                        if let Some(active_id) = self.tabs.get(self.active_tab).map(|t| t.id) {
+                            self.pending_tab_scroll_id = Some(active_id);
                         }
                         self.mark_tab_infos_dirty();
                         self.load_path();
@@ -708,8 +714,15 @@ impl MainWindow {
             }
 
             if action.about {
-                self.about_window.open = true
-                // TODO: Open about dialog
+                self.about_window.open = true;
+            }
+
+            if action.exit {
+                if let Some(hwnd) = self.hwnd {
+                    unsafe {
+                        let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
+                    }
+                }
             }
         }
     }

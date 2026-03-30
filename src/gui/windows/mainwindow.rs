@@ -69,6 +69,7 @@ pub struct MainWindow {
     pub(crate) folder_size_text_cache: HashMap<PathBuf, (u64, bool, String)>,
     pub(crate) drive_size_text_cache: HashMap<PathBuf, (u64, u64, String)>,
     pub(crate) is_loading: bool,
+    pub(crate) pending_tab_scroll_id: Option<u64>,
 
     // Sidebar Variables
     pub(crate) sidebar_state: SidebarState,
@@ -146,6 +147,7 @@ impl Default for MainWindow {
             folder_size_text_cache: HashMap::new(),
             drive_size_text_cache: HashMap::new(),
             is_loading: false,
+            pending_tab_scroll_id: None,
         };
 
         // Initialize settings window with loaded values
@@ -380,6 +382,7 @@ impl eframe::App for MainWindow {
 
                                 egui::Frame::NONE.show(ui, |ui| {
                                     ui.add_space(8.0);
+                                    let scroll_to_id = self.pending_tab_scroll_id;
                                     tabs_action =
                                         Some(draw_tabs(
                                             ui,
@@ -387,7 +390,11 @@ impl eframe::App for MainWindow {
                                             active_id,
                                             palette,
                                             self.hwnd,
+                                            scroll_to_id,
                                         ));
+                                    if scroll_to_id.is_some() {
+                                        self.pending_tab_scroll_id = None;
+                                    }
                                 });
 
                                 let container = egui::Frame::NONE

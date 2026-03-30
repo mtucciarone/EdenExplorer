@@ -18,6 +18,7 @@ pub fn draw_tabs(
     active_id: u64,
     palette: &ThemePalette,
     hwnd: Option<HWND>,
+    scroll_to_id: Option<u64>,
 ) -> TabsAction {
     let mut action: TabsAction = TabsAction::default();
     let controls_width = 64.0;
@@ -38,6 +39,7 @@ pub fn draw_tabs(
                     egui::ScrollArea::horizontal()
                         .id_salt("tabs_scroll")
                         .auto_shrink([false, true])
+                        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 for tab in tabs {
@@ -47,11 +49,14 @@ pub fn draw_tabs(
                                         egui::vec2(tab_width, 28.0),
                                         egui::Sense::click(),
                                     );
+                                    if Some(tab.id) == scroll_to_id {
+                                        resp.scroll_to_me(Some(egui::Align::Center));
+                                    }
                                     handle_draw_tab_new_allocated(
                                         ui,
                                         tab,
                                         rect,
-                                        resp,
+                                        resp.clone(),
                                         active_id,
                                         palette,
                                         &mut action,

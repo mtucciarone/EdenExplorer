@@ -5,6 +5,7 @@ use crate::core::indexer::{WindowSizeMode, load_app_settings};
 use crate::gui::windows::windowsoverrides::{get_hwnd_from_cc, set_egui_ctx};
 use eframe::{NativeOptions, egui};
 use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
+use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
 
 fn main() -> eframe::Result<()> {
     unsafe {
@@ -18,9 +19,15 @@ fn main() -> eframe::Result<()> {
         WindowSizeMode::Custom { width, height } => egui::Vec2::new(width, height),
     };
 
+    let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) } as f32;
+    let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) } as f32;
+    let pos_x = ((screen_w - window_size.x) * 0.5).max(0.0);
+    let pos_y = ((screen_h - window_size.y) * 0.5).max(0.0);
+
     let options = NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size(window_size)
+            .with_position(egui::pos2(pos_x, pos_y))
             .with_icon(icon)
             .with_title_shown(false)
             .with_decorations(false),

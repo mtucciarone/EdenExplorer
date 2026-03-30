@@ -83,6 +83,7 @@ pub struct TopbarAction {
     pub customize_theme: bool,
     pub open_settings: bool,
     pub about: bool,
+    pub exit: bool,
 }
 
 #[derive(Default)]

@@ -53,6 +53,11 @@ pub fn draw_topbar(
                             action.about = true;
                             ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
                         }
+
+                        if menu_item(ui, regular::X, "Exit", palette).clicked() {
+                            action.exit = true;
+                            ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
+                        }
                     });
                 });
         }
