@@ -12,9 +12,15 @@ impl Navigation {
     }
 
     pub fn go_to(&mut self, path: PathBuf) {
-        if self.current != path {
+        let target = if path.as_os_str().is_empty() {
+            PathBuf::from(MY_PC_PATH)
+        } else {
+            path
+        };
+
+        if self.current != target {
             self.back.push(self.current.clone());
-            self.current = path;
+            self.current = target;
             self.forward.clear();
         }
     }
@@ -39,8 +45,17 @@ impl Navigation {
             return;
         }
 
+        if self.current.as_os_str().is_empty() || !self.current.is_absolute() {
+            self.go_to(PathBuf::from(MY_PC_PATH));
+            return;
+        }
+
         if let Some(parent) = self.current.parent() {
-            self.go_to(parent.to_path_buf());
+            if parent.as_os_str().is_empty() {
+                self.go_to(PathBuf::from(MY_PC_PATH));
+            } else {
+                self.go_to(parent.to_path_buf());
+            }
         } else {
             // Drive root (e.g., "C:\\") has no parent in PathBuf.
             self.go_to(PathBuf::from(MY_PC_PATH));

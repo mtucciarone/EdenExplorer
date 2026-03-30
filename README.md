@@ -313,7 +313,6 @@ Submit a pull request with a description of your changes
 - Fix network detection in sidebar
 - Fix raw/unmounted drive detection for ISO sticks and Linux partitions
 - selection dragging box doesn't select anything
-- Opening an external drive, like an IPhone, shows "this folder is empty". trying to navigate "up" breaks the interface.
 
 ## License
 This project is FOSS, released under the MIT License.
