@@ -105,6 +105,7 @@ pub struct FilterState {
     pub last_input_time: f64,
     pub focus_requested: bool,
     pub last_query: String,
+    pub last_files_len: usize,
     pub cached_indices: Vec<usize>,
     pub dirty: bool,
 }
@@ -117,8 +118,9 @@ impl Default for FilterState {
             last_input_time: 0.0,
             focus_requested: false,
             last_query: String::new(),
+            last_files_len: 0,
             cached_indices: Vec::new(),
-            dirty: false,
+            dirty: true,
         }
     }
 }

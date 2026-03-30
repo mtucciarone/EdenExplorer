@@ -3,7 +3,7 @@ use crate::gui::icons::IconCache;
 use crate::gui::theme::{ThemePalette, apply_checkbox_colors};
 use crate::gui::utils::{
     SortColumn, clear_clipboard_files, draw_object_drag_ghost, drive_usage_bar, format_size,
-    fuzzy_match, get_clipboard_files, get_file_type_name, is_clipboard_cut, truncate_item_text,
+    fuzzy_match, get_file_type_name, truncate_item_text,
 };
 use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
 use crate::gui::windows::containers::structs::{
@@ -22,26 +22,29 @@ pub fn draw_item_viewer(
     files: &Vec<FileItem>,
     folder_sizes: &HashMap<PathBuf, ItemViewerFolderSizeState>,
     paste_enabled: bool,
+    clipboard_set: &HashSet<PathBuf>,
+    is_cut_mode: bool,
+    is_drive_view: bool,
     sort_column: SortColumn,
     sort_ascending: bool,
     icon_cache: &IconCache,
     rename_state: &mut Option<RenameState>,
     palette: &ThemePalette,
     file_type_cache: &mut HashMap<String, String>,
+    file_size_text_cache: &mut HashMap<PathBuf, (u64, String)>,
+    folder_size_text_cache: &mut HashMap<PathBuf, (u64, bool, String)>,
+    drive_size_text_cache: &mut HashMap<PathBuf, (u64, u64, String)>,
     external_drag_to_internal_hover: &mut bool,
     tabbar_action: &mut Option<TabbarAction>,
     drag_state: &mut DragState,
     filter_state: &mut FilterState,
     explorer_state: &mut ExplorerState,
 ) -> Option<ItemViewerAction> {
-    let clipboard_paths = get_clipboard_files().unwrap_or_default();
-    let is_cut_mode = is_clipboard_cut();
     let mut hovered_drop_target: Option<PathBuf> = None;
     let mut hovered_drop_target_rect: Option<egui::Rect> = None;
-    let clipboard_set: HashSet<PathBuf> = clipboard_paths.into_iter().collect();
     draw_external_to_internal_drag_overlay(ui, *external_drag_to_internal_hover);
 
-    let layout = compute_layout(ui, files);
+    let layout = compute_layout(ui, is_drive_view);
 
     let mut action: Option<ItemViewerAction> = None;
     let mut any_row_hovered = false;
@@ -54,7 +57,7 @@ pub fn draw_item_viewer(
 
     if filter_state.dirty
         || filter_state.query != filter_state.last_query
-        || filter_state.cached_indices.is_empty()
+        || filter_state.last_files_len != files.len()
     {
         filter_state.cached_indices = files
             .iter()
@@ -64,6 +67,7 @@ pub fn draw_item_viewer(
             .collect();
 
         filter_state.last_query = filter_state.query.clone();
+        filter_state.last_files_len = files.len();
         filter_state.dirty = false;
     }
 
@@ -103,6 +107,7 @@ pub fn draw_item_viewer(
         filter_state,
         drag_state,
         explorer_state,
+        is_cut_mode,
     ) {
         action = Some(global_action);
     }
@@ -196,10 +201,10 @@ pub fn draw_item_viewer(
             .body(|body| {
                 let hovered_drop_target = &mut hovered_drop_target;
                 let filtered_indices = &filter_state.cached_indices;
+                let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
                 body.rows(layout.row_height, filtered_indices.len(), |mut row| {
                     let idx = row.index();
                     let file = &files[filtered_indices[idx]];
-                    let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
 
                     // Determine if this row is selected
                     let is_selected = explorer_state.selected_paths.contains(&file.path);
@@ -263,6 +268,9 @@ pub fn draw_item_viewer(
                             is_cut,
                             palette,
                             &font_id,
+                            file_size_text_cache,
+                            folder_size_text_cache,
+                            drive_size_text_cache,
                         );
                     });
 
@@ -382,7 +390,6 @@ pub fn draw_item_viewer(
                 });
                 if let Some((_, is_dir, path, rect)) = best_hovered_row.take() {
                     if is_dir {
-                        println!("Hovered drop target: {}", path.display());
                         current_hovered_drop_target = Some(path);
                         current_hovered_drop_target_rect = Some(rect);
                     }
@@ -436,13 +443,11 @@ pub fn draw_item_viewer(
             drag_state.source_items.clear();
         }
 
-        let input_state = ui.ctx().input(|i| i.clone());
-
         if let Some(a) = handle_keyboard_navigation(
+            ui.ctx(),
             &filter_state.cached_indices,
             files,
             explorer_state,
-            &input_state,
         ) {
             action = Some(a);
         }
@@ -450,13 +455,10 @@ pub fn draw_item_viewer(
         // --- Drag and Drop Detection ---
         // Check for external drag and drop
 
-        if !input_state.raw.dropped_files.is_empty() {
-            let dropped_paths: Vec<PathBuf> = input_state
-                .raw
-                .dropped_files
-                .iter()
-                .filter_map(|file| file.path.clone())
-                .collect();
+        if ui.ctx().input(|i| !i.raw.dropped_files.is_empty()) {
+            let dropped_paths: Vec<PathBuf> = ui
+                .ctx()
+                .input(|i| i.raw.dropped_files.iter().filter_map(|f| f.path.clone()).collect());
 
             if !dropped_paths.is_empty() {
                 action = Some(ItemViewerAction::FilesDropped(dropped_paths));
@@ -464,11 +466,9 @@ pub fn draw_item_viewer(
         }
 
         // Update drag hover state
-        *external_drag_to_internal_hover = input_state
-            .raw
-            .hovered_files
-            .iter()
-            .any(|file| file.path.is_some());
+        *external_drag_to_internal_hover =
+            ui.ctx()
+                .input(|i| i.raw.hovered_files.iter().any(|f| f.path.is_some()));
 
         // 👇 Fill remaining space so empty area is interactable
         let remaining_rect = ui.available_rect_before_wrap();
@@ -521,15 +521,13 @@ fn draw_external_to_internal_drag_overlay(
     }
 }
 
-fn compute_layout(ui: &egui::Ui, files: &Vec<FileItem>) -> ItemViewerLayout {
+fn compute_layout(ui: &egui::Ui, is_drive_view: bool) -> ItemViewerLayout {
     let text_height = 14.0;
     let row_padding = 6.0;
     let row_height = text_height + row_padding;
 
     let header_padding = 0.0;
     let header_height = row_height + header_padding;
-
-    let is_drive_view = files.iter().any(|f| f.total_space.is_some());
 
     ItemViewerLayout {
         row_height,
@@ -774,13 +772,11 @@ fn handle_draw_col_type(
     let color = get_text_color(is_selected, is_cut, palette);
 
     let type_text = if file.is_dir {
-        "Folder".to_string()
+        "Folder"
+    } else if let Some(ext) = file.path.extension().and_then(|ext| ext.to_str()) {
+        get_file_type_name(ext, file_type_cache)
     } else {
-        file.path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .map(|ext| get_file_type_name(ext, file_type_cache))
-            .unwrap_or_else(|| get_file_type_name("", file_type_cache))
+        get_file_type_name("", file_type_cache)
     };
 
     let mut rich_text = egui::RichText::new(type_text)
@@ -808,20 +804,42 @@ fn handle_draw_col_size(
     is_cut: bool,
     palette: &ThemePalette,
     font_id: &egui::FontId,
+    file_size_text_cache: &mut HashMap<PathBuf, (u64, String)>,
+    folder_size_text_cache: &mut HashMap<PathBuf, (u64, bool, String)>,
+    drive_size_text_cache: &mut HashMap<PathBuf, (u64, u64, String)>,
 ) {
     let text_color = get_text_color(is_selected, is_cut, palette);
 
     // --- DRIVE VIEW (free / total) ---
     if let (Some(total), Some(free)) = (file.total_space, file.free_space) {
         let gb = 1024.0 * 1024.0 * 1024.0;
+        let key = &file.path;
+        let text = if let Some((cached_total, cached_free, cached_text)) =
+            drive_size_text_cache.get(key)
+        {
+            if *cached_total == total && *cached_free == free {
+                cached_text.as_str()
+            } else {
+                ""
+            }
+        } else {
+            ""
+        };
+
+        let display_text = if text.is_empty() {
+            let formatted = format!("{:.1} / {:.1} GB", free as f64 / gb, total as f64 / gb);
+            drive_size_text_cache.insert(file.path.clone(), (total, free, formatted));
+            drive_size_text_cache
+                .get(key)
+                .map(|(_, _, t)| t.as_str())
+                .unwrap_or("")
+        } else {
+            text
+        };
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.label(
-                egui::RichText::new(format!(
-                    "{:.1} / {:.1} GB",
-                    free as f64 / gb,
-                    total as f64 / gb
-                ))
+                egui::RichText::new(display_text)
                 .size(palette.text_size)
                 .color(text_color)
                 .font(font_id.clone()),
@@ -834,12 +852,25 @@ fn handle_draw_col_size(
     // --- FOLDER SIZE ---
     if file.is_dir {
         if let Some(state) = folder_sizes.get(&file.path) {
-            let label = format_size(state.bytes);
-
-            let text = if state.done {
-                label
-            } else {
-                format!("⏳ {}", label)
+            let cached = folder_size_text_cache.get(&file.path);
+            let text = match cached {
+                Some((bytes, done, value)) if *bytes == state.bytes && *done == state.done => {
+                    value.as_str()
+                }
+                _ => {
+                    let label = format_size(state.bytes);
+                    let value = if state.done {
+                        label
+                    } else {
+                        format!("⏳ {}", label)
+                    };
+                    folder_size_text_cache
+                        .insert(file.path.clone(), (state.bytes, state.done, value));
+                    folder_size_text_cache
+                        .get(&file.path)
+                        .map(|(_, _, v)| v.as_str())
+                        .unwrap_or("")
+                }
             };
 
             ui.label(
@@ -857,8 +888,20 @@ fn handle_draw_col_size(
 
     // --- FILE SIZE ---
     if let Some(size) = file.file_size {
+        let cached = file_size_text_cache.get(&file.path);
+        let text = match cached {
+            Some((cached_size, value)) if *cached_size == size => value.as_str(),
+            _ => {
+                let value = format_size(size);
+                file_size_text_cache.insert(file.path.clone(), (size, value));
+                file_size_text_cache
+                    .get(&file.path)
+                    .map(|(_, v)| v.as_str())
+                    .unwrap_or("")
+            }
+        };
         ui.label(
-            egui::RichText::new(format_size(size))
+            egui::RichText::new(text)
                 .size(palette.text_size)
                 .color(text_color)
                 .font(font_id.clone()),
@@ -1008,16 +1051,21 @@ fn handle_editing_file_name(
 
         visuals.override_text_color = Some(get_row_color(is_selected, palette));
 
+        let edit_id = ui.id().with("rename_input").with(&file.path);
         let edit_response = ui.add(
             egui::TextEdit::singleline(&mut rename_state.new_name)
+                .id(edit_id)
                 .desired_width(f32::INFINITY)
                 .font(FontId::new(palette.text_size, FontFamily::Proportional)),
         );
 
         // ✅ Focus once
         if rename_state.should_focus {
+            ui.memory_mut(|mem| mem.request_focus(edit_id));
             edit_response.request_focus();
-            rename_state.should_focus = false;
+            if edit_response.has_focus() {
+                rename_state.should_focus = false;
+            }
         }
 
         // ✅ Input handling (same pattern as tabs)
@@ -1054,6 +1102,7 @@ fn handle_global_actions(
     filter_state: &mut FilterState,
     drag_state: &mut DragState,
     explorer_state: &mut ExplorerState,
+    is_cut_mode: bool,
 ) -> Option<ItemViewerAction> {
     let filtered_indices = &filter_state.cached_indices;
     let mut action: Option<ItemViewerAction> = None;
@@ -1069,7 +1118,7 @@ fn handle_global_actions(
         return None;
     }
 
-    if is_clipboard_cut() {
+    if is_cut_mode {
         let cancel_called = ui.input(|i| i.key_pressed(egui::Key::Escape));
         if cancel_called {
             clear_clipboard_files();
@@ -1415,10 +1464,10 @@ fn draw_item_viewer_header(
 }
 
 fn handle_keyboard_navigation(
+    ctx: &egui::Context,
     filtered_indices: &[usize],
     files: &Vec<FileItem>,
     explorer_state: &mut ExplorerState,
-    input_state: &egui::InputState,
 ) -> Option<ItemViewerAction> {
     if filtered_indices.is_empty() {
         return None;
@@ -1439,7 +1488,7 @@ fn handle_keyboard_navigation(
     let current_idx = match current_index {
         Some(idx) => idx,
         None => {
-            if input_state.key_pressed(egui::Key::ArrowDown) {
+            if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
                 let first = files[filtered_indices[0]].path.clone();
 
                 explorer_state.selection_anchor = Some(0);
@@ -1448,7 +1497,7 @@ fn handle_keyboard_navigation(
                 return Some(ItemViewerAction::ReplaceSelection(first));
             }
 
-            if input_state.key_pressed(egui::Key::ArrowUp) {
+            if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
                 let last_idx = filtered_indices.len() - 1;
                 let last = files[filtered_indices[last_idx]].path.clone();
 
@@ -1463,17 +1512,19 @@ fn handle_keyboard_navigation(
     };
 
     // 🔥 SHIFT RANGE
-    if input_state.modifiers.shift {
+    if ctx.input(|i| i.modifiers.shift) {
         let anchor = explorer_state.selection_anchor.unwrap_or(current_idx);
         let focus = explorer_state.selection_focus.unwrap_or(current_idx);
 
         let mut new_focus = focus;
 
-        if input_state.key_pressed(egui::Key::ArrowDown) && focus < filtered_indices.len() - 1 {
+        if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown))
+            && focus < filtered_indices.len() - 1
+        {
             new_focus += 1;
         }
 
-        if input_state.key_pressed(egui::Key::ArrowUp) && focus > 0 {
+        if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) && focus > 0 {
             new_focus -= 1;
         }
 
@@ -1494,12 +1545,13 @@ fn handle_keyboard_navigation(
     else {
         let mut new_idx = current_idx;
 
-        if input_state.key_pressed(egui::Key::ArrowDown) && current_idx < filtered_indices.len() - 1
+        if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown))
+            && current_idx < filtered_indices.len() - 1
         {
             new_idx += 1;
         }
 
-        if input_state.key_pressed(egui::Key::ArrowUp) && current_idx > 0 {
+        if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) && current_idx > 0 {
             new_idx -= 1;
         }
 

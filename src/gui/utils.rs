@@ -387,44 +387,43 @@ pub fn clipboard_has_files() -> bool {
     has
 }
 
-pub fn get_file_type_name(ext: &str, cache: &mut HashMap<String, String>) -> String {
-    // Check cache first
-    if let Some(cached) = cache.get(ext) {
-        return cached.clone();
+pub fn get_file_type_name<'a>(ext: &str, cache: &'a mut HashMap<String, String>) -> &'a str {
+    use std::collections::hash_map::Entry;
+
+    match cache.entry(ext.to_string()) {
+        Entry::Occupied(entry) => entry.into_mut().as_str(),
+        Entry::Vacant(entry) => {
+            // Ensure extension starts with "."
+            let ext_formatted = if ext.starts_with('.') {
+                ext.to_string()
+            } else {
+                format!(".{}", ext)
+            };
+
+            let wide: Vec<u16> = OsStr::new(&ext_formatted)
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect();
+
+            let mut info = SHFILEINFOW::default();
+
+            let _result = unsafe {
+                SHGetFileInfoW(
+                    PCWSTR(wide.as_ptr()),
+                    FILE_ATTRIBUTE_NORMAL,
+                    Some(&mut info),
+                    size_of::<SHFILEINFOW>() as u32,
+                    SHGFI_TYPENAME | SHGFI_USEFILEATTRIBUTES,
+                )
+            };
+
+            // Convert UTF-16 buffer to Rust String
+            let len = info.szTypeName.iter().position(|&c| c == 0).unwrap_or(0);
+            let type_name = String::from_utf16_lossy(&info.szTypeName[..len]);
+
+            entry.insert(type_name).as_str()
+        }
     }
-
-    // Ensure extension starts with "."
-    let ext_formatted = if ext.starts_with('.') {
-        ext.to_string()
-    } else {
-        format!(".{}", ext)
-    };
-
-    let wide: Vec<u16> = OsStr::new(&ext_formatted)
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-
-    let mut info = SHFILEINFOW::default();
-
-    let _result = unsafe {
-        SHGetFileInfoW(
-            PCWSTR(wide.as_ptr()),
-            FILE_ATTRIBUTE_NORMAL,
-            Some(&mut info),
-            size_of::<SHFILEINFOW>() as u32,
-            SHGFI_TYPENAME | SHGFI_USEFILEATTRIBUTES,
-        )
-    };
-
-    // Convert UTF-16 buffer to Rust String
-    let len = info.szTypeName.iter().position(|&c| c == 0).unwrap_or(0);
-    let type_name = String::from_utf16_lossy(&info.szTypeName[..len]);
-
-    // Cache the result
-    cache.insert(ext.to_string(), type_name.clone());
-
-    type_name
 }
 
 pub fn show_copy_move_dialog(sources: Vec<PathBuf>, destination: &PathBuf) -> Result<()> {

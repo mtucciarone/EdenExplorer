@@ -5,7 +5,8 @@ use egui::Context;
 use egui_phosphor::regular;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::sync::RwLock;
-use windows::Win32::Foundation::HWND;
+use std::sync::atomic::{AtomicBool, Ordering};
+use windows::Win32::Foundation::{HWND};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Dwm::*;
 use windows::Win32::Graphics::Gdi::{
@@ -13,6 +14,9 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::WindowsAndMessaging::*;
+use windows::Win32::System::DataExchange::{
+    AddClipboardFormatListener, RemoveClipboardFormatListener,
+};
 
 static mut ORIGINAL_WNDPROC: Option<WNDPROC> = None;
 const MIN_WIDTH: i32 = 600;
@@ -34,8 +38,18 @@ lazy_static::lazy_static! {
     static ref EGUI_CTX: RwLock<Option<Context>> = RwLock::new(None);
 }
 
+static CLIPBOARD_DIRTY: AtomicBool = AtomicBool::new(true);
+
 pub fn set_egui_ctx(ctx: &Context) {
     *EGUI_CTX.write().unwrap() = Some(ctx.clone());
+}
+
+pub fn consume_clipboard_dirty() -> bool {
+    CLIPBOARD_DIRTY.swap(false, Ordering::AcqRel)
+}
+
+pub fn mark_clipboard_dirty() {
+    CLIPBOARD_DIRTY.store(true, Ordering::Release);
 }
 
 fn color32_to_dwm(color: egui::Color32) -> u32 {
@@ -135,6 +149,8 @@ pub unsafe fn install_wndproc(hwnd: HWND) {
             GWLP_WNDPROC,
             custom_wndproc as *const () as isize,
         )));
+        let _ = AddClipboardFormatListener(hwnd);
+        mark_clipboard_dirty();
     }
 }
 
@@ -145,6 +161,18 @@ unsafe extern "system" fn custom_wndproc(
     lparam: LPARAM,
 ) -> LRESULT {
     match msg {
+        WM_CLIPBOARDUPDATE => {
+            mark_clipboard_dirty();
+            LRESULT(0)
+        }
+        WM_NCDESTROY => {
+            let _ = RemoveClipboardFormatListener(hwnd);
+            if let Some(orig) = ORIGINAL_WNDPROC {
+                CallWindowProcW(orig, hwnd, msg, wparam, lparam)
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        }
         WM_GETMINMAXINFO => {
             let info = &mut *(lparam.0 as *mut MINMAXINFO);
 

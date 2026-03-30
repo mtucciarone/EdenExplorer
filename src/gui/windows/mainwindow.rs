@@ -3,7 +3,6 @@ use crate::core::indexer::{load_app_settings, load_favorites};
 use crate::gui::icons::IconCache;
 use crate::gui::theme::{ThemeMode, apply_theme, get_palette};
 use crate::gui::utils::SortColumn;
-use crate::gui::utils::clipboard_has_files;
 use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::itemviewer::draw_item_viewer;
 use crate::gui::windows::containers::sidebar::draw_sidebar;
@@ -19,7 +18,9 @@ use crate::gui::windows::mainwindow_imp::{
 use crate::gui::windows::structs::{
     AboutWindow, AppSettings, Navigation, SettingsWindow, SidebarState, ThemeCustomizer,
 };
-use crate::gui::windows::windowsoverrides::{apply_window_override, install_wndproc};
+use crate::gui::windows::windowsoverrides::{
+    apply_window_override, consume_clipboard_dirty, install_wndproc,
+};
 use crossbeam_channel::Receiver;
 use crossbeam_channel::Sender;
 use eframe::egui;
@@ -58,6 +59,15 @@ pub struct MainWindow {
     pub(crate) file_type_cache: HashMap<String, String>,
     pub(crate) explorer_state: ExplorerState,
     pub(crate) item_viewer_filter_state: FilterState,
+    pub(crate) clipboard_paths: Vec<PathBuf>,
+    pub(crate) clipboard_set: HashSet<PathBuf>,
+    pub(crate) clipboard_is_cut: bool,
+    pub(crate) clipboard_has_files: bool,
+    pub(crate) tab_infos_cache: Vec<TabInfo>,
+    pub(crate) tab_infos_dirty: bool,
+    pub(crate) file_size_text_cache: HashMap<PathBuf, (u64, String)>,
+    pub(crate) folder_size_text_cache: HashMap<PathBuf, (u64, bool, String)>,
+    pub(crate) drive_size_text_cache: HashMap<PathBuf, (u64, u64, String)>,
 
     // Sidebar Variables
     pub(crate) sidebar_state: SidebarState,
@@ -125,6 +135,15 @@ impl Default for MainWindow {
 
             hwnd: None,
             item_viewer_filter_state: FilterState::default(),
+            clipboard_paths: Vec::new(),
+            clipboard_set: HashSet::new(),
+            clipboard_is_cut: false,
+            clipboard_has_files: false,
+            tab_infos_cache: Vec::new(),
+            tab_infos_dirty: true,
+            file_size_text_cache: HashMap::new(),
+            folder_size_text_cache: HashMap::new(),
+            drive_size_text_cache: HashMap::new(),
         };
 
         // Initialize settings window with loaded values
@@ -162,6 +181,27 @@ impl MainWindow {
 
         app.hwnd = hwnd;
         app
+    }
+
+    pub fn mark_tab_infos_dirty(&mut self) {
+        self.tab_infos_dirty = true;
+    }
+
+    fn rebuild_tab_infos(&mut self) {
+        self.tab_infos_cache = self
+            .tabs
+            .iter()
+            .map(|tab| TabInfo {
+                id: tab.id,
+                title: tab_title_for(&tab.nav),
+                full_path: if tab.nav.is_root() {
+                    PathBuf::from(MY_PC_PATH)
+                } else {
+                    tab.nav.current.clone()
+                },
+            })
+            .collect();
+        self.tab_infos_dirty = false;
     }
 }
 
@@ -205,6 +245,13 @@ impl eframe::App for MainWindow {
         if self.theme_dirty {
             apply_theme(ctx, self.theme);
             self.theme_dirty = false;
+        }
+
+        if consume_clipboard_dirty() {
+            self.clipboard_paths = crate::gui::utils::get_clipboard_files().unwrap_or_default();
+            self.clipboard_is_cut = crate::gui::utils::is_clipboard_cut();
+            self.clipboard_has_files = !self.clipboard_paths.is_empty();
+            self.clipboard_set = self.clipboard_paths.iter().cloned().collect();
         }
 
         // Increase scroll speed for the explorer view.
@@ -322,25 +369,23 @@ impl eframe::App for MainWindow {
                                 let old_spacing = ui.spacing().item_spacing;
                                 ui.spacing_mut().item_spacing.y = 0.0;
 
-                                let tab_infos: Vec<TabInfo> = self
-                                    .tabs
-                                    .iter()
-                                    .map(|tab| TabInfo {
-                                        id: tab.id,
-                                        title: tab_title_for(&tab.nav),
-                                        full_path: if tab.nav.is_root() {
-                                            PathBuf::from(MY_PC_PATH)
-                                        } else {
-                                            tab.nav.current.clone()
-                                        },
-                                    })
-                                    .collect();
+                                if self.tab_infos_dirty
+                                    || self.tab_infos_cache.len() != self.tabs.len()
+                                {
+                                    self.rebuild_tab_infos();
+                                }
                                 let active_id = self.tabs[self.active_tab].id;
 
                                 egui::Frame::NONE.show(ui, |ui| {
                                     ui.add_space(8.0);
                                     tabs_action =
-                                        Some(draw_tabs(ui, &tab_infos, active_id, palette, self.hwnd));
+                                        Some(draw_tabs(
+                                            ui,
+                                            &self.tab_infos_cache,
+                                            active_id,
+                                            palette,
+                                            self.hwnd,
+                                        ));
                                 });
 
                                 let container = egui::Frame::NONE
@@ -349,7 +394,7 @@ impl eframe::App for MainWindow {
                                     .inner_margin(egui::Margin::symmetric(10, 8));
 
                                 let active_index = self.active_tab;
-
+                                let is_drive_view = self.current_nav().is_root();
                                 let display_files = &self.files;
 
                                 container.show(ui, |ui| {
@@ -365,13 +410,19 @@ impl eframe::App for MainWindow {
                                                 ui,
                                                 display_files,
                                                 &self.folder_sizes,
-                                                clipboard_has_files(),
+                                                self.clipboard_has_files,
+                                                &self.clipboard_set,
+                                                self.clipboard_is_cut,
+                                                is_drive_view,
                                                 self.sort_column,
                                                 self.sort_ascending,
                                                 &icon_cache,
                                                 &mut self.rename_state,
                                                 palette,
                                                 &mut self.file_type_cache,
+                                                &mut self.file_size_text_cache,
+                                                &mut self.folder_size_text_cache,
+                                                &mut self.drive_size_text_cache,
                                                 &mut self.external_drag_to_internal_hover,
                                                 &mut tabbar_action,
                                                 &mut self.drag_state,

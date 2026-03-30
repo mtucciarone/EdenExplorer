@@ -1,9 +1,11 @@
+use crate::core::drives::DriveInfo;
 use crate::core::indexer::WindowSizeMode;
 use crate::core::networkdevices::NetworkDevicesState;
 use crate::gui::theme::{ThemeMode, ThemePalette};
 use crate::gui::windows::containers::structs::FavoriteItem;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 #[derive(Default)]
 pub struct AboutWindow {
@@ -53,16 +55,23 @@ pub struct SidebarState {
     pub dragging_favorite: Option<usize>,
     pub sidebar_default_width: f32,
     pub network_state: NetworkDevicesState,
+    pub cached_drives: Vec<DriveInfo>,
+    pub last_drive_refresh: Instant,
 }
 
 impl Default for SidebarState {
     fn default() -> Self {
+        let now = Instant::now();
         Self {
             favorites: vec![],
             dragging_favorite: None,
             item_clicked: None,
             sidebar_default_width: 250.0,
             network_state: NetworkDevicesState::default(),
+            cached_drives: Vec::new(),
+            last_drive_refresh: now
+                .checked_sub(Duration::from_secs(60))
+                .unwrap_or(now),
         }
     }
 }

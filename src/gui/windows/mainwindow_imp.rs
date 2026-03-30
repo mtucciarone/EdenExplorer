@@ -20,6 +20,7 @@ use crate::gui::windows::customizetheme::draw_theme_customizer;
 use crate::gui::windows::enums::{SettingsAction, ThemeCustomizerAction};
 use crate::gui::windows::settings::draw_settings_window;
 use crate::gui::windows::structs::{Navigation, ThemeCustomizer};
+use crate::gui::windows::windowsoverrides::mark_clipboard_dirty;
 use crossbeam_channel::Receiver;
 use crossbeam_channel::{Sender, unbounded};
 use eframe::egui;
@@ -58,6 +59,7 @@ impl MainWindow {
             breadcrumb_path_error_animation_time: 0.0,
         });
         self.active_tab = self.tabs.len() - 1;
+        self.mark_tab_infos_dirty();
     }
 
     pub fn default_favorites(&self) -> Vec<FavoriteItem> {
@@ -104,6 +106,9 @@ impl MainWindow {
         self.size_req_tx = None;
         self.size_rx = None;
         self.folder_sizes.clear();
+        self.file_size_text_cache.clear();
+        self.folder_size_text_cache.clear();
+        self.drive_size_text_cache.clear();
         self.pending_size_queue.clear();
         self.pending_size_set.clear();
         self.explorer_state.selected_paths.clear();
@@ -261,10 +266,10 @@ impl MainWindow {
     }
 
     pub fn handle_context_action(&mut self, action: ItemViewerContextAction) {
-        println!("Handling context action: {:?}", action);
         match action {
             ItemViewerContextAction::Cut(paths) => {
                 let _ = set_clipboard_files(&paths, true);
+                mark_clipboard_dirty();
                 if let Some(first) = paths.first() {
                     self.explorer_state.selected_paths.clear();
                     self.explorer_state.selected_paths.insert(first.clone());
@@ -272,6 +277,7 @@ impl MainWindow {
             }
             ItemViewerContextAction::Copy(paths) => {
                 let _ = set_clipboard_files(&paths, false);
+                mark_clipboard_dirty();
             }
             ItemViewerContextAction::Paste => {
                 if let Err(e) = self.paste_clipboard_native() {
@@ -529,10 +535,12 @@ impl MainWindow {
                 TabbarNavAction::Forward => self.current_nav_mut().go_forward(),
                 TabbarNavAction::Up => self.current_nav_mut().go_up(),
             }
+            self.mark_tab_infos_dirty();
             self.load_path();
         } else {
             if let Some(path) = tabbar_action.as_ref().and_then(|t| t.nav_to.as_ref()) {
                 self.current_nav_mut().go_to(path.clone());
+                self.mark_tab_infos_dirty();
                 self.load_path();
             }
             if tabbar_action
@@ -586,6 +594,7 @@ impl MainWindow {
                     breadcrumb_path_error_animation_time: 0.0,
                 });
                 self.active_tab = self.tabs.len() - 1;
+                self.mark_tab_infos_dirty();
                 self.load_path();
             }
             if let Some(id) = action.close {
@@ -595,6 +604,7 @@ impl MainWindow {
                         if self.active_tab >= self.tabs.len() {
                             self.active_tab = self.tabs.len() - 1;
                         }
+                        self.mark_tab_infos_dirty();
                         self.load_path();
                     }
                 } else {
@@ -602,6 +612,7 @@ impl MainWindow {
                         load_app_settings();
                     self.tabs[0].nav = Navigation::new(start_path);
                     self.active_tab = 0;
+                    self.mark_tab_infos_dirty();
                     self.load_path();
                 }
             }
@@ -632,6 +643,7 @@ impl MainWindow {
             }
             if let Some(path) = action.nav_to {
                 self.current_nav_mut().go_to(path);
+                self.mark_tab_infos_dirty();
                 self.load_path();
             }
             if let Some(path) = action.open_new_tab {
@@ -940,6 +952,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 explorer.item_viewer_filter_state.dirty = true;
                 explorer.item_viewer_filter_state.cached_indices.clear();
                 explorer.current_nav_mut().go_to(path);
+                explorer.mark_tab_infos_dirty();
                 explorer.load_path();
             }
             ItemViewerAction::OpenWithDefault(paths) => {
@@ -1013,6 +1026,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             }
             ItemViewerAction::BackNavigation => {
                 explorer.current_nav_mut().go_back();
+                explorer.mark_tab_infos_dirty();
                 explorer.load_path();
                 explorer.explorer_state.selection_anchor = None;
                 explorer.explorer_state.selected_paths.clear();
