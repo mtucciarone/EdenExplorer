@@ -1,12 +1,8 @@
 use crate::gui::theme::ThemePalette;
+use crate::gui::windows::structs::AboutWindow;
 use eframe::egui;
 use egui::FontId;
 use egui_phosphor::regular;
-
-#[derive(Default)]
-pub struct AboutWindow {
-    pub open: bool,
-}
 
 pub fn draw_about_window(ctx: &egui::Context, settings: &mut AboutWindow, palette: &ThemePalette) {
     if !settings.open {

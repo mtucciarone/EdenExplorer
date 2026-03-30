@@ -5,7 +5,7 @@ use crate::core::indexer::{load_app_settings, save_app_settings, save_favorites}
 use crate::gui::MainWindow;
 use crate::gui::theme::{ThemeMode, ThemePalette};
 use crate::gui::utils::{
-    SortColumn, compute_range, get_clipboard_files, is_clipboard_cut, set_clipboard_files,
+    SortColumn, get_clipboard_files, is_clipboard_cut, set_clipboard_files,
     shell_delete_to_recycle_bin, show_copy_move_dialog, sort_files,
 };
 use crate::gui::windows::about::draw_about_window;
@@ -17,10 +17,11 @@ use crate::gui::windows::containers::structs::{
     TabsAction, TopbarAction,
 };
 use crate::gui::windows::customizetheme::{
-    ThemeCustomizer, ThemeCustomizerAction, draw_theme_customizer,
+    draw_theme_customizer,
 };
-use crate::gui::windows::navigation::Navigation;
-use crate::gui::windows::settings::{SettingsAction, draw_settings_window};
+use crate::gui::windows::enums::{ThemeCustomizerAction, SettingsAction};
+use crate::gui::windows::structs::{ThemeCustomizer, Navigation};
+use crate::gui::windows::settings::{draw_settings_window};
 use crossbeam_channel::Receiver;
 use crossbeam_channel::{Sender, unbounded};
 use eframe::egui;
@@ -105,10 +106,13 @@ impl MainWindow {
         self.size_req_tx = None;
         self.size_rx = None;
         self.folder_sizes.clear();
-        self.search_active = false;
-        self.search_results.clear();
         self.pending_size_queue.clear();
         self.pending_size_set.clear();
+        self.explorer_state.selected_paths.clear();
+        self.explorer_state.selection_anchor = None;
+        self.explorer_state.selection_focus = None;
+        self.item_viewer_filter_state.dirty = true;
+        self.item_viewer_filter_state.cached_indices.clear();
 
         if self.current_nav().is_root() {
             for d in get_drives() {
@@ -228,7 +232,7 @@ impl MainWindow {
         }
 
         let path = self.current_nav().current.clone();
-        if self.favorites.iter().any(|fav| fav.path == path) {
+        if self.sidebar_state.favorites.iter().any(|fav| fav.path == path) {
             return;
         }
 
@@ -237,12 +241,13 @@ impl MainWindow {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| path.display().to_string());
 
-        self.favorites.push(FavoriteItem { path, label });
+        self.sidebar_state.favorites.push(FavoriteItem { path, label });
         self.persist_favorites();
     }
 
     pub fn persist_favorites(&self) {
         let items: Vec<String> = self
+            .sidebar_state
             .favorites
             .iter()
             .map(|fav| fav.path.display().to_string())
@@ -261,19 +266,9 @@ impl MainWindow {
                 }
             }
             ItemViewerContextAction::Copy(paths) => {
-                println!("Copy action received: {:?}", paths);
-
                 let _ = set_clipboard_files(&paths, false);
-
-                // optional: update selection
-                if let Some(first) = paths.first() {
-                    self.explorer_state.selected_paths.clear();
-                    self.explorer_state.selected_paths.insert(first.clone());
-                }
             }
             ItemViewerContextAction::Paste => {
-                println!("Paste action received");
-
                 if let Err(e) = self.paste_clipboard_native() {
                     eprintln!("Paste failed: {}", e);
                 }
@@ -348,7 +343,7 @@ impl MainWindow {
     pub fn paste_clipboard_native(&mut self) -> windows::core::Result<()> {
         use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
         use windows::Win32::UI::Shell::{
-            FOF_ALLOWUNDO, FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
+            FOF_ALLOWUNDO, FOF_RENAMEONCOLLISION, FOF_NOCONFIRMMKDIR, FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
         };
         use windows::core::HSTRING;
 
@@ -362,7 +357,7 @@ impl MainWindow {
         unsafe {
             let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
 
-            file_op.SetOperationFlags(FOF_ALLOWUNDO)?;
+            file_op.SetOperationFlags(FOF_ALLOWUNDO | FOF_RENAMEONCOLLISION | FOF_NOCONFIRMMKDIR)?;
 
             let target_item: IShellItem = SHCreateItemFromParsingName(
                 &HSTRING::from(self.current_nav().current.to_string_lossy().to_string()),
@@ -481,7 +476,6 @@ impl MainWindow {
         // Clear caches and collections
         self.folder_sizes.clear();
         self.files.clear();
-        self.search_results.clear();
         self.explorer_state.selected_paths.clear();
         self.pending_size_queue.clear();
         self.pending_size_set.clear();
@@ -509,7 +503,7 @@ impl MainWindow {
                     self.settings_window.has_unsaved_changes = true;
                 }
                 SettingsAction::ResetFavourites => {
-                    self.favorites = self.default_favorites();
+                    self.sidebar_state.favorites = self.default_favorites();
                     self.persist_favorites();
                 }
             }
@@ -522,7 +516,6 @@ impl MainWindow {
     }
 
     pub fn handle_tabbar_action(&mut self, tabbar_action: Option<TabbarAction>) {
-        self.search_query = self.search_query.clone();
         if let Some(action) = tabbar_action.as_ref().and_then(|t| t.nav.as_ref()) {
             match action {
                 TabbarNavAction::Back => self.current_nav_mut().go_back(),
@@ -611,10 +604,10 @@ impl MainWindow {
     pub fn handle_sidebar_action(&mut self, sidebar_action: Option<SidebarAction>) {
         if let Some(action) = sidebar_action {
             if let Some((from, to)) = action.reorder {
-                let len = self.favorites.len();
+                let len = self.sidebar_state.favorites.len();
 
                 if from < len {
-                    let item = self.favorites.remove(from);
+                    let item = self.sidebar_state.favorites.remove(from);
 
                     // Clamp target index AFTER removal
                     let mut target = to;
@@ -623,9 +616,9 @@ impl MainWindow {
                         target -= 1;
                     }
 
-                    target = target.min(self.favorites.len());
+                    target = target.min(self.sidebar_state.favorites.len());
 
-                    self.favorites.insert(target, item);
+                    self.sidebar_state.favorites.insert(target, item);
                 }
 
                 self.persist_favorites();
@@ -639,18 +632,18 @@ impl MainWindow {
                 self.load_path();
             }
             if let Some(path) = action.select_favorite {
-                self.sidebar_selected = Some(path);
+                self.sidebar_state.item_clicked = Some(path);
             }
             if let Some(path) = action.remove_favorite {
-                self.favorites.retain(|fav| fav.path != path);
+                self.sidebar_state.favorites.retain(|fav| fav.path != path);
                 self.persist_favorites();
                 if self
-                    .sidebar_selected
+                    .sidebar_state.item_clicked
                     .as_ref()
                     .map(|p| p == &path)
                     .unwrap_or(false)
                 {
-                    self.sidebar_selected = None;
+                    self.sidebar_state.item_clicked = None;
                 }
             }
         }
@@ -685,7 +678,7 @@ impl MainWindow {
         // Throttle size requests to keep UI responsive
         if let Some(size_req_tx) = &self.size_req_tx {
             let should_pause =
-                ctx.input(|i| i.pointer.any_down() || i.raw_scroll_delta.y.abs() > 0.0);
+                ctx.input(|i| i.pointer.any_down() || i.smooth_scroll_delta.y.abs() > 0.0);
             if !should_pause {
                 for _ in 0..6 {
                     if let Some(path) = self.pending_size_queue.pop_front() {
@@ -936,6 +929,8 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             ItemViewerAction::Open(path) => {
                 explorer.explorer_state.selected_paths.clear();
                 explorer.explorer_state.selected_paths.insert(path.clone());
+                explorer.item_viewer_filter_state.dirty = true;
+                explorer.item_viewer_filter_state.cached_indices.clear();
                 explorer.current_nav_mut().go_to(path);
                 explorer.load_path();
             }

@@ -3,12 +3,13 @@ use crate::gui::theme::ThemePalette;
 use eframe::egui::*;
 use egui_phosphor::regular::DOTS_SIX_VERTICAL;
 use std::cmp::Ordering::{Greater, Less};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 use std::ffi::OsStr;
 use std::fs::{copy, create_dir_all, read_dir};
 use std::mem::size_of;
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
 use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
@@ -29,6 +30,22 @@ use windows::Win32::UI::Shell::{
 };
 use windows::core::PCWSTR;
 use windows::core::Result;
+use std::sync::RwLock;
+use lru::LruCache;
+use std::num::NonZeroUsize;
+
+type TruncKey = (String, u32, u32); // (text, width_bucket, font_size_bucket)
+
+lazy_static::lazy_static! {
+    static ref TRUNCATION_CACHE: RwLock<LruCache<TruncKey, String>> =
+        RwLock::new(LruCache::new(NonZeroUsize::new(1024).unwrap()));
+}
+
+struct ClipboardState {
+    last_check: Instant,
+    has_files: bool,
+    paths: Vec<PathBuf>,
+}
 
 /// Creates a clickable icon with hover color effect
 pub fn clickable_icon(ui: &mut Ui, icon: &str, hover_color: Color32) -> Response {
@@ -624,51 +641,6 @@ pub fn styled_button(ui: &mut Ui, label: impl Into<String>, palette: &ThemePalet
     response
 }
 
-pub fn truncate_text(label: &str, max_chars: usize) -> String {
-    if label.len() > max_chars && max_chars > 3 {
-        let mut char_count = 0;
-        let mut byte_end = 0;
-
-        for (i, _) in label.char_indices() {
-            if char_count >= max_chars - 3 {
-                break;
-            }
-            char_count += 1;
-            byte_end = i;
-        }
-
-        format!("{}...", &label[..byte_end])
-    } else {
-        label.to_string()
-    }
-}
-
-pub fn generate_non_conflicting_path(dir: &Path, file_name: &OsStr) -> PathBuf {
-    let mut counter = 1;
-
-    let file_name_str = file_name.to_string_lossy();
-
-    let (base, ext) = match file_name_str.rsplit_once('.') {
-        Some((b, e)) => (b.to_string(), Some(e.to_string())),
-        None => (file_name_str.to_string(), None),
-    };
-
-    loop {
-        let new_name = match &ext {
-            Some(ext) => format!("{} ({}).{}", base, counter, ext),
-            None => format!("{} ({})", base, counter),
-        };
-
-        let candidate = dir.join(new_name);
-
-        if !candidate.exists() {
-            return candidate;
-        }
-
-        counter += 1;
-    }
-}
-
 pub fn fuzzy_match(name: &str, query: &str) -> bool {
     let mut query_chars = query.chars().map(|c| c.to_ascii_lowercase());
     let mut current = query_chars.next();
@@ -686,23 +658,90 @@ pub fn fuzzy_match(name: &str, query: &str) -> bool {
     current.is_none()
 }
 
-pub fn compute_range(
-    files: &Vec<FileItem>,
-    a: &PathBuf,
-    b: &PathBuf,
-) -> HashSet<PathBuf> {
-    let mut result = HashSet::new();
+fn width_bucket(width: f32) -> u32 {
+    (width / 8.0).round() as u32
+}
 
-    let idx_a = files.iter().position(|f| &f.path == a);
-    let idx_b = files.iter().position(|f| &f.path == b);
+/// The fast binary search truncation algorithm.
+fn truncate_text_binary_search(
+    ui: &mut egui::Ui,
+    text: &str,
+    max_width: f32,
+    font_id: &egui::FontId,
+    color: egui::Color32,
+) -> (String, bool) {
+    ui.fonts_mut(|f| {
+        let full = f.layout_no_wrap(text.to_owned(), font_id.clone(), color);
 
-    if let (Some(a), Some(b)) = (idx_a, idx_b) {
-        let (start, end) = if a <= b { (a, b) } else { (b, a) };
-
-        for i in start..=end {
-            result.insert(files[i].path.clone());
+        if full.size().x <= max_width {
+            return (text.to_string(), false);
         }
+
+        let ellipsis = "...";
+        let ellipsis_width = f
+            .layout_no_wrap(ellipsis.to_string(), font_id.clone(), color)
+            .size()
+            .x;
+        let target_width = max_width - ellipsis_width;
+
+        let chars: Vec<char> = text.chars().collect();
+        let mut low = 0;
+        let mut high = chars.len();
+        let mut buffer = String::with_capacity(text.len());
+
+        while low < high {
+            let mid = (low + high) / 2;
+
+            buffer.clear();
+            for ch in &chars[..mid] {
+                buffer.push(*ch);
+            }
+
+            let width = f.layout_no_wrap(buffer.clone(), font_id.clone(), color).size().x;
+
+            if width <= target_width {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+
+        let final_len = low.saturating_sub(1);
+        buffer.clear();
+        for ch in &chars[..final_len] {
+            buffer.push(*ch);
+        }
+        buffer.push_str(ellipsis);
+
+        (buffer, true)
+    })
+}
+
+/// Truncates text to fit within `max_width`, caching results for performance.
+pub fn truncate_item_text(
+    ui: &mut egui::Ui,
+    text: &str,
+    max_width: f32,
+    font_id: &egui::FontId,
+    color: egui::Color32,
+) -> (String, bool) {
+    let width_bucket = width_bucket(max_width);
+    let font_bucket = font_id.size.round() as u32;
+    let key = (text.to_string(), width_bucket, font_bucket);
+
+    // Try cache first
+    if let Ok(mut cache) = TRUNCATION_CACHE.write() {
+        if let Some(cached) = cache.get(&key) {
+            return (cached.clone(), cached.ends_with("..."));
+        }
+
+        let (result, truncated) = truncate_text_binary_search(ui, text, max_width, font_id, color);
+
+        cache.put(key, result.clone());
+
+        return (result, truncated);
     }
 
-    result
+    // fallback if lock poisoned
+    truncate_text_binary_search(ui, text, max_width, font_id, color)
 }

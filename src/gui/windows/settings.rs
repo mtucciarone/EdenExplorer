@@ -1,16 +1,10 @@
 use crate::core::{fs::MY_PC_PATH, indexer::WindowSizeMode};
 use crate::gui::theme::ThemePalette;
+use crate::gui::windows::structs::{AppSettings, SettingsWindow};
+use crate::gui::windows::enums::SettingsAction;
 use eframe::egui;
 use egui_phosphor::regular;
-use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AppSettings {
-    pub folder_scanning_enabled: bool,
-    pub start_path: Option<PathBuf>,
-    pub window_size_mode: WindowSizeMode,
-}
 
 impl Default for AppSettings {
     fn default() -> Self {
@@ -20,21 +14,6 @@ impl Default for AppSettings {
             window_size_mode: WindowSizeMode::default(),
         }
     }
-}
-
-#[derive(Default)]
-pub struct SettingsWindow {
-    pub open: bool,
-    pub current_settings: AppSettings,
-    pub has_unsaved_changes: bool,
-    pub show_reset_favorites_confirmation: bool,
-}
-
-#[derive(Clone, Debug)]
-pub enum SettingsAction {
-    ResetToDefaults,
-    ResetFavourites,
-    ApplySettings,
 }
 
 // Helper function for info icon with hover text (non-clickable)

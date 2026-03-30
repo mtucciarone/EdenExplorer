@@ -1,15 +1,7 @@
 use eframe::egui;
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
-
 use crate::gui::theme::{ThemeMode, ThemePalette, get_palette};
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CustomTheme {
-    pub name: String,
-    pub mode: ThemeMode,
-    pub palette: ThemePalette,
-}
+use crate::gui::windows::structs::{CustomTheme, ThemeCustomizer};
+use crate::gui::windows::enums::ThemeCustomizerAction;
 
 impl Default for CustomTheme {
     fn default() -> Self {
@@ -19,24 +11,6 @@ impl Default for CustomTheme {
             palette: get_palette(ThemeMode::Dark).clone(),
         }
     }
-}
-
-#[derive(Default)]
-pub struct ThemeCustomizer {
-    pub open: bool,
-    pub current_theme: CustomTheme,
-    pub selected_mode: ThemeMode,
-    pub has_unsaved_changes: bool,
-}
-
-#[derive(Clone, Debug)]
-pub enum ThemeCustomizerAction {
-    //ApplyTheme,
-    SaveTheme,
-    LoadTheme,
-    ResetToDefaults,
-    ExportTheme,
-    ImportTheme,
 }
 
 pub fn draw_theme_customizer(

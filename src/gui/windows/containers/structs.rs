@@ -1,7 +1,8 @@
 use std::collections::{HashSet};
+use std::time::Instant;
 
 use crate::gui::windows::containers::enums::TabbarNavAction;
-use crate::gui::windows::navigation::Navigation;
+use crate::gui::windows::structs::Navigation;
 use std::path::PathBuf;
 
 #[derive(Default)]
@@ -103,6 +104,9 @@ pub struct FilterState {
     pub query: String,
     pub last_input_time: f64,
     pub focus_requested: bool,
+    pub last_query: String,
+    pub cached_indices: Vec<usize>,
+    pub dirty: bool,
 }
 
 impl Default for FilterState {
@@ -112,6 +116,15 @@ impl Default for FilterState {
             query: String::new(),
             last_input_time: 0.0,
             focus_requested: false,
+            last_query: String::new(),
+            cached_indices: Vec::new(),
+            dirty: false,
         }
     }
+}
+
+pub struct ClipboardState {
+    paths: HashSet<PathBuf>,
+    is_cut: bool,
+    last_update: Instant,
 }

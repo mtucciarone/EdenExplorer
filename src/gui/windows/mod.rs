@@ -7,3 +7,5 @@ pub mod mainwindow_imp;
 pub mod navigation;
 pub mod settings;
 pub mod windowsoverrides;
+pub mod structs;
+pub mod enums;

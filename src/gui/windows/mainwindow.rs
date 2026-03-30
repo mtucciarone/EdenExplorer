@@ -1,27 +1,24 @@
-use crate::core::drives::get_drive_infos;
 use crate::core::fs::{FileItem, MY_PC_PATH};
 use crate::core::indexer::{load_app_settings, load_favorites};
-use crate::core::networkdevices::NetworkDevicesState;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::{ThemeMode, apply_theme, get_palette};
 use crate::gui::utils::SortColumn;
 use crate::gui::utils::clipboard_has_files;
-use crate::gui::windows::about::AboutWindow;
 use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::itemviewer::draw_item_viewer;
 use crate::gui::windows::containers::sidebar::draw_sidebar;
 use crate::gui::windows::containers::structs::{
-    DragState, FavoriteItem, FilterState, ItemViewerFolderSizeState, RenameState, SidebarAction,
-    TabInfo, TabState, ExplorerState
+    DragState, ExplorerState, FavoriteItem, FilterState, ItemViewerFolderSizeState, RenameState,
+    SidebarAction, TabInfo, TabState,
+};
+use crate::gui::windows::structs::{
+    AboutWindow, AppSettings, Navigation, SettingsWindow, SidebarState, ThemeCustomizer
 };
 use crate::gui::windows::containers::tabs::{draw_tabbar, draw_tabs};
 use crate::gui::windows::containers::topbar::draw_topbar;
-use crate::gui::windows::customizetheme::ThemeCustomizer;
 use crate::gui::windows::mainwindow_imp::{
     handle_draw_customizetheme_window, handle_pending_actions, tab_title_for,
 };
-use crate::gui::windows::navigation::Navigation;
-use crate::gui::windows::settings::{AppSettings, SettingsWindow};
 use crate::gui::windows::windowsoverrides::{apply_window_override, install_wndproc};
 use crossbeam_channel::Receiver;
 use crossbeam_channel::Sender;
@@ -34,32 +31,10 @@ use std::sync::atomic::AtomicBool;
 use windows::Win32::Foundation::HWND;
 
 pub struct MainWindow {
-    pub(crate) tabs: Vec<TabState>,
-    pub(crate) active_tab: usize,
-    pub(crate) next_tab_id: u64,
-    pub(crate) files: Vec<FileItem>,
-    pub(crate) rx: Option<Receiver<FileItem>>,
-    pub(crate) size_req_tx: Option<Sender<PathBuf>>,
-    pub(crate) size_rx: Option<Receiver<(PathBuf, u64, bool)>>,
-    pub(crate) folder_sizes: HashMap<PathBuf, ItemViewerFolderSizeState>,
-    pub(crate) search_query: String,
-    pub(crate) search_results: Vec<FileItem>,
-    pub(crate) search_active: bool,
-    pub(crate) favorites: Vec<FavoriteItem>,
-    pub(crate) dragging_favorite: Option<usize>,
-    pub(crate) sidebar_selected: Option<PathBuf>,
-    pub(crate) rename_state: Option<RenameState>,
-    pub(crate) pending_size_queue: VecDeque<PathBuf>,
-    pub(crate) pending_size_set: HashSet<PathBuf>,
+    // MainWindow General Variables
     pub(crate) theme: ThemeMode,
     pub(crate) theme_dirty: bool,
-    pub(crate) sort_column: SortColumn,
-    pub(crate) drag_state: DragState,
-    pub(crate) sort_ascending: bool,
-    pub(crate) icon_cache: Option<IconCache>,
-    pub(crate) sidebar_default_width: f32,
-    pub(crate) file_type_cache: HashMap<String, String>,
-    pub(crate) explorer_state: ExplorerState,
+    pub(crate) window_override_set: bool,
     pub(crate) theme_customizer: ThemeCustomizer,
     pub(crate) settings_window: SettingsWindow,
     pub(crate) about_window: AboutWindow,
@@ -68,9 +43,32 @@ pub struct MainWindow {
     pub(crate) dropped_files_pending_ui_refresh: bool,
     pub(crate) shutdown: Arc<AtomicBool>,
     pub(crate) size_threads: Vec<std::thread::JoinHandle<()>>,
-    pub(crate) network_state: crate::core::networkdevices::NetworkDevicesState,
     pub(crate) hwnd: Option<HWND>,
-    pub(crate) item_viewer_filter_state: FilterState
+
+    // File Explorer Variables
+    pub(crate) tabs: Vec<TabState>,
+    pub(crate) active_tab: usize,
+    pub(crate) next_tab_id: u64,
+    pub(crate) files: Vec<FileItem>,
+    pub(crate) folder_sizes: HashMap<PathBuf, ItemViewerFolderSizeState>,
+    pub(crate) rename_state: Option<RenameState>,
+    pub(crate) sort_column: SortColumn,
+    pub(crate) drag_state: DragState,
+    pub(crate) sort_ascending: bool,
+    pub(crate) file_type_cache: HashMap<String, String>,
+    pub(crate) explorer_state: ExplorerState,
+    pub(crate) item_viewer_filter_state: FilterState,
+
+    // Sidebar Variables
+    pub(crate) sidebar_state: SidebarState,
+
+    // Misc. Variables
+    pub(crate) rx: Option<Receiver<FileItem>>,
+    pub(crate) size_req_tx: Option<Sender<PathBuf>>,
+    pub(crate) size_rx: Option<Receiver<(PathBuf, u64, bool)>>,
+    pub(crate) pending_size_queue: VecDeque<PathBuf>,
+    pub(crate) pending_size_set: HashSet<PathBuf>,
+    pub(crate) icon_cache: Option<IconCache>,    
 }
 
 impl Default for MainWindow {
@@ -100,33 +98,31 @@ impl Default for MainWindow {
             size_req_tx: None,
             size_rx: None,
             folder_sizes: HashMap::new(),
-            search_query: String::new(),
-            search_results: vec![],
-            search_active: false,
-            favorites: vec![],
-            dragging_favorite: None,
-            sidebar_selected: None,
+
+            sidebar_state: SidebarState::default(),
+
             rename_state: None,
             pending_size_queue: VecDeque::new(),
             pending_size_set: HashSet::new(),
             theme: ThemeMode::Dark,
-            theme_dirty: false,
+            theme_dirty: true,
+            window_override_set: false,
             drag_state: DragState::default(),
             sort_column: SortColumn::Name,
             sort_ascending: true,
             icon_cache: None,
-            sidebar_default_width: 250.0,
+            
             file_type_cache: HashMap::new(),
             explorer_state: Default::default(),
             theme_customizer: Default::default(),
             settings_window: Default::default(),
             about_window: Default::default(),
             dropped_files: Vec::new(), // Files dropped from external drag and drop
-            external_drag_to_internal_hover: false,         // Whether external drag is hovering over the item viewer
+            external_drag_to_internal_hover: false, // Whether external drag is hovering over the item viewer
             dropped_files_pending_ui_refresh: false,
             shutdown: Arc::new(AtomicBool::new(false)),
             size_threads: Vec::new(),
-            network_state: NetworkDevicesState::default(),
+            
             hwnd: None,
             item_viewer_filter_state: FilterState::default(),
         };
@@ -135,10 +131,10 @@ impl Default for MainWindow {
         app.settings_window.current_settings = loaded_settings;
         let stored = load_favorites('C');
         if stored.is_empty() {
-            app.favorites = app.default_favorites();
+            app.sidebar_state.favorites = app.default_favorites();
             app.persist_favorites();
         } else {
-            app.favorites = stored
+            app.sidebar_state.favorites = stored
                 .into_iter()
                 .map(|path| {
                     let path = PathBuf::from(path);
@@ -179,10 +175,12 @@ impl eframe::App for MainWindow {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         let palette = get_palette(self.theme);
 
-        if let Some(hwnd) = self.hwnd {
-            apply_window_override(hwnd, palette);
+        if !self.window_override_set {
+            if let Some(hwnd) = self.hwnd {
+                apply_window_override(hwnd, palette);
+                self.window_override_set = true;
+            }
         }
-        apply_theme(ctx, self.theme);
 
         // Main layout: sidebar + tabs column
         let mut pending_action: Option<ItemViewerAction> = None;
@@ -211,8 +209,8 @@ impl eframe::App for MainWindow {
 
         // Increase scroll speed for the explorer view.
         ctx.input_mut(|i| {
-            i.raw_scroll_delta *= 8.0;
-            i.smooth_scroll_delta *= 8.0;
+            // i.raw_scroll_delta *= 8.0;
+            i.smooth_scroll_delta *= 6.0;
         });
 
         if self.icon_cache.is_none() {
@@ -230,177 +228,167 @@ impl eframe::App for MainWindow {
         let offset = egui::vec2(8.0, 8.0);
 
         egui::CentralPanel::default().show(ctx, |ui| {
-    // CentralPanel available rect
-    let rect = ui.min_rect();
+        // CentralPanel available rect
+        let rect = ui.min_rect();
 
-    // Shift it to compensate for Windows inset
-    let rect = rect.translate(-offset);
+        // Shift it to compensate for Windows inset
+        let rect = rect.translate(-offset);
 
-    ui.allocate_ui_at_rect(rect, |ui| {
-        let avail = ui.available_size();
+        ui.allocate_ui_at_rect(rect, |ui| {
+            let avail = ui.available_size();
 
-            ui.allocate_ui_with_layout(
-                avail,
-                egui::Layout::left_to_right(egui::Align::Min),
-                |ui| {
-                    // --- Sidebar column ---
-                    let sidebar_width_min = 140.0;
-                    let sidebar_width_max = 280.0;
-                    let sidebar_width = self
-                        .sidebar_default_width
-                        .max(sidebar_width_min)
-                        .min(sidebar_width_max);
-
-                    let sidebar_frame =
-                        // egui::Frame::NONE.inner_margin(egui::Margin::symmetric(12, 0))
-                        egui::Frame::NONE.stroke(egui::Stroke::new(1.0, palette.tab_border_default));
-
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(sidebar_width, ui.available_height() + 32.0),
-                        egui::Layout::top_down(egui::Align::Min),
-                        |ui| {
-                            egui::Frame::NONE.show(ui, |ui| {
-                                ui.add_space(8.0);
-                                topbar_action =
-                                    Some(draw_topbar(ui, self.theme == ThemeMode::Dark, palette));
-                            });
-                            sidebar_frame.show(ui, |ui| {
-                                let drives = get_drive_infos();
-                                sidebar_action = Some(draw_sidebar(
-                                    ui,
-                                    &icon_cache,
-                                    &mut self.favorites,
-                                    self.sidebar_selected.as_ref(),
-                                    &drives,
-                                    palette,
-                                    &mut self.dragging_favorite,
-                                    &mut self.network_state,
-                                ));
-                            });
-                        },
-                    );
-
-                    // --- Separator handle (drawn on top, no extra allocation) ---
-                    let separator_width = 6.0;
-                    let separator_rect = egui::Rect::from_min_size(
-                        egui::pos2(self.sidebar_default_width - separator_width / 2.0, 0.0),
-                        egui::vec2(separator_width, ui.available_height()),
-                    );
-
-                    let separator_response =
-                        ui.allocate_rect(separator_rect, egui::Sense::click_and_drag());
-
-                    if separator_response.hovered() || separator_response.dragged() {
-                        ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
-
-                        let handle_height = 25.0;
-                        let handle_width = 6.0;
-                        let center_y = ui.available_height() / 2.0;
-
-                        let handle_rect = egui::Rect::from_center_size(
-                            egui::pos2(self.sidebar_default_width, center_y), // exactly on sidebar right edge
-                            egui::vec2(handle_width, handle_height),
-                        );
-
-                        ui.painter().rect_filled(
-                            handle_rect,
-                            handle_width / 2.0,
-                            if self.theme == ThemeMode::Dark {
-                                egui::Color32::from_gray(120)
-                            } else {
-                                egui::Color32::from_gray(180)
-                            },
-                        );
-                    }
-
-                    if separator_response.dragged() {
-                        self.sidebar_default_width = (self.sidebar_default_width
-                            + separator_response.drag_delta().x)
+                ui.allocate_ui_with_layout(
+                    avail,
+                    egui::Layout::left_to_right(egui::Align::Min),
+                    |ui| {
+                        // --- Sidebar column ---
+                        let sidebar_width_min = 140.0;
+                        let sidebar_width_max = 280.0;
+                        let sidebar_width = self
+                            .sidebar_state.sidebar_default_width
                             .max(sidebar_width_min)
                             .min(sidebar_width_max);
-                    }
 
-                    // --- Tabs column ---
-                    let tabs_width = ui.available_width();
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(tabs_width, ui.available_height() - 16.0),
-                        egui::Layout::top_down(egui::Align::Min),
-                        |ui| {
-                            let old_spacing = ui.spacing().item_spacing;
-                            ui.spacing_mut().item_spacing.y = 0.0;
+                        let sidebar_frame =
+                            // egui::Frame::NONE.inner_margin(egui::Margin::symmetric(12, 0))
+                            egui::Frame::NONE.stroke(egui::Stroke::new(1.0, palette.tab_border_default));
 
-                            let tab_infos: Vec<TabInfo> = self
-                                .tabs
-                                .iter()
-                                .map(|tab| TabInfo {
-                                    id: tab.id,
-                                    title: tab_title_for(&tab.nav),
-                                    full_path: if tab.nav.is_root() {
-                                        PathBuf::from(MY_PC_PATH)
-                                    } else {
-                                        tab.nav.current.clone()
-                                    },
-                                })
-                                .collect();
-                            let active_id = self.tabs[self.active_tab].id;
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(sidebar_width, ui.available_height() + 32.0),
+                            egui::Layout::top_down(egui::Align::Min),
+                            |ui| {
+                                egui::Frame::NONE.show(ui, |ui| {
+                                    ui.add_space(8.0);
+                                    topbar_action =
+                                        Some(draw_topbar(ui, self.theme == ThemeMode::Dark, palette));
+                                });
+                                sidebar_frame.show(ui, |ui| {
+                                    sidebar_action = Some(draw_sidebar(
+                                        ui,
+                                        &icon_cache,
+                                        &mut self.sidebar_state,
+                                        palette,
+                                    ));
+                                });
+                            },
+                        );
 
-                            egui::Frame::NONE.show(ui, |ui| {
-                                ui.add_space(8.0);
-                                tabs_action =
-                                    Some(draw_tabs(ui, &tab_infos, active_id, palette, self.hwnd));
-                            });
+                        // --- Separator handle (drawn on top, no extra allocation) ---
+                        let separator_width = 6.0;
+                        let separator_rect = egui::Rect::from_min_size(
+                            egui::pos2(self.sidebar_state.sidebar_default_width - separator_width / 2.0, 0.0),
+                            egui::vec2(separator_width, ui.available_height()),
+                        );
 
-                            let container = egui::Frame::NONE
-                                .stroke(egui::Stroke::NONE)
-                                .fill(egui::Color32::TRANSPARENT)
-                                .inner_margin(egui::Margin::symmetric(10, 8));
+                        let separator_response =
+                            ui.allocate_rect(separator_rect, egui::Sense::click_and_drag());
 
-                            let active_index = self.active_tab;
-                            let search_active = self.search_active;
+                        if separator_response.hovered() || separator_response.dragged() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
 
-                            let display_files = if search_active {
-                                &self.search_results
-                            } else {
-                                &self.files
-                            };
+                            let handle_height = 25.0;
+                            let handle_width = 6.0;
+                            let center_y = ui.available_height() / 2.0;
 
-                            container.show(ui, |ui| {
-                                tabbar_action = {
-                                    let tab = &mut self.tabs[active_index];
+                            let handle_rect = egui::Rect::from_center_size(
+                                egui::pos2(self.sidebar_state.sidebar_default_width, center_y), // exactly on sidebar right edge
+                                egui::vec2(handle_width, handle_height),
+                            );
 
-                                    Some(draw_tabbar(ui, &icon_cache, tab, palette))
-                                };
+                            ui.painter().rect_filled(
+                                handle_rect,
+                                handle_width / 2.0,
+                                if self.theme == ThemeMode::Dark {
+                                    egui::Color32::from_gray(120)
+                                } else {
+                                    egui::Color32::from_gray(180)
+                                },
+                            );
+                        }
 
-                                ui.add_space(4.0);
+                        if separator_response.dragged() {
+                            self.sidebar_state.sidebar_default_width = (self.sidebar_state.sidebar_default_width
+                                + separator_response.drag_delta().x)
+                                .max(sidebar_width_min)
+                                .min(sidebar_width_max);
+                        }
 
-                                pending_action = draw_item_viewer(
-                                            ui,
-                                            display_files,
-                                            &self.folder_sizes,
-                                            clipboard_has_files(),
-                                            self.sort_column,
-                                            self.sort_ascending,
-                                            &icon_cache,
-                                            &mut self.rename_state,
-                                            palette,
-                                            &mut self.file_type_cache,
-                                            &mut self.external_drag_to_internal_hover,
-                                            &mut tabbar_action,
-                                            &mut self.drag_state,
-                                            &mut self.item_viewer_filter_state,
-                                            &mut self.explorer_state,
-                                        );
+                        // --- Tabs column ---
+                        let tabs_width = ui.available_width();
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(tabs_width, ui.available_height() - 16.0),
+                            egui::Layout::top_down(egui::Align::Min),
+                            |ui| {
+                                let old_spacing = ui.spacing().item_spacing;
+                                ui.spacing_mut().item_spacing.y = 0.0;
 
-                                ui.add_space(16.0);
-                            });
+                                let tab_infos: Vec<TabInfo> = self
+                                    .tabs
+                                    .iter()
+                                    .map(|tab| TabInfo {
+                                        id: tab.id,
+                                        title: tab_title_for(&tab.nav),
+                                        full_path: if tab.nav.is_root() {
+                                            PathBuf::from(MY_PC_PATH)
+                                        } else {
+                                            tab.nav.current.clone()
+                                        },
+                                    })
+                                    .collect();
+                                let active_id = self.tabs[self.active_tab].id;
 
-                            ui.spacing_mut().item_spacing = old_spacing;
-                        },
-                    );
-                },
-            );
+                                egui::Frame::NONE.show(ui, |ui| {
+                                    ui.add_space(8.0);
+                                    tabs_action =
+                                        Some(draw_tabs(ui, &tab_infos, active_id, palette, self.hwnd));
+                                });
+
+                                let container = egui::Frame::NONE
+                                    .stroke(egui::Stroke::NONE)
+                                    .fill(egui::Color32::TRANSPARENT)
+                                    .inner_margin(egui::Margin::symmetric(10, 8));
+
+                                let active_index = self.active_tab;
+
+                                let display_files = &self.files;
+
+                                container.show(ui, |ui| {
+                                    tabbar_action = {
+                                        let tab = &mut self.tabs[active_index];
+
+                                        Some(draw_tabbar(ui, &icon_cache, tab, palette))
+                                    };
+
+                                    ui.add_space(4.0);
+
+                                    pending_action = draw_item_viewer(
+                                                ui,
+                                                display_files,
+                                                &self.folder_sizes,
+                                                clipboard_has_files(),
+                                                self.sort_column,
+                                                self.sort_ascending,
+                                                &icon_cache,
+                                                &mut self.rename_state,
+                                                palette,
+                                                &mut self.file_type_cache,
+                                                &mut self.external_drag_to_internal_hover,
+                                                &mut tabbar_action,
+                                                &mut self.drag_state,
+                                                &mut self.item_viewer_filter_state,
+                                                &mut self.explorer_state,
+                                            );
+
+                                    ui.add_space(16.0);
+                                });
+
+                                ui.spacing_mut().item_spacing = old_spacing;
+                            },
+                        );
+                    },
+                );
+            });
         });
-    });
 
         self.handle_directory_batch_recieve(ctx);
         self.handle_directory_size_updates(ctx);

@@ -1,7 +1,7 @@
 use crate::core::fs::MY_PC_PATH;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
-use crate::gui::utils::{clickable_icon, truncate_text};
+use crate::gui::utils::{clear_clipboard_files, clickable_icon, truncate_item_text};
 use crate::gui::windows::containers::enums::TabbarNavAction;
 use crate::gui::windows::containers::structs::{TabInfo, TabState, TabbarAction, TabsAction};
 use crate::gui::windows::windowsoverrides::handle_draw_windows_buttons;
@@ -9,7 +9,7 @@ use eframe::egui;
 use egui::{FontFamily, FontId};
 use egui_phosphor::regular;
 use std::path::{Path, PathBuf};
-use windows::Win32::Foundation::{HWND};
+use windows::Win32::Foundation::HWND;
 
 pub fn draw_tabs(
     ui: &mut egui::Ui,
@@ -95,11 +95,6 @@ fn handle_draw_tab_new_allocated(
         egui::Color32::TRANSPARENT
     };
 
-    let painter = ui.painter();
-
-    // --- Paint background ---
-    painter.rect_filled(rect, corner, tab_fill);
-
     // --- Font and colors ---
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let label_color = if is_active {
@@ -111,12 +106,22 @@ fn handle_draw_tab_new_allocated(
     // --- Layout parameters ---
     let icon_size = 16.0;
     let spacing = 6.0;
-    let padding = 8.0; // distance from left edge of tab
-
+    let padding = 8.0;
+    let close_button_width = 20.0;
     let icon_pos = egui::pos2(rect.left() + padding, rect.center().y);
     let text_pos = egui::pos2(rect.left() + padding + icon_size + spacing, rect.center().y);
+    let text_width = rect.width() - icon_size - spacing - 2.0 * padding - close_button_width;
 
-    // --- Draw folder icon (left-aligned) ---
+    let (display_title, truncated) =
+        truncate_item_text(ui, &tab.title, text_width, &font_id, label_color);
+
+    // --- NOW safe to use painter ---
+    let painter = ui.painter();
+
+    // --- Paint background ---
+    painter.rect_filled(rect, corner, tab_fill);
+
+    // --- Draw folder icon ---
     painter.text(
         icon_pos,
         egui::Align2::LEFT_CENTER,
@@ -125,14 +130,10 @@ fn handle_draw_tab_new_allocated(
         label_color,
     );
 
-    // --- Draw tab text (left-aligned) ---
     painter.text(
         text_pos,
         egui::Align2::LEFT_CENTER,
-        truncate_text(
-            &tab.title,
-            ((rect.width() - icon_size - spacing - 2.0 * padding) / 7.0) as usize,
-        ),
+        display_title,
         font_id.clone(),
         label_color,
     );
@@ -153,7 +154,6 @@ fn handle_draw_tab_new_allocated(
 
     painter.rect_stroke(rect, rounding, stroke, egui::StrokeKind::Outside);
 
-    // Active tab blends into panel
     if is_active {
         painter.line_segment(
             [rect.left_bottom(), rect.right_bottom()],
@@ -161,7 +161,6 @@ fn handle_draw_tab_new_allocated(
         );
     }
 
-    // --- Handle clicks ---
     let close_resp = tab_close_button(ui, rect, tab.id, palette);
     if close_resp.clicked() {
         action.close = Some(tab.id);
@@ -169,12 +168,17 @@ fn handle_draw_tab_new_allocated(
         action.activate = Some(tab.id);
     }
 
-    // --- Hover cursor ---
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
 
+        let tooltip_text = if truncated {
+            tab.title.clone()
+        } else {
+            tab.full_path.to_string_lossy().to_string()
+        };
+
         resp.on_hover_text(
-            egui::RichText::new(tab.full_path.to_string_lossy())
+            egui::RichText::new(tooltip_text)
                 .size(palette.tooltip_text_size)
                 .color(palette.tooltip_text_color),
         );
@@ -353,6 +357,7 @@ fn toolbar_buttons(ui: &mut egui::Ui, palette: &ThemePalette) -> TabbarAction {
         .clicked()
     {
         action.refresh_current_directory = true;
+        clear_clipboard_files();
     }
 
     // Action buttons
@@ -546,6 +551,8 @@ pub fn draw_tabbar(
             let mut first = true;
 
             let mut breadcrumbs_right = 0.0;
+            let font_id = egui::FontId::new(palette.text_size, egui::FontFamily::Proportional);
+            let total_width = ui.available_width();
 
             for (label, path) in segments.iter() {
                 if !first {
@@ -567,21 +574,27 @@ pub fn draw_tabbar(
                     .inner_margin(egui::Margin::symmetric(6, 2))
                     .corner_radius(egui::CornerRadius::same(palette.medium_radius))
                     .show(ui, |ui| {
-                        let mut label_text = label.clone();
+                        let color = ui.visuals().text_color();
 
-                        // Optional: truncate the label if too long
-                        let max_label_len = 15;
-                        if label_text.len() > max_label_len {
-                            label_text = format!("{}...", &label_text[..max_label_len - 3]);
-                        }
+                        let max_width = (total_width / segments.len() as f32).clamp(60.0, 180.0);
 
-                        ui.add(
+                        let (label_text, truncated) =
+                            truncate_item_text(ui, label, max_width, &font_id, color);
+
+                        let resp = ui.add(
                             egui::Label::new(
                                 egui::RichText::new(label_text).size(palette.text_size),
                             )
                             .selectable(false)
                             .sense(egui::Sense::click()),
-                        )
+                        );
+
+                        // ✅ RETURN THIS
+                        if truncated {
+                            resp.on_hover_text(label)
+                        } else {
+                            resp
+                        }
                     });
 
                 let resp = inner.response.union(inner.inner);

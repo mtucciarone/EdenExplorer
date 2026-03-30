@@ -1,12 +1,6 @@
 use crate::core::fs::MY_PC_PATH;
 use std::path::PathBuf;
-
-#[derive(Debug, Clone)]
-pub struct Navigation {
-    pub current: PathBuf,
-    pub back: Vec<PathBuf>,
-    pub forward: Vec<PathBuf>,
-}
+use crate::gui::windows::structs::Navigation;
 
 impl Navigation {
     pub fn new(start: PathBuf) -> Self {
