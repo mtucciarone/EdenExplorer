@@ -1145,6 +1145,8 @@ fn handle_global_actions(
         let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
         if cancel {
+            let text_edit_id = ui.id().with("filter_input");
+            ui.memory_mut(|mem| mem.data.remove::<egui::text_edit::TextEditState>(text_edit_id));
             *filter_state = FilterState::default();
             return None;
         }
@@ -1167,6 +1169,7 @@ fn handle_global_actions(
         }
 
         if response.clicked_elsewhere() {
+            ui.memory_mut(|mem| mem.data.remove::<egui::text_edit::TextEditState>(text_edit_id));
             *filter_state = FilterState::default();
         }
 
