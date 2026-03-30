@@ -32,6 +32,7 @@ pub fn draw_tabs(
                 egui::vec2(tabs_width, 32.0),
                 egui::Layout::left_to_right(egui::Align::Min),
                 |ui| {
+                    let tabs_rect = ui.available_rect_before_wrap();
                     // 🔥 THIS is where overflow must be handled
                     egui::ScrollArea::horizontal()
                         .id_salt("tabs_scroll")
@@ -58,6 +59,33 @@ pub fn draw_tabs(
                             });
                             handle_draw_add_new_tab_button(ui, palette, &mut action);
                         });
+
+                    // Drag region: empty space to the right of the last tab
+                    let tab_width = 140.0;
+                    let add_tab_width = 28.0;
+                    let spacing = ui.spacing().item_spacing.x;
+                    let tab_count = tabs.len() as f32;
+                    let gaps = if tab_count > 0.0 { tab_count - 1.0 } else { 0.0 };
+                    let content_width =
+                        tab_count * tab_width + gaps * spacing + spacing + add_tab_width;
+
+                    if content_width < tabs_rect.width() {
+                        let empty_left = tabs_rect.min.x + content_width;
+                        let drag_rect = egui::Rect::from_min_max(
+                            egui::pos2(empty_left, tabs_rect.min.y),
+                            tabs_rect.max,
+                        );
+                        if drag_rect.width() > 4.0 {
+                            let resp = ui.allocate_rect(drag_rect, egui::Sense::click_and_drag());
+                            if resp.drag_started() || resp.dragged() {
+                                ui.ctx()
+                                    .send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                            }
+                            if resp.hovered() {
+                                ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                            }
+                        }
+                    }
                 },
             );
 

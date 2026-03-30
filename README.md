@@ -312,7 +312,6 @@ Submit a pull request with a description of your changes
 ## 🐛 Known Bugs
 - Fix network detection in sidebar
 - Fix raw/unmounted drive detection for ISO sticks and Linux partitions
-- Window drag handler some times bugs out and causes the egui elements to be unselectable or positioned incorrectly
 - selection dragging box doesn't select anything
 - navigating files with arrow keys when there's no selection doesn't automatically scroll the table to the index of the navigation
 - While filtering is active, doing shift+home, deleting all the content, then hitting Escape places the input cursor on next filter at -1 position

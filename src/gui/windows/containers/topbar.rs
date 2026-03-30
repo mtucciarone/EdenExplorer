@@ -72,6 +72,19 @@ pub fn draw_topbar(
                 action.toggle_theme = true;
             }
         });
+
+        // Drag region: remaining empty space in the topbar row
+        let drag_rect = ui.available_rect_before_wrap();
+        if drag_rect.width() > 0.0 && drag_rect.height() > 0.0 {
+            let resp = ui.allocate_rect(drag_rect, egui::Sense::click_and_drag());
+            if resp.drag_started() || resp.dragged() {
+                ui.ctx()
+                    .send_viewport_cmd(egui::ViewportCommand::StartDrag);
+            }
+            if resp.hovered() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+            }
+        }
     });
 
     action

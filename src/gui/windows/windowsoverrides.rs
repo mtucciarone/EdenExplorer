@@ -244,26 +244,6 @@ unsafe extern "system" fn custom_wndproc(
                 return LRESULT(HTBOTTOM as _);
             }
 
-            // drag zone
-            if local_y < DRAG_HEIGHT {
-                // convert screen -> client pixels
-                let mut point = POINT { x, y };
-                unsafe { ScreenToClient(hwnd, &mut point) };
-
-                if let Some(ctx) = EGUI_CTX.read().unwrap().as_ref() {
-                    let ppp = ctx.pixels_per_point();
-                    let client_pos = egui::pos2(point.x as f32 / ppp, point.y as f32 / ppp);
-                    // check if pointer is over any egui widget (includes areas/popup windows)
-                    let pointer_over = ctx.is_pointer_over_area();
-                    if !pointer_over {
-                        return LRESULT(HTCAPTION as _); // allow dragging
-                    }
-                }
-
-                // over egui -> don't drag
-                return LRESULT(HTCLIENT as _);
-            }
-
             // everything else is client
             LRESULT(HTCLIENT as _)
         }
