@@ -11,6 +11,7 @@ pub struct ExplorerState {
     pub selection_anchor: Option<usize>,
     pub selection_focus: Option<usize>,
     pub newly_created_path: Option<PathBuf>, // new folder or file
+    pub non_ntfs_popup_path: Option<PathBuf>,
 }
 
 #[derive(Clone)]
@@ -43,6 +44,7 @@ pub struct TabbarAction {
     pub create_folder: bool,
     pub create_file: bool,
     pub add_favorite: bool,
+    pub remove_favorite: bool,
     pub nav_to: Option<PathBuf>,
     pub refresh_current_directory: bool,
     pub is_breadcrumb_path_edit_active: bool,

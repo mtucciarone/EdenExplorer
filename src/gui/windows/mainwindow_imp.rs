@@ -1,4 +1,4 @@
-use crate::core::drives::{get_drives, parse_drive_display};
+use crate::core::drives::{get_drive_infos, is_raw_physical_drive_path};
 use crate::core::fs::FileItem;
 use crate::core::fs::{get_drive_space, parallel_directory_scan, scan_dir_async};
 use crate::core::indexer::{load_app_settings, save_app_settings, save_favorites};
@@ -116,12 +116,19 @@ impl MainWindow {
         self.explorer_state.selection_focus = None;
         self.item_viewer_filter_state.dirty = true;
         self.item_viewer_filter_state.cached_indices.clear();
+        self.is_loading = false;
+
+        if is_raw_physical_drive_path(&self.current_nav().current) {
+            self.explorer_state.non_ntfs_popup_path =
+                Some(self.current_nav().current.clone());
+            return;
+        }
 
         if self.current_nav().is_root() {
-            for d in get_drives() {
-                let (label, path) = parse_drive_display(&d);
-
-                if let Some((total, free)) = get_drive_space(&path) {
+            for d in get_drive_infos() {
+                let label = d.display;
+                let path = d.path;
+                if let (Some(total), Some(free)) = (d.total_space, d.free_space) {
                     self.files.push(FileItem::with_drive_info(
                         label, path, true, None, None, None, total, free,
                     ));
@@ -139,6 +146,7 @@ impl MainWindow {
         let (tx, rx) = unbounded();
         scan_dir_async(self.current_nav().current.clone(), tx);
         self.rx = Some(rx);
+        self.is_loading = true;
 
         // Setup folder size calculation channels only if folder scanning is enabled
         if self
@@ -253,6 +261,20 @@ impl MainWindow {
             .favorites
             .push(FavoriteItem { path, label });
         self.persist_favorites();
+    }
+
+    pub fn remove_favorite(&mut self, path: &PathBuf) {
+        self.sidebar_state.favorites.retain(|fav| &fav.path != path);
+        self.persist_favorites();
+        if self
+            .sidebar_state
+            .item_clicked
+            .as_ref()
+            .map(|p| p == path)
+            .unwrap_or(false)
+        {
+            self.sidebar_state.item_clicked = None;
+        }
     }
 
     pub fn persist_favorites(&self) {
@@ -571,6 +593,14 @@ impl MainWindow {
             {
                 self.add_favorite();
             }
+            if tabbar_action
+                .as_ref()
+                .map(|t| t.remove_favorite)
+                .unwrap_or(false)
+            {
+                let path = self.current_nav().current.clone();
+                self.remove_favorite(&path);
+            }
         }
     }
 
@@ -654,17 +684,7 @@ impl MainWindow {
                 self.sidebar_state.item_clicked = Some(path);
             }
             if let Some(path) = action.remove_favorite {
-                self.sidebar_state.favorites.retain(|fav| fav.path != path);
-                self.persist_favorites();
-                if self
-                    .sidebar_state
-                    .item_clicked
-                    .as_ref()
-                    .map(|p| p == &path)
-                    .unwrap_or(false)
-                {
-                    self.sidebar_state.item_clicked = None;
-                }
+                self.remove_favorite(&path);
             }
         }
     }
@@ -746,11 +766,16 @@ impl MainWindow {
         // Batch receive
         if let Some(rx) = &self.rx {
             let mut batch = Vec::with_capacity(128);
+            let mut disconnected = false;
 
             for _ in 0..128 {
                 match rx.try_recv() {
                     Ok(item) => batch.push(item),
-                    Err(_) => break,
+                    Err(crossbeam_channel::TryRecvError::Empty) => break,
+                    Err(crossbeam_channel::TryRecvError::Disconnected) => {
+                        disconnected = true;
+                        break;
+                    }
                 }
             }
 
@@ -778,6 +803,12 @@ impl MainWindow {
 
                 self.files.extend(batch);
                 sort_files(&mut self.files, self.sort_column, self.sort_ascending);
+                ctx.request_repaint();
+            }
+
+            if disconnected {
+                self.rx = None;
+                self.is_loading = false;
                 ctx.request_repaint();
             }
         }

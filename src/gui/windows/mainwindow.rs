@@ -68,6 +68,7 @@ pub struct MainWindow {
     pub(crate) file_size_text_cache: HashMap<PathBuf, (u64, String)>,
     pub(crate) folder_size_text_cache: HashMap<PathBuf, (u64, bool, String)>,
     pub(crate) drive_size_text_cache: HashMap<PathBuf, (u64, u64, String)>,
+    pub(crate) is_loading: bool,
 
     // Sidebar Variables
     pub(crate) sidebar_state: SidebarState,
@@ -144,6 +145,7 @@ impl Default for MainWindow {
             file_size_text_cache: HashMap::new(),
             folder_size_text_cache: HashMap::new(),
             drive_size_text_cache: HashMap::new(),
+            is_loading: false,
         };
 
         // Initialize settings window with loaded values
@@ -301,7 +303,7 @@ impl eframe::App for MainWindow {
                             egui::Frame::NONE.stroke(egui::Stroke::new(1.0, palette.tab_border_default));
 
                         ui.allocate_ui_with_layout(
-                            egui::vec2(sidebar_width, ui.available_height() + 32.0),
+                            egui::vec2(sidebar_width, ui.available_height() + 15.5),
                             egui::Layout::top_down(egui::Align::Min),
                             |ui| {
                                 egui::Frame::NONE.show(ui, |ui| {
@@ -400,8 +402,19 @@ impl eframe::App for MainWindow {
                                 container.show(ui, |ui| {
                                     tabbar_action = {
                                         let tab = &mut self.tabs[active_index];
+                                        let is_favorited = self
+                                            .sidebar_state
+                                            .favorites
+                                            .iter()
+                                            .any(|fav| fav.path == tab.nav.current);
 
-                                        Some(draw_tabbar(ui, &icon_cache, tab, palette))
+                                        Some(draw_tabbar(
+                                            ui,
+                                            &icon_cache,
+                                            tab,
+                                            palette,
+                                            is_favorited,
+                                        ))
                                     };
 
                                     ui.add_space(4.0);
@@ -427,6 +440,7 @@ impl eframe::App for MainWindow {
                                                 &mut tabbar_action,
                                                 &mut self.drag_state,
                                                 &mut self.item_viewer_filter_state,
+                                                self.is_loading,
                                                 &mut self.explorer_state,
                                             );
 

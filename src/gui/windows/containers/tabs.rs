@@ -5,9 +5,10 @@ use crate::gui::utils::{clear_clipboard_files, clickable_icon, truncate_item_tex
 use crate::gui::windows::containers::enums::TabbarNavAction;
 use crate::gui::windows::containers::structs::{TabInfo, TabState, TabbarAction, TabsAction};
 use crate::gui::windows::windowsoverrides::handle_draw_windows_buttons;
+use crate::core::portable;
 use eframe::egui;
 use egui::{FontFamily, FontId};
-use egui_phosphor::regular;
+use egui_phosphor::{fill, regular};
 use std::path::{Path, PathBuf};
 use windows::Win32::Foundation::HWND;
 
@@ -335,7 +336,12 @@ fn tab_add_button(
     resp
 }
 
-fn toolbar_buttons(ui: &mut egui::Ui, palette: &ThemePalette) -> TabbarAction {
+fn toolbar_buttons(
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+    is_favorited: bool,
+    is_root: bool,
+) -> TabbarAction {
     let mut action = TabbarAction::default();
 
     // Navigation buttons
@@ -413,16 +419,56 @@ fn toolbar_buttons(ui: &mut egui::Ui, palette: &ThemePalette) -> TabbarAction {
         action.create_file = true;
     }
 
-    if clickable_icon(ui, regular::STAR, palette.primary)
-        .on_hover_text(
-            egui::RichText::new("Add current directory to favorites")
+    let star_icon = if is_favorited { fill::STAR } else { regular::STAR };
+    let star_color = if is_favorited {
+        egui::Color32::from_rgb(242, 201, 76)
+    } else {
+        palette.tooltip_text_color
+    };
+
+    let star_font = if is_favorited {
+        FontId::new(palette.text_size, FontFamily::Name("phosphor_fill".into()))
+    } else {
+        FontId::new(palette.text_size, FontFamily::Proportional)
+    };
+
+    let star_resp = ui.add_enabled(
+        !is_root,
+        egui::Label::new(
+            egui::RichText::new(star_icon)
+                .font(star_font)
+                .color(star_color),
+        )
+        .selectable(false)
+        .sense(egui::Sense::click()),
+    );
+
+    let star_resp = if is_root {
+        star_resp.on_hover_text(
+            egui::RichText::new("Favorites are disabled on This PC")
                 .size(palette.tooltip_text_size)
                 .color(palette.tooltip_text_color),
         )
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .clicked()
-    {
-        action.add_favorite = true;
+    } else {
+        star_resp
+            .on_hover_text(
+                egui::RichText::new(if is_favorited {
+                    "Remove current directory from favorites"
+                } else {
+                    "Add current directory to favorites"
+                })
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+    };
+
+    if star_resp.clicked() {
+        if is_favorited {
+            action.remove_favorite = true;
+        } else {
+            action.add_favorite = true;
+        }
     }
 
     action
@@ -433,11 +479,12 @@ pub fn draw_tabbar(
     icon_cache: &IconCache,
     tab: &mut TabState,
     palette: &ThemePalette,
+    is_favorited: bool,
 ) -> TabbarAction {
     let mut action = TabbarAction::default();
 
     ui.horizontal(|ui| {
-        let toolbar_action = toolbar_buttons(ui, palette);
+        let toolbar_action = toolbar_buttons(ui, palette, is_favorited, tab.nav.is_root());
 
         // Merge toolbar actions
         if toolbar_action.nav.is_some() {
@@ -454,6 +501,9 @@ pub fn draw_tabbar(
         }
         if toolbar_action.add_favorite {
             action.add_favorite = true;
+        }
+        if toolbar_action.remove_favorite {
+            action.remove_favorite = true;
         }
 
         ui.separator();
@@ -677,27 +727,32 @@ fn build_breadcrumbs(path: &Path, available_width: f32, font_size: f32) -> Vec<(
     let separator_width = char_width * 4.0; // width for '>' separator
 
     // Collect all segments
-    let mut all_segments = Vec::new();
-    let mut current = PathBuf::new();
-    for comp in path.components() {
-        match comp {
-            Component::Prefix(prefix) => {
-                current.push(prefix.as_os_str());
-                all_segments.push((
-                    prefix.as_os_str().to_string_lossy().to_string(),
-                    current.clone(),
-                ));
+    let mut all_segments = if portable::is_portable_path(&path.to_path_buf()) {
+        portable::build_breadcrumb_segments(&path.to_path_buf()).unwrap_or_default()
+    } else {
+        let mut segments = Vec::new();
+        let mut current = PathBuf::new();
+        for comp in path.components() {
+            match comp {
+                Component::Prefix(prefix) => {
+                    current.push(prefix.as_os_str());
+                    segments.push((
+                        prefix.as_os_str().to_string_lossy().to_string(),
+                        current.clone(),
+                    ));
+                }
+                Component::RootDir => {
+                    current.push(Path::new("\\"));
+                }
+                Component::Normal(name) => {
+                    current.push(name);
+                    segments.push((name.to_string_lossy().to_string(), current.clone()));
+                }
+                _ => {}
             }
-            Component::RootDir => {
-                current.push(Path::new("\\"));
-            }
-            Component::Normal(name) => {
-                current.push(name);
-                all_segments.push((name.to_string_lossy().to_string(), current.clone()));
-            }
-            _ => {}
         }
-    }
+        segments
+    };
 
     // Compute total width
     let total_width: f32 = all_segments

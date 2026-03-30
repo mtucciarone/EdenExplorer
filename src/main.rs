@@ -33,6 +33,15 @@ fn main() -> eframe::Result<()> {
         Box::new(|cc| {
             let mut fonts = egui::FontDefinitions::default();
             egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+            // Register fill variant under a separate family for selective use (e.g., filled star).
+            fonts.font_data.insert(
+                "phosphor_fill".to_owned(),
+                egui_phosphor::Variant::Fill.font_data().into(),
+            );
+            fonts.families.insert(
+                egui::FontFamily::Name("phosphor_fill".into()),
+                vec!["phosphor_fill".to_owned()],
+            );
             fonts.font_data.insert(
                 "japanese_font".to_owned(),
                 egui::FontData::from_static(include_bytes!("assets/NotoSansJP-Regular.ttf")).into(),

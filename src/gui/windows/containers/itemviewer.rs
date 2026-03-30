@@ -1,4 +1,5 @@
 use crate::core::fs::FileItem;
+use crate::core::drives::is_raw_physical_drive_path;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::{ThemePalette, apply_checkbox_colors};
 use crate::gui::utils::{
@@ -38,8 +39,10 @@ pub fn draw_item_viewer(
     tabbar_action: &mut Option<TabbarAction>,
     drag_state: &mut DragState,
     filter_state: &mut FilterState,
+    is_loading: bool,
     explorer_state: &mut ExplorerState,
 ) -> Option<ItemViewerAction> {
+    let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let mut hovered_drop_target: Option<PathBuf> = None;
     let mut hovered_drop_target_rect: Option<egui::Rect> = None;
     draw_external_to_internal_drag_overlay(ui, *external_drag_to_internal_hover);
@@ -51,7 +54,11 @@ pub fn draw_item_viewer(
 
     if files.is_empty() {
         ui.centered_and_justified(|ui| {
-            ui.label("This folder is empty");
+            if is_loading {
+                ui.add(egui::Spinner::new().size(28.0));
+            } else {
+                ui.label("This folder is empty");
+            }
         });
     }
 
@@ -214,10 +221,11 @@ pub fn draw_item_viewer(
             .body(|body| {
                 let hovered_drop_target = &mut hovered_drop_target;
                 let filtered_indices = &filter_state.cached_indices;
-                let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
                 body.rows(layout.row_height, filtered_indices.len(), |mut row| {
                     let idx = row.index();
                     let file = &files[filtered_indices[idx]];
+                    let is_non_ntfs_drive =
+                        layout.is_drive_view && is_raw_physical_drive_path(&file.path);
 
                     // Determine if this row is selected
                     let is_selected = explorer_state.selected_paths.contains(&file.path);
@@ -338,7 +346,7 @@ pub fn draw_item_viewer(
                         }
                     }
 
-                    if row_resp.drag_started() {
+                    if row_resp.drag_started() && !is_non_ntfs_drive {
                         drag_state.start_pos = row_resp.interact_pointer_pos();
                         drag_state.active = false; // threshold not passed yet
                         drag_state.source_items.clear();
@@ -362,7 +370,9 @@ pub fn draw_item_viewer(
                     }
 
                     if row_resp.clicked() && !drag_state.active {
-                        if let Some(a) = handle_row_click(
+                        if is_non_ntfs_drive {
+                            explorer_state.non_ntfs_popup_path = Some(file.path.clone());
+                        } else if let Some(a) = handle_row_click(
                             idx,
                             file,
                             modifiers,
@@ -375,7 +385,7 @@ pub fn draw_item_viewer(
                         }
                     }
 
-                    if row_resp.middle_clicked() && file.is_dir {
+                    if row_resp.middle_clicked() && file.is_dir && !is_non_ntfs_drive {
                         action = Some(ItemViewerAction::OpenInNewTab(file.path.clone()));
                     }
 
@@ -387,19 +397,21 @@ pub fn draw_item_viewer(
                         any_row_hovered = true;
                     }
 
-                    row_resp.context_menu(|ui| {
-                        handle_context_menu_actions(
-                            ui,
-                            file,
-                            is_selected,
-                            paste_enabled,
-                            layout.is_drive_view,
-                            is_cut,
-                            &mut action,
-                            palette,
-                            explorer_state,
-                        );
-                    });
+                    if !is_non_ntfs_drive {
+                        row_resp.context_menu(|ui| {
+                            handle_context_menu_actions(
+                                ui,
+                                file,
+                                is_selected,
+                                paste_enabled,
+                                layout.is_drive_view,
+                                is_cut,
+                                &mut action,
+                                palette,
+                                explorer_state,
+                            );
+                        });
+                    }
                 });
                 if let Some((_, is_dir, path, rect)) = best_hovered_row.take() {
                     if is_dir {
@@ -460,6 +472,7 @@ pub fn draw_item_viewer(
             ui.ctx(),
             &filter_state.cached_indices,
             files,
+            layout.is_drive_view,
             explorer_state,
         ) {
             action = Some(a);
@@ -504,6 +517,34 @@ pub fn draw_item_viewer(
                 }
             }
         });
+
+        if let Some(_path) = explorer_state.non_ntfs_popup_path.clone() {
+            let mut open = true;
+            egui::Window::new("Non-NTFS Drive")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                .open(&mut open)
+                .show(ui.ctx(), |ui| {
+                    ui.label(
+                        egui::RichText::new("This is a non-NTFS drive. Please mount it first if you'd like to explore it, or use an external tool to access this filesystem.")
+                            .size(palette.text_size)
+                            .color(palette.tooltip_text_color)
+                            .font(font_id.clone()),
+                    );
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.button(format!("{} Ok", regular::CHECK)).clicked() {
+                                explorer_state.non_ntfs_popup_path = None;
+                            }
+                        });
+                    });
+                });
+            if !open {
+                explorer_state.non_ntfs_popup_path = None;
+            }
+        }
 
         action
     } else {
@@ -1483,11 +1524,34 @@ fn handle_keyboard_navigation(
     ctx: &egui::Context,
     filtered_indices: &[usize],
     files: &Vec<FileItem>,
+    is_drive_view: bool,
     explorer_state: &mut ExplorerState,
 ) -> Option<ItemViewerAction> {
     if filtered_indices.is_empty() {
         return None;
     }
+
+    let is_selectable = |row_idx: usize| -> bool {
+        if !is_drive_view {
+            return true;
+        }
+        let file_idx = filtered_indices[row_idx];
+        !is_raw_physical_drive_path(&files[file_idx].path)
+    };
+
+    let next_selectable = |start: usize, dir: i32| -> Option<usize> {
+        let mut i = start as i32;
+        loop {
+            i += dir;
+            if i < 0 || i >= filtered_indices.len() as i32 {
+                return None;
+            }
+            let idx = i as usize;
+            if is_selectable(idx) {
+                return Some(idx);
+            }
+        }
+    };
 
     let mut action: Option<ItemViewerAction> = None;
 
@@ -1505,16 +1569,17 @@ fn handle_keyboard_navigation(
         Some(idx) => idx,
         None => {
             if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
-                let first = files[filtered_indices[0]].path.clone();
+                let first_idx = (0..filtered_indices.len()).find(|&i| is_selectable(i))?;
+                let first = files[filtered_indices[first_idx]].path.clone();
 
-                explorer_state.selection_anchor = Some(0);
-                explorer_state.selection_focus = Some(0);
+                explorer_state.selection_anchor = Some(first_idx);
+                explorer_state.selection_focus = Some(first_idx);
 
                 return Some(ItemViewerAction::ReplaceSelection(first));
             }
 
             if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
-                let last_idx = filtered_indices.len() - 1;
+                let last_idx = (0..filtered_indices.len()).rev().find(|&i| is_selectable(i))?;
                 let last = files[filtered_indices[last_idx]].path.clone();
 
                 explorer_state.selection_anchor = Some(last_idx);
@@ -1534,14 +1599,16 @@ fn handle_keyboard_navigation(
 
         let mut new_focus = focus;
 
-        if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown))
-            && focus < filtered_indices.len() - 1
-        {
-            new_focus += 1;
+        if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+            if let Some(next) = next_selectable(focus, 1) {
+                new_focus = next;
+            }
         }
 
-        if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) && focus > 0 {
-            new_focus -= 1;
+        if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+            if let Some(prev) = next_selectable(focus, -1) {
+                new_focus = prev;
+            }
         }
 
         explorer_state.selection_anchor = Some(anchor);
@@ -1552,6 +1619,13 @@ fn handle_keyboard_navigation(
 
         let range_paths: Vec<PathBuf> = filtered_indices[range_start..=range_end]
             .iter()
+            .filter(|&&i| {
+                if !is_drive_view {
+                    true
+                } else {
+                    !is_raw_physical_drive_path(&files[i].path)
+                }
+            })
             .map(|&i| files[i].path.clone())
             .collect();
 
@@ -1561,14 +1635,16 @@ fn handle_keyboard_navigation(
     else {
         let mut new_idx = current_idx;
 
-        if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown))
-            && current_idx < filtered_indices.len() - 1
-        {
-            new_idx += 1;
+        if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+            if let Some(next) = next_selectable(current_idx, 1) {
+                new_idx = next;
+            }
         }
 
-        if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) && current_idx > 0 {
-            new_idx -= 1;
+        if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+            if let Some(prev) = next_selectable(current_idx, -1) {
+                new_idx = prev;
+            }
         }
 
         if new_idx != current_idx {

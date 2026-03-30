@@ -12,6 +12,7 @@ use windows::Win32::Storage::FileSystem::{
     FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, GetDiskFreeSpaceExW, OPEN_EXISTING,
 };
 use windows::core::PCWSTR;
+use crate::core::portable;
 
 const STATUS_NO_MORE_FILES: i32 = 0x80000006u32 as i32;
 pub const MY_PC_PATH: &str = "::MY_PC::";
@@ -156,6 +157,11 @@ pub fn calculate_folder_size_fast(path: PathBuf) -> u64 {
 pub fn scan_dir_async(path: PathBuf, tx: Sender<FileItem>) {
     thread::spawn(move || {
         if path.to_string_lossy() == MY_PC_PATH {
+            return;
+        }
+
+        if portable::is_portable_path(&path) {
+            portable::scan_portable_async(path, tx);
             return;
         }
 

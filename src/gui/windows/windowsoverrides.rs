@@ -17,6 +17,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::Win32::System::DataExchange::{
     AddClipboardFormatListener, RemoveClipboardFormatListener,
 };
+use crate::core::drives::mark_drive_cache_dirty;
 
 static mut ORIGINAL_WNDPROC: Option<WNDPROC> = None;
 const MIN_WIDTH: i32 = 600;
@@ -163,6 +164,15 @@ unsafe extern "system" fn custom_wndproc(
     match msg {
         WM_CLIPBOARDUPDATE => {
             mark_clipboard_dirty();
+            LRESULT(0)
+        }
+        WM_DEVICECHANGE => {
+            mark_drive_cache_dirty();
+            if let Ok(ctx) = EGUI_CTX.read() {
+                if let Some(ctx) = ctx.as_ref() {
+                    ctx.request_repaint();
+                }
+            }
             LRESULT(0)
         }
         WM_NCDESTROY => {

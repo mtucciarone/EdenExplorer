@@ -311,7 +311,6 @@ Submit a pull request with a description of your changes
 
 ## 🐛 Known Bugs
 - Fix network detection in sidebar
-- Fix raw/unmounted drive detection for ISO sticks and Linux partitions
 - selection dragging box doesn't select anything
 
 ## License

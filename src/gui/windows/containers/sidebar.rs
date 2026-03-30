@@ -1,4 +1,4 @@
-use crate::core::drives::{DriveInfo, get_drive_infos};
+use crate::core::drives::{DriveInfo, get_drive_infos, consume_drive_list_dirty, is_raw_physical_drive_path};
 use crate::core::fs::MY_PC_PATH;
 use crate::core::networkdevices::NetworkDevicesState;
 use crate::gui::icons::IconCache;
@@ -503,6 +503,7 @@ pub fn draw_sidebar(
 
                     if sidebar_state.cached_drives.is_empty()
                         || sidebar_state.last_drive_refresh.elapsed() > DRIVE_CACHE_DURATION
+                        || consume_drive_list_dirty()
                     {
                         sidebar_state.cached_drives = get_drive_infos();
                         sidebar_state.last_drive_refresh = Instant::now();
@@ -517,10 +518,39 @@ pub fn draw_sidebar(
 
                         let resp = sidebar_drive_item(ui, icon_cache, &drive, palette, is_selected);
                         if resp.clicked() {
-                            action.nav_to = Some(drive.path.clone());
+                            if is_raw_physical_drive_path(&drive.path) {
+                                sidebar_state.non_ntfs_popup_path = Some(drive.path.clone());
+                            } else {
+                                action.nav_to = Some(drive.path.clone());
+                            }
                         }
                         if resp.middle_clicked() {
-                            action.open_new_tab = Some(drive.path.clone());
+                            if is_raw_physical_drive_path(&drive.path) {
+                                sidebar_state.non_ntfs_popup_path = Some(drive.path.clone());
+                            } else {
+                                action.open_new_tab = Some(drive.path.clone());
+                            }
+                        }
+                    }
+
+                    if let Some(_path) = sidebar_state.non_ntfs_popup_path.clone() {
+                        let mut open = true;
+                        egui::Window::new("Non-NTFS Drive")
+                            .collapsible(false)
+                            .resizable(false)
+                            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                            .open(&mut open)
+                            .show(ui.ctx(), |ui| {
+                                ui.label("This is a non-NTFS drive.");
+                                ui.label("Please mount it first if you'd like to explore it,");
+                                ui.label("or use an external tool to access this filesystem.");
+                                ui.add_space(8.0);
+                                if ui.button("OK").clicked() {
+                                    sidebar_state.non_ntfs_popup_path = None;
+                                }
+                            });
+                        if !open {
+                            sidebar_state.non_ntfs_popup_path = None;
                         }
                     }
 
@@ -563,6 +593,9 @@ pub fn draw_sidebar(
                     //         action.open_new_tab = Some(device_path);
                     //     }
                     // }
+
+                    // Extra bottom padding so last items aren't clipped by scroll boundary.
+                    ui.add_space(12.0);
                 });
                 ui.add_space(2.0);
             });

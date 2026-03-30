@@ -57,6 +57,7 @@ pub struct SidebarState {
     pub network_state: NetworkDevicesState,
     pub cached_drives: Vec<DriveInfo>,
     pub last_drive_refresh: Instant,
+    pub non_ntfs_popup_path: Option<PathBuf>,
 }
 
 impl Default for SidebarState {
@@ -72,6 +73,7 @@ impl Default for SidebarState {
             last_drive_refresh: now
                 .checked_sub(Duration::from_secs(60))
                 .unwrap_or(now),
+            non_ntfs_popup_path: None,
         }
     }
 }

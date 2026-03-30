@@ -7,12 +7,10 @@ use std::{
     sync::{Arc, Mutex},
     thread,
 };
+use crate::core::portable;
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
 use windows::Win32::UI::WindowsAndMessaging::HICON;
-use windows::Win32::UI::WindowsAndMessaging::{
-    CopyImage, IMAGE_ICON, LR_COPYFROMRESOURCE, LR_DEFAULTCOLOR,
-};
 use windows::{
     Win32::{
         Graphics::Gdi::*,
@@ -21,7 +19,8 @@ use windows::{
             Controls::IImageList,
             Shell::{
                 SHFILEINFOW, SHGFI_SYSICONINDEX, SHGFI_USEFILEATTRIBUTES, SHGetFileInfoW,
-                SHGetImageList, SHIL_EXTRALARGE,
+                SHGetImageList, SHGetStockIconInfo, SHIL_EXTRALARGE, SHGSI_ICON, SHGSI_LARGEICON,
+                SHSTOCKICONINFO, SIID_DRIVEUNKNOWN,
             },
             WindowsAndMessaging::{DestroyIcon, GetIconInfo, ICONINFO},
         },
@@ -61,6 +60,26 @@ impl IconCache {
 
             while let Ok(req) = rx.recv() {
                 let key = icon_key(&req.path, req.is_dir);
+
+                if key.starts_with("portable_device") {
+                    if textures_bg.lock().unwrap().contains_key(&key) {
+                        continue;
+                    }
+                    if let Some((pixels, w, h)) = get_portable_device_icon_rgba() {
+                        let image = egui::ColorImage::from_rgba_unmultiplied(
+                            [w as usize, h as usize],
+                            &pixels,
+                        );
+                        let texture = ctx_bg.load_texture(
+                            format!("icon_{}", key),
+                            image,
+                            Default::default(),
+                        );
+                        textures_bg.lock().unwrap().insert(key.clone(), texture);
+                        ctx_bg.request_repaint();
+                        continue;
+                    }
+                }
 
                 // 1️⃣ Get icon index (cached)
                 let icon_index = {
@@ -126,6 +145,12 @@ impl IconCache {
 // ---------------- helpers ----------------
 
 fn icon_key(path: &Path, is_dir: bool) -> String {
+    if portable::is_portable_device_path(&path.to_path_buf()) {
+        if let Some((device_id, _)) = portable::parse_portable_path(&path.to_path_buf()) {
+            return format!("portable_device:stock:{}", device_id);
+        }
+        return "portable_device".to_string();
+    }
     if is_dir {
         if is_drive_root(path) {
             format!("drive:{}", path.to_string_lossy().to_lowercase())
@@ -147,7 +172,7 @@ fn is_drive_root(path: &Path) -> bool {
 fn get_icon_index_for_key(key: &str, path: &Path, is_dir: bool) -> Option<i32> {
     let wide: Vec<u16>;
     let mut flags = SHGFI_SYSICONINDEX;
-    let file_attrs = if is_dir {
+    let mut file_attrs = if is_dir {
         FILE_ATTRIBUTE_DIRECTORY
     } else {
         FILE_ATTRIBUTE_NORMAL
@@ -155,6 +180,9 @@ fn get_icon_index_for_key(key: &str, path: &Path, is_dir: bool) -> Option<i32> {
 
     if key.starts_with("drive:") {
         wide = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    } else if key.starts_with("portable_device") {
+        let fake = PathBuf::from("C:\\");
+        wide = fake.as_os_str().encode_wide().chain(Some(0)).collect();
     } else if is_dir {
         wide = "folder".encode_utf16().chain(Some(0)).collect();
         flags |= SHGFI_USEFILEATTRIBUTES;
@@ -184,6 +212,27 @@ fn get_icon_index_for_key(key: &str, path: &Path, is_dir: bool) -> Option<i32> {
 
 fn get_icon_from_list(list: &IImageList, index: i32) -> Option<HICON> {
     unsafe { list.GetIcon(index, 0).ok() }
+}
+
+fn get_portable_device_icon_rgba() -> Option<(Vec<u8>, u32, u32)> {
+    unsafe {
+        let mut info = SHSTOCKICONINFO::default();
+        info.cbSize = std::mem::size_of::<SHSTOCKICONINFO>() as u32;
+        SHGetStockIconInfo(
+            SIID_DRIVEUNKNOWN,
+            SHGSI_ICON | SHGSI_LARGEICON,
+            &mut info,
+        )
+        .ok()?;
+
+        if info.hIcon.0.is_null() {
+            return None;
+        }
+
+        let rgba = icon_to_rgba(info.hIcon);
+        let _ = DestroyIcon(info.hIcon);
+        rgba
+    }
 }
 
 fn icon_to_rgba(icon: HICON) -> Option<(Vec<u8>, u32, u32)> {
