@@ -125,6 +125,10 @@ pub fn draw_item_viewer(
     if !files.is_empty() {
         let modifiers = ui.ctx().input(|i| i.modifiers);
 
+        let arrow_nav = ui.ctx().input(|i| {
+            i.key_pressed(egui::Key::ArrowDown) || i.key_pressed(egui::Key::ArrowUp)
+        });
+
         let mut table = TableBuilder::new(ui)
             .striped(false)
             .sense(if layout.is_drive_view {
@@ -145,6 +149,15 @@ pub fn draw_item_viewer(
             {
                 table = table.scroll_to_row(idx, Some(egui::Align::Center));
                 explorer_state.newly_created_path = None;
+            }
+        }
+
+        // If selection changed via keyboard, keep it in view
+        if arrow_nav {
+            if let Some(focus_idx) = explorer_state.selection_focus {
+                if focus_idx < filter_state.cached_indices.len() {
+                    table = table.scroll_to_row(focus_idx, Some(egui::Align::Center));
+                }
             }
         }
 

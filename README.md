@@ -313,7 +313,6 @@ Submit a pull request with a description of your changes
 - Fix network detection in sidebar
 - Fix raw/unmounted drive detection for ISO sticks and Linux partitions
 - selection dragging box doesn't select anything
-- navigating files with arrow keys when there's no selection doesn't automatically scroll the table to the index of the navigation
 - While filtering is active, doing shift+home, deleting all the content, then hitting Escape places the input cursor on next filter at -1 position
 - Opening an external drive, like an IPhone, shows "this folder is empty". trying to navigate "up" breaks the interface.
 
