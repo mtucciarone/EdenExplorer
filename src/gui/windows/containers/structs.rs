@@ -1,8 +1,6 @@
-use std::collections::HashSet;
-use std::time::Instant;
-
 use crate::gui::windows::containers::enums::TabbarNavAction;
 use crate::gui::windows::structs::Navigation;
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 #[derive(Default)]
@@ -126,10 +124,4 @@ impl Default for FilterState {
             dirty: true,
         }
     }
-}
-
-pub struct ClipboardState {
-    paths: HashSet<PathBuf>,
-    is_cut: bool,
-    last_update: Instant,
 }

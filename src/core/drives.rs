@@ -10,10 +10,9 @@ use std::time::{Duration, Instant};
 use windows::Win32::Devices::DeviceAndDriverInstallation::*;
 use windows::Win32::Foundation::*;
 use windows::Win32::Storage::FileSystem::{
-    CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_GENERIC_READ, FILE_READ_ATTRIBUTES, FILE_SHARE_READ,
-    FILE_SHARE_WRITE, FindFirstVolumeW, FindNextVolumeW, FindVolumeClose, GetDiskFreeSpaceExW,
-    GetDriveTypeW, GetLogicalDrives, GetVolumeInformationW, GetVolumePathNamesForVolumeNameW,
-    OPEN_EXISTING,
+    CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_READ_ATTRIBUTES, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    FindFirstVolumeW, FindNextVolumeW, FindVolumeClose, GetDiskFreeSpaceExW, GetDriveTypeW,
+    GetLogicalDrives, GetVolumeInformationW, GetVolumePathNamesForVolumeNameW, OPEN_EXISTING,
 };
 use windows::Win32::System::IO::DeviceIoControl;
 use windows::Win32::System::Ioctl::*;
@@ -22,7 +21,6 @@ use windows::Win32::System::Ioctl::{
 };
 use windows::Win32::System::WindowsProgramming::{DRIVE_CDROM, DRIVE_REMOVABLE};
 use windows::core::PCWSTR;
-use windows::core::PWSTR;
 
 // Cache for drive information to avoid expensive enumeration on every call
 struct DriveCache {

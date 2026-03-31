@@ -17,7 +17,6 @@ pub struct ThemeCustomizer {
     pub selected_mode: ThemeMode,
     pub light_palette: ThemePalette,
     pub dark_palette: ThemePalette,
-    pub has_unsaved_changes: bool,
 }
 
 impl Default for ThemeCustomizer {
@@ -27,7 +26,6 @@ impl Default for ThemeCustomizer {
             selected_mode: ThemeMode::Dark,
             light_palette: crate::gui::theme::get_palette(ThemeMode::Light),
             dark_palette: crate::gui::theme::get_palette(ThemeMode::Dark),
-            has_unsaved_changes: false,
         }
     }
 }
@@ -50,7 +48,6 @@ pub struct AppSettings {
 pub struct SettingsWindow {
     pub open: bool,
     pub current_settings: AppSettings,
-    pub has_unsaved_changes: bool,
     pub show_reset_favorites_confirmation: bool,
 }
 

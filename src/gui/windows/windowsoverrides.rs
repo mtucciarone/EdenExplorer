@@ -11,7 +11,7 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Dwm::*;
 use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow, ScreenToClient,
+    GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
 };
 use windows::Win32::System::DataExchange::{
     AddClipboardFormatListener, RemoveClipboardFormatListener,
@@ -23,7 +23,6 @@ static mut ORIGINAL_WNDPROC: Option<WNDPROC> = None;
 const MIN_WIDTH: i32 = 600;
 const MIN_HEIGHT: i32 = 400;
 const RESIZE_BORDER: i32 = 6;
-const DRAG_HEIGHT: i32 = 36;
 
 pub fn get_hwnd_from_cc(cc: &eframe::CreationContext<'_>) -> Option<HWND> {
     let handle = cc.window_handle().ok()?;

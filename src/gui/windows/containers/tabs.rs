@@ -740,7 +740,7 @@ fn build_breadcrumbs(path: &Path, available_width: f32, font_size: f32) -> Vec<(
     let separator_width = char_width * 4.0; // width for '>' separator
 
     // Collect all segments
-    let mut all_segments = if portable::is_portable_path(&path.to_path_buf()) {
+    let all_segments = if portable::is_portable_path(&path.to_path_buf()) {
         portable::build_breadcrumb_segments(&path.to_path_buf()).unwrap_or_default()
     } else {
         let mut segments = Vec::new();

@@ -302,15 +302,6 @@ pub fn set_palette(mode: ThemeMode, palette: ThemePalette) {
     }
 }
 
-pub fn reset_palette(mode: ThemeMode) {
-    set_palette(mode, get_default_palette(mode));
-}
-
-pub fn set_palettes(light: ThemePalette, dark: ThemePalette) {
-    set_palette(ThemeMode::Light, light);
-    set_palette(ThemeMode::Dark, dark);
-}
-
 pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
     let mut style = (*ctx.style()).clone();
     let palette = get_palette(mode);

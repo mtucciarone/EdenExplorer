@@ -8,12 +8,13 @@ use std::{
     sync::{Arc, Mutex},
     thread,
 };
-use windows::Win32::Foundation::HANDLE;
-use windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
+use windows::Win32::Graphics::Gdi::{
+    BI_RGB, BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, DeleteObject, GetDC, GetDIBits,
+    GetObjectW, HGDIOBJ, ReleaseDC,
+};
 use windows::Win32::UI::WindowsAndMessaging::HICON;
 use windows::{
     Win32::{
-        Graphics::Gdi::*,
         Storage::FileSystem::{FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL},
         UI::{
             Controls::IImageList,
@@ -169,7 +170,7 @@ fn is_drive_root(path: &Path) -> bool {
 fn get_icon_index_for_key(key: &str, path: &Path, is_dir: bool) -> Option<i32> {
     let wide: Vec<u16>;
     let mut flags = SHGFI_SYSICONINDEX;
-    let mut file_attrs = if is_dir {
+    let file_attrs = if is_dir {
         FILE_ATTRIBUTE_DIRECTORY
     } else {
         FILE_ATTRIBUTE_NORMAL
@@ -275,125 +276,6 @@ fn icon_to_rgba(icon: HICON) -> Option<(Vec<u8>, u32, u32)> {
         }
 
         // Convert BGRA -> RGBA
-        for px in pixels.chunks_exact_mut(4) {
-            px.swap(0, 2);
-        }
-
-        Some((pixels, width, height))
-    }
-}
-
-use windows::Win32::UI::Shell::SHGFI_FLAGS;
-use windows::Win32::{
-    Graphics::Gdi::{
-        BI_RGB, BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, DeleteObject, GetDC,
-        GetDIBits, GetObjectW, HGDIOBJ, ReleaseDC,
-    },
-    UI::Shell::SHIL_JUMBO,
-};
-
-/// Fetch the sharpest available HICON for a file or folder path
-/// Returns (pixels, width, height) as RGBA
-pub fn get_icon_sharpest(path: &std::path::Path, is_dir: bool) -> Option<(Vec<u8>, u32, u32)> {
-    unsafe {
-        // 1️⃣ Convert path to wide
-        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-        let attrs = if is_dir { 0x10 } else { 0x80 }; // FILE_ATTRIBUTE_DIRECTORY/NORMAL
-        let mut shfi = SHFILEINFOW::default();
-
-        // 2️⃣ Get system icon index
-        let attrs = if is_dir {
-            FILE_ATTRIBUTE_DIRECTORY
-        } else {
-            FILE_ATTRIBUTE_NORMAL
-        };
-        let res = SHGetFileInfoW(
-            PCWSTR(wide.as_ptr()),
-            FILE_FLAGS_AND_ATTRIBUTES(attrs.0),
-            Some(&mut shfi as *mut _),
-            std::mem::size_of::<SHFILEINFOW>() as u32,
-            SHGFI_SYSICONINDEX
-                | if !is_dir {
-                    SHGFI_USEFILEATTRIBUTES
-                } else {
-                    SHGFI_FLAGS(0)
-                },
-        );
-        if res == 0 {
-            return None;
-        }
-        let icon_index = shfi.iIcon;
-
-        // 3️⃣ Try SHIL_JUMBO (256x256+), fallback to SHIL_EXTRALARGE
-        let mut image_list: Option<IImageList> = None;
-        for size in [SHIL_JUMBO, SHIL_EXTRALARGE] {
-            if let Ok(list) = SHGetImageList(size as i32) {
-                image_list = Some(list);
-                break;
-            }
-        }
-        let image_list = image_list?;
-
-        // 4️⃣ Fetch HICON from image list
-        let hicon: HICON = image_list.GetIcon(icon_index, 0).ok()?;
-        if hicon.0.is_null() {
-            return None;
-        }
-
-        // 5️⃣ Convert HICON -> RGBA bitmap
-        let mut icon_info = ICONINFO::default();
-        if GetIconInfo(hicon, &mut icon_info).is_err() {
-            let _ = DestroyIcon(hicon).is_ok();
-            return None;
-        }
-
-        let mut bmp = BITMAP::default();
-        if GetObjectW(
-            HGDIOBJ(icon_info.hbmColor.0),
-            std::mem::size_of::<BITMAP>() as i32,
-            Some(&mut bmp as *mut _ as _),
-        ) == 0
-        {
-            let _ = DestroyIcon(hicon).is_ok();
-            return None;
-        }
-
-        let width = bmp.bmWidth as u32;
-        let height = bmp.bmHeight as u32;
-        let mut pixels = vec![0u8; (width * height * 4) as usize];
-
-        let hdc = GetDC(None);
-        let mut bmi = BITMAPINFO::default();
-        bmi.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
-        bmi.bmiHeader.biWidth = width as i32;
-        bmi.bmiHeader.biHeight = -(height as i32);
-        bmi.bmiHeader.biPlanes = 1;
-        bmi.bmiHeader.biBitCount = 32;
-        bmi.bmiHeader.biCompression = BI_RGB.0;
-
-        if GetDIBits(
-            hdc,
-            icon_info.hbmColor,
-            0,
-            height,
-            Some(pixels.as_mut_ptr() as _),
-            &mut bmi,
-            DIB_RGB_COLORS,
-        ) == 0
-        {
-            ReleaseDC(None, hdc);
-            let _ = DestroyIcon(hicon).is_ok();
-            return None;
-        }
-
-        ReleaseDC(None, hdc);
-
-        // 6️⃣ Cleanup
-        let _ = DeleteObject(HGDIOBJ(icon_info.hbmColor.0));
-        let _ = DeleteObject(HGDIOBJ(icon_info.hbmMask.0));
-        let _ = DestroyIcon(hicon).is_ok();
-
-        // 7️⃣ Convert BGRA -> RGBA
         for px in pixels.chunks_exact_mut(4) {
             px.swap(0, 2);
         }

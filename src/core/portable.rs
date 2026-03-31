@@ -256,8 +256,7 @@ pub fn list_portable_devices_with_ids() -> Vec<(String, String)> {
             return devices;
         }
 
-        let mut device_ids: Vec<PWSTR> = Vec::with_capacity(count as usize);
-        device_ids.set_len(count as usize);
+        let mut device_ids: Vec<PWSTR> = vec![PWSTR::null(); count as usize];
 
         if device_manager
             .GetDevices(device_ids.as_mut_ptr(), &mut count)
@@ -266,7 +265,7 @@ pub fn list_portable_devices_with_ids() -> Vec<(String, String)> {
             return devices;
         }
 
-        for device_id_ptr in &device_ids {
+        for device_id_ptr in device_ids.iter().take(count as usize) {
             if device_id_ptr.is_null() {
                 continue;
             }

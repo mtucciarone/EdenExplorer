@@ -12,7 +12,6 @@ use std::num::NonZeroUsize;
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
-use std::time::Instant;
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
 use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
@@ -39,12 +38,6 @@ type TruncKey = (String, u32, u32); // (text, width_bucket, font_size_bucket)
 lazy_static::lazy_static! {
     static ref TRUNCATION_CACHE: RwLock<LruCache<TruncKey, String>> =
         RwLock::new(LruCache::new(NonZeroUsize::new(1024).unwrap()));
-}
-
-struct ClipboardState {
-    last_check: Instant,
-    has_files: bool,
-    paths: Vec<PathBuf>,
 }
 
 pub fn clickable_icon(ui: &mut Ui, icon: &str, hover_color: Color32) -> Response {

@@ -14,7 +14,6 @@ pub enum ItemViewerAction {
     SelectAll,
     DeselectAll,
     RangeSelect(Vec<PathBuf>),
-    BoxSelect(Vec<PathBuf>),
     Open(PathBuf),
     OpenWithDefault(Vec<PathBuf>),
     OpenInNewTab(PathBuf),

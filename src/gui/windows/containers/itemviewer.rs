@@ -1686,7 +1686,7 @@ fn handle_row_click(
     file: &FileItem,
     modifiers: egui::Modifiers,
     filtered_indices: &[usize],
-    files: &Vec<FileItem>,
+    files: &[FileItem],
     drag_state: &DragState,
     explorer_state: &mut ExplorerState,
 ) -> Option<ItemViewerAction> {
@@ -1707,12 +1707,12 @@ fn handle_row_click(
 
             explorer_state.selection_focus = Some(current_idx);
 
-            return Some(ItemViewerAction::RangeSelect(range_paths));
+            Some(ItemViewerAction::RangeSelect(range_paths))
         } else {
             explorer_state.selection_anchor = Some(row_idx);
             explorer_state.selection_focus = Some(row_idx);
 
-            return Some(ItemViewerAction::Select(file.path.clone()));
+            Some(ItemViewerAction::Select(file.path.clone()))
         }
     } else if modifiers.ctrl {
         if !explorer_state.selected_paths.contains(&file.path) {
@@ -1722,7 +1722,7 @@ fn handle_row_click(
         explorer_state.selection_anchor = Some(row_idx);
         explorer_state.selection_focus = Some(row_idx);
 
-        return Some(ItemViewerAction::Select(file.path.clone()));
+        Some(ItemViewerAction::Select(file.path.clone()))
     } else {
         let is_single_selected = explorer_state.selected_paths.len() == 1
             && explorer_state.selected_paths.contains(&file.path);
@@ -1737,7 +1737,7 @@ fn handle_row_click(
             explorer_state.selection_anchor = Some(row_idx);
             explorer_state.selection_focus = Some(row_idx);
 
-            return Some(ItemViewerAction::ReplaceSelection(file.path.clone()));
+            Some(ItemViewerAction::ReplaceSelection(file.path.clone()))
         }
     }
 }

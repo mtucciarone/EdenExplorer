@@ -1,6 +1,6 @@
 use crate::core::drives::{get_drive_infos, is_raw_physical_drive_path};
 use crate::core::fs::FileItem;
-use crate::core::fs::{get_drive_space, parallel_directory_scan, scan_dir_async};
+use crate::core::fs::{parallel_directory_scan, scan_dir_async};
 use crate::core::indexer::{
     load_app_settings, save_app_settings, save_favorites, save_theme_settings,
 };
@@ -533,11 +533,9 @@ impl MainWindow {
                         &self.settings_window.current_settings.window_size_mode,
                         &self.settings_window.current_settings.start_path,
                     );
-                    self.settings_window.has_unsaved_changes = false;
                 }
                 SettingsAction::ResetToDefaults => {
                     self.settings_window.current_settings = Default::default();
-                    self.settings_window.has_unsaved_changes = true;
                 }
                 SettingsAction::ResetFavourites => {
                     self.sidebar_state.favorites = self.default_favorites();
@@ -952,13 +950,6 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             }
             ItemViewerAction::DeselectAll => {
                 explorer.explorer_state.selected_paths.clear();
-            }
-            ItemViewerAction::BoxSelect(paths) => {
-                // Clear current selection and add box-selected files
-                explorer.explorer_state.selected_paths.clear();
-                for path in paths {
-                    explorer.explorer_state.selected_paths.insert(path);
-                }
             }
             ItemViewerAction::RangeSelect(paths) => {
                 // Clear current selection and add all range-selected files
