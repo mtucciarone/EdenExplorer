@@ -17,6 +17,10 @@ git config user.name "github-actions"
 git config user.email "github-actions@github.com"
 
 git add Cargo.toml
-git commit -m "chore(release): $version [skip ci]"
 
-git push origin HEAD:main
+if (git diff --cached --quiet) {
+  Write-Host "No changes to commit"
+} else {
+  git commit -m "chore(release): $version [skip ci]"
+  git push origin HEAD:main
+}

@@ -7,8 +7,8 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "pwsh ./scripts/update-version.ps1 ${nextRelease.version}",
-        "publishCmd": "pwsh ./scripts/build-and-package.ps1"
+        "prepareCmd": "pwsh -File ./scripts/update-version.ps1 ${nextRelease.version}",
+        "publishCmd": "pwsh -File ./scripts/build-and-package.ps1"
       }
     ],
 
