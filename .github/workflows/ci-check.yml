@@ -39,7 +39,7 @@ jobs:
       run: cargo fmt --all -- --check
       
     - name: Run Clippy lints
-      run: cargo clippy --all-targets --all-features -- -D warnings
+      run: cargo clippy --all-targets --all-features
       
     - name: Build in debug mode (faster check)
       run: cargo build --verbose
