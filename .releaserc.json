@@ -1,0 +1,27 @@
+{
+  "branches": ["main"],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "pwsh ./scripts/update-version.ps1 ${nextRelease.version}",
+        "publishCmd": "pwsh ./scripts/build-and-package.ps1"
+      }
+    ],
+
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          {
+            "path": "release/**",
+            "label": "Windows Build"
+          }
+        ]
+      }
+    ]
+  ]
+}
