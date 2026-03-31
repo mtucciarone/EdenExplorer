@@ -26,12 +26,7 @@ jobs:
         node-version: 20
 
     - name: Install semantic-release
-      run: |
-        npm install -g semantic-release \
-          @semantic-release/commit-analyzer \
-          @semantic-release/release-notes-generator \
-          @semantic-release/exec \
-          @semantic-release/github
+      run: npm install -g semantic-release @semantic-release/commit-analyzer @semantic-release/release-notes-generator @semantic-release/exec @semantic-release/github
 
     - uses: dtolnay/rust-toolchain@stable
 
