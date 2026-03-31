@@ -83,8 +83,7 @@ pub fn draw_topbar(
         if drag_rect.width() > 0.0 && drag_rect.height() > 0.0 {
             let resp = ui.allocate_rect(drag_rect, egui::Sense::click_and_drag());
             if resp.drag_started() || resp.dragged() {
-                ui.ctx()
-                    .send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
             }
             if resp.hovered() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);

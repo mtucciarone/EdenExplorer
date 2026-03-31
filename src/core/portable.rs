@@ -1,16 +1,16 @@
 use crate::core::fs::FileItem;
 use crossbeam_channel::Sender;
 use std::collections::HashMap;
+use std::ffi::OsStr;
+use std::os::windows::ffi::OsStrExt;
 use std::path::PathBuf;
 use std::sync::RwLock;
 use windows::Win32::Devices::PortableDevices::*;
 use windows::Win32::Foundation::{PROPERTYKEY, RPC_E_CHANGED_MODE};
 use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_INPROC_SERVER,
-    COINIT_APARTMENTTHREADED, COINIT_MULTITHREADED,
+    CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, COINIT_MULTITHREADED, CoCreateInstance,
+    CoInitializeEx, CoTaskMemFree, CoUninitialize,
 };
-use std::ffi::OsStr;
-use std::os::windows::ffi::OsStrExt;
 use windows::core::{GUID, HSTRING, PCWSTR, PWSTR};
 
 pub const PORTABLE_PREFIX: &str = "portable://";
@@ -31,7 +31,9 @@ lazy_static::lazy_static! {
 pub fn make_portable_path(device_id: &str, object_id: &str) -> PathBuf {
     let encoded_device = encode_component(device_id);
     let encoded_object = encode_component(object_id);
-    PathBuf::from(format!("{PORTABLE_PREFIX}{encoded_device}/{encoded_object}"))
+    PathBuf::from(format!(
+        "{PORTABLE_PREFIX}{encoded_device}/{encoded_object}"
+    ))
 }
 
 pub fn is_portable_path(path: &PathBuf) -> bool {
@@ -65,12 +67,7 @@ pub fn cache_device_name(device_id: &str, name: &str) {
     cache_object_info(device_id, PORTABLE_ROOT_OBJECT_ID, "DEVICE", None);
 }
 
-pub fn cache_object_info(
-    device_id: &str,
-    object_id: &str,
-    name: &str,
-    parent_id: Option<String>,
-) {
+pub fn cache_object_info(device_id: &str, object_id: &str, name: &str, parent_id: Option<String>) {
     if let Ok(mut cache) = OBJECT_CACHE.write() {
         cache.insert(
             (device_id.to_string(), object_id.to_string()),
@@ -194,11 +191,8 @@ pub fn scan_portable_async(path: PathBuf, tx: Sender<FileItem>) {
         let mut storage_object_id: Option<String> = None;
         if object_id != PORTABLE_ROOT_OBJECT_ID {
             let object_w = wide_z(&object_id);
-            if let Ok(values) =
-                unsafe { props.GetValues(PCWSTR(object_w.as_ptr()), None) }
-            {
-                storage_object_id =
-                    get_string_value(&values, &WPD_PROPERTY_STORAGE_OBJECT_ID);
+            if let Ok(values) = unsafe { props.GetValues(PCWSTR(object_w.as_ptr()), None) } {
+                storage_object_id = get_string_value(&values, &WPD_PROPERTY_STORAGE_OBJECT_ID);
             }
         }
 
@@ -215,7 +209,11 @@ pub fn scan_portable_async(path: PathBuf, tx: Sender<FileItem>) {
             &device_id,
             &enumerate_id,
             object_id == PORTABLE_ROOT_OBJECT_ID,
-            if enumerate_id != object_id { Some(&object_id) } else { None },
+            if enumerate_id != object_id {
+                Some(&object_id)
+            } else {
+                None
+            },
         );
 
         if items.is_empty() && enumerate_id != object_id {
@@ -250,7 +248,11 @@ pub fn list_portable_devices_with_ids() -> Vec<(String, String)> {
             };
 
         let mut count: u32 = 0;
-        if device_manager.GetDevices(std::ptr::null_mut(), &mut count).is_err() || count == 0 {
+        if device_manager
+            .GetDevices(std::ptr::null_mut(), &mut count)
+            .is_err()
+            || count == 0
+        {
             return devices;
         }
 
@@ -477,7 +479,10 @@ fn decode_component(input: &str) -> Option<String> {
 }
 
 fn wide_z(s: &str) -> Vec<u16> {
-    OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+    OsStr::new(s)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect()
 }
 
 fn normalize_portable_str(input: &str) -> Option<String> {

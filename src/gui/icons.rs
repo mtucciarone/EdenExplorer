@@ -1,3 +1,4 @@
+use crate::core::portable;
 use crossbeam_channel::{Sender, unbounded};
 use eframe::egui;
 use std::os::windows::ffi::OsStrExt;
@@ -7,7 +8,6 @@ use std::{
     sync::{Arc, Mutex},
     thread,
 };
-use crate::core::portable;
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
 use windows::Win32::UI::WindowsAndMessaging::HICON;
@@ -18,9 +18,9 @@ use windows::{
         UI::{
             Controls::IImageList,
             Shell::{
-                SHFILEINFOW, SHGFI_SYSICONINDEX, SHGFI_USEFILEATTRIBUTES, SHGetFileInfoW,
-                SHGetImageList, SHGetStockIconInfo, SHIL_EXTRALARGE, SHGSI_ICON, SHGSI_LARGEICON,
-                SHSTOCKICONINFO, SIID_DRIVEUNKNOWN,
+                SHFILEINFOW, SHGFI_SYSICONINDEX, SHGFI_USEFILEATTRIBUTES, SHGSI_ICON,
+                SHGSI_LARGEICON, SHGetFileInfoW, SHGetImageList, SHGetStockIconInfo,
+                SHIL_EXTRALARGE, SHSTOCKICONINFO, SIID_DRIVEUNKNOWN,
             },
             WindowsAndMessaging::{DestroyIcon, GetIconInfo, ICONINFO},
         },
@@ -70,11 +70,8 @@ impl IconCache {
                             [w as usize, h as usize],
                             &pixels,
                         );
-                        let texture = ctx_bg.load_texture(
-                            format!("icon_{}", key),
-                            image,
-                            Default::default(),
-                        );
+                        let texture =
+                            ctx_bg.load_texture(format!("icon_{}", key), image, Default::default());
                         textures_bg.lock().unwrap().insert(key.clone(), texture);
                         ctx_bg.request_repaint();
                         continue;
@@ -218,12 +215,7 @@ fn get_portable_device_icon_rgba() -> Option<(Vec<u8>, u32, u32)> {
     unsafe {
         let mut info = SHSTOCKICONINFO::default();
         info.cbSize = std::mem::size_of::<SHSTOCKICONINFO>() as u32;
-        SHGetStockIconInfo(
-            SIID_DRIVEUNKNOWN,
-            SHGSI_ICON | SHGSI_LARGEICON,
-            &mut info,
-        )
-        .ok()?;
+        SHGetStockIconInfo(SIID_DRIVEUNKNOWN, SHGSI_ICON | SHGSI_LARGEICON, &mut info).ok()?;
 
         if info.hIcon.0.is_null() {
             return None;

@@ -1,4 +1,6 @@
-use crate::core::drives::{DriveInfo, get_drive_infos, consume_drive_list_dirty, is_raw_physical_drive_path};
+use crate::core::drives::{
+    DriveInfo, consume_drive_list_dirty, get_drive_infos, is_raw_physical_drive_path,
+};
 use crate::core::fs::MY_PC_PATH;
 use crate::core::networkdevices::NetworkDevicesState;
 use crate::gui::icons::IconCache;

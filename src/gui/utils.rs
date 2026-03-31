@@ -51,11 +51,9 @@ pub fn clickable_icon(ui: &mut Ui, icon: &str, hover_color: Color32) -> Response
     let font_id = egui::FontId::default();
 
     // Measure exact text size
-    let galley = ui.painter().layout_no_wrap(
-        icon.to_string(),
-        font_id.clone(),
-        ui.visuals().text_color(),
-    );
+    let galley =
+        ui.painter()
+            .layout_no_wrap(icon.to_string(), font_id.clone(), ui.visuals().text_color());
 
     let (rect, resp) = ui.allocate_exact_size(galley.size(), egui::Sense::click());
 

@@ -75,9 +75,7 @@ impl Default for SidebarState {
             sidebar_default_width: 250.0,
             network_state: NetworkDevicesState::default(),
             cached_drives: Vec::new(),
-            last_drive_refresh: now
-                .checked_sub(Duration::from_secs(60))
-                .unwrap_or(now),
+            last_drive_refresh: now.checked_sub(Duration::from_secs(60)).unwrap_or(now),
             non_ntfs_popup_path: None,
         }
     }

@@ -32,11 +32,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
+use windows::Win32::Foundation::{LPARAM, WPARAM};
 use windows::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::Shell::{SEE_MASK_INVOKEIDLIST, SHELLEXECUTEINFOW, ShellExecuteExW};
 use windows::Win32::UI::WindowsAndMessaging::*;
-use windows::Win32::Foundation::{WPARAM, LPARAM};
 use windows::{Win32::System::Com::*, Win32::UI::Shell::*, core::*};
 
 impl MainWindow {
@@ -122,8 +122,7 @@ impl MainWindow {
         self.is_loading = false;
 
         if is_raw_physical_drive_path(&self.current_nav().current) {
-            self.explorer_state.non_ntfs_popup_path =
-                Some(self.current_nav().current.clone());
+            self.explorer_state.non_ntfs_popup_path = Some(self.current_nav().current.clone());
             return;
         }
 
@@ -1139,7 +1138,10 @@ pub fn handle_draw_customizetheme_window(
                     ThemeMode::Light => theme_customizer.light_palette.clone(),
                 };
                 set_palette(mode, updated);
-                save_theme_settings(&theme_customizer.light_palette, &theme_customizer.dark_palette);
+                save_theme_settings(
+                    &theme_customizer.light_palette,
+                    &theme_customizer.dark_palette,
+                );
 
                 if mode == current_mode {
                     *theme_dirty = true;
@@ -1152,7 +1154,10 @@ pub fn handle_draw_customizetheme_window(
                     ThemeMode::Light => theme_customizer.light_palette = default.clone(),
                 }
                 set_palette(mode, default);
-                save_theme_settings(&theme_customizer.light_palette, &theme_customizer.dark_palette);
+                save_theme_settings(
+                    &theme_customizer.light_palette,
+                    &theme_customizer.dark_palette,
+                );
 
                 if mode == current_mode {
                     *theme_dirty = true;

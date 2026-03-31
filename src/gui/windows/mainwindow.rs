@@ -287,14 +287,14 @@ impl eframe::App for MainWindow {
         let offset = egui::vec2(8.0, 8.0);
 
         egui::CentralPanel::default().show(ctx, |ui| {
-        // CentralPanel available rect
-        let rect = ui.min_rect();
+            // CentralPanel available rect
+            let rect = ui.min_rect();
 
-        // Shift it to compensate for Windows inset
-        let rect = rect.translate(-offset);
+            // Shift it to compensate for Windows inset
+            let rect = rect.translate(-offset);
 
-        ui.allocate_ui_at_rect(rect, |ui| {
-            let avail = ui.available_size();
+            ui.allocate_ui_at_rect(rect, |ui| {
+                let avail = ui.available_size();
 
                 ui.allocate_ui_with_layout(
                     avail,
@@ -304,12 +304,13 @@ impl eframe::App for MainWindow {
                         let sidebar_width_min = 140.0;
                         let sidebar_width_max = 280.0;
                         let sidebar_width = self
-                            .sidebar_state.sidebar_default_width
+                            .sidebar_state
+                            .sidebar_default_width
                             .max(sidebar_width_min)
                             .min(sidebar_width_max);
 
-                        let sidebar_frame =
-                            egui::Frame::NONE.stroke(egui::Stroke::new(1.0, palette.tab_border_default));
+                        let sidebar_frame = egui::Frame::NONE
+                            .stroke(egui::Stroke::new(1.0, palette.tab_border_default));
 
                         ui.allocate_ui_with_layout(
                             egui::vec2(sidebar_width, ui.available_height() + 15.5),
@@ -317,8 +318,11 @@ impl eframe::App for MainWindow {
                             |ui| {
                                 egui::Frame::NONE.show(ui, |ui| {
                                     ui.add_space(8.0);
-                                    topbar_action =
-                                        Some(draw_topbar(ui, self.theme == ThemeMode::Dark, &palette));
+                                    topbar_action = Some(draw_topbar(
+                                        ui,
+                                        self.theme == ThemeMode::Dark,
+                                        &palette,
+                                    ));
                                 });
                                 sidebar_frame.show(ui, |ui| {
                                     sidebar_action = Some(draw_sidebar(
@@ -334,7 +338,10 @@ impl eframe::App for MainWindow {
                         // --- Separator handle (drawn on top, no extra allocation) ---
                         let separator_width = 6.0;
                         let separator_rect = egui::Rect::from_min_size(
-                            egui::pos2(self.sidebar_state.sidebar_default_width - separator_width / 2.0, 0.0),
+                            egui::pos2(
+                                self.sidebar_state.sidebar_default_width - separator_width / 2.0,
+                                0.0,
+                            ),
                             egui::vec2(separator_width, ui.available_height()),
                         );
 
@@ -361,10 +368,11 @@ impl eframe::App for MainWindow {
                         }
 
                         if separator_response.dragged() {
-                            self.sidebar_state.sidebar_default_width = (self.sidebar_state.sidebar_default_width
-                                + separator_response.drag_delta().x)
-                                .max(sidebar_width_min)
-                                .min(sidebar_width_max);
+                            self.sidebar_state.sidebar_default_width =
+                                (self.sidebar_state.sidebar_default_width
+                                    + separator_response.drag_delta().x)
+                                    .max(sidebar_width_min)
+                                    .min(sidebar_width_max);
                         }
 
                         // --- Tabs column ---
@@ -386,15 +394,14 @@ impl eframe::App for MainWindow {
                                 egui::Frame::NONE.show(ui, |ui| {
                                     ui.add_space(8.0);
                                     let scroll_to_id = self.pending_tab_scroll_id;
-                                    tabs_action =
-                                        Some(draw_tabs(
-                                            ui,
-                                            &self.tab_infos_cache,
-                                            active_id,
-                                            &palette,
-                                            self.hwnd,
-                                            scroll_to_id,
-                                        ));
+                                    tabs_action = Some(draw_tabs(
+                                        ui,
+                                        &self.tab_infos_cache,
+                                        active_id,
+                                        &palette,
+                                        self.hwnd,
+                                        scroll_to_id,
+                                    ));
                                     if scroll_to_id.is_some() {
                                         self.pending_tab_scroll_id = None;
                                     }
@@ -430,29 +437,29 @@ impl eframe::App for MainWindow {
                                     ui.add_space(4.0);
 
                                     pending_action = draw_item_viewer(
-                                                ui,
-                                                display_files,
-                                                &self.folder_sizes,
-                                                self.clipboard_has_files,
-                                                &self.clipboard_set,
-                                                self.clipboard_is_cut,
-                                                is_drive_view,
-                                                self.sort_column,
-                                                self.sort_ascending,
-                                                &icon_cache,
-                                                &mut self.rename_state,
-                                                &palette,
-                                                &mut self.file_type_cache,
-                                                &mut self.file_size_text_cache,
-                                                &mut self.folder_size_text_cache,
-                                                &mut self.drive_size_text_cache,
-                                                &mut self.external_drag_to_internal_hover,
-                                                &mut tabbar_action,
-                                                &mut self.drag_state,
-                                                &mut self.item_viewer_filter_state,
-                                                self.is_loading,
-                                                &mut self.explorer_state,
-                                            );
+                                        ui,
+                                        display_files,
+                                        &self.folder_sizes,
+                                        self.clipboard_has_files,
+                                        &self.clipboard_set,
+                                        self.clipboard_is_cut,
+                                        is_drive_view,
+                                        self.sort_column,
+                                        self.sort_ascending,
+                                        &icon_cache,
+                                        &mut self.rename_state,
+                                        &palette,
+                                        &mut self.file_type_cache,
+                                        &mut self.file_size_text_cache,
+                                        &mut self.folder_size_text_cache,
+                                        &mut self.drive_size_text_cache,
+                                        &mut self.external_drag_to_internal_hover,
+                                        &mut tabbar_action,
+                                        &mut self.drag_state,
+                                        &mut self.item_viewer_filter_state,
+                                        self.is_loading,
+                                        &mut self.explorer_state,
+                                    );
 
                                     ui.add_space(16.0);
                                 });

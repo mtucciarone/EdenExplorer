@@ -1,14 +1,14 @@
 use crate::core::fs::get_drive_space;
+use crate::core::portable::{list_portable_devices_with_ids, make_portable_path};
 use std::ffi::OsString;
 use std::mem::size_of;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use windows::Win32::Devices::DeviceAndDriverInstallation::*;
 use windows::Win32::Foundation::*;
-use windows::core::PWSTR;
 use windows::Win32::Storage::FileSystem::{
     CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_GENERIC_READ, FILE_READ_ATTRIBUTES, FILE_SHARE_READ,
     FILE_SHARE_WRITE, FindFirstVolumeW, FindNextVolumeW, FindVolumeClose, GetDiskFreeSpaceExW,
@@ -22,7 +22,7 @@ use windows::Win32::System::Ioctl::{
 };
 use windows::Win32::System::WindowsProgramming::{DRIVE_CDROM, DRIVE_REMOVABLE};
 use windows::core::PCWSTR;
-use crate::core::portable::{list_portable_devices_with_ids, make_portable_path};
+use windows::core::PWSTR;
 
 // Cache for drive information to avoid expensive enumeration on every call
 struct DriveCache {
@@ -290,7 +290,11 @@ fn list_unmounted_volumes() -> Vec<RawDriveInfo> {
 
                     volumes.push(RawDriveInfo {
                         device_path: volume_name,
-                        total_bytes: if total_bytes > 0 { Some(total_bytes) } else { None },
+                        total_bytes: if total_bytes > 0 {
+                            Some(total_bytes)
+                        } else {
+                            None
+                        },
                         is_removable: true,
                         bus_type: None,
                     });

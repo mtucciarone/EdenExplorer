@@ -205,7 +205,7 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         icon_color: Color32::from_rgb(40, 40, 40),
         icon_windows: Color32::WHITE,
         icon_colored_hover: Color32::WHITE,
-        item_viewer_row_text_selected: Color32::from_rgb(0, 0,0),
+        item_viewer_row_text_selected: Color32::from_rgb(0, 0, 0),
         item_viewer_row_text_normal: Color32::from_rgb(70, 78, 86),
         item_viewer_col_header_text: Color32::from_rgb(0, 0, 0),
         tooltip_text_color: Color32::from_rgb(40, 40, 40),
@@ -363,8 +363,7 @@ pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
             style.visuals.widgets.hovered.fg_stroke.color = Color32::from_rgb(245, 240, 255);
             style.visuals.widgets.active.fg_stroke.color = Color32::from_rgb(255, 250, 255);
 
-            style.visuals.widgets.noninteractive.fg_stroke.color =
-                Color32::from_rgb(160, 170, 180);
+            style.visuals.widgets.noninteractive.fg_stroke.color = Color32::from_rgb(160, 170, 180);
         }
 
         ThemeMode::Light => {
@@ -388,8 +387,7 @@ pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
             style.visuals.widgets.hovered.fg_stroke.color = Color32::from_rgb(25, 29, 33);
             style.visuals.widgets.active.fg_stroke.color = Color32::from_rgb(15, 18, 22);
 
-            style.visuals.widgets.noninteractive.fg_stroke.color =
-                Color32::from_rgb(70, 78, 86);
+            style.visuals.widgets.noninteractive.fg_stroke.color = Color32::from_rgb(70, 78, 86);
         }
     }
 

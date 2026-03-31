@@ -1,3 +1,4 @@
+use crate::core::drives::mark_drive_cache_dirty;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::clickable_icon;
 use eframe::egui;
@@ -6,18 +7,17 @@ use egui_phosphor::regular;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
-use windows::Win32::Foundation::{HWND};
+use windows::Win32::Foundation::HWND;
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Dwm::*;
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow, ScreenToClient,
 };
-use windows::Win32::UI::Controls::MARGINS;
-use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::Win32::System::DataExchange::{
     AddClipboardFormatListener, RemoveClipboardFormatListener,
 };
-use crate::core::drives::mark_drive_cache_dirty;
+use windows::Win32::UI::Controls::MARGINS;
+use windows::Win32::UI::WindowsAndMessaging::*;
 
 static mut ORIGINAL_WNDPROC: Option<WNDPROC> = None;
 const MIN_WIDTH: i32 = 600;

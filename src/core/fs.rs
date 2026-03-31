@@ -1,3 +1,4 @@
+use crate::core::portable;
 use crossbeam_channel::Sender;
 use ntapi::ntioapi::{FILE_DIRECTORY_INFORMATION, IO_STATUS_BLOCK, NtQueryDirectoryFile};
 use std::ffi::OsString;
@@ -12,7 +13,6 @@ use windows::Win32::Storage::FileSystem::{
     FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, GetDiskFreeSpaceExW, OPEN_EXISTING,
 };
 use windows::core::PCWSTR;
-use crate::core::portable;
 
 const STATUS_NO_MORE_FILES: i32 = 0x80000006u32 as i32;
 pub const MY_PC_PATH: &str = "::MY_PC::";
