@@ -2,9 +2,9 @@ use std::fs;
 use std::path::PathBuf;
 
 fn main() {
-    // ==============================
-    // 🪟 Windows EXE metadata + icon
-    // ==============================
+    // Tell Cargo to rerun build script if icon changes
+    println!("cargo:rerun-if-changed=src/assets/icon.ico");
+
     #[cfg(target_os = "windows")]
     {
         let mut res = winres::WindowsResource::new();
