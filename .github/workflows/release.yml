@@ -1,0 +1,100 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
+
+    # 🟦 Setup Node (for semantic-release)
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    - name: Install semantic-release
+      run: |
+        npm install -g semantic-release \
+          @semantic-release/commit-analyzer \
+          @semantic-release/release-notes-generator \
+          @semantic-release/changelog \
+          @semantic-release/github
+
+    # 🟧 Rust setup
+    - uses: dtolnay/rust-toolchain@stable
+
+    - uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+    # 🏗️ Build BEFORE release
+    - name: Build
+      run: cargo build --release --verbose
+
+    # 📦 Prepare artifacts
+    - name: Prepare release files
+      shell: pwsh
+      run: |
+        mkdir release
+
+        if (Test-Path "target/release/EdenExplorer.exe") {
+          Copy-Item "target/release/EdenExplorer.exe" "release/EdenExplorer.exe"
+        } elseif (Test-Path "target/release/eden_explorer.exe") {
+          Copy-Item "target/release/eden_explorer.exe" "release/EdenExplorer.exe"
+        } else {
+          echo "❌ No binary found"
+          exit 1
+        }
+
+        if (Test-Path "README.md") { Copy-Item "README.md" "release/" }
+        if (Test-Path "LICENSE") { Copy-Item "LICENSE" "release/" }
+
+    # 🚀 Run semantic-release (this updates Cargo.toml + creates tag)
+    - name: Run semantic-release (versioning)
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: npx semantic-release --no-ci
+
+    # 🔄 Re-checkout updated code (VERY IMPORTANT)
+    - name: Pull updated version
+      run: git pull
+
+    # 🏗️ Build with correct version
+    - name: Build
+      run: cargo build --release --verbose
+
+    # 📦 Prepare artifacts
+    - name: Prepare release files
+      shell: pwsh
+      run: |
+            mkdir release
+
+            if (Test-Path "target/release/EdenExplorer.exe") {
+            Copy-Item "target/release/EdenExplorer.exe" "release/EdenExplorer.exe"
+            } elseif (Test-Path "target/release/eden_explorer.exe") {
+            Copy-Item "target/release/eden_explorer.exe" "release/EdenExplorer.exe"
+            } else {
+            echo "❌ No binary found"
+            exit 1
+            }
+
+    # 🚀 Publish release with assets
+    - name: Publish GitHub Release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: npx semantic-release
