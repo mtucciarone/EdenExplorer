@@ -39,10 +39,10 @@ pub fn draw_topbar(
                     egui::containers::Frame::popup(ui.style()).show(ui, |ui| {
                         ui.set_min_width(120.0);
 
-                        // if menu_item(ui, regular::PALETTE, "Theme", palette).clicked() {
-                        //     action.customize_theme = true;
-                        //     ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
-                        // }
+                        if menu_item(ui, regular::PALETTE, "Theme", palette).clicked() {
+                            action.customize_theme = true;
+                            ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
+                        }
 
                         if menu_item(ui, regular::SLIDERS, "Settings", palette).clicked() {
                             action.open_settings = true;

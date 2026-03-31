@@ -1,11 +1,9 @@
 #[derive(Clone, Debug)]
 pub enum ThemeCustomizerAction {
-    //ApplyTheme,
-    SaveTheme,
-    LoadTheme,
-    ResetToDefaults,
-    ExportTheme,
-    ImportTheme,
+    ThemeUpdated(crate::gui::theme::ThemeMode),
+    ResetToDefaults(crate::gui::theme::ThemeMode),
+    ExportTheme(crate::gui::theme::ThemeMode),
+    ImportTheme(crate::gui::theme::ThemeMode),
 }
 
 #[derive(Clone, Debug)]

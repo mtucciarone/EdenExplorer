@@ -12,19 +12,24 @@ pub struct AboutWindow {
     pub open: bool,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CustomTheme {
-    pub name: String,
-    pub mode: ThemeMode,
-    pub palette: ThemePalette,
-}
-
-#[derive(Default)]
 pub struct ThemeCustomizer {
     pub open: bool,
-    pub current_theme: CustomTheme,
     pub selected_mode: ThemeMode,
+    pub light_palette: ThemePalette,
+    pub dark_palette: ThemePalette,
     pub has_unsaved_changes: bool,
+}
+
+impl Default for ThemeCustomizer {
+    fn default() -> Self {
+        Self {
+            open: false,
+            selected_mode: ThemeMode::Dark,
+            light_palette: crate::gui::theme::get_palette(ThemeMode::Light),
+            dark_palette: crate::gui::theme::get_palette(ThemeMode::Dark),
+            has_unsaved_changes: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

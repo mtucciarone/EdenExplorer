@@ -3,7 +3,7 @@ use crate::core::fs::MY_PC_PATH;
 use crate::core::networkdevices::NetworkDevicesState;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
-use crate::gui::utils::{draw_object_drag_ghost, drive_usage_gradient, truncate_item_text};
+use crate::gui::utils::{draw_object_drag_ghost, drive_usage_color, truncate_item_text};
 use crate::gui::windows::containers::structs::SidebarAction;
 use crate::gui::windows::structs::SidebarState;
 use eframe::egui;
@@ -182,7 +182,7 @@ fn sidebar_drive_item(
             (&icon).into(),
             egui::Rect::from_min_size(icon_pos, icon_size),
             egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1.0, 1.0)),
-            palette.icon_color,
+            palette.icon_windows,
         );
 
         palette.text_size + icon_size.x + icon_padding
@@ -234,7 +234,7 @@ fn sidebar_drive_item(
         );
 
         let bar_bg = palette.drive_usage_background;
-        let bar_fill = drive_usage_gradient((total - free) as f32 / total as f32, palette).0;
+        let bar_fill = drive_usage_color((total - free) as f32 / total as f32, palette);
 
         ui.painter().rect_filled(
             bar_rect,

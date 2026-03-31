@@ -47,19 +47,31 @@ struct ClipboardState {
     paths: Vec<PathBuf>,
 }
 
-/// Creates a clickable icon with hover color effect
 pub fn clickable_icon(ui: &mut Ui, icon: &str, hover_color: Color32) -> Response {
-    let resp = ui.add(Label::new(icon).sense(Sense::click()));
+    let font_id = egui::FontId::default();
 
-    if resp.hovered() {
-        ui.painter().text(
-            resp.rect.center(),
-            Align2::CENTER_CENTER,
-            icon,
-            FontId::default(),
-            hover_color,
-        );
-    }
+    // Measure exact text size
+    let galley = ui.painter().layout_no_wrap(
+        icon.to_string(),
+        font_id.clone(),
+        ui.visuals().text_color(),
+    );
+
+    let (rect, resp) = ui.allocate_exact_size(galley.size(), egui::Sense::click());
+
+    let color = if resp.hovered() {
+        hover_color
+    } else {
+        ui.visuals().text_color()
+    };
+
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        icon,
+        font_id,
+        color,
+    );
 
     resp
 }
@@ -74,12 +86,6 @@ pub fn drive_usage_color(ratio: f32, palette: &ThemePalette) -> Color32 {
     };
 
     base.gamma_multiply(0.6)
-}
-
-pub fn drive_usage_gradient(ratio: f32, palette: &ThemePalette) -> (Color32, Color32) {
-    let left = drive_usage_color(ratio, palette);
-    let right = left.gamma_multiply(0.8);
-    (left, right)
 }
 
 pub fn drive_usage_bar(ui: &mut Ui, total: u64, free: u64, height: f32, palette: &ThemePalette) {
@@ -123,7 +129,7 @@ pub fn drive_usage_bar(ui: &mut Ui, total: u64, free: u64, height: f32, palette:
 
     if fill_width > 0.0 {
         let fill_rect = Rect::from_min_size(rect.min, vec2(fill_width, rect.height()));
-        let (left, _right) = drive_usage_gradient(target_ratio, palette);
+        let fill_color = drive_usage_color(target_ratio, palette);
 
         let radius = palette.small_radius;
 
@@ -139,19 +145,7 @@ pub fn drive_usage_bar(ui: &mut Ui, total: u64, free: u64, height: f32, palette:
             }
         };
 
-        painter.rect_filled(
-            fill_rect,
-            fill_rounding,
-            Color32::from_rgb(left.r(), left.g(), left.b()),
-        );
-
-        // 🔥 subtle highlight strip (fake gradient feel)
-        let highlight_rect = Rect::from_min_size(
-            fill_rect.min,
-            vec2(fill_rect.width(), fill_rect.height() * 0.25),
-        );
-
-        painter.rect_filled(highlight_rect, fill_rounding, Color32::from_white_alpha(20));
+        painter.rect_filled(fill_rect, fill_rounding, fill_color);
     }
 
     // percentage text
@@ -162,7 +156,7 @@ pub fn drive_usage_bar(ui: &mut Ui, total: u64, free: u64, height: f32, palette:
         Align2::CENTER_CENTER,
         percent,
         TextStyle::Small.resolve(ui.style()),
-        palette.icon_colored_hover,
+        palette.drive_usage_text,
     );
 }
 

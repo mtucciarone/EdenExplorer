@@ -1,7 +1,7 @@
 use crate::core::fs::{FileItem, MY_PC_PATH};
-use crate::core::indexer::{load_app_settings, load_favorites};
+use crate::core::indexer::{load_app_settings, load_favorites, load_theme_settings};
 use crate::gui::icons::IconCache;
-use crate::gui::theme::{ThemeMode, apply_theme, get_palette};
+use crate::gui::theme::{ThemeMode, apply_theme, get_palette, set_palette};
 use crate::gui::utils::SortColumn;
 use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::itemviewer::draw_item_viewer;
@@ -152,6 +152,14 @@ impl Default for MainWindow {
 
         // Initialize settings window with loaded values
         app.settings_window.current_settings = loaded_settings;
+
+        if let Some((light, dark)) = load_theme_settings() {
+            set_palette(ThemeMode::Light, light);
+            set_palette(ThemeMode::Dark, dark);
+        }
+
+        app.theme_customizer.light_palette = get_palette(ThemeMode::Light);
+        app.theme_customizer.dark_palette = get_palette(ThemeMode::Dark);
         let stored = load_favorites('C');
         if stored.is_empty() {
             app.sidebar_state.favorites = app.default_favorites();
@@ -221,7 +229,7 @@ impl eframe::App for MainWindow {
 
         if !self.window_override_set {
             if let Some(hwnd) = self.hwnd {
-                apply_window_override(hwnd, palette);
+                apply_window_override(hwnd, &palette);
                 self.window_override_set = true;
             }
         }
@@ -301,7 +309,6 @@ impl eframe::App for MainWindow {
                             .min(sidebar_width_max);
 
                         let sidebar_frame =
-                            // egui::Frame::NONE.inner_margin(egui::Margin::symmetric(12, 0))
                             egui::Frame::NONE.stroke(egui::Stroke::new(1.0, palette.tab_border_default));
 
                         ui.allocate_ui_with_layout(
@@ -311,14 +318,14 @@ impl eframe::App for MainWindow {
                                 egui::Frame::NONE.show(ui, |ui| {
                                     ui.add_space(8.0);
                                     topbar_action =
-                                        Some(draw_topbar(ui, self.theme == ThemeMode::Dark, palette));
+                                        Some(draw_topbar(ui, self.theme == ThemeMode::Dark, &palette));
                                 });
                                 sidebar_frame.show(ui, |ui| {
                                     sidebar_action = Some(draw_sidebar(
                                         ui,
                                         &icon_cache,
                                         &mut self.sidebar_state,
-                                        palette,
+                                        &palette,
                                     ));
                                 });
                             },
@@ -349,11 +356,7 @@ impl eframe::App for MainWindow {
                             ui.painter().rect_filled(
                                 handle_rect,
                                 handle_width / 2.0,
-                                if self.theme == ThemeMode::Dark {
-                                    egui::Color32::from_gray(120)
-                                } else {
-                                    egui::Color32::from_gray(180)
-                                },
+                                palette.button_seperator_handle_fill,
                             );
                         }
 
@@ -388,7 +391,7 @@ impl eframe::App for MainWindow {
                                             ui,
                                             &self.tab_infos_cache,
                                             active_id,
-                                            palette,
+                                            &palette,
                                             self.hwnd,
                                             scroll_to_id,
                                         ));
@@ -419,7 +422,7 @@ impl eframe::App for MainWindow {
                                             ui,
                                             &icon_cache,
                                             tab,
-                                            palette,
+                                            &palette,
                                             is_favorited,
                                         ))
                                     };
@@ -438,7 +441,7 @@ impl eframe::App for MainWindow {
                                                 self.sort_ascending,
                                                 &icon_cache,
                                                 &mut self.rename_state,
-                                                palette,
+                                                &palette,
                                                 &mut self.file_type_cache,
                                                 &mut self.file_size_text_cache,
                                                 &mut self.folder_size_text_cache,
@@ -470,9 +473,15 @@ impl eframe::App for MainWindow {
         self.handle_tabs_action(tabs_action);
         self.handle_tabbar_action(tabbar_action);
         handle_pending_actions(pending_action, self);
-        handle_draw_customizetheme_window(ctx, &mut self.theme_customizer);
-        self.handle_draw_settings_window(ctx, palette);
-        self.handle_draw_about_window(ctx, palette);
+        handle_draw_customizetheme_window(
+            ctx,
+            &mut self.theme_customizer,
+            &palette,
+            self.theme,
+            &mut self.theme_dirty,
+        );
+        self.handle_draw_settings_window(ctx, &palette);
+        self.handle_draw_about_window(ctx, &palette);
 
         // ✅ Step 5: Apply Deferred Refresh (IMPORTANT)
         if self.dropped_files_pending_ui_refresh {

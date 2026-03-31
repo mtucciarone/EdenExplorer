@@ -69,7 +69,7 @@ pub fn draw_settings_window(
         .show(ctx, |ui| {
             let rect = ctx.content_rect();
             ui.painter()
-                .rect_filled(rect, 0.0, egui::Color32::from_black_alpha(180));
+                .rect_filled(rect, 0.0, palette.modal_background_effect_color);
         });
 
     egui::Window::new("EdenExplorer Settings")

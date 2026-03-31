@@ -1,5 +1,5 @@
-use crate::core::fs::FileItem;
 use crate::core::drives::is_raw_physical_drive_path;
+use crate::core::fs::FileItem;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::{ThemePalette, apply_checkbox_colors};
 use crate::gui::utils::{
@@ -132,9 +132,9 @@ pub fn draw_item_viewer(
     if !files.is_empty() {
         let modifiers = ui.ctx().input(|i| i.modifiers);
 
-        let arrow_nav = ui.ctx().input(|i| {
-            i.key_pressed(egui::Key::ArrowDown) || i.key_pressed(egui::Key::ArrowUp)
-        });
+        let arrow_nav = ui
+            .ctx()
+            .input(|i| i.key_pressed(egui::Key::ArrowDown) || i.key_pressed(egui::Key::ArrowUp));
 
         let mut table = TableBuilder::new(ui)
             .striped(false)
@@ -182,12 +182,21 @@ pub fn draw_item_viewer(
                 Column::initial(layout.available_width * 0.1)
                     .at_least(60.0)
                     .resizable(true),
-            ) // Type
-            .column(
+            ); // Type
+
+        if layout.is_drive_view {
+            table = table.column(
+                Column::initial(layout.available_width * 0.14)
+                    .at_least(120.0)
+                    .resizable(true),
+            ); // Size
+        } else {
+            table = table.column(
                 Column::initial(layout.available_width * 0.075)
                     .at_least(50.0)
                     .resizable(true),
             ); // Size
+        }
 
         if layout.is_drive_view {
             table = table.column(Column::remainder().at_least(150.0).resizable(true));
@@ -482,9 +491,13 @@ pub fn draw_item_viewer(
         // Check for external drag and drop
 
         if ui.ctx().input(|i| !i.raw.dropped_files.is_empty()) {
-            let dropped_paths: Vec<PathBuf> = ui
-                .ctx()
-                .input(|i| i.raw.dropped_files.iter().filter_map(|f| f.path.clone()).collect());
+            let dropped_paths: Vec<PathBuf> = ui.ctx().input(|i| {
+                i.raw
+                    .dropped_files
+                    .iter()
+                    .filter_map(|f| f.path.clone())
+                    .collect()
+            });
 
             if !dropped_paths.is_empty() {
                 action = Some(ItemViewerAction::FilesDropped(dropped_paths));
@@ -492,9 +505,9 @@ pub fn draw_item_viewer(
         }
 
         // Update drag hover state
-        *external_drag_to_internal_hover =
-            ui.ctx()
-                .input(|i| i.raw.hovered_files.iter().any(|f| f.path.is_some()));
+        *external_drag_to_internal_hover = ui
+            .ctx()
+            .input(|i| i.raw.hovered_files.iter().any(|f| f.path.is_some()));
 
         // 👇 Fill remaining space so empty area is interactable
         let remaining_rect = ui.available_rect_before_wrap();
@@ -866,7 +879,6 @@ fn handle_draw_col_size(
 
     // --- DRIVE VIEW (free / total) ---
     if let (Some(total), Some(free)) = (file.total_space, file.free_space) {
-        let gb = 1024.0 * 1024.0 * 1024.0;
         let key = &file.path;
         let text = if let Some((cached_total, cached_free, cached_text)) =
             drive_size_text_cache.get(key)
@@ -881,7 +893,7 @@ fn handle_draw_col_size(
         };
 
         let display_text = if text.is_empty() {
-            let formatted = format!("{:.1} / {:.1} GB", free as f64 / gb, total as f64 / gb);
+            let formatted = format!("{} / {}", format_size(free), format_size(total));
             drive_size_text_cache.insert(file.path.clone(), (total, free, formatted));
             drive_size_text_cache
                 .get(key)
@@ -891,14 +903,15 @@ fn handle_draw_col_size(
             text
         };
 
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.label(
+        ui.add(
+            egui::Label::new(
                 egui::RichText::new(display_text)
-                .size(palette.text_size)
-                .color(text_color)
-                .font(font_id.clone()),
-            );
-        });
+                    .size(palette.text_size)
+                    .color(text_color)
+                    .font(font_id.clone()),
+            )
+            .truncate(),
+        );
 
         return;
     }
@@ -1062,9 +1075,9 @@ fn get_row_color(
     palette: &crate::gui::theme::ThemePalette,
 ) -> egui::Color32 {
     if is_multi_selected {
-        palette.row_label_selected
+        palette.item_viewer_row_text_selected
     } else {
-        palette.row_label_default
+        palette.item_viewer_row_text_normal
     }
 }
 
@@ -1187,7 +1200,10 @@ fn handle_global_actions(
 
         if cancel {
             let text_edit_id = ui.id().with("filter_input");
-            ui.memory_mut(|mem| mem.data.remove::<egui::text_edit::TextEditState>(text_edit_id));
+            ui.memory_mut(|mem| {
+                mem.data
+                    .remove::<egui::text_edit::TextEditState>(text_edit_id)
+            });
             *filter_state = FilterState::default();
             return None;
         }
@@ -1210,7 +1226,10 @@ fn handle_global_actions(
         }
 
         if response.clicked_elsewhere() {
-            ui.memory_mut(|mem| mem.data.remove::<egui::text_edit::TextEditState>(text_edit_id));
+            ui.memory_mut(|mem| {
+                mem.data
+                    .remove::<egui::text_edit::TextEditState>(text_edit_id)
+            });
             *filter_state = FilterState::default();
         }
 
@@ -1380,7 +1399,7 @@ fn draw_item_viewer_header(
                 egui::RichText::new(format!("{label} {arrow}").trim_end())
                     .font(font_id.clone())
                     .size(palette.text_size)
-                    .color(palette.itemviewer_header_color),
+                    .color(palette.item_viewer_col_header_text),
             )
             .selectable(false)
             .sense(egui::Sense::click()),
@@ -1407,7 +1426,7 @@ fn draw_item_viewer_header(
                 egui::RichText::new(format!("{label} {arrow}").trim_end())
                     .font(font_id.clone())
                     .size(palette.text_size)
-                    .color(palette.itemviewer_header_color),
+                    .color(palette.item_viewer_col_header_text),
             )
             .selectable(false)
             .sense(egui::Sense::click()),
@@ -1434,7 +1453,7 @@ fn draw_item_viewer_header(
                 egui::RichText::new(format!("{label} {arrow}").trim_end())
                     .font(font_id.clone())
                     .size(palette.text_size)
-                    .color(palette.itemviewer_header_color),
+                    .color(palette.item_viewer_col_header_text),
             )
             .selectable(false)
             .sense(egui::Sense::click()),
@@ -1454,7 +1473,7 @@ fn draw_item_viewer_header(
                     egui::RichText::new(format!("Usage").trim_end())
                         .font(font_id.clone())
                         .size(palette.text_size)
-                        .color(palette.itemviewer_header_color),
+                        .color(palette.item_viewer_col_header_text),
                 )
                 .selectable(false)
                 .sense(egui::Sense::click()),
@@ -1478,7 +1497,7 @@ fn draw_item_viewer_header(
                     egui::RichText::new(format!("{label} {arrow}").trim_end())
                         .font(font_id.clone())
                         .size(palette.text_size)
-                        .color(palette.itemviewer_header_color),
+                        .color(palette.item_viewer_col_header_text),
                 )
                 .selectable(false)
                 .sense(egui::Sense::click()),
@@ -1505,7 +1524,7 @@ fn draw_item_viewer_header(
                     egui::RichText::new(format!("{label} {arrow}").trim_end())
                         .font(font_id.clone())
                         .size(palette.text_size)
-                        .color(palette.itemviewer_header_color),
+                        .color(palette.item_viewer_col_header_text),
                 )
                 .selectable(false)
                 .sense(egui::Sense::click()),
@@ -1579,7 +1598,9 @@ fn handle_keyboard_navigation(
             }
 
             if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
-                let last_idx = (0..filtered_indices.len()).rev().find(|&i| is_selectable(i))?;
+                let last_idx = (0..filtered_indices.len())
+                    .rev()
+                    .find(|&i| is_selectable(i))?;
                 let last = files[filtered_indices[last_idx]].path.clone();
 
                 explorer_state.selection_anchor = Some(last_idx);

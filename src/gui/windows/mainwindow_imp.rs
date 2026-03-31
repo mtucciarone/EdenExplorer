@@ -1,9 +1,11 @@
 use crate::core::drives::{get_drive_infos, is_raw_physical_drive_path};
 use crate::core::fs::FileItem;
 use crate::core::fs::{get_drive_space, parallel_directory_scan, scan_dir_async};
-use crate::core::indexer::{load_app_settings, save_app_settings, save_favorites};
+use crate::core::indexer::{
+    load_app_settings, save_app_settings, save_favorites, save_theme_settings,
+};
 use crate::gui::MainWindow;
-use crate::gui::theme::{ThemeMode, ThemePalette};
+use crate::gui::theme::{ThemeMode, ThemePalette, get_default_palette, set_palette};
 use crate::gui::utils::{
     SortColumn, get_clipboard_files, is_clipboard_cut, set_clipboard_files,
     shell_delete_to_recycle_bin, show_copy_move_dialog, sort_files,
@@ -1125,26 +1127,81 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
 pub fn handle_draw_customizetheme_window(
     ctx: &egui::Context,
     theme_customizer: &mut ThemeCustomizer,
+    palette: &ThemePalette,
+    current_mode: ThemeMode,
+    theme_dirty: &mut bool,
 ) {
-    if let Some(action) = draw_theme_customizer(ctx, theme_customizer) {
+    if let Some(action) = draw_theme_customizer(ctx, theme_customizer, palette) {
         match action {
-            // ThemeCustomizerAction::ApplyTheme => {
-            //     // Theme will be applied when theme_dirty is set to true
-            // }
-            ThemeCustomizerAction::ResetToDefaults => {
-                theme_customizer.current_theme = Default::default();
+            ThemeCustomizerAction::ThemeUpdated(mode) => {
+                let updated = match mode {
+                    ThemeMode::Dark => theme_customizer.dark_palette.clone(),
+                    ThemeMode::Light => theme_customizer.light_palette.clone(),
+                };
+                set_palette(mode, updated);
+                save_theme_settings(&theme_customizer.light_palette, &theme_customizer.dark_palette);
+
+                if mode == current_mode {
+                    *theme_dirty = true;
+                }
             }
-            ThemeCustomizerAction::SaveTheme => {
-                // implement later
+            ThemeCustomizerAction::ResetToDefaults(mode) => {
+                let default = get_default_palette(mode);
+                match mode {
+                    ThemeMode::Dark => theme_customizer.dark_palette = default.clone(),
+                    ThemeMode::Light => theme_customizer.light_palette = default.clone(),
+                }
+                set_palette(mode, default);
+                save_theme_settings(&theme_customizer.light_palette, &theme_customizer.dark_palette);
+
+                if mode == current_mode {
+                    *theme_dirty = true;
+                }
             }
-            ThemeCustomizerAction::LoadTheme => {
-                // implement later
+            ThemeCustomizerAction::ExportTheme(mode) => {
+                let palette_to_export = match mode {
+                    ThemeMode::Dark => &theme_customizer.dark_palette,
+                    ThemeMode::Light => &theme_customizer.light_palette,
+                };
+
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("Theme JSON", &["json"])
+                    .set_file_name(match mode {
+                        ThemeMode::Dark => "eden_theme_dark.json",
+                        ThemeMode::Light => "eden_theme_light.json",
+                    })
+                    .save_file()
+                {
+                    if let Ok(json) = serde_json::to_string_pretty(palette_to_export) {
+                        let _ = std::fs::write(path, json);
+                    }
+                }
             }
-            ThemeCustomizerAction::ExportTheme => {
-                // implement later
-            }
-            ThemeCustomizerAction::ImportTheme => {
-                // implement later
+            ThemeCustomizerAction::ImportTheme(mode) => {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("Theme JSON", &["json"])
+                    .pick_file()
+                {
+                    if let Ok(json) = std::fs::read_to_string(path) {
+                        if let Ok(imported) = serde_json::from_str::<ThemePalette>(&json) {
+                            match mode {
+                                ThemeMode::Dark => theme_customizer.dark_palette = imported.clone(),
+                                ThemeMode::Light => {
+                                    theme_customizer.light_palette = imported.clone()
+                                }
+                            }
+                            set_palette(mode, imported);
+                            save_theme_settings(
+                                &theme_customizer.light_palette,
+                                &theme_customizer.dark_palette,
+                            );
+
+                            if mode == current_mode {
+                                *theme_dirty = true;
+                            }
+                        }
+                    }
+                }
             }
         }
     }

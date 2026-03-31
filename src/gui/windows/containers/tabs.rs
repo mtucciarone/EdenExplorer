@@ -1,11 +1,11 @@
 use crate::core::fs::MY_PC_PATH;
+use crate::core::portable;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{clear_clipboard_files, clickable_icon, truncate_item_text};
 use crate::gui::windows::containers::enums::TabbarNavAction;
 use crate::gui::windows::containers::structs::{TabInfo, TabState, TabbarAction, TabsAction};
 use crate::gui::windows::windowsoverrides::handle_draw_windows_buttons;
-use crate::core::portable;
 use eframe::egui;
 use egui::{FontFamily, FontId};
 use egui_phosphor::{fill, regular};
@@ -71,7 +71,11 @@ pub fn draw_tabs(
                     let add_tab_width = 28.0;
                     let spacing = ui.spacing().item_spacing.x;
                     let tab_count = tabs.len() as f32;
-                    let gaps = if tab_count > 0.0 { tab_count - 1.0 } else { 0.0 };
+                    let gaps = if tab_count > 0.0 {
+                        tab_count - 1.0
+                    } else {
+                        0.0
+                    };
                     let content_width =
                         tab_count * tab_width + gaps * spacing + spacing + add_tab_width;
 
@@ -84,8 +88,7 @@ pub fn draw_tabs(
                         if drag_rect.width() > 4.0 {
                             let resp = ui.allocate_rect(drag_rect, egui::Sense::click_and_drag());
                             if resp.drag_started() || resp.dragged() {
-                                ui.ctx()
-                                    .send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                                ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
                             }
                             if resp.hovered() {
                                 ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
@@ -132,9 +135,9 @@ fn handle_draw_tab_new_allocated(
     // --- Font and colors ---
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let label_color = if is_active {
-        palette.row_label_selected
+        palette.tab_text_selected
     } else {
-        ui.visuals().widgets.noninteractive.fg_stroke.color
+        palette.tab_text_normal
     };
 
     // --- Layout parameters ---
@@ -279,7 +282,7 @@ fn tab_close_button(
     let color = if hovered {
         palette.icon_colored_hover
     } else {
-        ui.visuals().widgets.noninteractive.fg_stroke.color
+        palette.icon_color
     };
 
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
@@ -321,7 +324,8 @@ fn tab_add_button(
     let color = if hovered {
         palette.icon_colored_hover
     } else {
-        ui.visuals().widgets.noninteractive.fg_stroke.color
+        //ui.visuals().widgets.noninteractive.fg_stroke.color
+        palette.icon_color
     };
 
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
@@ -424,9 +428,13 @@ fn toolbar_buttons(
         action.create_file = true;
     }
 
-    let star_icon = if is_favorited { fill::STAR } else { regular::STAR };
+    let star_icon = if is_favorited {
+        fill::STAR
+    } else {
+        regular::STAR
+    };
     let star_color = if is_favorited {
-        egui::Color32::from_rgb(242, 201, 76)
+        palette.button_favorite_fill
     } else {
         palette.tooltip_text_color
     };
