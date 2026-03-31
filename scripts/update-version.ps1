@@ -1,8 +1,8 @@
-$ErrorActionPreference = "Stop"
-
 param (
   [string]$version
 )
+
+$ErrorActionPreference = "Stop"
 
 Write-Host "🔄 Updating Cargo.toml to version $version"
 
