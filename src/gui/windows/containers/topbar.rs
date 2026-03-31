@@ -17,7 +17,15 @@ pub fn draw_topbar(
 
         let menu_open = ui.memory(|mem| mem.data.get_temp::<bool>(menu_id).unwrap_or(false));
 
-        if clickable_icon(ui, regular::LIST, palette.primary).clicked() {
+        if clickable_icon(ui, regular::LIST, palette.primary)
+            .on_hover_text(
+                egui::RichText::new("Menu")
+                    .size(palette.tooltip_text_size)
+                    .color(palette.tooltip_text_color),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
             ui.memory_mut(|mem| mem.data.insert_temp(menu_id, !menu_open));
         }
 
@@ -42,6 +50,12 @@ pub fn draw_topbar(
                         }
 
                         if menu_item(ui, regular::QUESTION, "About", palette).clicked() {
+                            action.about = true;
+                            ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
+                        }
+
+                        if menu_item(ui, regular::X, "Exit", palette).clicked() {
+                            action.exit = true;
                             ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
                         }
                     });
@@ -51,10 +65,30 @@ pub fn draw_topbar(
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
             let icon = if is_dark { regular::SUN } else { regular::MOON };
 
-            if clickable_icon(ui, icon, palette.primary).clicked() {
+            if clickable_icon(ui, icon, palette.primary)
+                .on_hover_text(
+                    egui::RichText::new("Toggle theme")
+                        .size(palette.tooltip_text_size)
+                        .color(palette.tooltip_text_color),
+                )
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+            {
                 action.toggle_theme = true;
             }
         });
+
+        // Drag region: remaining empty space in the topbar row
+        let drag_rect = ui.available_rect_before_wrap();
+        if drag_rect.width() > 0.0 && drag_rect.height() > 0.0 {
+            let resp = ui.allocate_rect(drag_rect, egui::Sense::click_and_drag());
+            if resp.drag_started() || resp.dragged() {
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+            }
+            if resp.hovered() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+            }
+        }
     });
 
     action

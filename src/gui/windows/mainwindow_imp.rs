@@ -1,14 +1,16 @@
-use crate::core::drives::{get_drives, parse_drive_display};
+use crate::core::drives::{get_drive_infos, is_raw_physical_drive_path};
 use crate::core::fs::FileItem;
-use crate::core::fs::{get_drive_space, parallel_directory_scan, scan_dir_async};
-use crate::core::indexer::{save_app_settings, save_favorites};
-use crate::gui::MainWindow;
-use crate::gui::theme::{ThemeMode, ThemePalette};
-use crate::gui::utils::{
-    SortColumn,
-    get_clipboard_files, is_clipboard_cut, set_clipboard_files, shell_delete_to_recycle_bin,
-    show_copy_move_dialog, sort_files,
+use crate::core::fs::{parallel_directory_scan, scan_dir_async};
+use crate::core::indexer::{
+    load_app_settings, save_app_settings, save_favorites, save_theme_settings,
 };
+use crate::gui::MainWindow;
+use crate::gui::theme::{ThemeMode, ThemePalette, get_default_palette, set_palette};
+use crate::gui::utils::{
+    SortColumn, get_clipboard_files, is_clipboard_cut, set_clipboard_files,
+    shell_delete_to_recycle_bin, show_copy_move_dialog, sort_files,
+};
+use crate::gui::windows::about::draw_about_window;
 use crate::gui::windows::containers::enums::{
     ItemViewerAction, ItemViewerContextAction, TabbarNavAction,
 };
@@ -16,11 +18,11 @@ use crate::gui::windows::containers::structs::{
     FavoriteItem, ItemViewerFolderSizeState, RenameState, SidebarAction, TabState, TabbarAction,
     TabsAction, TopbarAction,
 };
-use crate::gui::windows::customizetheme::{
-    ThemeCustomizer, ThemeCustomizerAction, draw_theme_customizer,
-};
-use crate::gui::windows::navigation::Navigation;
-use crate::gui::windows::settings::{SettingsAction, draw_settings_window};
+use crate::gui::windows::customizetheme::draw_theme_customizer;
+use crate::gui::windows::enums::{SettingsAction, ThemeCustomizerAction};
+use crate::gui::windows::settings::draw_settings_window;
+use crate::gui::windows::structs::{Navigation, ThemeCustomizer};
+use crate::gui::windows::windowsoverrides::mark_clipboard_dirty;
 use crossbeam_channel::Receiver;
 use crossbeam_channel::{Sender, unbounded};
 use eframe::egui;
@@ -30,6 +32,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
+use windows::Win32::Foundation::{LPARAM, WPARAM};
 use windows::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::Shell::{SEE_MASK_INVOKEIDLIST, SHELLEXECUTEINFOW, ShellExecuteExW};
@@ -46,8 +49,7 @@ impl MainWindow {
     }
 
     pub fn open_new_tab(&mut self, path: PathBuf) {
-        let mut nav = Navigation::new();
-        nav.go_to(path);
+        let nav = Navigation::new(path);
         let id = self.next_tab_id;
         self.next_tab_id += 1;
         self.tabs.push(TabState {
@@ -60,6 +62,7 @@ impl MainWindow {
             breadcrumb_path_error_animation_time: 0.0,
         });
         self.active_tab = self.tabs.len() - 1;
+        self.mark_tab_infos_dirty();
     }
 
     pub fn default_favorites(&self) -> Vec<FavoriteItem> {
@@ -106,17 +109,28 @@ impl MainWindow {
         self.size_req_tx = None;
         self.size_rx = None;
         self.folder_sizes.clear();
-        self.search_active = false;
-        self.search_results.clear();
-        self.selected_path = None;
+        self.file_size_text_cache.clear();
+        self.folder_size_text_cache.clear();
+        self.drive_size_text_cache.clear();
         self.pending_size_queue.clear();
         self.pending_size_set.clear();
+        self.explorer_state.selected_paths.clear();
+        self.explorer_state.selection_anchor = None;
+        self.explorer_state.selection_focus = None;
+        self.item_viewer_filter_state.dirty = true;
+        self.item_viewer_filter_state.cached_indices.clear();
+        self.is_loading = false;
+
+        if is_raw_physical_drive_path(&self.current_nav().current) {
+            self.explorer_state.non_ntfs_popup_path = Some(self.current_nav().current.clone());
+            return;
+        }
 
         if self.current_nav().is_root() {
-            for d in get_drives() {
-                let (label, path) = parse_drive_display(&d);
-
-                if let Some((total, free)) = get_drive_space(&path) {
+            for d in get_drive_infos() {
+                let label = d.display;
+                let path = d.path;
+                if let (Some(total), Some(free)) = (d.total_space, d.free_space) {
                     self.files.push(FileItem::with_drive_info(
                         label, path, true, None, None, None, total, free,
                     ));
@@ -134,6 +148,7 @@ impl MainWindow {
         let (tx, rx) = unbounded();
         scan_dir_async(self.current_nav().current.clone(), tx);
         self.rx = Some(rx);
+        self.is_loading = true;
 
         // Setup folder size calculation channels only if folder scanning is enabled
         if self
@@ -182,9 +197,11 @@ impl MainWindow {
                 should_focus: true,
             });
             // Select the new folder
-            self.selected_path = Some(path_for_selection.clone());
-            self.selected_paths.clear();
-            self.selected_paths.insert(path_for_selection);
+            self.explorer_state.selected_paths.clear();
+            self.explorer_state
+                .selected_paths
+                .insert(path_for_selection.clone());
+            self.explorer_state.newly_created_path = Some(path_for_selection.clone());
         }
     }
 
@@ -214,9 +231,11 @@ impl MainWindow {
                 should_focus: true,
             });
             // Select the new file
-            self.selected_path = Some(path_for_selection.clone());
-            self.selected_paths.clear();
-            self.selected_paths.insert(path_for_selection);
+            self.explorer_state.selected_paths.clear();
+            self.explorer_state
+                .selected_paths
+                .insert(path_for_selection.clone());
+            self.explorer_state.newly_created_path = Some(path_for_selection.clone());
         }
     }
 
@@ -226,7 +245,12 @@ impl MainWindow {
         }
 
         let path = self.current_nav().current.clone();
-        if self.favorites.iter().any(|fav| fav.path == path) {
+        if self
+            .sidebar_state
+            .favorites
+            .iter()
+            .any(|fav| fav.path == path)
+        {
             return;
         }
 
@@ -235,12 +259,29 @@ impl MainWindow {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| path.display().to_string());
 
-        self.favorites.push(FavoriteItem { path, label });
+        self.sidebar_state
+            .favorites
+            .push(FavoriteItem { path, label });
         self.persist_favorites();
+    }
+
+    pub fn remove_favorite(&mut self, path: &PathBuf) {
+        self.sidebar_state.favorites.retain(|fav| &fav.path != path);
+        self.persist_favorites();
+        if self
+            .sidebar_state
+            .item_clicked
+            .as_ref()
+            .map(|p| p == path)
+            .unwrap_or(false)
+        {
+            self.sidebar_state.item_clicked = None;
+        }
     }
 
     pub fn persist_favorites(&self) {
         let items: Vec<String> = self
+            .sidebar_state
             .favorites
             .iter()
             .map(|fav| fav.path.display().to_string())
@@ -249,27 +290,20 @@ impl MainWindow {
     }
 
     pub fn handle_context_action(&mut self, action: ItemViewerContextAction) {
-        println!("Handling context action: {:?}", action);
         match action {
             ItemViewerContextAction::Cut(paths) => {
                 let _ = set_clipboard_files(&paths, true);
+                mark_clipboard_dirty();
                 if let Some(first) = paths.first() {
-                    self.selected_path = Some(first.clone());
+                    self.explorer_state.selected_paths.clear();
+                    self.explorer_state.selected_paths.insert(first.clone());
                 }
             }
             ItemViewerContextAction::Copy(paths) => {
-                println!("Copy action received: {:?}", paths);
-
                 let _ = set_clipboard_files(&paths, false);
-
-                // optional: update selection
-                if let Some(first) = paths.first() {
-                    self.selected_path = Some(first.clone());
-                }
+                mark_clipboard_dirty();
             }
             ItemViewerContextAction::Paste => {
-                println!("Paste action received");
-
                 if let Err(e) = self.paste_clipboard_native() {
                     eprintln!("Paste failed: {}", e);
                 }
@@ -344,7 +378,8 @@ impl MainWindow {
     pub fn paste_clipboard_native(&mut self) -> windows::core::Result<()> {
         use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
         use windows::Win32::UI::Shell::{
-            FOF_ALLOWUNDO, FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
+            FOF_ALLOWUNDO, FOF_NOCONFIRMMKDIR, FOF_RENAMEONCOLLISION, FileOperation,
+            IFileOperation, IShellItem, SHCreateItemFromParsingName,
         };
         use windows::core::HSTRING;
 
@@ -358,7 +393,8 @@ impl MainWindow {
         unsafe {
             let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
 
-            file_op.SetOperationFlags(FOF_ALLOWUNDO)?;
+            file_op
+                .SetOperationFlags(FOF_ALLOWUNDO | FOF_RENAMEONCOLLISION | FOF_NOCONFIRMMKDIR)?;
 
             let target_item: IShellItem = SHCreateItemFromParsingName(
                 &HSTRING::from(self.current_nav().current.to_string_lossy().to_string()),
@@ -477,8 +513,7 @@ impl MainWindow {
         // Clear caches and collections
         self.folder_sizes.clear();
         self.files.clear();
-        self.search_results.clear();
-        self.selected_paths.clear();
+        self.explorer_state.selected_paths.clear();
         self.pending_size_queue.clear();
         self.pending_size_set.clear();
         self.file_type_cache.clear();
@@ -496,33 +531,38 @@ impl MainWindow {
                             .current_settings
                             .folder_scanning_enabled,
                         &self.settings_window.current_settings.window_size_mode,
+                        &self.settings_window.current_settings.start_path,
                     );
-                    self.settings_window.has_unsaved_changes = false;
                 }
                 SettingsAction::ResetToDefaults => {
                     self.settings_window.current_settings = Default::default();
-                    self.settings_window.has_unsaved_changes = true;
                 }
                 SettingsAction::ResetFavourites => {
-                    self.favorites = self.default_favorites();
+                    self.sidebar_state.favorites = self.default_favorites();
                     self.persist_favorites();
                 }
             }
         }
     }
 
+    pub fn handle_draw_about_window(&mut self, ctx: &egui::Context, palette: &ThemePalette) {
+        // TODO: Implement about window
+        draw_about_window(ctx, &mut self.about_window, palette);
+    }
+
     pub fn handle_tabbar_action(&mut self, tabbar_action: Option<TabbarAction>) {
-        self.search_query = self.search_query.clone();
         if let Some(action) = tabbar_action.as_ref().and_then(|t| t.nav.as_ref()) {
             match action {
                 TabbarNavAction::Back => self.current_nav_mut().go_back(),
                 TabbarNavAction::Forward => self.current_nav_mut().go_forward(),
                 TabbarNavAction::Up => self.current_nav_mut().go_up(),
             }
+            self.mark_tab_infos_dirty();
             self.load_path();
         } else {
             if let Some(path) = tabbar_action.as_ref().and_then(|t| t.nav_to.as_ref()) {
                 self.current_nav_mut().go_to(path.clone());
+                self.mark_tab_infos_dirty();
                 self.load_path();
             }
             if tabbar_action
@@ -553,6 +593,14 @@ impl MainWindow {
             {
                 self.add_favorite();
             }
+            if tabbar_action
+                .as_ref()
+                .map(|t| t.remove_favorite)
+                .unwrap_or(false)
+            {
+                let path = self.current_nav().current.clone();
+                self.remove_favorite(&path);
+            }
         }
     }
 
@@ -560,6 +608,7 @@ impl MainWindow {
         if let Some(action) = tabs_action {
             if let Some(id) = action.activate {
                 self.active_tab = self.tabs.iter().position(|t| t.id == id).unwrap();
+                self.pending_tab_scroll_id = Some(id);
                 self.load_path();
             }
             if action.open_new {
@@ -576,6 +625,8 @@ impl MainWindow {
                     breadcrumb_path_error_animation_time: 0.0,
                 });
                 self.active_tab = self.tabs.len() - 1;
+                self.pending_tab_scroll_id = Some(id);
+                self.mark_tab_infos_dirty();
                 self.load_path();
             }
             if let Some(id) = action.close {
@@ -585,11 +636,18 @@ impl MainWindow {
                         if self.active_tab >= self.tabs.len() {
                             self.active_tab = self.tabs.len() - 1;
                         }
+                        if let Some(active_id) = self.tabs.get(self.active_tab).map(|t| t.id) {
+                            self.pending_tab_scroll_id = Some(active_id);
+                        }
+                        self.mark_tab_infos_dirty();
                         self.load_path();
                     }
                 } else {
-                    self.tabs[0].nav = Navigation::new();
+                    let (_folder_scanning_enabled, _window_size_mode, start_path) =
+                        load_app_settings();
+                    self.tabs[0].nav = Navigation::new(start_path);
                     self.active_tab = 0;
+                    self.mark_tab_infos_dirty();
                     self.load_path();
                 }
             }
@@ -599,10 +657,10 @@ impl MainWindow {
     pub fn handle_sidebar_action(&mut self, sidebar_action: Option<SidebarAction>) {
         if let Some(action) = sidebar_action {
             if let Some((from, to)) = action.reorder {
-                let len = self.favorites.len();
+                let len = self.sidebar_state.favorites.len();
 
                 if from < len {
-                    let item = self.favorites.remove(from);
+                    let item = self.sidebar_state.favorites.remove(from);
 
                     // Clamp target index AFTER removal
                     let mut target = to;
@@ -611,15 +669,16 @@ impl MainWindow {
                         target -= 1;
                     }
 
-                    target = target.min(self.favorites.len());
+                    target = target.min(self.sidebar_state.favorites.len());
 
-                    self.favorites.insert(target, item);
+                    self.sidebar_state.favorites.insert(target, item);
                 }
 
                 self.persist_favorites();
             }
             if let Some(path) = action.nav_to {
                 self.current_nav_mut().go_to(path);
+                self.mark_tab_infos_dirty();
                 self.load_path();
             }
             if let Some(path) = action.open_new_tab {
@@ -627,19 +686,10 @@ impl MainWindow {
                 self.load_path();
             }
             if let Some(path) = action.select_favorite {
-                self.sidebar_selected = Some(path);
+                self.sidebar_state.item_clicked = Some(path);
             }
             if let Some(path) = action.remove_favorite {
-                self.favorites.retain(|fav| fav.path != path);
-                self.persist_favorites();
-                if self
-                    .sidebar_selected
-                    .as_ref()
-                    .map(|p| p == &path)
-                    .unwrap_or(false)
-                {
-                    self.sidebar_selected = None;
-                }
+                self.remove_favorite(&path);
             }
         }
     }
@@ -661,6 +711,18 @@ impl MainWindow {
             if action.open_settings {
                 self.settings_window.open = true;
             }
+
+            if action.about {
+                self.about_window.open = true;
+            }
+
+            if action.exit {
+                if let Some(hwnd) = self.hwnd {
+                    unsafe {
+                        let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
+                    }
+                }
+            }
         }
     }
 
@@ -668,7 +730,7 @@ impl MainWindow {
         // Throttle size requests to keep UI responsive
         if let Some(size_req_tx) = &self.size_req_tx {
             let should_pause =
-                ctx.input(|i| i.pointer.any_down() || i.raw_scroll_delta.y.abs() > 0.0);
+                ctx.input(|i| i.pointer.any_down() || i.smooth_scroll_delta.y.abs() > 0.0);
             if !should_pause {
                 for _ in 0..6 {
                     if let Some(path) = self.pending_size_queue.pop_front() {
@@ -716,11 +778,16 @@ impl MainWindow {
         // Batch receive
         if let Some(rx) = &self.rx {
             let mut batch = Vec::with_capacity(128);
+            let mut disconnected = false;
 
             for _ in 0..128 {
                 match rx.try_recv() {
                     Ok(item) => batch.push(item),
-                    Err(_) => break,
+                    Err(crossbeam_channel::TryRecvError::Empty) => break,
+                    Err(crossbeam_channel::TryRecvError::Disconnected) => {
+                        disconnected = true;
+                        break;
+                    }
                 }
             }
 
@@ -748,6 +815,12 @@ impl MainWindow {
 
                 self.files.extend(batch);
                 sort_files(&mut self.files, self.sort_column, self.sort_ascending);
+                ctx.request_repaint();
+            }
+
+            if disconnected {
+                self.rx = None;
+                self.is_loading = false;
                 ctx.request_repaint();
             }
         }
@@ -856,84 +929,89 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
         match action {
             ItemViewerAction::Sort(col) => explorer.toggle_sort(col),
             ItemViewerAction::Select(path) => {
-                explorer.selected_path = Some(path.clone());
-                explorer.selected_paths.insert(path);
+                explorer.explorer_state.selected_paths.insert(path.clone());
+
+                if let Some(idx) = explorer.files.iter().position(|f| f.path == path) {
+                    explorer.explorer_state.selection_anchor = Some(idx);
+                    explorer.explorer_state.selection_focus = Some(idx);
+                }
             }
             ItemViewerAction::Deselect(path) => {
-                explorer.selected_paths.remove(&path);
+                explorer.explorer_state.selected_paths.remove(&path);
             }
             ItemViewerAction::SelectAll => {
-                explorer.selected_paths.clear();
+                explorer.explorer_state.selected_paths.clear();
                 for file in &explorer.files {
-                    explorer.selected_paths.insert(file.path.clone());
+                    explorer
+                        .explorer_state
+                        .selected_paths
+                        .insert(file.path.clone());
                 }
             }
             ItemViewerAction::DeselectAll => {
-                explorer.selected_paths.clear();
-            }
-            ItemViewerAction::BoxSelect(paths) => {
-                // Clear current selection and add box-selected files
-                explorer.selected_paths.clear();
-                for path in paths {
-                    explorer.selected_paths.insert(path);
-                }
+                explorer.explorer_state.selected_paths.clear();
             }
             ItemViewerAction::RangeSelect(paths) => {
-                // Clear current selection and add range-selected files
-                explorer.selected_paths.clear();
+                // Clear current selection and add all range-selected files
+                explorer.explorer_state.selected_paths.clear();
                 for path in &paths {
-                    explorer.selected_paths.insert(path.clone());
+                    explorer.explorer_state.selected_paths.insert(path.clone());
                 }
-                // Set the current position to the target edge of the range
-                // The target should be the item that was just moved to
-                if let Some(anchor_idx) = explorer.selection_anchor
-                    && let Some(current_selected) = explorer.selected_path.as_ref()
-                    && let Some(current_idx) = explorer
-                        .files
-                        .iter()
-                        .position(|f| &f.path == current_selected)
-                {
-                    // Determine which edge was just selected
-                    if current_idx > anchor_idx {
-                        // Moving down - set current to the bottom of range
-                        if let Some(bottom_path) = paths.last() {
-                            explorer.selected_path = Some(bottom_path.clone());
-                        }
-                    } else if current_idx < anchor_idx {
-                        // Moving up - set current to the top of range
-                        if let Some(top_path) = paths.first() {
-                            explorer.selected_path = Some(top_path.clone());
-                        }
+
+                // Set selection_focus to the edge of the range that is farthest from the anchor
+                if let Some(anchor_idx) = explorer.explorer_state.selection_anchor {
+                    if let (Some(first_path), Some(last_path)) = (paths.first(), paths.last()) {
+                        let first_idx = explorer
+                            .files
+                            .iter()
+                            .position(|f| &f.path == first_path)
+                            .unwrap_or(anchor_idx);
+                        let last_idx = explorer
+                            .files
+                            .iter()
+                            .position(|f| &f.path == last_path)
+                            .unwrap_or(anchor_idx);
+
+                        // If moving down, focus the last item; if moving up, focus the first item
+                        explorer.explorer_state.selection_focus =
+                            Some(if anchor_idx <= first_idx {
+                                last_idx // moved down
+                            } else {
+                                first_idx // moved up
+                            });
                     }
-                    // If current_idx == anchor_idx, no change needed
                 }
             }
             ItemViewerAction::Open(path) => {
-                explorer.selected_path = Some(path.clone());
+                explorer.explorer_state.selected_paths.clear();
+                explorer.explorer_state.selected_paths.insert(path.clone());
+                explorer.item_viewer_filter_state.dirty = true;
+                explorer.item_viewer_filter_state.cached_indices.clear();
                 explorer.current_nav_mut().go_to(path);
+                explorer.mark_tab_infos_dirty();
                 explorer.load_path();
             }
-            ItemViewerAction::OpenWithDefault(path) => {
-                // Open file with default Windows application
-                let path_str = path.to_string_lossy().to_string();
-                let wide_path: Vec<u16> = OsStr::new(&path_str)
-                    .encode_wide()
-                    .chain(std::iter::once(0))
-                    .collect();
+            ItemViewerAction::OpenWithDefault(paths) => {
+                for path in paths {
+                    let path_str = path.to_string_lossy().to_string();
+                    let wide_path: Vec<u16> = OsStr::new(&path_str)
+                        .encode_wide()
+                        .chain(std::iter::once(0))
+                        .collect();
 
-                unsafe {
-                    let result = ShellExecuteW(
-                        None,
-                        PCWSTR::null(),
-                        PCWSTR(wide_path.as_ptr()),
-                        PCWSTR::null(),
-                        PCWSTR::null(),
-                        SW_SHOWNORMAL,
-                    );
+                    unsafe {
+                        let result = ShellExecuteW(
+                            None,
+                            PCWSTR::null(),
+                            PCWSTR(wide_path.as_ptr()),
+                            PCWSTR::null(),
+                            PCWSTR::null(),
+                            SW_SHOWNORMAL,
+                        );
 
-                    // Check if the operation was successful (result > 32)
-                    if result.0 <= std::ptr::null_mut() {
-                        eprintln!("Failed to open file: {}", path.display());
+                        if result.0 <= std::ptr::null_mut() {
+                            eprintln!("Failed to open file: {}", path.display());
+                        }
                     }
                 }
             }
@@ -956,12 +1034,11 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 });
             }
             ItemViewerAction::ReplaceSelection(path) => {
-                explorer.selected_paths.clear();
-                explorer.selected_paths.insert(path.clone());
-                explorer.selected_path = Some(path.clone());
-                // Set anchor index for extended selection
-                if let Some(anchor_idx) = explorer.files.iter().position(|f| f.path == path) {
-                    explorer.selection_anchor = Some(anchor_idx);
+                explorer.explorer_state.selected_paths.clear();
+                explorer.explorer_state.selected_paths.insert(path.clone());
+                if let Some(idx) = explorer.files.iter().position(|f| f.path == path) {
+                    explorer.explorer_state.selection_anchor = Some(idx);
+                    explorer.explorer_state.selection_focus = Some(idx);
                 }
             }
             ItemViewerAction::FilesDropped(dropped_files) => {
@@ -985,7 +1062,11 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             }
             ItemViewerAction::BackNavigation => {
                 explorer.current_nav_mut().go_back();
+                explorer.mark_tab_infos_dirty();
                 explorer.load_path();
+                explorer.explorer_state.selection_anchor = None;
+                explorer.explorer_state.selected_paths.clear();
+                explorer.explorer_state.selection_focus = None;
             }
             ItemViewerAction::MoveItems {
                 sources,
@@ -1024,8 +1105,9 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     file_op.PerformOperations().ok();
                 }
 
-                explorer.selected_paths.clear();
-                explorer.selected_path = None;
+                explorer.explorer_state.selected_paths.clear();
+                explorer.explorer_state.selection_anchor = None;
+                explorer.explorer_state.selection_focus = None;
                 explorer.load_path();
             }
         }
@@ -1035,26 +1117,87 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
 pub fn handle_draw_customizetheme_window(
     ctx: &egui::Context,
     theme_customizer: &mut ThemeCustomizer,
+    palette: &ThemePalette,
+    current_mode: ThemeMode,
+    theme_dirty: &mut bool,
 ) {
-    if let Some(action) = draw_theme_customizer(ctx, theme_customizer) {
+    if let Some(action) = draw_theme_customizer(ctx, theme_customizer, palette) {
         match action {
-            // ThemeCustomizerAction::ApplyTheme => {
-            //     // Theme will be applied when theme_dirty is set to true
-            // }
-            ThemeCustomizerAction::ResetToDefaults => {
-                theme_customizer.current_theme = Default::default();
+            ThemeCustomizerAction::ThemeUpdated(mode) => {
+                let updated = match mode {
+                    ThemeMode::Dark => theme_customizer.dark_palette.clone(),
+                    ThemeMode::Light => theme_customizer.light_palette.clone(),
+                };
+                set_palette(mode, updated);
+                save_theme_settings(
+                    &theme_customizer.light_palette,
+                    &theme_customizer.dark_palette,
+                );
+
+                if mode == current_mode {
+                    *theme_dirty = true;
+                }
             }
-            ThemeCustomizerAction::SaveTheme => {
-                // implement later
+            ThemeCustomizerAction::ResetToDefaults(mode) => {
+                let default = get_default_palette(mode);
+                match mode {
+                    ThemeMode::Dark => theme_customizer.dark_palette = default.clone(),
+                    ThemeMode::Light => theme_customizer.light_palette = default.clone(),
+                }
+                set_palette(mode, default);
+                save_theme_settings(
+                    &theme_customizer.light_palette,
+                    &theme_customizer.dark_palette,
+                );
+
+                if mode == current_mode {
+                    *theme_dirty = true;
+                }
             }
-            ThemeCustomizerAction::LoadTheme => {
-                // implement later
+            ThemeCustomizerAction::ExportTheme(mode) => {
+                let palette_to_export = match mode {
+                    ThemeMode::Dark => &theme_customizer.dark_palette,
+                    ThemeMode::Light => &theme_customizer.light_palette,
+                };
+
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("Theme JSON", &["json"])
+                    .set_file_name(match mode {
+                        ThemeMode::Dark => "eden_theme_dark.json",
+                        ThemeMode::Light => "eden_theme_light.json",
+                    })
+                    .save_file()
+                {
+                    if let Ok(json) = serde_json::to_string_pretty(palette_to_export) {
+                        let _ = std::fs::write(path, json);
+                    }
+                }
             }
-            ThemeCustomizerAction::ExportTheme => {
-                // implement later
-            }
-            ThemeCustomizerAction::ImportTheme => {
-                // implement later
+            ThemeCustomizerAction::ImportTheme(mode) => {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("Theme JSON", &["json"])
+                    .pick_file()
+                {
+                    if let Ok(json) = std::fs::read_to_string(path) {
+                        if let Ok(imported) = serde_json::from_str::<ThemePalette>(&json) {
+                            match mode {
+                                ThemeMode::Dark => theme_customizer.dark_palette = imported.clone(),
+                                ThemeMode::Light => {
+                                    theme_customizer.light_palette = imported.clone()
+                                }
+                            }
+                            set_palette(mode, imported);
+                            save_theme_settings(
+                                &theme_customizer.light_palette,
+                                &theme_customizer.dark_palette,
+                            );
+
+                            if mode == current_mode {
+                                *theme_dirty = true;
+                            }
+                        }
+                    }
+                }
             }
         }
     }

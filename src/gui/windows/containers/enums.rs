@@ -14,16 +14,18 @@ pub enum ItemViewerAction {
     SelectAll,
     DeselectAll,
     RangeSelect(Vec<PathBuf>),
-    BoxSelect(Vec<PathBuf>),
     Open(PathBuf),
-    OpenWithDefault(PathBuf),
+    OpenWithDefault(Vec<PathBuf>),
     OpenInNewTab(PathBuf),
     Context(ItemViewerContextAction),
     StartEdit(PathBuf),
     FilesDropped(Vec<PathBuf>),
     ReplaceSelection(PathBuf),
     BackNavigation,
-    MoveItems { sources: Vec<PathBuf>, target_dir: PathBuf },
+    MoveItems {
+        sources: Vec<PathBuf>,
+        target_dir: PathBuf,
+    },
 }
 
 #[derive(Clone, Debug)]

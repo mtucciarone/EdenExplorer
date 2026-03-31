@@ -1,13 +1,16 @@
+use crate::core::fs::MY_PC_PATH;
+use crate::core::portable;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
-use crate::gui::utils::{clickable_icon, truncate_text};
+use crate::gui::utils::{clear_clipboard_files, clickable_icon, truncate_item_text};
 use crate::gui::windows::containers::enums::TabbarNavAction;
 use crate::gui::windows::containers::structs::{TabInfo, TabState, TabbarAction, TabsAction};
+use crate::gui::windows::windowsoverrides::handle_draw_windows_buttons;
 use eframe::egui;
 use egui::{FontFamily, FontId};
-use egui_phosphor::regular;
+use egui_phosphor::{fill, regular};
 use std::path::{Path, PathBuf};
-use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+use windows::Win32::Foundation::HWND;
 
 pub fn draw_tabs(
     ui: &mut egui::Ui,
@@ -15,6 +18,7 @@ pub fn draw_tabs(
     active_id: u64,
     palette: &ThemePalette,
     hwnd: Option<HWND>,
+    scroll_to_id: Option<u64>,
 ) -> TabsAction {
     let mut action: TabsAction = TabsAction::default();
     let controls_width = 64.0;
@@ -30,10 +34,12 @@ pub fn draw_tabs(
                 egui::vec2(tabs_width, 32.0),
                 egui::Layout::left_to_right(egui::Align::Min),
                 |ui| {
+                    let tabs_rect = ui.available_rect_before_wrap();
                     // 🔥 THIS is where overflow must be handled
                     egui::ScrollArea::horizontal()
                         .id_salt("tabs_scroll")
                         .auto_shrink([false, true])
+                        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 for tab in tabs {
@@ -43,11 +49,14 @@ pub fn draw_tabs(
                                         egui::vec2(tab_width, 28.0),
                                         egui::Sense::click(),
                                     );
+                                    if Some(tab.id) == scroll_to_id {
+                                        resp.scroll_to_me(Some(egui::Align::Center));
+                                    }
                                     handle_draw_tab_new_allocated(
                                         ui,
                                         tab,
                                         rect,
-                                        resp,
+                                        resp.clone(),
                                         active_id,
                                         palette,
                                         &mut action,
@@ -56,6 +65,36 @@ pub fn draw_tabs(
                             });
                             handle_draw_add_new_tab_button(ui, palette, &mut action);
                         });
+
+                    // Drag region: empty space to the right of the last tab
+                    let tab_width = 140.0;
+                    let add_tab_width = 28.0;
+                    let spacing = ui.spacing().item_spacing.x;
+                    let tab_count = tabs.len() as f32;
+                    let gaps = if tab_count > 0.0 {
+                        tab_count - 1.0
+                    } else {
+                        0.0
+                    };
+                    let content_width =
+                        tab_count * tab_width + gaps * spacing + spacing + add_tab_width;
+
+                    if content_width < tabs_rect.width() {
+                        let empty_left = tabs_rect.min.x + content_width;
+                        let drag_rect = egui::Rect::from_min_max(
+                            egui::pos2(empty_left, tabs_rect.min.y),
+                            tabs_rect.max,
+                        );
+                        if drag_rect.width() > 4.0 {
+                            let resp = ui.allocate_rect(drag_rect, egui::Sense::click_and_drag());
+                            if resp.drag_started() || resp.dragged() {
+                                ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                            }
+                            if resp.hovered() {
+                                ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                            }
+                        }
+                    }
                 },
             );
 
@@ -93,28 +132,33 @@ fn handle_draw_tab_new_allocated(
         egui::Color32::TRANSPARENT
     };
 
-    let painter = ui.painter();
-
-    // --- Paint background ---
-    painter.rect_filled(rect, corner, tab_fill);
-
     // --- Font and colors ---
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let label_color = if is_active {
-        palette.row_label_selected
+        palette.tab_text_selected
     } else {
-        ui.visuals().widgets.noninteractive.fg_stroke.color
+        palette.tab_text_normal
     };
 
     // --- Layout parameters ---
     let icon_size = 16.0;
     let spacing = 6.0;
-    let padding = 8.0; // distance from left edge of tab
-
+    let padding = 8.0;
+    let close_button_width = 20.0;
     let icon_pos = egui::pos2(rect.left() + padding, rect.center().y);
     let text_pos = egui::pos2(rect.left() + padding + icon_size + spacing, rect.center().y);
+    let text_width = rect.width() - icon_size - spacing - 2.0 * padding - close_button_width;
 
-    // --- Draw folder icon (left-aligned) ---
+    let (display_title, truncated) =
+        truncate_item_text(ui, &tab.title, text_width, &font_id, label_color);
+
+    // --- NOW safe to use painter ---
+    let painter = ui.painter();
+
+    // --- Paint background ---
+    painter.rect_filled(rect, corner, tab_fill);
+
+    // --- Draw folder icon ---
     painter.text(
         icon_pos,
         egui::Align2::LEFT_CENTER,
@@ -123,14 +167,10 @@ fn handle_draw_tab_new_allocated(
         label_color,
     );
 
-    // --- Draw tab text (left-aligned) ---
     painter.text(
         text_pos,
         egui::Align2::LEFT_CENTER,
-        truncate_text(
-            &tab.title,
-            ((rect.width() - icon_size - spacing - 2.0 * padding) / 7.0) as usize,
-        ),
+        display_title,
         font_id.clone(),
         label_color,
     );
@@ -151,7 +191,6 @@ fn handle_draw_tab_new_allocated(
 
     painter.rect_stroke(rect, rounding, stroke, egui::StrokeKind::Outside);
 
-    // Active tab blends into panel
     if is_active {
         painter.line_segment(
             [rect.left_bottom(), rect.right_bottom()],
@@ -159,7 +198,6 @@ fn handle_draw_tab_new_allocated(
         );
     }
 
-    // --- Handle clicks ---
     let close_resp = tab_close_button(ui, rect, tab.id, palette);
     if close_resp.clicked() {
         action.close = Some(tab.id);
@@ -167,9 +205,20 @@ fn handle_draw_tab_new_allocated(
         action.activate = Some(tab.id);
     }
 
-    // --- Hover cursor ---
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+
+        let tooltip_text = if truncated {
+            tab.title.clone()
+        } else {
+            tab.full_path.to_string_lossy().to_string()
+        };
+
+        resp.on_hover_text(
+            egui::RichText::new(tooltip_text)
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        );
     }
 }
 
@@ -199,42 +248,6 @@ fn handle_draw_add_new_tab_button(
 
     if response.clicked() {
         action.open_new = true;
-    }
-}
-
-fn handle_draw_windows_buttons(ui: &mut egui::Ui, hwnd: Option<HWND>, palette: &ThemePalette) {
-    if let Some(hwnd) = hwnd {
-        if clickable_icon(ui, regular::X, palette.primary).clicked() {
-            unsafe {
-                use windows::Win32::UI::WindowsAndMessaging::*;
-                let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
-            }
-        }
-
-        if clickable_icon(ui, regular::SQUARE, palette.primary).clicked() {
-            unsafe {
-                use windows::Win32::UI::WindowsAndMessaging::*;
-                let mut placement = WINDOWPLACEMENT {
-                    length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
-                    ..Default::default()
-                };
-
-                if GetWindowPlacement(hwnd, &mut placement).is_ok() {
-                    if placement.showCmd == SW_SHOWMAXIMIZED.0 as u32 {
-                        let _ = ShowWindow(hwnd, SW_RESTORE);
-                    } else {
-                        let _ = ShowWindow(hwnd, SW_MAXIMIZE);
-                    }
-                }
-            }
-        }
-
-        if clickable_icon(ui, regular::MINUS, palette.primary).clicked() {
-            unsafe {
-                use windows::Win32::UI::WindowsAndMessaging::*;
-                let _ = ShowWindow(hwnd, SW_MINIMIZE);
-            }
-        }
     }
 }
 
@@ -269,7 +282,7 @@ fn tab_close_button(
     let color = if hovered {
         palette.icon_colored_hover
     } else {
-        ui.visuals().widgets.noninteractive.fg_stroke.color
+        palette.icon_color
     };
 
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
@@ -311,7 +324,8 @@ fn tab_add_button(
     let color = if hovered {
         palette.icon_colored_hover
     } else {
-        ui.visuals().widgets.noninteractive.fg_stroke.color
+        //ui.visuals().widgets.noninteractive.fg_stroke.color
+        palette.icon_color
     };
 
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
@@ -331,37 +345,143 @@ fn tab_add_button(
     resp
 }
 
-fn toolbar_buttons(ui: &mut egui::Ui, palette: &ThemePalette) -> TabbarAction {
+fn toolbar_buttons(
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+    is_favorited: bool,
+    is_root: bool,
+) -> TabbarAction {
     let mut action = TabbarAction::default();
 
     // Navigation buttons
-    if clickable_icon(ui, regular::ARROW_LEFT, palette.primary).clicked() {
+    if clickable_icon(ui, regular::ARROW_LEFT, palette.primary)
+        .on_hover_text(
+            egui::RichText::new("Navigate to previous directory")
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+    {
         action.nav = Some(TabbarNavAction::Back);
     }
 
-    if clickable_icon(ui, regular::ARROW_RIGHT, palette.primary).clicked() {
+    if clickable_icon(ui, regular::ARROW_RIGHT, palette.primary)
+        .on_hover_text(
+            egui::RichText::new("Navigate to next directory")
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+    {
         action.nav = Some(TabbarNavAction::Forward);
     }
 
-    if clickable_icon(ui, regular::ARROW_UP, palette.primary).clicked() {
+    if clickable_icon(ui, regular::ARROW_UP, palette.primary)
+        .on_hover_text(
+            egui::RichText::new("Navigate to parent directory")
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+    {
         action.nav = Some(TabbarNavAction::Up);
     }
 
-    if clickable_icon(ui, regular::ARROWS_CLOCKWISE, palette.primary).clicked() {
+    if clickable_icon(ui, regular::ARROWS_CLOCKWISE, palette.primary)
+        .on_hover_text(
+            egui::RichText::new("Refresh current directory")
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+    {
         action.refresh_current_directory = true;
+        clear_clipboard_files();
     }
 
     // Action buttons
-    if clickable_icon(ui, regular::FOLDER_PLUS, palette.primary).clicked() {
+    if clickable_icon(ui, regular::FOLDER_PLUS, palette.primary)
+        .on_hover_text(
+            egui::RichText::new("Create new folder")
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+    {
         action.create_folder = true;
     }
 
-    if clickable_icon(ui, regular::FILE_PLUS, palette.primary).clicked() {
+    if clickable_icon(ui, regular::FILE_PLUS, palette.primary)
+        .on_hover_text(
+            egui::RichText::new("Create new file")
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+    {
         action.create_file = true;
     }
 
-    if clickable_icon(ui, regular::STAR, palette.primary).clicked() {
-        action.add_favorite = true;
+    let star_icon = if is_favorited {
+        fill::STAR
+    } else {
+        regular::STAR
+    };
+    let star_color = if is_favorited {
+        palette.button_favorite_fill
+    } else {
+        palette.tooltip_text_color
+    };
+
+    let star_font = if is_favorited {
+        FontId::new(palette.text_size, FontFamily::Name("phosphor_fill".into()))
+    } else {
+        FontId::new(palette.text_size, FontFamily::Proportional)
+    };
+
+    let star_resp = ui.add_enabled(
+        !is_root,
+        egui::Label::new(
+            egui::RichText::new(star_icon)
+                .font(star_font)
+                .color(star_color),
+        )
+        .selectable(false)
+        .sense(egui::Sense::click()),
+    );
+
+    let star_resp = if is_root {
+        star_resp.on_hover_text(
+            egui::RichText::new("Favorites are disabled on This PC")
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+    } else {
+        star_resp
+            .on_hover_text(
+                egui::RichText::new(if is_favorited {
+                    "Remove current directory from favorites"
+                } else {
+                    "Add current directory to favorites"
+                })
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+    };
+
+    if star_resp.clicked() {
+        if is_favorited {
+            action.remove_favorite = true;
+        } else {
+            action.add_favorite = true;
+        }
     }
 
     action
@@ -372,11 +492,12 @@ pub fn draw_tabbar(
     icon_cache: &IconCache,
     tab: &mut TabState,
     palette: &ThemePalette,
+    is_favorited: bool,
 ) -> TabbarAction {
     let mut action = TabbarAction::default();
 
     ui.horizontal(|ui| {
-        let toolbar_action = toolbar_buttons(ui, palette);
+        let toolbar_action = toolbar_buttons(ui, palette, is_favorited, tab.nav.is_root());
 
         // Merge toolbar actions
         if toolbar_action.nav.is_some() {
@@ -393,6 +514,9 @@ pub fn draw_tabbar(
         }
         if toolbar_action.add_favorite {
             action.add_favorite = true;
+        }
+        if toolbar_action.remove_favorite {
+            action.remove_favorite = true;
         }
 
         ui.separator();
@@ -510,7 +634,7 @@ pub fn draw_tabbar(
                 )
                 .clicked()
             {
-                action.nav_to = Some(PathBuf::from("::MY_PC::"));
+                action.nav_to = Some(PathBuf::from(MY_PC_PATH));
             }
         } else {
             let segments =
@@ -518,6 +642,8 @@ pub fn draw_tabbar(
             let mut first = true;
 
             let mut breadcrumbs_right = 0.0;
+            let font_id = egui::FontId::new(palette.text_size, egui::FontFamily::Proportional);
+            let total_width = ui.available_width();
 
             for (label, path) in segments.iter() {
                 if !first {
@@ -539,21 +665,27 @@ pub fn draw_tabbar(
                     .inner_margin(egui::Margin::symmetric(6, 2))
                     .corner_radius(egui::CornerRadius::same(palette.medium_radius))
                     .show(ui, |ui| {
-                        let mut label_text = label.clone();
+                        let color = ui.visuals().text_color();
 
-                        // Optional: truncate the label if too long
-                        let max_label_len = 15;
-                        if label_text.len() > max_label_len {
-                            label_text = format!("{}...", &label_text[..max_label_len - 3]);
-                        }
+                        let max_width = (total_width / segments.len() as f32).clamp(60.0, 180.0);
 
-                        ui.add(
+                        let (label_text, truncated) =
+                            truncate_item_text(ui, label, max_width, &font_id, color);
+
+                        let resp = ui.add(
                             egui::Label::new(
                                 egui::RichText::new(label_text).size(palette.text_size),
                             )
                             .selectable(false)
                             .sense(egui::Sense::click()),
-                        )
+                        );
+
+                        // ✅ RETURN THIS
+                        if truncated {
+                            resp.on_hover_text(label)
+                        } else {
+                            resp
+                        }
                     });
 
                 let resp = inner.response.union(inner.inner);
@@ -608,27 +740,32 @@ fn build_breadcrumbs(path: &Path, available_width: f32, font_size: f32) -> Vec<(
     let separator_width = char_width * 4.0; // width for '>' separator
 
     // Collect all segments
-    let mut all_segments = Vec::new();
-    let mut current = PathBuf::new();
-    for comp in path.components() {
-        match comp {
-            Component::Prefix(prefix) => {
-                current.push(prefix.as_os_str());
-                all_segments.push((
-                    prefix.as_os_str().to_string_lossy().to_string(),
-                    current.clone(),
-                ));
+    let all_segments = if portable::is_portable_path(&path.to_path_buf()) {
+        portable::build_breadcrumb_segments(&path.to_path_buf()).unwrap_or_default()
+    } else {
+        let mut segments = Vec::new();
+        let mut current = PathBuf::new();
+        for comp in path.components() {
+            match comp {
+                Component::Prefix(prefix) => {
+                    current.push(prefix.as_os_str());
+                    segments.push((
+                        prefix.as_os_str().to_string_lossy().to_string(),
+                        current.clone(),
+                    ));
+                }
+                Component::RootDir => {
+                    current.push(Path::new("\\"));
+                }
+                Component::Normal(name) => {
+                    current.push(name);
+                    segments.push((name.to_string_lossy().to_string(), current.clone()));
+                }
+                _ => {}
             }
-            Component::RootDir => {
-                current.push(Path::new("\\"));
-            }
-            Component::Normal(name) => {
-                current.push(name);
-                all_segments.push((name.to_string_lossy().to_string(), current.clone()));
-            }
-            _ => {}
         }
-    }
+        segments
+    };
 
     // Compute total width
     let total_width: f32 = all_segments

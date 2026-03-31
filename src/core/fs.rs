@@ -1,8 +1,9 @@
+use crate::core::portable;
 use crossbeam_channel::Sender;
 use ntapi::ntioapi::{FILE_DIRECTORY_INFORMATION, IO_STATUS_BLOCK, NtQueryDirectoryFile};
 use std::ffi::OsString;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
@@ -14,9 +15,10 @@ use windows::Win32::Storage::FileSystem::{
 use windows::core::PCWSTR;
 
 const STATUS_NO_MORE_FILES: i32 = 0x80000006u32 as i32;
+pub const MY_PC_PATH: &str = "::MY_PC::";
 
 /// Convert PathBuf -> UTF-16
-fn path_to_wide(path: &PathBuf) -> Vec<u16> {
+fn path_to_wide(path: &Path) -> Vec<u16> {
     let mut w: Vec<u16> = path.as_os_str().encode_wide().collect();
     w.push(0);
     w
@@ -154,7 +156,12 @@ pub fn calculate_folder_size_fast(path: PathBuf) -> u64 {
 /// 🚀 Async directory scan
 pub fn scan_dir_async(path: PathBuf, tx: Sender<FileItem>) {
     thread::spawn(move || {
-        if path.to_string_lossy() == "::MY_PC::" {
+        if path.to_string_lossy() == MY_PC_PATH {
+            return;
+        }
+
+        if portable::is_portable_path(&path) {
+            portable::scan_portable_async(path, tx);
             return;
         }
 

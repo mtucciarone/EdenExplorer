@@ -1,6 +1,6 @@
-use eframe::egui;
+use eframe::egui::{Color32, CornerRadius};
 use serde::{Deserialize, Serialize};
-use std::sync::LazyLock;
+use std::sync::{LazyLock, RwLock};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub enum ThemeMode {
@@ -16,184 +16,289 @@ impl Default for ThemeMode {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ThemePalette {
-    pub application_bg_color: egui::Color32,
+    // 🔤 Typography
     pub text_size: f32,
-    // 🎯 Core brand color
-    pub primary: egui::Color32,
-    pub primary_hover: egui::Color32,
-    pub primary_active: egui::Color32,
-    pub primary_subtle: egui::Color32,
-    pub secondary: egui::Color32,
+    pub tooltip_text_size: f32,
 
-    // 🎯 UI element colors
-    pub box_selection_stroke: egui::Color32,
-    pub box_selection_fill: egui::Color32,
-    pub icon_color: egui::Color32,
-    pub icon_colored_hover: egui::Color32,
-    pub row_label_selected: egui::Color32,
-    pub row_label_default: egui::Color32,
-    pub row_selected_bg: egui::Color32,
-    pub row_bg: egui::Color32,
-    pub itemviewer_header_color: egui::Color32,
-    pub resize_handle: egui::Color32,
+    // 🎯 Brand / primary colors
+    pub primary: Color32,
+    pub primary_hover: Color32,
+    pub primary_active: Color32,
+    pub primary_subtle: Color32,
+    pub secondary: Color32,
+
+    // 🧱 Application surfaces
+    pub application_bg_color: Color32,
+    pub modal_background_effect_color: Color32,
+
+    // 🎯 Selection / box selection
+    pub box_selection_stroke: Color32,
+    pub box_selection_fill: Color32,
+
+    // 🎯 Icons & text
+    pub icon_color: Color32,
+    pub icon_windows: Color32,
+    pub icon_colored_hover: Color32,
+    pub item_viewer_row_text_selected: Color32,
+    pub item_viewer_row_text_normal: Color32,
+    pub item_viewer_col_header_text: Color32,
+    pub tooltip_text_color: Color32,
+    pub tab_text_selected: Color32,
+    pub tab_text_normal: Color32,
+
+    // 🎯 Rows / list items
+    pub row_selected_bg: Color32,
+    pub row_bg: Color32,
+
+    // 🎯 Handles / borders
+    pub resize_handle: Color32,
+    pub tab_border_active: Color32,
+    pub tab_border_default: Color32,
+
+    // 🎯 Tab button colors
+    pub tab_close_hover: Color32,
+    pub tab_add_hover: Color32,
+
+    // 🎯 Drive usage colors
+    pub drive_usage_critical: Color32,
+    pub drive_usage_warning: Color32,
+    pub drive_usage_normal: Color32,
+    pub drive_usage_background: Color32,
+    pub drive_usage_text: Color32,
+
+    // ☑️ Checkbox
+    pub checkbox_bg_default: Color32,
+    pub checkbox_checkmark_color: Color32,
+    pub checkbox_bg_hover: Color32,
+    pub checkbox_bg_active: Color32,
+
+    // 🔘 Buttons
+    pub button_background: Color32,
+    pub button_stroke: Color32,
+    pub button_favorite_fill: Color32,
+    pub button_seperator_handle_fill: Color32,
 
     // 🎯 Corner radius values
     pub small_radius: u8,
     pub medium_radius: u8,
     pub large_radius: u8,
-    pub tab_active_radius: egui::CornerRadius,
-    pub tab_inactive_radius: egui::CornerRadius,
-    pub tab_button_radius: egui::CornerRadius,
-
-    // 🎯 Drive usage colors
-    pub drive_usage_critical: egui::Color32,
-    pub drive_usage_warning: egui::Color32,
-    pub drive_usage_normal: egui::Color32,
-    pub drive_usage_background: egui::Color32,
-
-    // 🎯 Tab button colors
-    pub tab_close_hover: egui::Color32,
-    pub tab_add_hover: egui::Color32,
-    pub tab_border_active: egui::Color32,
-    pub tab_border_default: egui::Color32,
-
-    // 🎯 Tooltip colors
-    pub tooltip_text_size: f32,
-    pub tooltip_text_color: egui::Color32,
-
-    // checkbox
-    pub checkbox_bg_default: egui::Color32,
-    pub checkbox_checkmark_color: egui::Color32,
-    pub checkbox_bg_hover: egui::Color32,
-    pub checkbox_bg_active: egui::Color32,
-
-    // Button colors
-    pub button_background: egui::Color32,
-    pub button_stroke: egui::Color32,
+    pub tab_active_radius: CornerRadius,
+    pub tab_inactive_radius: CornerRadius,
+    pub tab_button_radius: CornerRadius,
 }
 
 // 🎯 Single base color (your purple)
-fn base_color() -> egui::Color32 {
-    egui::Color32::from_rgb(110, 85, 160)
+fn base_color() -> Color32 {
+    Color32::from_rgb(110, 85, 160)
 }
 
-// 🌙 Dark theme palette (lazy)
-pub static PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
+// 🌙 Dark theme palette (defaults)
+pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
     let base = base_color();
     ThemePalette {
-        application_bg_color: egui::Color32::from_rgb(20, 22, 26),
+        // 🔤 Typography
         text_size: 12.0,
+        tooltip_text_size: 13.0,
+
+        // 🎯 Brand / primary colors
         primary: base,
-        primary_hover: egui::Color32::from_rgba_unmultiplied(95, 75, 135, 128),
-        primary_active: egui::Color32::from_rgb(70, 55, 110),
-        primary_subtle: egui::Color32::from_rgba_unmultiplied(95, 75, 135, 60),
-        secondary: egui::Color32::from_rgb(255, 255, 255),
-        box_selection_stroke: egui::Color32::from_rgba_unmultiplied(95, 75, 135, 60),
+        primary_hover: Color32::from_rgba_unmultiplied(95, 75, 135, 128),
+        primary_active: Color32::from_rgb(70, 55, 110),
+        primary_subtle: Color32::from_rgba_unmultiplied(95, 75, 135, 60),
+        secondary: Color32::from_rgb(255, 255, 255),
+
+        // 🧱 Application surfaces
+        application_bg_color: Color32::from_rgb(20, 22, 26),
+        modal_background_effect_color: Color32::from_black_alpha(180),
+
+        // 🎯 Selection / box selection
+        box_selection_stroke: Color32::from_rgba_unmultiplied(95, 75, 135, 60),
         box_selection_fill: base,
-        icon_color: egui::Color32::WHITE,
-        icon_colored_hover: egui::Color32::WHITE,
-        row_label_selected: egui::Color32::WHITE,
-        row_label_default: egui::Color32::from_rgb(160, 170, 180),
-        row_selected_bg: egui::Color32::from_rgb(70, 78, 86),
-        row_bg: egui::Color32::from_rgb(40, 45, 50),
-        itemviewer_header_color: egui::Color32::WHITE,
-        resize_handle: egui::Color32::from_rgb(160, 170, 180),
+
+        // 🎯 Icons & text
+        icon_color: Color32::WHITE,
+        icon_windows: Color32::WHITE,
+        icon_colored_hover: Color32::WHITE,
+        item_viewer_row_text_selected: Color32::WHITE,
+        item_viewer_row_text_normal: Color32::from_rgb(160, 170, 180),
+        item_viewer_col_header_text: Color32::WHITE,
+        tooltip_text_color: Color32::from_rgb(220, 220, 220),
+        tab_text_selected: Color32::WHITE,
+        tab_text_normal: Color32::from_rgb(160, 170, 180),
+
+        // 🎯 Rows / list items
+        row_selected_bg: Color32::from_rgb(70, 78, 86),
+        row_bg: Color32::from_rgb(40, 45, 50),
+
+        // 🎯 Handles / borders
+        resize_handle: Color32::from_rgb(160, 170, 180),
+        tab_border_active: base,
+        tab_border_default: Color32::from_rgba_unmultiplied(95, 75, 135, 60),
+
+        // 🎯 Tab button colors
+        tab_close_hover: Color32::from_rgb(200, 52, 52),
+        tab_add_hover: Color32::from_rgb(54, 168, 82),
+
+        // 🎯 Drive usage colors
+        drive_usage_critical: Color32::from_rgb(220, 60, 60),
+        drive_usage_warning: Color32::from_rgb(245, 170, 60),
+        drive_usage_normal: Color32::from_rgb(60, 190, 110),
+        drive_usage_background: Color32::from_rgba_unmultiplied(160, 170, 180, 20),
+        drive_usage_text: Color32::WHITE,
+
+        // ☑️ Checkbox
+        checkbox_bg_default: Color32::from_rgba_unmultiplied(160, 170, 180, 20),
+        checkbox_checkmark_color: Color32::WHITE,
+        checkbox_bg_hover: base,
+        checkbox_bg_active: base,
+
+        // 🔘 Buttons
+        button_background: Color32::from_rgba_unmultiplied(160, 170, 180, 20),
+        button_stroke: Color32::from_rgba_unmultiplied(160, 170, 180, 60),
+        button_favorite_fill: Color32::from_rgb(242, 201, 76),
+        button_seperator_handle_fill: Color32::from_gray(120),
+
+        // 🎯 Corner radius values
         small_radius: 2,
         medium_radius: 4,
         large_radius: 6,
-        tab_active_radius: egui::CornerRadius {
+        tab_active_radius: CornerRadius {
             nw: 8,
             ne: 8,
             sw: 0,
             se: 0,
         },
-        tab_inactive_radius: egui::CornerRadius {
+        tab_inactive_radius: CornerRadius {
             nw: 6,
             ne: 6,
             sw: 0,
             se: 0,
         },
-        tab_button_radius: egui::CornerRadius::same(4),
-        tab_border_active: base,
-        tab_border_default: egui::Color32::from_rgba_unmultiplied(95, 75, 135, 60),
-        tooltip_text_size: 13.0,
-        tooltip_text_color: egui::Color32::from_rgb(220, 220, 220),
-        drive_usage_critical: egui::Color32::from_rgb(200, 72, 72),
-        drive_usage_warning: egui::Color32::from_rgb(214, 170, 76),
-        drive_usage_normal: egui::Color32::from_rgb(88, 170, 120),
-        drive_usage_background: egui::Color32::from_rgba_unmultiplied(160, 170, 180, 20),
-        tab_close_hover: egui::Color32::from_rgb(200, 52, 52),
-        tab_add_hover: egui::Color32::from_rgb(54, 168, 82),
-        checkbox_bg_default: egui::Color32::from_rgba_unmultiplied(160, 170, 180, 20),
-        checkbox_checkmark_color: egui::Color32::WHITE,
-        checkbox_bg_hover: base,
-        checkbox_bg_active: base,
-        button_background: egui::Color32::from_rgba_unmultiplied(160, 170, 180, 20),
-        button_stroke: egui::Color32::from_rgba_unmultiplied(160, 170, 180, 60),
+        tab_button_radius: CornerRadius::same(4),
     }
 });
 
-// ☀️ Light theme palette (lazy)
-pub static PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
+// ☀️ Light theme palette (defaults)
+pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
     let base = base_color();
     ThemePalette {
-        application_bg_color: egui::Color32::from_rgb(245, 245, 245),
+        // 🔤 Typography
         text_size: 12.0,
+        tooltip_text_size: 13.0,
+
+        // 🎯 Brand / primary colors
         primary: base,
-        primary_hover: egui::Color32::from_rgba_unmultiplied(110, 85, 160, 90),
-        primary_active: egui::Color32::from_rgb(140, 120, 200),
-        primary_subtle: egui::Color32::from_rgba_unmultiplied(110, 85, 160, 40),
-        secondary: egui::Color32::from_rgb(0, 0, 0),
-        box_selection_stroke: egui::Color32::from_rgba_unmultiplied(110, 85, 160, 40),
+        primary_hover: Color32::from_rgba_unmultiplied(110, 85, 160, 90),
+        primary_active: Color32::from_rgb(140, 120, 200),
+        primary_subtle: Color32::from_rgba_unmultiplied(110, 85, 160, 40),
+        secondary: Color32::from_rgb(0, 0, 0),
+
+        // 🧱 Application surfaces
+        application_bg_color: Color32::from_rgb(245, 245, 245),
+        modal_background_effect_color: Color32::from_black_alpha(180),
+
+        // 🎯 Selection / box selection
+        box_selection_stroke: Color32::from_rgba_unmultiplied(110, 85, 160, 40),
         box_selection_fill: base,
-        icon_color: egui::Color32::from_rgb(40, 40, 40),
-        icon_colored_hover: egui::Color32::WHITE,
-        row_label_selected: egui::Color32::from_rgb(0, 0, 0),
-        row_label_default: egui::Color32::from_rgb(70, 78, 86),
-        row_selected_bg: egui::Color32::from_rgb(70, 78, 86),
-        row_bg: egui::Color32::from_rgb(240, 245, 250),
-        itemviewer_header_color: egui::Color32::from_rgb(0, 0, 0),
-        resize_handle: egui::Color32::from_rgb(160, 170, 180),
+
+        // 🎯 Icons & text
+        icon_color: Color32::from_rgb(40, 40, 40),
+        icon_windows: Color32::WHITE,
+        icon_colored_hover: Color32::WHITE,
+        item_viewer_row_text_selected: Color32::from_rgb(0, 0, 0),
+        item_viewer_row_text_normal: Color32::from_rgb(70, 78, 86),
+        item_viewer_col_header_text: Color32::from_rgb(0, 0, 0),
+        tooltip_text_color: Color32::from_rgb(40, 40, 40),
+        tab_text_selected: Color32::WHITE,
+        tab_text_normal: Color32::from_rgb(70, 78, 86),
+
+        // 🎯 Rows / list items
+        row_selected_bg: Color32::from_rgb(70, 78, 86),
+        row_bg: Color32::from_rgb(240, 245, 250),
+
+        // 🎯 Handles / borders
+        resize_handle: Color32::from_rgb(160, 170, 180),
+        tab_border_active: base,
+        tab_border_default: Color32::from_rgba_unmultiplied(110, 85, 160, 40),
+
+        // 🎯 Tab button colors
+        tab_close_hover: Color32::from_rgb(200, 52, 52),
+        tab_add_hover: Color32::from_rgb(54, 168, 82),
+
+        // 🎯 Drive usage colors
+        drive_usage_critical: Color32::from_rgb(200, 52, 52),
+        drive_usage_warning: Color32::from_rgb(235, 155, 60),
+        drive_usage_normal: Color32::from_rgb(54, 168, 82),
+        drive_usage_background: Color32::from_rgba_unmultiplied(200, 210, 220, 120),
+        drive_usage_text: Color32::from_rgb(70, 78, 86),
+
+        // ☑️ Checkbox
+        checkbox_bg_default: Color32::from_rgba_unmultiplied(160, 170, 180, 95),
+        checkbox_checkmark_color: Color32::WHITE,
+        checkbox_bg_hover: base,
+        checkbox_bg_active: base,
+
+        // 🔘 Buttons
+        button_background: Color32::from_rgba_unmultiplied(160, 170, 180, 95),
+        button_stroke: Color32::from_rgba_unmultiplied(160, 170, 180, 60),
+        button_favorite_fill: Color32::from_rgb(242, 201, 76),
+        button_seperator_handle_fill: Color32::from_gray(180),
+
+        // 🎯 Corner radius values
         small_radius: 2,
         medium_radius: 4,
         large_radius: 6,
-        tab_active_radius: egui::CornerRadius {
+        tab_active_radius: CornerRadius {
             nw: 8,
             ne: 8,
             sw: 0,
             se: 0,
         },
-        tab_inactive_radius: egui::CornerRadius {
+        tab_inactive_radius: CornerRadius {
             nw: 6,
             ne: 6,
             sw: 0,
             se: 0,
         },
-        tab_button_radius: egui::CornerRadius::same(4),
-        tab_border_active: base,
-        tab_border_default: egui::Color32::from_rgba_unmultiplied(110, 85, 160, 40),
-        tooltip_text_size: 13.0,
-        tooltip_text_color: egui::Color32::from_rgb(40, 40, 40),
-        drive_usage_critical: egui::Color32::from_rgb(200, 72, 72),
-        drive_usage_warning: egui::Color32::from_rgb(214, 170, 76),
-        drive_usage_normal: egui::Color32::from_rgb(88, 170, 120),
-        drive_usage_background: egui::Color32::from_rgba_unmultiplied(160, 170, 180, 95),
-        tab_close_hover: egui::Color32::from_rgb(200, 52, 52),
-        tab_add_hover: egui::Color32::from_rgb(54, 168, 82),
-        checkbox_bg_default: egui::Color32::from_rgba_unmultiplied(160, 170, 180, 95),
-        checkbox_checkmark_color: egui::Color32::WHITE,
-        checkbox_bg_hover: base,
-        checkbox_bg_active: base,
-        button_background: egui::Color32::from_rgba_unmultiplied(160, 170, 180, 95),
-        button_stroke: egui::Color32::from_rgba_unmultiplied(160, 170, 180, 60),
+        tab_button_radius: CornerRadius::same(4),
     }
 });
+
+// 🎯 Runtime-editable palettes
+static PALETTE_DARK: LazyLock<RwLock<ThemePalette>> =
+    LazyLock::new(|| RwLock::new(DEFAULT_PALETTE_DARK.clone()));
+static PALETTE_LIGHT: LazyLock<RwLock<ThemePalette>> =
+    LazyLock::new(|| RwLock::new(DEFAULT_PALETTE_LIGHT.clone()));
 
 // Usage:
-pub fn get_palette(mode: ThemeMode) -> &'static ThemePalette {
+pub fn get_palette(mode: ThemeMode) -> ThemePalette {
     match mode {
+        ThemeMode::Dark => PALETTE_DARK
+            .read()
+            .map(|p| p.clone())
+            .unwrap_or_else(|_| DEFAULT_PALETTE_DARK.clone()),
+        ThemeMode::Light => PALETTE_LIGHT
+            .read()
+            .map(|p| p.clone())
+            .unwrap_or_else(|_| DEFAULT_PALETTE_LIGHT.clone()),
+    }
+}
+
+pub fn get_default_palette(mode: ThemeMode) -> ThemePalette {
+    match mode {
+        ThemeMode::Dark => DEFAULT_PALETTE_DARK.clone(),
+        ThemeMode::Light => DEFAULT_PALETTE_LIGHT.clone(),
+    }
+}
+
+pub fn set_palette(mode: ThemeMode, palette: ThemePalette) {
+    let target = match mode {
         ThemeMode::Dark => &PALETTE_DARK,
         ThemeMode::Light => &PALETTE_LIGHT,
+    };
+
+    if let Ok(mut guard) = target.write() {
+        *guard = palette;
     }
 }
 
@@ -212,25 +317,27 @@ pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
     style.spacing.window_margin = egui::Margin::same(10);
 
     // 🔤 Typography
-    style
-        .text_styles
-        .insert(egui::TextStyle::Heading, egui::FontId::proportional(18.0));
-    style
-        .text_styles
-        .insert(egui::TextStyle::Body, egui::FontId::proportional(14.0));
+    style.text_styles.insert(
+        egui::TextStyle::Heading,
+        egui::FontId::proportional(palette.text_size + 4.0),
+    );
+    style.text_styles.insert(
+        egui::TextStyle::Body,
+        egui::FontId::proportional(palette.text_size),
+    );
 
     // 🔲 Shape
-    style.visuals.window_corner_radius = egui::CornerRadius::same(10);
-    style.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(6);
-    style.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(6);
-    style.visuals.widgets.active.corner_radius = egui::CornerRadius::same(6);
+    style.visuals.window_corner_radius = CornerRadius::same(10);
+    style.visuals.widgets.inactive.corner_radius = CornerRadius::same(6);
+    style.visuals.widgets.hovered.corner_radius = CornerRadius::same(6);
+    style.visuals.widgets.active.corner_radius = CornerRadius::same(6);
 
     match mode {
         ThemeMode::Dark => {
-            style.visuals.panel_fill = egui::Color32::from_rgb(20, 22, 26);
-            style.visuals.faint_bg_color = egui::Color32::from_rgb(26, 30, 36);
+            style.visuals.panel_fill = palette.application_bg_color;
+            style.visuals.faint_bg_color = Color32::from_rgb(26, 30, 36);
 
-            style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(30, 34, 40);
+            style.visuals.widgets.inactive.bg_fill = Color32::from_rgb(30, 34, 40);
 
             // 🎯 PRIMARY SYSTEM
             style.visuals.widgets.hovered.bg_fill = palette.primary_hover;
@@ -243,19 +350,18 @@ pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
             style.visuals.selection.stroke.color = palette.primary_active;
 
             // 🔤 Text
-            style.visuals.widgets.inactive.fg_stroke.color = egui::Color32::from_rgb(220, 226, 232);
-            style.visuals.widgets.hovered.fg_stroke.color = egui::Color32::from_rgb(245, 240, 255);
-            style.visuals.widgets.active.fg_stroke.color = egui::Color32::from_rgb(255, 250, 255);
+            style.visuals.widgets.inactive.fg_stroke.color = Color32::from_rgb(220, 226, 232);
+            style.visuals.widgets.hovered.fg_stroke.color = Color32::from_rgb(245, 240, 255);
+            style.visuals.widgets.active.fg_stroke.color = Color32::from_rgb(255, 250, 255);
 
-            style.visuals.widgets.noninteractive.fg_stroke.color =
-                egui::Color32::from_rgb(160, 170, 180);
+            style.visuals.widgets.noninteractive.fg_stroke.color = Color32::from_rgb(160, 170, 180);
         }
 
         ThemeMode::Light => {
-            style.visuals.panel_fill = egui::Color32::from_rgb(250, 251, 253);
-            style.visuals.faint_bg_color = egui::Color32::from_rgb(244, 246, 249);
+            style.visuals.panel_fill = palette.application_bg_color;
+            style.visuals.faint_bg_color = Color32::from_rgb(244, 246, 249);
 
-            style.visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(247, 248, 250);
+            style.visuals.widgets.inactive.bg_fill = Color32::from_rgb(247, 248, 250);
 
             // 🎯 SAME SYSTEM (just lighter)
             style.visuals.widgets.hovered.bg_fill = palette.primary_hover;
@@ -268,12 +374,11 @@ pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
             style.visuals.selection.stroke.color = palette.primary;
 
             // 🔤 Text
-            style.visuals.widgets.inactive.fg_stroke.color = egui::Color32::from_rgb(35, 41, 47);
-            style.visuals.widgets.hovered.fg_stroke.color = egui::Color32::from_rgb(25, 29, 33);
-            style.visuals.widgets.active.fg_stroke.color = egui::Color32::from_rgb(15, 18, 22);
+            style.visuals.widgets.inactive.fg_stroke.color = Color32::from_rgb(35, 41, 47);
+            style.visuals.widgets.hovered.fg_stroke.color = Color32::from_rgb(25, 29, 33);
+            style.visuals.widgets.active.fg_stroke.color = Color32::from_rgb(15, 18, 22);
 
-            style.visuals.widgets.noninteractive.fg_stroke.color =
-                egui::Color32::from_rgb(70, 78, 86);
+            style.visuals.widgets.noninteractive.fg_stroke.color = Color32::from_rgb(70, 78, 86);
         }
     }
 

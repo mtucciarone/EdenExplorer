@@ -1,12 +1,21 @@
+use crate::core::drives::mark_drive_cache_dirty;
 use crate::gui::theme::ThemePalette;
+use crate::gui::utils::clickable_icon;
 use eframe::egui;
-use egui::{Context};
+use egui::Context;
+use egui_phosphor::regular;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::sync::RwLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Dwm::*;
-use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow, ScreenToClient};
+use windows::Win32::Graphics::Gdi::{
+    GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
+};
+use windows::Win32::System::DataExchange::{
+    AddClipboardFormatListener, RemoveClipboardFormatListener,
+};
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
@@ -14,7 +23,6 @@ static mut ORIGINAL_WNDPROC: Option<WNDPROC> = None;
 const MIN_WIDTH: i32 = 600;
 const MIN_HEIGHT: i32 = 400;
 const RESIZE_BORDER: i32 = 6;
-const DRAG_HEIGHT: i32 = 36;
 
 pub fn get_hwnd_from_cc(cc: &eframe::CreationContext<'_>) -> Option<HWND> {
     let handle = cc.window_handle().ok()?;
@@ -30,8 +38,18 @@ lazy_static::lazy_static! {
     static ref EGUI_CTX: RwLock<Option<Context>> = RwLock::new(None);
 }
 
+static CLIPBOARD_DIRTY: AtomicBool = AtomicBool::new(true);
+
 pub fn set_egui_ctx(ctx: &Context) {
     *EGUI_CTX.write().unwrap() = Some(ctx.clone());
+}
+
+pub fn consume_clipboard_dirty() -> bool {
+    CLIPBOARD_DIRTY.swap(false, Ordering::AcqRel)
+}
+
+pub fn mark_clipboard_dirty() {
+    CLIPBOARD_DIRTY.store(true, Ordering::Release);
 }
 
 fn color32_to_dwm(color: egui::Color32) -> u32 {
@@ -131,6 +149,8 @@ pub unsafe fn install_wndproc(hwnd: HWND) {
             GWLP_WNDPROC,
             custom_wndproc as *const () as isize,
         )));
+        let _ = AddClipboardFormatListener(hwnd);
+        mark_clipboard_dirty();
     }
 }
 
@@ -141,6 +161,27 @@ unsafe extern "system" fn custom_wndproc(
     lparam: LPARAM,
 ) -> LRESULT {
     match msg {
+        WM_CLIPBOARDUPDATE => {
+            mark_clipboard_dirty();
+            LRESULT(0)
+        }
+        WM_DEVICECHANGE => {
+            mark_drive_cache_dirty();
+            if let Ok(ctx) = EGUI_CTX.read() {
+                if let Some(ctx) = ctx.as_ref() {
+                    ctx.request_repaint();
+                }
+            }
+            LRESULT(0)
+        }
+        WM_NCDESTROY => {
+            let _ = RemoveClipboardFormatListener(hwnd);
+            if let Some(orig) = ORIGINAL_WNDPROC {
+                CallWindowProcW(orig, hwnd, msg, wparam, lparam)
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        }
         WM_GETMINMAXINFO => {
             let info = &mut *(lparam.0 as *mut MINMAXINFO);
 
@@ -212,26 +253,6 @@ unsafe extern "system" fn custom_wndproc(
                 return LRESULT(HTBOTTOM as _);
             }
 
-            // drag zone
-            if local_y < DRAG_HEIGHT {
-                // convert screen -> client pixels
-                let mut point = POINT { x, y };
-                unsafe { ScreenToClient(hwnd, &mut point) };
-
-                if let Some(ctx) = EGUI_CTX.read().unwrap().as_ref() {
-                    let ppp = ctx.pixels_per_point();
-                    let client_pos = egui::pos2(point.x as f32 / ppp, point.y as f32 / ppp);
-                    // check if pointer is over any egui widget (includes areas/popup windows)
-                    let pointer_over = ctx.is_pointer_over_area();
-                    if !pointer_over {
-                        return LRESULT(HTCAPTION as _); // allow dragging
-                    }
-                }
-
-                // over egui -> don't drag
-                return LRESULT(HTCLIENT as _);
-            }
-
             // everything else is client
             LRESULT(HTCLIENT as _)
         }
@@ -254,4 +275,64 @@ fn get_x_lparam(lparam: LPARAM) -> i32 {
 }
 fn get_y_lparam(lparam: LPARAM) -> i32 {
     ((lparam.0 >> 16) & 0xFFFF) as i16 as i32
+}
+
+pub fn handle_draw_windows_buttons(ui: &mut egui::Ui, hwnd: Option<HWND>, palette: &ThemePalette) {
+    if let Some(hwnd) = hwnd {
+        if clickable_icon(ui, regular::X, palette.primary)
+            .on_hover_text(
+                egui::RichText::new("Close")
+                    .size(palette.tooltip_text_size)
+                    .color(palette.tooltip_text_color),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
+            unsafe {
+                use windows::Win32::UI::WindowsAndMessaging::*;
+                let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
+            }
+        }
+
+        if clickable_icon(ui, regular::SQUARE, palette.primary)
+            .on_hover_text(
+                egui::RichText::new("Maximize")
+                    .size(palette.tooltip_text_size)
+                    .color(palette.tooltip_text_color),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
+            unsafe {
+                use windows::Win32::UI::WindowsAndMessaging::*;
+                let mut placement = WINDOWPLACEMENT {
+                    length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+                    ..Default::default()
+                };
+
+                if GetWindowPlacement(hwnd, &mut placement).is_ok() {
+                    if placement.showCmd == SW_SHOWMAXIMIZED.0 as u32 {
+                        let _ = ShowWindow(hwnd, SW_RESTORE);
+                    } else {
+                        let _ = ShowWindow(hwnd, SW_MAXIMIZE);
+                    }
+                }
+            }
+        }
+
+        if clickable_icon(ui, regular::MINUS, palette.primary)
+            .on_hover_text(
+                egui::RichText::new("Minimize")
+                    .size(palette.tooltip_text_size)
+                    .color(palette.tooltip_text_color),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
+            unsafe {
+                use windows::Win32::UI::WindowsAndMessaging::*;
+                let _ = ShowWindow(hwnd, SW_MINIMIZE);
+            }
+        }
+    }
 }

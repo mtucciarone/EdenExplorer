@@ -2,18 +2,19 @@ use crate::core::fs::FileItem;
 use crate::gui::theme::ThemePalette;
 use eframe::egui::*;
 use egui_phosphor::regular::DOTS_SIX_VERTICAL;
+use lru::LruCache;
 use std::cmp::Ordering::{Greater, Less};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::{copy, create_dir_all, read_dir};
 use std::mem::size_of;
+use std::num::NonZeroUsize;
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
+use std::sync::RwLock;
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
-use windows::Win32::System::Com::{
-    CLSCTX_ALL, CoCreateInstance
-};
+use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
 use windows::Win32::System::DataExchange::{CloseClipboard, GetClipboardData, OpenClipboard};
 use windows::Win32::System::DataExchange::{
     EmptyClipboard, RegisterClipboardFormatW, SetClipboardData,
@@ -32,19 +33,36 @@ use windows::Win32::UI::Shell::{
 use windows::core::PCWSTR;
 use windows::core::Result;
 
-/// Creates a clickable icon with hover color effect
-pub fn clickable_icon(ui: &mut Ui, icon: &str, hover_color: Color32) -> Response {
-    let resp = ui.add(Label::new(icon).sense(Sense::click()));
+type TruncKey = (String, u32, u32); // (text, width_bucket, font_size_bucket)
 
-    if resp.hovered() {
-        ui.painter().text(
-            resp.rect.center(),
-            Align2::CENTER_CENTER,
-            icon,
-            FontId::default(),
-            hover_color,
-        );
-    }
+lazy_static::lazy_static! {
+    static ref TRUNCATION_CACHE: RwLock<LruCache<TruncKey, String>> =
+        RwLock::new(LruCache::new(NonZeroUsize::new(1024).unwrap()));
+}
+
+pub fn clickable_icon(ui: &mut Ui, icon: &str, hover_color: Color32) -> Response {
+    let font_id = egui::FontId::default();
+
+    // Measure exact text size
+    let galley =
+        ui.painter()
+            .layout_no_wrap(icon.to_string(), font_id.clone(), ui.visuals().text_color());
+
+    let (rect, resp) = ui.allocate_exact_size(galley.size(), egui::Sense::click());
+
+    let color = if resp.hovered() {
+        hover_color
+    } else {
+        ui.visuals().text_color()
+    };
+
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        icon,
+        font_id,
+        color,
+    );
 
     resp
 }
@@ -59,12 +77,6 @@ pub fn drive_usage_color(ratio: f32, palette: &ThemePalette) -> Color32 {
     };
 
     base.gamma_multiply(0.6)
-}
-
-pub fn drive_usage_gradient(ratio: f32, palette: &ThemePalette) -> (Color32, Color32) {
-    let left = drive_usage_color(ratio, palette);
-    let right = left.gamma_multiply(0.8);
-    (left, right)
 }
 
 pub fn drive_usage_bar(ui: &mut Ui, total: u64, free: u64, height: f32, palette: &ThemePalette) {
@@ -108,7 +120,7 @@ pub fn drive_usage_bar(ui: &mut Ui, total: u64, free: u64, height: f32, palette:
 
     if fill_width > 0.0 {
         let fill_rect = Rect::from_min_size(rect.min, vec2(fill_width, rect.height()));
-        let (left, _right) = drive_usage_gradient(target_ratio, palette);
+        let fill_color = drive_usage_color(target_ratio, palette);
 
         let radius = palette.small_radius;
 
@@ -124,19 +136,7 @@ pub fn drive_usage_bar(ui: &mut Ui, total: u64, free: u64, height: f32, palette:
             }
         };
 
-        painter.rect_filled(
-            fill_rect,
-            fill_rounding,
-            Color32::from_rgb(left.r(), left.g(), left.b()),
-        );
-
-        // 🔥 subtle highlight strip (fake gradient feel)
-        let highlight_rect = Rect::from_min_size(
-            fill_rect.min,
-            vec2(fill_rect.width(), fill_rect.height() * 0.25),
-        );
-
-        painter.rect_filled(highlight_rect, fill_rounding, Color32::from_white_alpha(20));
+        painter.rect_filled(fill_rect, fill_rounding, fill_color);
     }
 
     // percentage text
@@ -147,7 +147,7 @@ pub fn drive_usage_bar(ui: &mut Ui, total: u64, free: u64, height: f32, palette:
         Align2::CENTER_CENTER,
         percent,
         TextStyle::Small.resolve(ui.style()),
-        palette.icon_colored_hover,
+        palette.drive_usage_text,
     );
 }
 
@@ -258,7 +258,9 @@ pub fn set_clipboard_files(paths: &[PathBuf], cut: bool) -> bool {
         return false;
     }
     let _ = unsafe { EmptyClipboard() };
-    let _ = unsafe { SetClipboardData(CF_HDROP.0 as u32, Some(HANDLE(hglobal.0))); };
+    let _ = unsafe {
+        SetClipboardData(CF_HDROP.0 as u32, Some(HANDLE(hglobal.0)));
+    };
 
     let effect: u32 = if cut { 2 } else { 5 };
     let hglobal_effect = match unsafe { GlobalAlloc(GMEM_MOVEABLE, size_of::<u32>()) } {
@@ -338,9 +340,9 @@ pub fn is_clipboard_cut() -> bool {
 
     if let Ok(hglobal) = unsafe { GetClipboardData(format) } {
         if !hglobal.0.is_null() {
-            let ptr = unsafe {
-                GlobalLock(windows::Win32::Foundation::HGLOBAL(hglobal.0 as *mut _))
-            } as *const u32;
+            let ptr =
+                unsafe { GlobalLock(windows::Win32::Foundation::HGLOBAL(hglobal.0 as *mut _)) }
+                    as *const u32;
 
             if !ptr.is_null() {
                 let val = unsafe { *ptr };
@@ -370,44 +372,43 @@ pub fn clipboard_has_files() -> bool {
     has
 }
 
-pub fn get_file_type_name(ext: &str, cache: &mut HashMap<String, String>) -> String {
-    // Check cache first
-    if let Some(cached) = cache.get(ext) {
-        return cached.clone();
+pub fn get_file_type_name<'a>(ext: &str, cache: &'a mut HashMap<String, String>) -> &'a str {
+    use std::collections::hash_map::Entry;
+
+    match cache.entry(ext.to_string()) {
+        Entry::Occupied(entry) => entry.into_mut().as_str(),
+        Entry::Vacant(entry) => {
+            // Ensure extension starts with "."
+            let ext_formatted = if ext.starts_with('.') {
+                ext.to_string()
+            } else {
+                format!(".{}", ext)
+            };
+
+            let wide: Vec<u16> = OsStr::new(&ext_formatted)
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect();
+
+            let mut info = SHFILEINFOW::default();
+
+            let _result = unsafe {
+                SHGetFileInfoW(
+                    PCWSTR(wide.as_ptr()),
+                    FILE_ATTRIBUTE_NORMAL,
+                    Some(&mut info),
+                    size_of::<SHFILEINFOW>() as u32,
+                    SHGFI_TYPENAME | SHGFI_USEFILEATTRIBUTES,
+                )
+            };
+
+            // Convert UTF-16 buffer to Rust String
+            let len = info.szTypeName.iter().position(|&c| c == 0).unwrap_or(0);
+            let type_name = String::from_utf16_lossy(&info.szTypeName[..len]);
+
+            entry.insert(type_name).as_str()
+        }
     }
-
-    // Ensure extension starts with "."
-    let ext_formatted = if ext.starts_with('.') {
-        ext.to_string()
-    } else {
-        format!(".{}", ext)
-    };
-
-    let wide: Vec<u16> = OsStr::new(&ext_formatted)
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-
-    let mut info = SHFILEINFOW::default();
-
-    let _result = unsafe {
-        SHGetFileInfoW(
-            PCWSTR(wide.as_ptr()),
-            FILE_ATTRIBUTE_NORMAL,
-            Some(&mut info),
-            size_of::<SHFILEINFOW>() as u32,
-            SHGFI_TYPENAME | SHGFI_USEFILEATTRIBUTES,
-        )
-    };
-
-    // Convert UTF-16 buffer to Rust String
-    let len = info.szTypeName.iter().position(|&c| c == 0).unwrap_or(0);
-    let type_name = String::from_utf16_lossy(&info.szTypeName[..len]);
-
-    // Cache the result
-    cache.insert(ext.to_string(), type_name.clone());
-
-    type_name
 }
 
 pub fn show_copy_move_dialog(sources: Vec<PathBuf>, destination: &PathBuf) -> Result<()> {
@@ -536,8 +537,12 @@ pub fn draw_object_drag_ghost(
             .ctx()
             .layer_painter(LayerId::new(Order::Foreground, Id::new("drag_ghost")));
 
+        // Get Ui's width in screen coordinates
+        let ui_rect = ui.min_rect();
+        let ghost_width = ui_rect.width(); // full width of the UI block
+
         // --- Background ---
-        let ghost_rect = Rect::from_center_size(pos, vec2(ui.available_width(), 18.0));
+        let ghost_rect = Rect::from_center_size(pos, vec2(ghost_width, 18.0));
 
         painter.rect_filled(
             ghost_rect,
@@ -620,47 +625,110 @@ pub fn styled_button(ui: &mut Ui, label: impl Into<String>, palette: &ThemePalet
     response
 }
 
-pub fn truncate_text(label: &str, max_chars: usize) -> String {
-    if label.len() > max_chars && max_chars > 3 {
-        let mut char_count = 0;
-        let mut byte_end = 0;
+pub fn fuzzy_match(name: &str, query: &str) -> bool {
+    let mut query_chars = query.chars().map(|c| c.to_ascii_lowercase());
+    let mut current = query_chars.next();
 
-        for (i, _) in label.char_indices() {
-            if char_count >= max_chars - 3 {
-                break;
+    for c in name.chars().map(|c| c.to_ascii_lowercase()) {
+        if let Some(q) = current {
+            if c == q {
+                current = query_chars.next();
             }
-            char_count += 1;
-            byte_end = i;
+        } else {
+            return true;
         }
-
-        format!("{}...", &label[..byte_end])
-    } else {
-        label.to_string()
     }
+
+    current.is_none()
 }
 
-pub fn generate_non_conflicting_path(dir: &Path, file_name: &OsStr) -> PathBuf {
-    let mut counter = 1;
+fn width_bucket(width: f32) -> u32 {
+    (width / 8.0).round() as u32
+}
 
-    let file_name_str = file_name.to_string_lossy();
+/// The fast binary search truncation algorithm.
+fn truncate_text_binary_search(
+    ui: &mut egui::Ui,
+    text: &str,
+    max_width: f32,
+    font_id: &egui::FontId,
+    color: egui::Color32,
+) -> (String, bool) {
+    ui.fonts_mut(|f| {
+        let full = f.layout_no_wrap(text.to_owned(), font_id.clone(), color);
 
-    let (base, ext) = match file_name_str.rsplit_once('.') {
-        Some((b, e)) => (b.to_string(), Some(e.to_string())),
-        None => (file_name_str.to_string(), None),
-    };
-
-    loop {
-        let new_name = match &ext {
-            Some(ext) => format!("{} ({}).{}", base, counter, ext),
-            None => format!("{} ({})", base, counter),
-        };
-
-        let candidate = dir.join(new_name);
-
-        if !candidate.exists() {
-            return candidate;
+        if full.size().x <= max_width {
+            return (text.to_string(), false);
         }
 
-        counter += 1;
+        let ellipsis = "...";
+        let ellipsis_width = f
+            .layout_no_wrap(ellipsis.to_string(), font_id.clone(), color)
+            .size()
+            .x;
+        let target_width = max_width - ellipsis_width;
+
+        let chars: Vec<char> = text.chars().collect();
+        let mut low = 0;
+        let mut high = chars.len();
+        let mut buffer = String::with_capacity(text.len());
+
+        while low < high {
+            let mid = (low + high) / 2;
+
+            buffer.clear();
+            for ch in &chars[..mid] {
+                buffer.push(*ch);
+            }
+
+            let width = f
+                .layout_no_wrap(buffer.clone(), font_id.clone(), color)
+                .size()
+                .x;
+
+            if width <= target_width {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+
+        let final_len = low.saturating_sub(1);
+        buffer.clear();
+        for ch in &chars[..final_len] {
+            buffer.push(*ch);
+        }
+        buffer.push_str(ellipsis);
+
+        (buffer, true)
+    })
+}
+
+/// Truncates text to fit within `max_width`, caching results for performance.
+pub fn truncate_item_text(
+    ui: &mut egui::Ui,
+    text: &str,
+    max_width: f32,
+    font_id: &egui::FontId,
+    color: egui::Color32,
+) -> (String, bool) {
+    let width_bucket = width_bucket(max_width);
+    let font_bucket = font_id.size.round() as u32;
+    let key = (text.to_string(), width_bucket, font_bucket);
+
+    // Try cache first
+    if let Ok(mut cache) = TRUNCATION_CACHE.write() {
+        if let Some(cached) = cache.get(&key) {
+            return (cached.clone(), cached.ends_with("..."));
+        }
+
+        let (result, truncated) = truncate_text_binary_search(ui, text, max_width, font_id, color);
+
+        cache.put(key, result.clone());
+
+        return (result, truncated);
     }
+
+    // fallback if lock poisoned
+    truncate_text_binary_search(ui, text, max_width, font_id, color)
 }

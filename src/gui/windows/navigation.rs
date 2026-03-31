@@ -1,25 +1,26 @@
+use crate::core::fs::MY_PC_PATH;
+use crate::gui::windows::structs::Navigation;
 use std::path::PathBuf;
 
-#[derive(Debug, Clone)]
-pub struct Navigation {
-    pub current: PathBuf,
-    pub back: Vec<PathBuf>,
-    pub forward: Vec<PathBuf>,
-}
-
 impl Navigation {
-    pub fn new() -> Self {
+    pub fn new(start: PathBuf) -> Self {
         Self {
-            current: PathBuf::from("::MY_PC::"),
+            current: start,
             back: Vec::new(),
             forward: Vec::new(),
         }
     }
 
     pub fn go_to(&mut self, path: PathBuf) {
-        if self.current != path {
+        let target = if path.as_os_str().is_empty() {
+            PathBuf::from(MY_PC_PATH)
+        } else {
+            path
+        };
+
+        if self.current != target {
             self.back.push(self.current.clone());
-            self.current = path;
+            self.current = target;
             self.forward.clear();
         }
     }
@@ -40,20 +41,29 @@ impl Navigation {
 
     pub fn go_up(&mut self) {
         // Prevent breaking virtual root
-        if self.current.to_string_lossy() == "::MY_PC::" {
+        if self.current.to_string_lossy() == MY_PC_PATH {
+            return;
+        }
+
+        if self.current.as_os_str().is_empty() || !self.current.is_absolute() {
+            self.go_to(PathBuf::from(MY_PC_PATH));
             return;
         }
 
         if let Some(parent) = self.current.parent() {
-            self.go_to(parent.to_path_buf());
+            if parent.as_os_str().is_empty() {
+                self.go_to(PathBuf::from(MY_PC_PATH));
+            } else {
+                self.go_to(parent.to_path_buf());
+            }
         } else {
             // Drive root (e.g., "C:\\") has no parent in PathBuf.
-            self.go_to(PathBuf::from("::MY_PC::"));
+            self.go_to(PathBuf::from(MY_PC_PATH));
         }
     }
 
     /// Helper: are we at virtual root?
     pub fn is_root(&self) -> bool {
-        self.current.to_string_lossy() == "::MY_PC::"
+        self.current.to_string_lossy() == MY_PC_PATH
     }
 }

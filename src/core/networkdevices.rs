@@ -1,5 +1,4 @@
 use crossbeam_channel::{Receiver, Sender, unbounded};
-use std::sync::{Arc, Mutex};
 use std::thread;
 use windows::Win32::NetworkManagement::NetManagement::{
     MAX_PREFERRED_LENGTH, NetApiBufferFree, NetServerEnum, SERVER_INFO_101, SV_TYPE_ALL,

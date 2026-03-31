@@ -1,6 +1,16 @@
-use crate::gui::windows::navigation::Navigation;
 use crate::gui::windows::containers::enums::TabbarNavAction;
+use crate::gui::windows::structs::Navigation;
+use std::collections::HashSet;
 use std::path::PathBuf;
+
+#[derive(Default)]
+pub struct ExplorerState {
+    pub selected_paths: HashSet<PathBuf>,
+    pub selection_anchor: Option<usize>,
+    pub selection_focus: Option<usize>,
+    pub newly_created_path: Option<PathBuf>, // new folder or file
+    pub non_ntfs_popup_path: Option<PathBuf>,
+}
 
 #[derive(Clone)]
 pub struct TabInfo {
@@ -32,6 +42,7 @@ pub struct TabbarAction {
     pub create_folder: bool,
     pub create_file: bool,
     pub add_favorite: bool,
+    pub remove_favorite: bool,
     pub nav_to: Option<PathBuf>,
     pub refresh_current_directory: bool,
     pub is_breadcrumb_path_edit_active: bool,
@@ -69,6 +80,8 @@ pub struct TopbarAction {
     pub toggle_theme: bool,
     pub customize_theme: bool,
     pub open_settings: bool,
+    pub about: bool,
+    pub exit: bool,
 }
 
 #[derive(Default)]
@@ -85,4 +98,30 @@ pub struct DragState {
     pub active: bool,
     pub source_items: Vec<PathBuf>,
     pub start_pos: Option<egui::Pos2>,
+}
+
+pub struct FilterState {
+    pub active: bool,
+    pub query: String,
+    pub last_input_time: f64,
+    pub focus_requested: bool,
+    pub last_query: String,
+    pub last_files_len: usize,
+    pub cached_indices: Vec<usize>,
+    pub dirty: bool,
+}
+
+impl Default for FilterState {
+    fn default() -> Self {
+        Self {
+            active: false,
+            query: String::new(),
+            last_input_time: 0.0,
+            focus_requested: false,
+            last_query: String::new(),
+            last_files_len: 0,
+            cached_indices: Vec::new(),
+            dirty: true,
+        }
+    }
 }

@@ -1,3 +1,4 @@
+use crate::core::portable;
 use crossbeam_channel::{Sender, unbounded};
 use eframe::egui;
 use std::os::windows::ffi::OsStrExt;
@@ -7,21 +8,20 @@ use std::{
     sync::{Arc, Mutex},
     thread,
 };
-use windows::Win32::Foundation::HANDLE;
-use windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
-use windows::Win32::UI::WindowsAndMessaging::HICON;
-use windows::Win32::UI::WindowsAndMessaging::{
-    CopyImage, IMAGE_ICON, LR_COPYFROMRESOURCE, LR_DEFAULTCOLOR,
+use windows::Win32::Graphics::Gdi::{
+    BI_RGB, BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, DeleteObject, GetDC, GetDIBits,
+    GetObjectW, HGDIOBJ, ReleaseDC,
 };
+use windows::Win32::UI::WindowsAndMessaging::HICON;
 use windows::{
     Win32::{
-        Graphics::Gdi::*,
         Storage::FileSystem::{FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL},
         UI::{
             Controls::IImageList,
             Shell::{
-                SHFILEINFOW, SHGFI_SYSICONINDEX, SHGFI_USEFILEATTRIBUTES, SHGetFileInfoW,
-                SHGetImageList, SHIL_EXTRALARGE,
+                SHFILEINFOW, SHGFI_SYSICONINDEX, SHGFI_USEFILEATTRIBUTES, SHGSI_ICON,
+                SHGSI_LARGEICON, SHGetFileInfoW, SHGetImageList, SHGetStockIconInfo,
+                SHIL_EXTRALARGE, SHSTOCKICONINFO, SIID_DRIVEUNKNOWN,
             },
             WindowsAndMessaging::{DestroyIcon, GetIconInfo, ICONINFO},
         },
@@ -61,6 +61,23 @@ impl IconCache {
 
             while let Ok(req) = rx.recv() {
                 let key = icon_key(&req.path, req.is_dir);
+
+                if key.starts_with("portable_device") {
+                    if textures_bg.lock().unwrap().contains_key(&key) {
+                        continue;
+                    }
+                    if let Some((pixels, w, h)) = get_portable_device_icon_rgba() {
+                        let image = egui::ColorImage::from_rgba_unmultiplied(
+                            [w as usize, h as usize],
+                            &pixels,
+                        );
+                        let texture =
+                            ctx_bg.load_texture(format!("icon_{}", key), image, Default::default());
+                        textures_bg.lock().unwrap().insert(key.clone(), texture);
+                        ctx_bg.request_repaint();
+                        continue;
+                    }
+                }
 
                 // 1️⃣ Get icon index (cached)
                 let icon_index = {
@@ -126,6 +143,12 @@ impl IconCache {
 // ---------------- helpers ----------------
 
 fn icon_key(path: &Path, is_dir: bool) -> String {
+    if portable::is_portable_device_path(&path.to_path_buf()) {
+        if let Some((device_id, _)) = portable::parse_portable_path(&path.to_path_buf()) {
+            return format!("portable_device:stock:{}", device_id);
+        }
+        return "portable_device".to_string();
+    }
     if is_dir {
         if is_drive_root(path) {
             format!("drive:{}", path.to_string_lossy().to_lowercase())
@@ -155,6 +178,9 @@ fn get_icon_index_for_key(key: &str, path: &Path, is_dir: bool) -> Option<i32> {
 
     if key.starts_with("drive:") {
         wide = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    } else if key.starts_with("portable_device") {
+        let fake = PathBuf::from("C:\\");
+        wide = fake.as_os_str().encode_wide().chain(Some(0)).collect();
     } else if is_dir {
         wide = "folder".encode_utf16().chain(Some(0)).collect();
         flags |= SHGFI_USEFILEATTRIBUTES;
@@ -184,6 +210,22 @@ fn get_icon_index_for_key(key: &str, path: &Path, is_dir: bool) -> Option<i32> {
 
 fn get_icon_from_list(list: &IImageList, index: i32) -> Option<HICON> {
     unsafe { list.GetIcon(index, 0).ok() }
+}
+
+fn get_portable_device_icon_rgba() -> Option<(Vec<u8>, u32, u32)> {
+    unsafe {
+        let mut info = SHSTOCKICONINFO::default();
+        info.cbSize = std::mem::size_of::<SHSTOCKICONINFO>() as u32;
+        SHGetStockIconInfo(SIID_DRIVEUNKNOWN, SHGSI_ICON | SHGSI_LARGEICON, &mut info).ok()?;
+
+        if info.hIcon.0.is_null() {
+            return None;
+        }
+
+        let rgba = icon_to_rgba(info.hIcon);
+        let _ = DestroyIcon(info.hIcon);
+        rgba
+    }
 }
 
 fn icon_to_rgba(icon: HICON) -> Option<(Vec<u8>, u32, u32)> {
@@ -234,125 +276,6 @@ fn icon_to_rgba(icon: HICON) -> Option<(Vec<u8>, u32, u32)> {
         }
 
         // Convert BGRA -> RGBA
-        for px in pixels.chunks_exact_mut(4) {
-            px.swap(0, 2);
-        }
-
-        Some((pixels, width, height))
-    }
-}
-
-use windows::Win32::UI::Shell::SHGFI_FLAGS;
-use windows::Win32::{
-    Graphics::Gdi::{
-        BI_RGB, BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, DeleteObject, GetDC,
-        GetDIBits, GetObjectW, HGDIOBJ, ReleaseDC,
-    },
-    UI::Shell::SHIL_JUMBO,
-};
-
-/// Fetch the sharpest available HICON for a file or folder path
-/// Returns (pixels, width, height) as RGBA
-pub fn get_icon_sharpest(path: &std::path::Path, is_dir: bool) -> Option<(Vec<u8>, u32, u32)> {
-    unsafe {
-        // 1️⃣ Convert path to wide
-        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-        let attrs = if is_dir { 0x10 } else { 0x80 }; // FILE_ATTRIBUTE_DIRECTORY/NORMAL
-        let mut shfi = SHFILEINFOW::default();
-
-        // 2️⃣ Get system icon index
-        let attrs = if is_dir {
-            FILE_ATTRIBUTE_DIRECTORY
-        } else {
-            FILE_ATTRIBUTE_NORMAL
-        };
-        let res = SHGetFileInfoW(
-            PCWSTR(wide.as_ptr()),
-            FILE_FLAGS_AND_ATTRIBUTES(attrs.0),
-            Some(&mut shfi as *mut _),
-            std::mem::size_of::<SHFILEINFOW>() as u32,
-            SHGFI_SYSICONINDEX
-                | if !is_dir {
-                    SHGFI_USEFILEATTRIBUTES
-                } else {
-                    SHGFI_FLAGS(0)
-                },
-        );
-        if res == 0 {
-            return None;
-        }
-        let icon_index = shfi.iIcon;
-
-        // 3️⃣ Try SHIL_JUMBO (256x256+), fallback to SHIL_EXTRALARGE
-        let mut image_list: Option<IImageList> = None;
-        for size in [SHIL_JUMBO, SHIL_EXTRALARGE] {
-            if let Ok(list) = SHGetImageList(size as i32) {
-                image_list = Some(list);
-                break;
-            }
-        }
-        let image_list = image_list?;
-
-        // 4️⃣ Fetch HICON from image list
-        let hicon: HICON = image_list.GetIcon(icon_index, 0).ok()?;
-        if hicon.0.is_null() {
-            return None;
-        }
-
-        // 5️⃣ Convert HICON -> RGBA bitmap
-        let mut icon_info = ICONINFO::default();
-        if GetIconInfo(hicon, &mut icon_info).is_err() {
-            let _ = DestroyIcon(hicon).is_ok();
-            return None;
-        }
-
-        let mut bmp = BITMAP::default();
-        if GetObjectW(
-            HGDIOBJ(icon_info.hbmColor.0),
-            std::mem::size_of::<BITMAP>() as i32,
-            Some(&mut bmp as *mut _ as _),
-        ) == 0
-        {
-            let _ = DestroyIcon(hicon).is_ok();
-            return None;
-        }
-
-        let width = bmp.bmWidth as u32;
-        let height = bmp.bmHeight as u32;
-        let mut pixels = vec![0u8; (width * height * 4) as usize];
-
-        let hdc = GetDC(None);
-        let mut bmi = BITMAPINFO::default();
-        bmi.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
-        bmi.bmiHeader.biWidth = width as i32;
-        bmi.bmiHeader.biHeight = -(height as i32);
-        bmi.bmiHeader.biPlanes = 1;
-        bmi.bmiHeader.biBitCount = 32;
-        bmi.bmiHeader.biCompression = BI_RGB.0;
-
-        if GetDIBits(
-            hdc,
-            icon_info.hbmColor,
-            0,
-            height,
-            Some(pixels.as_mut_ptr() as _),
-            &mut bmi,
-            DIB_RGB_COLORS,
-        ) == 0
-        {
-            ReleaseDC(None, hdc);
-            let _ = DestroyIcon(hicon).is_ok();
-            return None;
-        }
-
-        ReleaseDC(None, hdc);
-
-        // 6️⃣ Cleanup
-        let _ = DeleteObject(HGDIOBJ(icon_info.hbmColor.0));
-        let _ = DeleteObject(HGDIOBJ(icon_info.hbmMask.0));
-        let _ = DestroyIcon(hicon).is_ok();
-
-        // 7️⃣ Convert BGRA -> RGBA
         for px in pixels.chunks_exact_mut(4) {
             px.swap(0, 2);
         }

@@ -1,13 +1,18 @@
-use crate::core::drives::DriveInfo;
-use crate::core::networkdevices::NetworkDevicesState;
+use crate::core::drives::{
+    DriveInfo, consume_drive_list_dirty, get_drive_infos, is_raw_physical_drive_path,
+};
+use crate::core::fs::MY_PC_PATH;
+// use crate::core::networkdevices::NetworkDevicesState;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
-use crate::gui::utils::{draw_object_drag_ghost, drive_usage_gradient, truncate_text};
-use crate::gui::windows::containers::structs::{FavoriteItem, SidebarAction};
+use crate::gui::utils::{draw_object_drag_ghost, drive_usage_color, truncate_item_text};
+use crate::gui::windows::containers::structs::SidebarAction;
+use crate::gui::windows::structs::SidebarState;
 use eframe::egui;
 use egui::{FontFamily, FontId, ScrollArea};
 use egui_phosphor::regular;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 pub fn draw_sidebar_item(
     ui: &mut egui::Ui,
@@ -50,7 +55,6 @@ pub fn draw_sidebar_item(
             palette.primary_hover,
         );
 
-        // --- Drag handle (only if draggable) ---
         if draggable {
             let handle_width = 12.0;
             let handle_rect = egui::Rect::from_min_size(
@@ -73,18 +77,12 @@ pub fn draw_sidebar_item(
     let icon_padding = 4.0;
 
     let text_offset_x = if let Some(icon) = icon_cache.get(path, is_dir) {
-        let icon_pos = egui::pos2(
-            rect.min.x + 4.0,
-            rect.center().y - icon_size.y / 2.0,
-        );
+        let icon_pos = egui::pos2(rect.min.x + 4.0, rect.center().y - icon_size.y / 2.0);
 
         ui.painter().image(
             (&icon).into(),
             egui::Rect::from_min_size(icon_pos, icon_size),
-            egui::Rect::from_min_size(
-                egui::pos2(0.0, 0.0),
-                egui::vec2(1.0, 1.0),
-            ),
+            egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1.0, 1.0)),
             egui::Color32::WHITE,
         );
 
@@ -95,29 +93,37 @@ pub fn draw_sidebar_item(
 
     // --- Text ---
     let text_width = rect.width() - text_offset_x;
-    let max_chars = (text_width / 7.0) as usize;
+    let font_id = egui::FontId::new(palette.text_size, egui::FontFamily::Proportional);
+    let color = ui.visuals().text_color();
 
-    let display_name = truncate_text(label, max_chars);
+    let (display_name, truncated) = truncate_item_text(ui, label, text_width, &font_id, color);
 
-    let text_pos = egui::pos2(
-        rect.min.x + text_offset_x,
-        rect.center().y - 2.0,
-    );
-
-    let font_id = egui::FontId::new(
-        palette.text_size,
-        egui::FontFamily::Proportional,
-    );
+    let text_pos = egui::pos2(rect.min.x + text_offset_x, rect.center().y - 2.0);
 
     ui.painter().text(
         text_pos,
         egui::Align2::LEFT_CENTER,
         display_name,
         font_id,
-        ui.visuals().text_color(),
+        color,
     );
 
-    resp
+    // --- Tooltip + cursor ---
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+
+    if truncated {
+        resp.on_hover_text(
+            egui::RichText::new(label)
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+    } else {
+        resp.on_hover_text(
+            egui::RichText::new(path.to_string_lossy())
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+    }
 }
 
 fn favorites_item_layout(ui: &mut egui::Ui) -> (egui::Rect, egui::Response) {
@@ -164,7 +170,7 @@ fn sidebar_drive_item(
     }
 
     if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
 
     // --- Top row: icon + label ---
@@ -178,7 +184,7 @@ fn sidebar_drive_item(
             (&icon).into(),
             egui::Rect::from_min_size(icon_pos, icon_size),
             egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1.0, 1.0)),
-            palette.icon_color,
+            palette.icon_windows,
         );
 
         palette.text_size + icon_size.x + icon_padding
@@ -230,7 +236,7 @@ fn sidebar_drive_item(
         );
 
         let bar_bg = palette.drive_usage_background;
-        let bar_fill = drive_usage_gradient((total - free) as f32 / total as f32, palette).0;
+        let bar_fill = drive_usage_color((total - free) as f32 / total as f32, palette);
 
         ui.painter().rect_filled(
             bar_rect,
@@ -248,7 +254,7 @@ fn sidebar_drive_item(
             egui::CornerRadius::same(palette.small_radius),
             bar_fill,
         );
-        
+
         let gb = 1024.0 * 1024.0 * 1024.0;
         let used_gb = (total - free) as f64 / gb;
         let total_gb = total as f64 / gb;
@@ -267,13 +273,10 @@ fn sidebar_drive_item(
 pub fn draw_sidebar(
     ui: &mut egui::Ui,
     icon_cache: &IconCache,
-    favorites: &mut [FavoriteItem],
-    sidebar_selected: Option<&PathBuf>,
-    drives: &[DriveInfo],
+    sidebar_state: &mut SidebarState,
     palette: &ThemePalette,
-    dragging_favorite: &mut Option<usize>, // track dragged item globally
-    network_state: &mut NetworkDevicesState,
 ) -> SidebarAction {
+    const DRIVE_CACHE_DURATION: Duration = Duration::from_secs(30);
     let mut action = SidebarAction::default();
     let mut drop_index: Option<usize> = None;
     let pointer_pos = ui.ctx().input(|i| i.pointer.hover_pos());
@@ -308,10 +311,10 @@ pub fn draw_sidebar(
                         None,
                     );
                     if resp.clicked() {
-                        action.nav_to = Some(PathBuf::from("::MY_PC::"));
+                        action.nav_to = Some(PathBuf::from(MY_PC_PATH));
                     }
                     if resp.middle_clicked() {
-                        action.open_new_tab = Some(PathBuf::from("::MY_PC::"));
+                        action.open_new_tab = Some(PathBuf::from(MY_PC_PATH));
                     }
 
                     if let Some(home) = dirs::home_dir() {
@@ -342,55 +345,77 @@ pub fn draw_sidebar(
                     ));
                     ui.add_space(4.0);
 
+                    let is_dragging = sidebar_state.dragging_favorite.is_some();
                     let mut item_layouts = Vec::new();
 
-                    for (i, _favorite) in favorites.iter().enumerate() {
-                        let (rect, resp) = favorites_item_layout(ui);
+                    if is_dragging {
+                        for (i, _favorite) in sidebar_state.favorites.iter().enumerate() {
+                            let (rect, resp) = favorites_item_layout(ui);
 
-                        if resp.drag_started() {
-                            *dragging_favorite = Some(i);
+                            if resp.drag_started() {
+                                sidebar_state.dragging_favorite = Some(i);
+                            }
+
+                            item_layouts.push((rect, resp));
                         }
 
-                        item_layouts.push((rect, resp));
+                        if let (Some(pos), Some(drag_idx)) =
+                            (pointer_pos, sidebar_state.dragging_favorite)
+                        {
+                            drop_index = None;
+
+                            for (i, (rect, _)) in item_layouts.iter().enumerate() {
+                                let mid_y = rect.center().y;
+
+                                let new_index = if pos.y < mid_y { i } else { i + 1 };
+
+                                if new_index != drag_idx && new_index != drag_idx + 1 {
+                                    drop_index = Some(new_index);
+                                }
+
+                                if pos.y < rect.bottom() {
+                                    break;
+                                }
+                            }
+
+                            if let Some(last) = item_layouts.last() {
+                                if pos.y > last.0.bottom() {
+                                    drop_index = Some(item_layouts.len());
+                                }
+                            }
+                        }
                     }
 
-                    if let (Some(pos), Some(drag_idx)) = (pointer_pos, *dragging_favorite) {
-                        drop_index = None;
+                    for (i, favorite) in sidebar_state.favorites.iter().enumerate() {
+                        let resp = if is_dragging {
+                            let (rect, resp) = &item_layouts[i];
+                            draw_sidebar_item(
+                                ui,
+                                icon_cache,
+                                &favorite.path,
+                                &favorite.label,
+                                true,
+                                palette,
+                                true,
+                                Some((*rect, resp.clone())),
+                            );
+                            resp.clone()
+                        } else {
+                            draw_sidebar_item(
+                                ui,
+                                icon_cache,
+                                &favorite.path,
+                                &favorite.label,
+                                true,
+                                palette,
+                                true,
+                                None,
+                            )
+                        };
 
-                        for (i, (rect, _)) in item_layouts.iter().enumerate() {
-                            let mid_y = rect.center().y;
-
-                            let new_index = if pos.y < mid_y { i } else { i + 1 };
-
-                            if new_index != drag_idx && new_index != drag_idx + 1 {
-                                drop_index = Some(new_index);
-                            }
-
-                            if pos.y < rect.bottom() {
-                                break;
-                            }
+                        if !is_dragging && resp.drag_started() {
+                            sidebar_state.dragging_favorite = Some(i);
                         }
-
-                        if let Some(last) = item_layouts.last() {
-                            if pos.y > last.0.bottom() {
-                                drop_index = Some(item_layouts.len());
-                            }
-                        }
-                    }
-
-                    for (i, favorite) in favorites.iter().enumerate() {
-                        let (rect, resp) = &item_layouts[i];
-
-                        draw_sidebar_item(
-                            ui,
-                            icon_cache,
-                            &favorite.path,
-                            &favorite.label,
-                            true,
-                            palette,
-                            true,
-                            Some((*rect, resp.clone())),
-                        );
 
                         if resp.clicked() {
                             action.nav_to = Some(favorite.path.clone());
@@ -428,38 +453,45 @@ pub fn draw_sidebar(
                         }
                     }
 
-                    if let Some(drop) = drop_index {
-                        if drop == favorites.len() {
-                            if let Some(rect) = item_layouts.last().map(|(r, _)| r) {
-                                let painter = ui.ctx().layer_painter(egui::LayerId::new(
-                                    egui::Order::Background,
-                                    egui::Id::new("insert_line_end"),
-                                ));
+                    if is_dragging {
+                        if let Some(drop) = drop_index {
+                            if drop == sidebar_state.favorites.len() {
+                                if let Some(rect) = item_layouts.last().map(|(r, _)| r) {
+                                    let painter = ui.ctx().layer_painter(egui::LayerId::new(
+                                        egui::Order::Background,
+                                        egui::Id::new("insert_line_end"),
+                                    ));
 
-                                let y = rect.bottom();
-                                let left = rect.left() + 6.0;
-                                let right = rect.right() - 6.0;
+                                    let y = rect.bottom();
+                                    let left = rect.left() + 6.0;
+                                    let right = rect.right() - 6.0;
 
-                                painter.line_segment(
-                                    [egui::pos2(left, y), egui::pos2(right, y)],
-                                    egui::Stroke::new(2.0, palette.primary_active),
-                                );
+                                    painter.line_segment(
+                                        [egui::pos2(left, y), egui::pos2(right, y)],
+                                        egui::Stroke::new(2.0, palette.primary_active),
+                                    );
+                                }
                             }
                         }
-                    }
 
-                    if let Some(drag_idx) = dragging_favorite {
-                        draw_object_drag_ghost(ui, palette, &favorites[*drag_idx].label, true);
-                    }
+                        if let Some(drag_idx) = sidebar_state.dragging_favorite {
+                            draw_object_drag_ghost(
+                                ui,
+                                palette,
+                                &sidebar_state.favorites[drag_idx].label,
+                                true,
+                            );
+                        }
 
-                    if let Some(from) = *dragging_favorite {
-                        if pointer_released {
-                            if let Some(to) = drop_index {
-                                action.reorder = Some((from, to));
+                        if let Some(from) = sidebar_state.dragging_favorite {
+                            if pointer_released {
+                                if let Some(to) = drop_index {
+                                    action.reorder = Some((from, to));
+                                }
+
+                                sidebar_state.dragging_favorite = None;
+                                drop_index = None;
                             }
-
-                            *dragging_favorite = None;
-                            drop_index = None;
                         }
                     }
 
@@ -471,16 +503,56 @@ pub fn draw_sidebar(
                     ));
                     ui.add_space(4.0);
 
-                    for drive in drives {
-                        let is_selected =
-                            sidebar_selected.map(|p| p == &drive.path).unwrap_or(false);
+                    if sidebar_state.cached_drives.is_empty()
+                        || sidebar_state.last_drive_refresh.elapsed() > DRIVE_CACHE_DURATION
+                        || consume_drive_list_dirty()
+                    {
+                        sidebar_state.cached_drives = get_drive_infos();
+                        sidebar_state.last_drive_refresh = Instant::now();
+                    }
 
-                        let resp = sidebar_drive_item(ui, icon_cache, drive, palette, is_selected);
+                    for drive in sidebar_state.cached_drives.iter() {
+                        let is_selected = sidebar_state
+                            .item_clicked
+                            .as_ref()
+                            .map(|p| p == &drive.path)
+                            .unwrap_or(false);
+
+                        let resp = sidebar_drive_item(ui, icon_cache, &drive, palette, is_selected);
                         if resp.clicked() {
-                            action.nav_to = Some(drive.path.clone());
+                            if is_raw_physical_drive_path(&drive.path) {
+                                sidebar_state.non_ntfs_popup_path = Some(drive.path.clone());
+                            } else {
+                                action.nav_to = Some(drive.path.clone());
+                            }
                         }
                         if resp.middle_clicked() {
-                            action.open_new_tab = Some(drive.path.clone());
+                            if is_raw_physical_drive_path(&drive.path) {
+                                sidebar_state.non_ntfs_popup_path = Some(drive.path.clone());
+                            } else {
+                                action.open_new_tab = Some(drive.path.clone());
+                            }
+                        }
+                    }
+
+                    if let Some(_path) = sidebar_state.non_ntfs_popup_path.clone() {
+                        let mut open = true;
+                        egui::Window::new("Non-NTFS Drive")
+                            .collapsible(false)
+                            .resizable(false)
+                            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                            .open(&mut open)
+                            .show(ui.ctx(), |ui| {
+                                ui.label("This is a non-NTFS drive.");
+                                ui.label("Please mount it first if you'd like to explore it,");
+                                ui.label("or use an external tool to access this filesystem.");
+                                ui.add_space(8.0);
+                                if ui.button("OK").clicked() {
+                                    sidebar_state.non_ntfs_popup_path = None;
+                                }
+                            });
+                        if !open {
+                            sidebar_state.non_ntfs_popup_path = None;
                         }
                     }
 
@@ -524,7 +596,8 @@ pub fn draw_sidebar(
                     //     }
                     // }
 
-
+                    // Extra bottom padding so last items aren't clipped by scroll boundary.
+                    ui.add_space(12.0);
                 });
                 ui.add_space(2.0);
             });
