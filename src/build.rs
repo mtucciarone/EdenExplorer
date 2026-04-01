@@ -1,4 +1,3 @@
-
 extern crate winres;
 
 fn main() {
@@ -17,7 +16,6 @@ fn main() {
         res.set("ProductVersion", env!("CARGO_PKG_VERSION"));
         res.set("OriginalFilename", "EdenExplorer.exe");
 
-        res.compile()
-            .expect("Failed to compile Windows resources");
+        res.compile().expect("Failed to compile Windows resources");
     }
 }
