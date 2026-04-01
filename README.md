@@ -199,7 +199,9 @@
 - [ ] Support network devices
 
 ## 🐛 Known Bugs
-- None currently
+- After hitting "Enter" when renaming a new file/folder, it should automatically select that item in the itemviewer
+- Dragging and dropping files into empty folders/directories doesn't do anything
+- Hitting "Shift" after already shift-selecting files drops the entire file selection
 
 ## Star History
 
