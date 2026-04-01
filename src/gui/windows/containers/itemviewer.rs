@@ -147,7 +147,7 @@ pub fn draw_item_viewer(
             .resizable(true)
             .id_salt("item_viewer_table");
 
-        // If we have a newly created row, scroll to it
+        // If we have a newly created row, scroll to it and select it
         if let Some(new_path) = &explorer_state.newly_created_path {
             if let Some(idx) = filter_state
                 .cached_indices
@@ -155,6 +155,13 @@ pub fn draw_item_viewer(
                 .position(|&i| files[i].path == *new_path)
             {
                 table = table.scroll_to_row(idx, Some(egui::Align::Center));
+                
+                // Auto-select the newly created/renamed item
+                explorer_state.selected_paths.clear();
+                explorer_state.selected_paths.insert(new_path.clone());
+                explorer_state.selection_anchor = Some(idx);
+                explorer_state.selection_focus = Some(idx);
+                
                 explorer_state.newly_created_path = None;
             }
         }
