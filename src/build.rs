@@ -1,15 +1,15 @@
-use std::fs;
-use std::path::PathBuf;
+
+extern crate winres;
 
 fn main() {
     // Tell Cargo to rerun build script if icon changes
-    println!("cargo:rerun-if-changed=src/assets/icon.ico");
+    println!("cargo:rerun-if-changed=src/icon.ico");
 
     #[cfg(target_os = "windows")]
     {
         let mut res = winres::WindowsResource::new();
 
-        res.set_icon("src/assets/icon.ico");
+        res.set_icon("src/icon.ico");
 
         res.set("FileDescription", "EdenExplorer");
         res.set("ProductName", "EdenExplorer");

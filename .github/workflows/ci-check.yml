@@ -6,6 +6,9 @@ on:
     branches:
       - main  # Only run for PRs targeting main branch
 
+permissions:
+  contents: read
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
