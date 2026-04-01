@@ -311,5 +311,15 @@ Submit a pull request with a description of your changes
 - Fix network detection in sidebar
 - selection dragging box doesn't select anything
 
+## Star History
+
+<a href="https://www.star-history.com/?repos=mtucciarone%2FEdenExplorer&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=mtucciarone/EdenExplorer&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=mtucciarone/EdenExplorer&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=mtucciarone/EdenExplorer&type=date&legend=top-left" />
+ </picture>
+</a>
+
 ## License
 This project is FOSS, released under the MIT License.
