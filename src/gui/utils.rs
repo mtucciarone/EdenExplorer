@@ -5,6 +5,7 @@ use egui_phosphor::regular::DOTS_SIX_VERTICAL;
 use lru::LruCache;
 use std::cmp::Ordering::{Greater, Less};
 use std::collections::HashMap;
+use std::env;
 use std::ffi::OsStr;
 use std::fs::{copy, create_dir_all, read_dir};
 use std::mem::size_of;
@@ -642,6 +643,47 @@ pub fn fuzzy_match(name: &str, query: &str) -> bool {
     current.is_none()
 }
 
+/// Expands Windows environment variables in a path (e.g., %appdata% -> C:\Users\...\AppData\Roaming)
+pub fn expand_environment_variables(path: &str) -> String {
+    let mut result = String::new();
+    let mut chars = path.chars().peekable();
+    
+    while let Some(ch) = chars.next() {
+        if ch == '%' {
+            // Start of environment variable
+            let mut var_name = String::new();
+            
+            // Collect variable name until next %
+            while let Some(&next_ch) = chars.peek() {
+                if next_ch == '%' {
+                    chars.next(); // Consume the closing %
+                    break;
+                }
+                var_name.push(chars.next().unwrap());
+            }
+            
+            if !var_name.is_empty() {
+                // Try to expand the environment variable
+                if let Ok(value) = env::var(&var_name) {
+                    result.push_str(&value);
+                } else {
+                    // If expansion fails, keep the original %VAR% format
+                    result.push('%');
+                    result.push_str(&var_name);
+                    result.push('%');
+                }
+            } else {
+                // Empty variable name, just add %
+                result.push('%');
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+    
+    result
+}
+
 fn width_bucket(width: f32) -> u32 {
     (width / 8.0).round() as u32
 }
@@ -731,4 +773,48 @@ pub fn truncate_item_text(
 
     // fallback if lock poisoned
     truncate_text_binary_search(ui, text, max_width, font_id, color)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_expand_environment_variables() {
+        // Test with a common environment variable that should exist on Windows
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            let expanded = expand_environment_variables("%appdata%");
+            assert_eq!(expanded, appdata);
+        }
+
+        // Test with mixed case
+        if let Ok(windir) = std::env::var("WINDIR") {
+            let expanded = expand_environment_variables("%WiNdIr%");
+            assert_eq!(expanded, windir);
+        }
+
+        // Test with non-existent variable (should remain unchanged)
+        let expanded = expand_environment_variables("%nonexistent%");
+        assert_eq!(expanded, "%nonexistent%");
+
+        // Test with partial environment variable in path
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            let expanded = expand_environment_variables("C:\\test\\%appdata%\\subfolder");
+            assert_eq!(expanded, format!("C:\\test\\{}\\subfolder", appdata));
+        }
+
+        // Test with no environment variables
+        let expanded = expand_environment_variables("C:\\Windows\\System32");
+        assert_eq!(expanded, "C:\\Windows\\System32");
+
+        // Test with empty string
+        let expanded = expand_environment_variables("");
+        assert_eq!(expanded, "");
+
+        // Test with multiple environment variables
+        if let (Ok(appdata), Ok(windir)) = (std::env::var("APPDATA"), std::env::var("WINDIR")) {
+            let expanded = expand_environment_variables("%appdata%\\%windir%");
+            assert_eq!(expanded, format!("{}\\{}", appdata, windir));
+        }
+    }
 }

@@ -282,6 +282,7 @@
 - [x] **Drag and drop files/folders** - Move one or more items into folders shown in the item viewer
 - [x] **Window management improvements** with proper maximization bounds and minimum size constraints
 - [x] **File/Directory filtering** - typing characters automatically start filtering items in the item viewer
+- [x] **Windows environment variables PATH support** - Automatically expands Windows PATHs in breadcrumb input
 
 ### 🚀 Upcoming Features
 - [ ] **Image previews using Spacebar** - GPU texture via wgpu / egui_wgpu_backend
@@ -296,6 +297,7 @@
 - After hitting "Enter" when renaming a new file/folder, it should automatically select that item in the itemviewer
 - Dragging and dropping files into empty folders/directories doesn't do anything
 - Hitting "Shift" after already shift-selecting files drops the entire file selection
+- Entering "%appdata%" in the breadcrumbs/path throws an invalid path errors
 
 ## Star History
 
