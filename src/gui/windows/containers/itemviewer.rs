@@ -192,8 +192,8 @@ pub fn draw_item_viewer(
             ); // Size
         } else {
             table = table.column(
-                Column::initial(layout.available_width * 0.075)
-                    .at_least(50.0)
+                Column::initial(layout.available_width * 0.1)
+                    .at_least(75.0)
                     .resizable(true),
             ); // Size
         }

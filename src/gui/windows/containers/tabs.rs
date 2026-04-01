@@ -2,7 +2,9 @@ use crate::core::fs::MY_PC_PATH;
 use crate::core::portable;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
-use crate::gui::utils::{clear_clipboard_files, clickable_icon, truncate_item_text};
+use crate::gui::utils::{
+    clear_clipboard_files, clickable_icon, expand_environment_variables, truncate_item_text,
+};
 use crate::gui::windows::containers::enums::TabbarNavAction;
 use crate::gui::windows::containers::structs::{TabInfo, TabState, TabbarAction, TabsAction};
 use crate::gui::windows::windowsoverrides::handle_draw_windows_buttons;
@@ -595,13 +597,19 @@ pub fn draw_tabbar(
 
             if enter {
                 let input = tab.breadcrumb_path_buffer.trim().trim_matches('"');
-                let new_path = PathBuf::from(input);
+
+                // Expand environment variables before checking path existence
+                let expanded_input = expand_environment_variables(input);
+                let new_path = PathBuf::from(&expanded_input);
 
                 if new_path.exists() {
                     action.nav_to = Some(new_path);
                     exit_edit_mode = true;
                 } else {
-                    println!("Invalid path: {}", tab.breadcrumb_path_buffer);
+                    println!(
+                        "Invalid path: {} (expanded to: {})",
+                        tab.breadcrumb_path_buffer, expanded_input
+                    );
                     tab.breadcrumb_path_error = true;
                     tab.breadcrumb_path_error_animation_time = ui.input(|i| i.time);
                 }
