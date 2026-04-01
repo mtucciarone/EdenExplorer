@@ -53,6 +53,21 @@ pub fn draw_item_viewer(
     let mut any_row_hovered = false;
 
     if files.is_empty() {
+        // Handle drag and drop for empty folders
+        if ui.ctx().input(|i| !i.raw.dropped_files.is_empty()) {
+            let dropped_paths: Vec<PathBuf> = ui.ctx().input(|i| {
+                i.raw
+                    .dropped_files
+                    .iter()
+                    .filter_map(|f| f.path.clone())
+                    .collect()
+            });
+
+            if !dropped_paths.is_empty() {
+                action = Some(ItemViewerAction::FilesDropped(dropped_paths));
+            }
+        }
+
         ui.centered_and_justified(|ui| {
             if is_loading {
                 ui.add(egui::Spinner::new().size(28.0));
@@ -155,13 +170,13 @@ pub fn draw_item_viewer(
                 .position(|&i| files[i].path == *new_path)
             {
                 table = table.scroll_to_row(idx, Some(egui::Align::Center));
-                
+
                 // Auto-select the newly created/renamed item
                 explorer_state.selected_paths.clear();
                 explorer_state.selected_paths.insert(new_path.clone());
                 explorer_state.selection_anchor = Some(idx);
                 explorer_state.selection_focus = Some(idx);
-                
+
                 explorer_state.newly_created_path = None;
             }
         }
