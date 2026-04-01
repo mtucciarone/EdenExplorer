@@ -1,45 +1,74 @@
-<p align="center">
-  <img src="src/assets/icon.ico" alt="EdenExplorer Icon" width="128" height="128">
+<table>
+  <tr>
+    <td width="60%" valign="middle">
+
+# EdenExplorer
+**Blazing-fast, open-source file manager for Windows 11.**
+
+EdenExplorer is a next-generation file explorer built with Rust and egui,
+focused on performance, efficiency, and modern workflows.
+
+A fast, open-source alternative to Windows File Explorer.
+<p>
+  <img src="https://img.shields.io/github/v/release/mtucciarone/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" />
+  <img src="https://img.shields.io/github/license/mtucciarone/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" />
+  <img src="https://img.shields.io/github/actions/workflow/status/mtucciarone/EdenExplorer/release.yml?style=for-the-badge&color=5F4B87&labelColor=14161A" />
+  <img src="https://img.shields.io/github/stars/mtucciarone/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" />
 </p>
-
-# EdenExplorer — The Ultimate Open Source Windows File Manager 🚀
-
-**EdenExplorer** is a next-generation, **blazing-fast**, fully open-source file explorer built for Windows 11+ using **Rust** and **egui**.
-Designed from the ground up for **performance, efficiency, and modern workflows**, EdenExplorer is the **best FOSS alternative** to the default Windows File Explorer.
+    </td>
+    <td width="40%" align="right">
+  <img src="src/assets/icon.ico" alt="EdenExplorer Icon" width="128" height="128">
+    </td>
+  </tr>
+</table>
 
 ## ⭐ Support
 
 If you like this FOSS project, consider sponsoring
 
-[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-pink?logo=GitHub&style=for-the-badge)](https://github.com/sponsors/mtucciarone)
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-5F4B87?style=for-the-badge&labelColor=14161A&logo=github)](https://github.com/sponsors/mtucciarone)
 
 
 ## ⚡ Why EdenExplorer?
 
-Windows File Explorer hasn't kept up with power users. It's slow, bloated, and resource-heavy.
+Windows File Explorer hasn't evolved for modern workflows. 
 
-**EdenExplorer changes that.**
+It's slow, inefficient, and built for a different era.
 
-* ⚡ **Lightning-fast performance** — Direct NT-level filesystem scanning with minimal overhead
+**EdenExplorer fixes that.**
+
+**Powered by direct NT-level filesystem access for maximum performance.**
+
+* ⚡ **Lightning-fast performance** — minimal overhead
 * 🧠 **Efficient by design** — Built in Rust for memory safety and speed
 * 🎯 **Minimal, modern UI** — Clean, distraction-free interface that just works
 * 🔓 **100% Free & Open Source** — No telemetry, no lock-in, no nonsense
 * 🪶 **Lightweight footprint** — Uses a fraction of the resources of Explorer
 * 🧰 **Built for daily use** — Your new go-to file manager for everything
 
-
 ## 🧩 Built With Modern Technology
 
 * 🦀 **Rust** — Safe, fast, and reliable systems programming
-* 🎨 **egui** — Immediate mode GUI for ultra-responsive interfaces
+* 🎨 [**egui**](https://github.com/emilk/egui/) — Immediate mode GUI for ultra-responsive interfaces
+* 📦 [**egui-phosphor**](https://github.com/amPerl/egui-phosphor) — [Phosphor](https://github.com/phosphor-icons/homepage) icon set for egui
 * ⚙️ **NT-level filesystem access** — Maximum performance, minimal abstraction
 
-## ⭐ Try It. Star It. Replace Explorer.
+## 🆚 Comparison
 
-If EdenExplorer improves your workflow, consider giving it a ⭐ on GitHub and contributing to the project.
+| Feature                | EdenExplorer | FilePilot | Windows Explorer |
+|----------------------|-------------|------------------|------------------|
+| Pricing              | ✅ Free      | ❌ Full-Version Paid          | ❌ Your Data          |
+| Performance          | ⚡ Fast      | ⚡ Fast          | 🐢 Slow          |
+| Open Source          | ✅ Yes       | ❌ No            | ❌ No            |
+| NT-level access      | ✅ Yes       | ✅ Yes           | ❌ No            |
+| Resource usage       | 🪶 Low       | 🪶 Low        | 🧱 Heavy         |
 
-**Fast. Clean. Open. Powerful.**
-That's EdenExplorer.
+## 🚀 Getting Started
+### Download
+Grab the latest release from:
+https://github.com/mtucciarone/EdenExplorer/releases
+
+Just download and launch — no installation, no setup.
 
 ## ✨ Features
 
