@@ -5,6 +5,10 @@
 <h1 align="center">EdenExplorer</h1>
 
 <p align="center">
+  <img src="https://img.shields.io/badge/Public%20Alpha-Now%20Available-2ecc71?style=for-the-badge" />
+</p>
+
+<p align="center">
   <b>Blazing-fast, open-source file manager for Windows 11.</b>
 </p>
 
@@ -22,6 +26,10 @@
   <img src="https://img.shields.io/github/license/mtucciarone/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" />
   <img src="https://img.shields.io/github/actions/workflow/status/mtucciarone/EdenExplorer/release.yml?style=for-the-badge&color=5F4B87&labelColor=14161A" />
   <img src="https://img.shields.io/github/stars/mtucciarone/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" />
+</p>
+
+<p align="center">
+  <img src="src/demo.gif" width="600" />
 </p>
 
 <h1 align="center"> ⭐ Support</h1>
@@ -70,14 +78,100 @@
 </p>
 
 <h1 align="center"> Comparison </h1>
+<div align="center">
 
-| Feature                | EdenExplorer | FilePilot | Windows Explorer |
-|----------------------|-------------|------------------|------------------|
-| Pricing              | ✅ Free      | ❌ Full-Version Paid          | ❌ Your Data          |
-| Performance          | ⚡ Fast      | ⚡ Fast          | 🐢 Slow          |
-| Open Source          | ✅ Yes       | ❌ No            | ❌ No            |
-| NT-level access      | ✅ Yes       | ✅ Yes           | ❌ No            |
-| Resource usage       | 🪶 Low       | 🪶 Low        | 🧱 Heavy         |
+<table>
+  <thead>
+    <tr>
+      <th>Feature</th>
+      <th><b>EdenExplorer</b></th>
+      <th>FilePilot</th>
+      <th>Windows Explorer</th>
+      <th>Files App</th>
+      <th>Directory Opus</th>
+      <th>Total Commander</th>
+      <th>XYplorer</th>
+      <th>Explorer++</th>
+      <th>Double Commander</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>Pricing</b></td>
+      <td><b>✅ Free</b></td>
+      <td>❌ Paid</td>
+      <td>❌ Your Data</td>
+      <td>✅ Free</td>
+      <td>❌ Paid</td>
+      <td>❌ Paid</td>
+      <td>❌ Paid</td>
+      <td>✅ Free</td>
+      <td>✅ Free</td>
+    </tr>
+    <tr>
+      <td><b>Performance</b></td>
+      <td><b>⚡ Fast</b></td>
+      <td>⚡ Fast</td>
+      <td>🐢 Slow</td>
+      <td>⚡ Fast</td>
+      <td>⚡ Fast</td>
+      <td>⚡ Fast</td>
+      <td>⚡ Fast</td>
+      <td>⚡ Fast</td>
+      <td>⚡ Fast</td>
+    </tr>
+    <tr>
+      <td><b>Open Source</b></td>
+      <td><b>✅ Yes</b></td>
+      <td>❌ No</td>
+      <td>❌ No</td>
+      <td>✅ Yes</td>
+      <td>❌ No</td>
+      <td>❌ No</td>
+      <td>❌ No</td>
+      <td>✅ Yes</td>
+      <td>✅ Yes</td>
+    </tr>
+    <tr>
+      <td><b>NT-level access</b></td>
+      <td><b>✅ Yes</b></td>
+      <td>✅ Yes</td>
+      <td>❌ No</td>
+      <td>❌ No</td>
+      <td>✅ Yes</td>
+      <td>✅ Yes</td>
+      <td>❌ No</td>
+      <td>❌ No</td>
+      <td>❌ No</td>
+    </tr>
+    <tr>
+      <td><b>Resource Usage</b></td>
+      <td><b>🪶 Low</b></td>
+      <td>🪶 Low</td>
+      <td>🧱 Heavy</td>
+      <td>🪶 Low</td>
+      <td>🧱 Heavy</td>
+      <td>🪶 Low</td>
+      <td>🪶 Low</td>
+      <td>🪶 Low</td>
+      <td>🪶 Low</td>
+    </tr>
+    <tr>
+      <td><b>Core Technology</b></td>
+      <td><b>🦀 Rust</b></td>
+      <td>🦀 Rust</td>
+      <td>⚙️ C++*</td>
+      <td>💙 C# / WinUI</td>
+      <td>⚙️ C++</td>
+      <td>⚙️ Delphi (Object Pascal)</td>
+      <td>⚙️ C++*</td>
+      <td>⚙️ C++</td>
+      <td>⚙️ Free Pascal (Lazarus)</td>
+    </tr>
+  </tbody>
+</table>
+
+</div>
 
 <h2 align="center">🚀 Getting Started</h2>
 <h3 align="center">Download</h3>
