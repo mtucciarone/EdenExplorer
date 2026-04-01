@@ -647,12 +647,12 @@ pub fn fuzzy_match(name: &str, query: &str) -> bool {
 pub fn expand_environment_variables(path: &str) -> String {
     let mut result = String::new();
     let mut chars = path.chars().peekable();
-    
+
     while let Some(ch) = chars.next() {
         if ch == '%' {
             // Start of environment variable
             let mut var_name = String::new();
-            
+
             // Collect variable name until next %
             while let Some(&next_ch) = chars.peek() {
                 if next_ch == '%' {
@@ -661,7 +661,7 @@ pub fn expand_environment_variables(path: &str) -> String {
                 }
                 var_name.push(chars.next().unwrap());
             }
-            
+
             if !var_name.is_empty() {
                 // Try to expand the environment variable
                 if let Ok(value) = env::var(&var_name) {
@@ -680,7 +680,7 @@ pub fn expand_environment_variables(path: &str) -> String {
             result.push(ch);
         }
     }
-    
+
     result
 }
 
