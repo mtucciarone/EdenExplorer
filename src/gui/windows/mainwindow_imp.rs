@@ -347,6 +347,9 @@ impl MainWindow {
 
                             file_op.PerformOperations().ok();
                         }
+
+                        // Set the renamed file path for auto-selection and scrolling
+                        self.explorer_state.newly_created_path = Some(target);
                     }
                 }
 

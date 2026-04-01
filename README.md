@@ -292,12 +292,10 @@
   - Best for "popup over app" with no lag
 - [ ] Drag and drop files into breadcrumb folders
 - [ ] Support network devices
+- [ ] Drag and drop files from EdenExplorer into Windows objects (Desktop, File Explorer, applications, etc.)
 
 ## 🐛 Known Bugs
-- After hitting "Enter" when renaming a new file/folder, it should automatically select that item in the itemviewer
-- Dragging and dropping files into empty folders/directories doesn't do anything
 - Hitting "Shift" after already shift-selecting files drops the entire file selection
-- Entering "%appdata%" in the breadcrumbs/path throws an invalid path errors
 
 ## Star History
 
