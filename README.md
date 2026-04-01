@@ -1,59 +1,75 @@
-<table>
-  <tr>
-    <td width="60%" valign="middle">
+<p align="center">
+  <img src="src/assets/icon.ico" alt="EdenExplorer Icon" width="120" height="120">
+</p>
 
-# EdenExplorer
-**Blazing-fast, open-source file manager for Windows 11.**
+<h1 align="center">EdenExplorer</h1>
 
-EdenExplorer is a next-generation file explorer built with Rust and egui,
-focused on performance, efficiency, and modern workflows.
+<p align="center">
+  <b>Blazing-fast, open-source file manager for Windows 11.</b>
+</p>
 
-A fast, open-source alternative to Windows File Explorer.
-<p>
+<p align="center">
+  A next-generation file explorer built with Rust and egui,<br>
+  focused on performance, efficiency, and modern workflows.
+</p>
+
+<p align="center">
+  A fast, open-source alternative to Windows File Explorer.
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/github/v/release/mtucciarone/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" />
   <img src="https://img.shields.io/github/license/mtucciarone/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" />
   <img src="https://img.shields.io/github/actions/workflow/status/mtucciarone/EdenExplorer/release.yml?style=for-the-badge&color=5F4B87&labelColor=14161A" />
   <img src="https://img.shields.io/github/stars/mtucciarone/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" />
 </p>
-    </td>
-    <td width="40%" align="right">
-  <img src="src/assets/icon.ico" alt="EdenExplorer Icon" width="128" height="128">
-    </td>
-  </tr>
-</table>
 
-## ⭐ Support
+<h1 align="center"> ⭐ Support</h1>
+<p align="center">
+  If you like this FOSS project, consider sponsoring
+</p>
+<p align="center">
+  <a href="https://github.com/sponsors/mtucciarone">
+    <img src="https://img.shields.io/badge/Sponsor-%E2%9D%A4-5F4B87?style=for-the-badge&labelColor=14161A&logo=github" alt="Sponsor">
+  </a>
+</p>
 
-If you like this FOSS project, consider sponsoring
+<h1 align="center">⚡ Why EdenExplorer?</h1>
 
-[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-5F4B87?style=for-the-badge&labelColor=14161A&logo=github)](https://github.com/sponsors/mtucciarone)
+<p align="center">
+  Windows File Explorer hasn't evolved for modern workflows.<br><br>
+  It's slow, inefficient, and built for a different era.
+</p>
 
+<p align="center">
+  <b>EdenExplorer fixes that.</b>
+</p>
 
-## ⚡ Why EdenExplorer?
+<p align="center">
+  <b>Powered by direct NT-level filesystem access for maximum performance.</b>
+</p>
 
-Windows File Explorer hasn't evolved for modern workflows. 
+<br>
 
-It's slow, inefficient, and built for a different era.
+<p align="center">
+  ⚡ <b>Lightning-fast performance</b> — minimal overhead<br>
+  🧠 <b>Efficient by design</b> — Built in Rust for memory safety and speed<br>
+  🎯 <b>Minimal, modern UI</b> — Clean, distraction-free interface that just works<br>
+  🔓 <b>100% Free & Open Source</b> — No telemetry, no lock-in, no nonsense<br>
+  🪶 <b>Lightweight footprint</b> — Uses a fraction of the resources of Explorer<br>
+  🧰 <b>Built for daily use</b> — Your new go-to file manager for everything
+</p>
 
-**EdenExplorer fixes that.**
+<h1 align="center"> 🧩 Built With Modern Technology </h1>
 
-**Powered by direct NT-level filesystem access for maximum performance.**
+<p align="center">
+  🦀 <b>Rust</b> — Safe, fast, and reliable systems programming<br>
+  🎨 <a href="https://github.com/emilk/egui/"><b>egui</b></a> — Immediate mode GUI for ultra-responsive interfaces<br>
+  📦 <a href="https://github.com/amPerl/egui-phosphor"><b>egui-phosphor</b></a> — <a href="https://github.com/phosphor-icons/homepage">Phosphor</a> icon set for egui<br>
+  ⚙️ <b>NT-level filesystem access</b> — Maximum performance, minimal abstraction
+</p>
 
-* ⚡ **Lightning-fast performance** — minimal overhead
-* 🧠 **Efficient by design** — Built in Rust for memory safety and speed
-* 🎯 **Minimal, modern UI** — Clean, distraction-free interface that just works
-* 🔓 **100% Free & Open Source** — No telemetry, no lock-in, no nonsense
-* 🪶 **Lightweight footprint** — Uses a fraction of the resources of Explorer
-* 🧰 **Built for daily use** — Your new go-to file manager for everything
-
-## 🧩 Built With Modern Technology
-
-* 🦀 **Rust** — Safe, fast, and reliable systems programming
-* 🎨 [**egui**](https://github.com/emilk/egui/) — Immediate mode GUI for ultra-responsive interfaces
-* 📦 [**egui-phosphor**](https://github.com/amPerl/egui-phosphor) — [Phosphor](https://github.com/phosphor-icons/homepage) icon set for egui
-* ⚙️ **NT-level filesystem access** — Maximum performance, minimal abstraction
-
-## 🆚 Comparison
+<h1 align="center"> Comparison </h1>
 
 | Feature                | EdenExplorer | FilePilot | Windows Explorer |
 |----------------------|-------------|------------------|------------------|
@@ -63,61 +79,94 @@ It's slow, inefficient, and built for a different era.
 | NT-level access      | ✅ Yes       | ✅ Yes           | ❌ No            |
 | Resource usage       | 🪶 Low       | 🪶 Low        | 🧱 Heavy         |
 
-## 🚀 Getting Started
-### Download
-Grab the latest release from:
-https://github.com/mtucciarone/EdenExplorer/releases
+<h2 align="center">🚀 Getting Started</h2>
+<h3 align="center">Download</h3>
+<p align="center">
+  Grab the latest release from:<br>
+  <a href="https://github.com/mtucciarone/EdenExplorer/releases">
+    https://github.com/mtucciarone/EdenExplorer/releases
+  </a>
+</p>
+<p align="center">
+  Just download and launch — no installation, no setup.
+</p>
 
-Just download and launch — no installation, no setup.
 
-## ✨ Features
 
-### 🚀 Core Functionality
-- **Lightning-fast GUI** that starts at the **root of your computer**, displaying all drives with comprehensive storage types and detailed information
-- **Asynchronous directory scanning** for ultra-fast file listing without blocking the UI
-- **Intuitive navigation** with **Back / Forward / Up** controls for seamless browsing
-- **Smart sidebar** with quick access to common folders (Desktop, Documents, Downloads) and customizable favorites
 
-### 🎯 User Interface & Navigation
-- **Tabbed navigation** with independent loading states
-- **Interactive breadcrumb navigation** with clickable path segments and inline path editing
-- **Responsive design** that adapts to different window sizes and configurations
-- **Modern toolbar** with file operations and folder creation tools
+<h2 align="center">✨ Features</h2>
 
-### 🎨 Theme & Customization
-- **Dark/Light mode switching** with instant toggle via topbar button
-- **Advanced theme customization** with comprehensive color palette editor
-- **Customizable startup directory** - set your preferred default location
-- **Persistent settings** that survive application restarts
+<table align="center" style="border: none; border-collapse: collapse;">
+<tr>
+<td width="50%" valign="top" style="border: none; padding: 12px;">
 
-### ⚡ Advanced Features
-- **Favorites system** with drive-specific storage and drag-and-drop support
-- **File operations history** with undo/redo functionality
-- **Background folder size calculation** with progress updates and user control
-- **Context menu operations** (cut, copy, paste, rename, delete)
-- **Drag and drop files/folders** - Move one or more items into folders shown in the item viewer
-- **Portable device support** for iPhone, Android, and connected devices
-- **Raw/unmounted drive detection** for ISO sticks and Linux partitions
+<h3>Core Functionality</h3>
+<ul>
+  <li><b>Lightning-fast GUI</b> that starts at the <b>root of your computer</b>, displaying all drives with comprehensive storage types and detailed information</li>
+  <li><b>Asynchronous directory scanning</b> for ultra-fast file listing without blocking the UI</li>
+  <li><b>Intuitive navigation</b> with <b>Back / Forward / Up</b> controls for seamless browsing</li>
+  <li><b>Smart sidebar</b> with quick access to common folders and customizable favorites</li>
+</ul>
 
-### 🔍 Search & Filtering
-- **Real-time file filtering** - typing characters automatically start filtering items in the item viewer
-- **Fuzzy matching** for intelligent search results
-- **Performance-optimized filtering** with cached indices for instant results
+<h3>Theme & Customization</h3>
+<ul>
+  <li><b>Dark/Light mode switching</b> with instant toggle</li>
+  <li><b>Advanced theme customization</b> with full color palette editor</li>
+  <li><b>Customizable startup directory</b></li>
+  <li><b>Persistent settings</b> across restarts</li>
+</ul>
 
-### 🪟 System Integration
-- **Persistent settings** using binary cache format surviving application restarts
-- **Efficient drive space queries** with intelligent caching
-- **Windows API integration** for optimal performance and compatibility
-- **Custom executable icon** with proper Windows file association
-- **Window management improvements** with proper maximization bounds and minimum size constraints
+<h3>Search & Filtering</h3>
+<ul>
+  <li><b>Real-time file filtering</b> as you type</li>
+  <li><b>Fuzzy matching</b> for intelligent results</li>
+  <li><b>Performance-optimized filtering</b> with cached indices</li>
+</ul>
 
-### ⚡ Performance Optimizations
-- **NT-level filesystem access** via direct NT API calls
-- **Background scanning** prevents UI freezing during large directory operations
-- **Efficient caching** for frequently accessed directories and metadata
-- **Streaming directory enumeration** with optimized buffer management
-- **Low memory footprint** optimized for Windows 11 environments
-- **Performance benchmarking system** with real-time measurement and comparison tools
+</td>
+
+<td width="50%" valign="top" style="border: none; padding: 12px;">
+
+<h3>User Interface & Navigation</h3>
+<ul>
+  <li><b>Tabbed navigation</b> with independent loading states</li>
+  <li><b>Interactive breadcrumb navigation</b> with inline editing</li>
+  <li><b>Responsive design</b> across window sizes</li>
+  <li><b>Modern toolbar</b> with file and folder actions</li>
+</ul>
+
+<h3>Advanced Features</h3>
+<ul>
+  <li><b>Favorites system</b> with drag-and-drop support</li>
+  <li><b>Background folder size calculation</b> with progress tracking</li>
+  <li><b>Context menu operations</b> (cut, copy, paste, rename, delete)</li>
+  <li><b>Drag and drop files/folders</b> within the viewer</li>
+  <li><b>Portable device support</b> (iPhone, Android, external devices)</li>
+  <li><b>Raw/unmounted drive detection</b> (ISO, Linux partitions)</li>
+</ul>
+
+<h3>System Integration</h3>
+<ul>
+  <li><b>Persistent settings</b> using efficient binary cache</li>
+  <li><b>Efficient drive space queries</b> with caching</li>
+  <li><b>Windows API integration</b></li>
+  <li><b>Custom executable icon</b> with file association</li>
+  <li><b>Improved window management</b></li>
+</ul>
+
+<h3>Performance Optimizations</h3>
+<ul>
+  <li><b>NT-level filesystem access</b> via direct API calls</li>
+  <li><b>Background scanning</b> prevents UI freezing</li>
+  <li><b>Efficient caching</b> for directories and metadata</li>
+  <li><b>Streaming directory enumeration</b></li>
+  <li><b>Low memory footprint</b></li>
+  <li><b>Built-in benchmarking system</b></li>
+</ul>
+
+</td>
+</tr>
+</table>
 
 ## 🗺️ Roadmap
 
