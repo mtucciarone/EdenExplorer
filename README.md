@@ -9,6 +9,14 @@ Designed from the ground up for **performance, efficiency, and modern workflows*
 
 ---
 
+## ⭐ Support
+
+If you like this FOSS project, consider sponsoring
+
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-pink?logo=GitHub&style=for-the-badge)](https://github.com/sponsors/mtucciarone)
+
+---
+
 ## ⚡ Why EdenExplorer?
 
 Windows File Explorer hasn't kept up with power users. It's slow, bloated, and resource-heavy.
