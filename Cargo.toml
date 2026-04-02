@@ -1,6 +1,6 @@
 [package]
 name = "EdenExplorer"
-version = "0.3.1"
+version = "0.2.3"
 edition = "2024"
 build = "src/build.rs"
 
