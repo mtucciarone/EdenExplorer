@@ -535,6 +535,10 @@ impl MainWindow {
                             .folder_scanning_enabled,
                         &self.settings_window.current_settings.window_size_mode,
                         &self.settings_window.current_settings.start_path,
+                        Some(match self.theme {
+                            crate::gui::theme::ThemeMode::Dark => "dark",
+                            crate::gui::theme::ThemeMode::Light => "light",
+                        }),
                     );
                 }
                 SettingsAction::ResetToDefaults => {
@@ -646,7 +650,7 @@ impl MainWindow {
                         self.load_path();
                     }
                 } else {
-                    let (_folder_scanning_enabled, _window_size_mode, start_path) =
+                    let (_folder_scanning_enabled, _window_size_mode, start_path, _saved_theme) =
                         load_app_settings();
                     self.tabs[0].nav = Navigation::new(start_path);
                     self.active_tab = 0;
@@ -705,6 +709,19 @@ impl MainWindow {
                     ThemeMode::Light => ThemeMode::Dark,
                 };
                 self.theme_dirty = true;
+
+                // Save the theme setting
+                save_app_settings(
+                    self.settings_window
+                        .current_settings
+                        .folder_scanning_enabled,
+                    &self.settings_window.current_settings.window_size_mode,
+                    &self.settings_window.current_settings.start_path,
+                    Some(match self.theme {
+                        ThemeMode::Dark => "dark",
+                        ThemeMode::Light => "light",
+                    }),
+                );
             }
 
             if action.customize_theme {

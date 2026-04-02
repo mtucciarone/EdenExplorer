@@ -13,6 +13,7 @@ struct AppSettingsSnapshot {
     folder_scanning_enabled: bool,
     window_size_mode: WindowSizeMode,
     pub start_path: Option<PathBuf>,
+    theme: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -85,7 +86,7 @@ pub fn save_favorites(drive: char, favorites: &[String]) {
     }
 }
 
-pub fn load_app_settings() -> (bool, WindowSizeMode, PathBuf) {
+pub fn load_app_settings() -> (bool, WindowSizeMode, PathBuf, Option<String>) {
     let default_path = PathBuf::from(MY_PC_PATH);
     let path = match settings_cache_path() {
         Some(path) => path,
@@ -97,6 +98,7 @@ pub fn load_app_settings() -> (bool, WindowSizeMode, PathBuf) {
                     height: 800.0,
                 },
                 default_path,
+                None,
             );
         }
     };
@@ -110,6 +112,7 @@ pub fn load_app_settings() -> (bool, WindowSizeMode, PathBuf) {
                     height: 800.0,
                 },
                 default_path,
+                None,
             );
         }
     };
@@ -118,6 +121,7 @@ pub fn load_app_settings() -> (bool, WindowSizeMode, PathBuf) {
             snapshot.folder_scanning_enabled,
             snapshot.window_size_mode,
             snapshot.start_path.unwrap_or(default_path),
+            snapshot.theme,
         ),
         Err(_) => (
             true,
@@ -126,6 +130,7 @@ pub fn load_app_settings() -> (bool, WindowSizeMode, PathBuf) {
                 height: 800.0,
             },
             default_path,
+            None,
         ),
     }
 }
@@ -134,6 +139,7 @@ pub fn save_app_settings(
     folder_scanning_enabled: bool,
     window_size_mode: &WindowSizeMode,
     start_path: &Option<PathBuf>,
+    theme: Option<&str>,
 ) {
     let path = match settings_cache_path() {
         Some(path) => path,
@@ -144,6 +150,7 @@ pub fn save_app_settings(
         folder_scanning_enabled,
         window_size_mode: window_size_mode.clone(),
         start_path: start_path.clone(),
+        theme: theme.map(|s| s.to_string()),
     };
     if let Ok(data) = bincode::serialize(&snapshot) {
         let _ = std::fs::write(path, data);
