@@ -459,6 +459,8 @@ impl eframe::App for MainWindow {
                                         &mut self.item_viewer_filter_state,
                                         self.is_loading,
                                         &mut self.explorer_state,
+                                        &mut self.theme_customizer,
+                                        &mut self.settings_window,
                                     );
 
                                     ui.add_space(16.0);

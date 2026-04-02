@@ -11,6 +11,7 @@ use crate::gui::windows::containers::structs::{
     DragState, ExplorerState, FilterState, ItemViewerFolderSizeState, ItemViewerLayout,
     RenameState, TabbarAction,
 };
+use crate::gui::windows::structs::{SettingsWindow, ThemeCustomizer};
 use eframe::egui;
 use egui::{FontFamily, FontId};
 use egui_extras::{Column, TableBuilder};
@@ -41,6 +42,8 @@ pub fn draw_item_viewer(
     filter_state: &mut FilterState,
     is_loading: bool,
     explorer_state: &mut ExplorerState,
+    theme_customizer_window: &mut ThemeCustomizer,
+    settings_window: &mut SettingsWindow,
 ) -> Option<ItemViewerAction> {
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let mut hovered_drop_target: Option<PathBuf> = None;
@@ -130,6 +133,8 @@ pub fn draw_item_viewer(
         drag_state,
         explorer_state,
         is_cut_mode,
+        theme_customizer_window,
+        settings_window,
     ) {
         action = Some(global_action);
     }
@@ -1192,6 +1197,8 @@ fn handle_global_actions(
     drag_state: &mut DragState,
     explorer_state: &mut ExplorerState,
     is_cut_mode: bool,
+    theme_customizer_window: &mut ThemeCustomizer,
+    settings_windows: &mut SettingsWindow,
 ) -> Option<ItemViewerAction> {
     let filtered_indices = &filter_state.cached_indices;
     let mut action: Option<ItemViewerAction> = None;
@@ -1199,6 +1206,10 @@ fn handle_global_actions(
     let is_text_edit_active = tabbar_action
         .as_ref()
         .is_some_and(|t| t.is_breadcrumb_path_edit_active);
+
+    if theme_customizer_window.open || settings_windows.open {
+        return None;
+    }
 
     // =====================================================
     // 🥇 PRIORITY 1: RENAME MODE (let TextEdit own everything)

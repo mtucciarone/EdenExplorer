@@ -1,8 +1,9 @@
 use crate::core::{fs::MY_PC_PATH, indexer::WindowSizeMode};
-use crate::gui::theme::ThemePalette;
+use crate::gui::theme::{ThemePalette, apply_checkbox_colors};
 use crate::gui::windows::enums::SettingsAction;
 use crate::gui::windows::structs::{AppSettings, SettingsWindow};
 use eframe::egui;
+use egui::RichText;
 use egui_phosphor::regular;
 use std::path::PathBuf;
 
@@ -101,14 +102,17 @@ pub fn draw_settings_window(
                     });
                     // Folder Scanning
                     ui.horizontal(|ui| {
-                        if ui.checkbox(
-                            &mut settings.current_settings.folder_scanning_enabled,
-                            "Enable folder size scanning"
-                        ).changed() {
-                            // Auto-save when setting changes
-                            action = Some(SettingsAction::ApplySettings);
-                        }
-                        info_icon(ui, "When enabled, the application will scan folders to calculate their sizes. This may impact performance on large directories.", palette);
+                        ui.scope(|ui| {
+                            apply_checkbox_colors(ui, palette, false);
+                            if ui.checkbox(
+                                &mut settings.current_settings.folder_scanning_enabled,
+                                RichText::new("Enable folder size scanning").color(palette.tab_text_normal)
+                            ).changed() {
+                                // Auto-save when setting changes
+                                action = Some(SettingsAction::ApplySettings);
+                            }
+                        });
+                    info_icon(ui, "When enabled, the application will scan folders to calculate their sizes. This may impact performance on large directories.", palette);
                     });
                     ui.add_space(8.0);
                     // Starting Path
@@ -200,6 +204,7 @@ pub fn draw_settings_window(
                             }
                             info_icon(ui, "Configure the window size when the application launches.", palette);
                         });
+                        ui.label("Changes are applied after restarting");
                     }
                     ui.add_space(8.0);
                     // Favorites Reset

@@ -285,12 +285,8 @@
 - [x] **Windows environment variables PATH support** - Automatically expands Windows PATHs in breadcrumb input
 
 ### 🚀 Upcoming Features
-- [ ] **Image previews using Spacebar** - GPU texture via wgpu / egui_wgpu_backend
-  - Decodes image once, uploads to GPU, renders instantly
-  - Even very large images (>10k×10k) show instantly
-  - Minimal CPU overhead
-  - Best for "popup over app" with no lag
-- [ ] Drag and drop files into breadcrumb folders
+- [ ] Image previews using Spacebar - GPU texture via wgpu / egui_wgpu_backend
+- [ ] Drag and drop files into breadcrumb folders and directory tabs
 - [ ] Support network devices
 - [ ] Drag and drop files from EdenExplorer into Windows objects (Desktop, File Explorer, applications, etc.)
 
