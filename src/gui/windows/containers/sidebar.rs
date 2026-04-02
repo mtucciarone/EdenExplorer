@@ -295,6 +295,7 @@ pub fn draw_sidebar(
                     ui.add(egui::Label::new(
                         egui::RichText::new("Places")
                             .size(palette.text_size)
+                            .color(palette.text_header_section)
                             .strong(),
                     ));
                     ui.add_space(8.0);
@@ -341,6 +342,7 @@ pub fn draw_sidebar(
                     ui.add(egui::Label::new(
                         egui::RichText::new("Favorites")
                             .size(palette.text_size)
+                            .color(palette.text_header_section)
                             .strong(),
                     ));
                     ui.add_space(4.0);
@@ -499,6 +501,7 @@ pub fn draw_sidebar(
                     ui.add(egui::Label::new(
                         egui::RichText::new("Storage")
                             .size(palette.text_size)
+                            .color(palette.text_header_section)
                             .strong(),
                     ));
                     ui.add_space(4.0);

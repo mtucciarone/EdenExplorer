@@ -16,7 +16,7 @@ fn selectable_mode(
     ui.selectable_label(
         selected,
         egui::RichText::new(label).color(if selected {
-            palette.tab_text_normal
+            palette.text_normal
         } else {
             ui.visuals().text_color()
         }),
@@ -74,7 +74,7 @@ pub fn draw_theme_customizer(
             ui.set_style(style);
             ui.set_width(ui.available_width());
 
-            let label_color = palette.item_viewer_row_text_normal;
+            let label_color = palette.text_normal;
             let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
 
             // HEADER

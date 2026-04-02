@@ -106,7 +106,7 @@ pub fn draw_settings_window(
                             apply_checkbox_colors(ui, palette, false);
                             if ui.checkbox(
                                 &mut settings.current_settings.folder_scanning_enabled,
-                                RichText::new("Enable folder size scanning").color(palette.tab_text_normal)
+                                RichText::new("Enable folder size scanning").color(palette.text_normal)
                             ).changed() {
                                 // Auto-save when setting changes
                                 action = Some(SettingsAction::ApplySettings);

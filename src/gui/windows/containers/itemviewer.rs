@@ -1104,7 +1104,7 @@ fn get_row_color(
     if is_multi_selected {
         palette.item_viewer_row_text_selected
     } else {
-        palette.item_viewer_row_text_normal
+        palette.text_normal
     }
 }
 
@@ -1432,7 +1432,7 @@ fn draw_item_viewer_header(
                 egui::RichText::new(format!("{label} {arrow}").trim_end())
                     .font(font_id.clone())
                     .size(palette.text_size)
-                    .color(palette.item_viewer_col_header_text),
+                    .color(palette.text_header_section),
             )
             .selectable(false)
             .sense(egui::Sense::click()),
@@ -1459,7 +1459,7 @@ fn draw_item_viewer_header(
                 egui::RichText::new(format!("{label} {arrow}").trim_end())
                     .font(font_id.clone())
                     .size(palette.text_size)
-                    .color(palette.item_viewer_col_header_text),
+                    .color(palette.text_header_section),
             )
             .selectable(false)
             .sense(egui::Sense::click()),
@@ -1486,7 +1486,7 @@ fn draw_item_viewer_header(
                 egui::RichText::new(format!("{label} {arrow}").trim_end())
                     .font(font_id.clone())
                     .size(palette.text_size)
-                    .color(palette.item_viewer_col_header_text),
+                    .color(palette.text_header_section),
             )
             .selectable(false)
             .sense(egui::Sense::click()),
@@ -1506,7 +1506,7 @@ fn draw_item_viewer_header(
                     egui::RichText::new(format!("Usage").trim_end())
                         .font(font_id.clone())
                         .size(palette.text_size)
-                        .color(palette.item_viewer_col_header_text),
+                        .color(palette.text_header_section),
                 )
                 .selectable(false)
                 .sense(egui::Sense::click()),
@@ -1530,7 +1530,7 @@ fn draw_item_viewer_header(
                     egui::RichText::new(format!("{label} {arrow}").trim_end())
                         .font(font_id.clone())
                         .size(palette.text_size)
-                        .color(palette.item_viewer_col_header_text),
+                        .color(palette.text_header_section),
                 )
                 .selectable(false)
                 .sense(egui::Sense::click()),
@@ -1557,7 +1557,7 @@ fn draw_item_viewer_header(
                     egui::RichText::new(format!("{label} {arrow}").trim_end())
                         .font(font_id.clone())
                         .size(palette.text_size)
-                        .color(palette.item_viewer_col_header_text),
+                        .color(palette.text_header_section),
                 )
                 .selectable(false)
                 .sense(egui::Sense::click()),
