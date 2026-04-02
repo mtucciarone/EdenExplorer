@@ -13,7 +13,8 @@ fn main() -> eframe::Result<()> {
         CoInitializeEx(None, COINIT_APARTMENTTHREADED).unwrap();
     }
     let icon = load_icon().expect("Failed to load icon");
-    let (_folder_scanning_enabled, window_size_mode, _start_path) = load_app_settings();
+    let (_folder_scanning_enabled, window_size_mode, _start_path, _saved_theme) =
+        load_app_settings();
     let window_size = match window_size_mode {
         WindowSizeMode::FullScreen => egui::Vec2::new(1920.0, 1080.0),
         WindowSizeMode::HalfScreen => egui::Vec2::new(960.0, 540.0),

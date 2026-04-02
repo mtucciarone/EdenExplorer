@@ -4,13 +4,19 @@ use crate::gui::windows::structs::ThemeCustomizer;
 use eframe::egui;
 use egui::{FontFamily, FontId};
 
-fn selectable_mode(ui: &mut egui::Ui, current: ThemeMode, target: ThemeMode, label: &str) -> bool {
+fn selectable_mode(
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+    current: ThemeMode,
+    target: ThemeMode,
+    label: &str,
+) -> bool {
     let selected = current == target;
 
     ui.selectable_label(
         selected,
         egui::RichText::new(label).color(if selected {
-            egui::Color32::WHITE
+            palette.tab_text_normal
         } else {
             ui.visuals().text_color()
         }),
@@ -99,11 +105,23 @@ pub fn draw_theme_customizer(
                         .color(label_color),
                 );
 
-                if selectable_mode(ui, customizer.selected_mode, ThemeMode::Dark, "Dark") {
+                if selectable_mode(
+                    ui,
+                    palette,
+                    customizer.selected_mode,
+                    ThemeMode::Dark,
+                    "Dark",
+                ) {
                     customizer.selected_mode = ThemeMode::Dark;
                 }
 
-                if selectable_mode(ui, customizer.selected_mode, ThemeMode::Light, "Light") {
+                if selectable_mode(
+                    ui,
+                    palette,
+                    customizer.selected_mode,
+                    ThemeMode::Light,
+                    "Light",
+                ) {
                     customizer.selected_mode = ThemeMode::Light;
                 }
             });

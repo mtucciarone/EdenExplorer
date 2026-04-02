@@ -122,12 +122,19 @@ pub fn draw_about_window(ctx: &egui::Context, settings: &mut AboutWindow, palett
                                     ui.label("raw-window-handle");
                                     ui.label("0.6");
                                     ui.end_row();
+                                    ui.label("rfd");
+                                    ui.label("0.14");
+                                    ui.end_row();
+                                    ui.label("lru");
+                                    ui.label("0.16");
+                                    ui.end_row();
                                 });
                     });
             ui.add_space(8.0);
             ui.label("Author: Matthew Tucciarone (GitHub: mtucciarone)");
-            ui.add_space(8.0);
+            ui.label("Repo: https://github.com/mtucciarone/EdenExplorer");
             ui.label(format!("Current Version: {}", env!("CARGO_PKG_VERSION")));
+            ui.label("License: MIT");
             ui.separator();
             // Footer
             ui.horizontal(|ui| {

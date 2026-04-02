@@ -86,7 +86,8 @@ pub struct MainWindow {
 impl Default for MainWindow {
     fn default() -> Self {
         // Load saved settings
-        let (folder_scanning_enabled, window_size_mode, start_path) = load_app_settings();
+        let (folder_scanning_enabled, window_size_mode, start_path, saved_theme) =
+            load_app_settings();
         let loaded_settings = AppSettings {
             folder_scanning_enabled,
             window_size_mode: window_size_mode.clone(),
@@ -116,7 +117,10 @@ impl Default for MainWindow {
             rename_state: None,
             pending_size_queue: VecDeque::new(),
             pending_size_set: HashSet::new(),
-            theme: ThemeMode::Dark,
+            theme: match saved_theme.as_deref() {
+                Some("light") => ThemeMode::Light,
+                Some("dark") | _ => ThemeMode::Dark,
+            },
             theme_dirty: true,
             window_override_set: false,
             drag_state: DragState::default(),
@@ -459,6 +463,8 @@ impl eframe::App for MainWindow {
                                         &mut self.item_viewer_filter_state,
                                         self.is_loading,
                                         &mut self.explorer_state,
+                                        &mut self.theme_customizer,
+                                        &mut self.settings_window,
                                     );
 
                                     ui.add_space(16.0);
