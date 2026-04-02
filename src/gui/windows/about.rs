@@ -43,7 +43,7 @@ pub fn draw_about_window(ctx: &egui::Context, settings: &mut AboutWindow, palett
             ui.set_width(ui.available_width());
             let font_id = FontId::new(palette.text_size, egui::FontFamily::Proportional);
 
-            ui.label(egui::RichText::new("EdenExplorer is a next-generation, blazing-fast fully open-source file explorer built for Windows 11+ using Rust and egui. Designed from the ground up for performance, efficiency, and modern workflows, EdenExplorer is the best FOSS alternative to the default Windows File Explorer.").font(font_id).size(palette.text_size).color(palette.item_viewer_row_text_normal));
+            ui.label(egui::RichText::new("EdenExplorer is a next-generation, blazing-fast fully open-source file explorer built for Windows 11+ using Rust and egui. Designed from the ground up for performance, efficiency, and modern workflows, EdenExplorer is the best FOSS alternative to the default Windows File Explorer.").font(font_id).size(palette.text_size).color(palette.text_normal));
             ui.add_space(8.0);
             ui.heading("Cargo Dependencies");
             egui::ScrollArea::vertical()
@@ -61,8 +61,8 @@ pub fn draw_about_window(ctx: &egui::Context, settings: &mut AboutWindow, palett
                             .striped(true)
                             .show(ui, |ui| {
                                 // Header
-                                ui.label(egui::RichText::new("Dependency").strong().color(palette.item_viewer_row_text_normal));
-                                ui.label(egui::RichText::new("Version").strong().color(palette.item_viewer_row_text_normal));
+                                ui.label(egui::RichText::new("Dependency").strong().color(palette.text_normal));
+                                ui.label(egui::RichText::new("Version").strong().color(palette.text_normal));
                                 ui.end_row();
                                     let mut style = (*ui.ctx().style()).clone();
                                     style.text_styles = [

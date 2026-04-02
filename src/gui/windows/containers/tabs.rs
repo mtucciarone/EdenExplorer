@@ -139,7 +139,7 @@ fn handle_draw_tab_new_allocated(
     let label_color = if is_active {
         palette.tab_text_selected
     } else {
-        palette.tab_text_normal
+        palette.text_normal
     };
 
     // --- Layout parameters ---
@@ -200,7 +200,7 @@ fn handle_draw_tab_new_allocated(
         );
     }
 
-    let close_resp = tab_close_button(ui, rect, tab.id, palette);
+    let close_resp = tab_close_button(ui, rect, tab.id, is_active, palette);
     if close_resp.clicked() {
         action.close = Some(tab.id);
     } else if resp.clicked() {
@@ -257,6 +257,7 @@ fn tab_close_button(
     ui: &mut egui::Ui,
     tab_rect: egui::Rect,
     tab_id: u64,
+    is_active: bool,
     palette: &ThemePalette,
 ) -> egui::Response {
     let size = egui::vec2(18.0, 18.0);
@@ -283,8 +284,10 @@ fn tab_close_button(
 
     let color = if hovered {
         palette.icon_colored_hover
+    } else if is_active {
+        palette.tab_close_active
     } else {
-        palette.icon_color
+        palette.tab_close_normal
     };
 
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
@@ -636,9 +639,13 @@ pub fn draw_tabbar(
 
             if ui
                 .add(
-                    egui::Label::new(egui::RichText::new("This PC").size(palette.text_size))
-                        .selectable(false)
-                        .sense(egui::Sense::click()),
+                    egui::Label::new(
+                        egui::RichText::new("This PC")
+                            .size(palette.text_size)
+                            .color(palette.text_header_section),
+                    )
+                    .selectable(false)
+                    .sense(egui::Sense::click()),
                 )
                 .clicked()
             {
@@ -661,7 +668,7 @@ pub fn draw_tabbar(
                     ui.label(
                         egui::RichText::new(">")
                             .size(palette.text_size)
-                            .color(ui.visuals().widgets.noninteractive.fg_stroke.color),
+                            .color(palette.text_header_section),
                     );
 
                     ui.spacing_mut().item_spacing = old_spacing;
@@ -682,7 +689,9 @@ pub fn draw_tabbar(
 
                         let resp = ui.add(
                             egui::Label::new(
-                                egui::RichText::new(label_text).size(palette.text_size),
+                                egui::RichText::new(label_text)
+                                    .size(palette.text_size)
+                                    .color(palette.text_header_section),
                             )
                             .selectable(false)
                             .sense(egui::Sense::click()),

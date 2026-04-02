@@ -26,25 +26,20 @@ pub struct ThemePalette {
     pub primary_active: Color32,
     pub primary_subtle: Color32,
     pub secondary: Color32,
+    pub text_normal: Color32,
+    pub text_header_section: Color32,
 
     // 🧱 Application surfaces
     pub application_bg_color: Color32,
     pub modal_background_effect_color: Color32,
-
-    // 🎯 Selection / box selection
-    pub box_selection_stroke: Color32,
-    pub box_selection_fill: Color32,
 
     // 🎯 Icons & text
     pub icon_color: Color32,
     pub icon_windows: Color32,
     pub icon_colored_hover: Color32,
     pub item_viewer_row_text_selected: Color32,
-    pub item_viewer_row_text_normal: Color32,
-    pub item_viewer_col_header_text: Color32,
     pub tooltip_text_color: Color32,
     pub tab_text_selected: Color32,
-    pub tab_text_normal: Color32,
 
     // 🎯 Rows / list items
     pub row_selected_bg: Color32,
@@ -57,6 +52,8 @@ pub struct ThemePalette {
 
     // 🎯 Tab button colors
     pub tab_close_hover: Color32,
+    pub tab_close_active: Color32,
+    pub tab_close_normal: Color32,
     pub tab_add_hover: Color32,
 
     // 🎯 Drive usage colors
@@ -106,25 +103,20 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         primary_active: Color32::from_rgb(70, 55, 110),
         primary_subtle: Color32::from_rgba_unmultiplied(95, 75, 135, 60),
         secondary: Color32::from_rgb(255, 255, 255),
+        text_normal: Color32::from_rgb(160, 170, 180),
+        text_header_section: Color32::WHITE,
 
         // 🧱 Application surfaces
         application_bg_color: Color32::from_rgb(20, 22, 26),
         modal_background_effect_color: Color32::from_black_alpha(180),
-
-        // 🎯 Selection / box selection
-        box_selection_stroke: Color32::from_rgba_unmultiplied(95, 75, 135, 60),
-        box_selection_fill: base,
 
         // 🎯 Icons & text
         icon_color: Color32::WHITE,
         icon_windows: Color32::WHITE,
         icon_colored_hover: Color32::WHITE,
         item_viewer_row_text_selected: Color32::WHITE,
-        item_viewer_row_text_normal: Color32::from_rgb(160, 170, 180),
-        item_viewer_col_header_text: Color32::WHITE,
-        tooltip_text_color: Color32::from_rgb(220, 220, 220),
+        tooltip_text_color: Color32::from_rgb(160, 170, 180),
         tab_text_selected: Color32::WHITE,
-        tab_text_normal: Color32::from_rgb(160, 170, 180),
 
         // 🎯 Rows / list items
         row_selected_bg: Color32::from_rgb(70, 78, 86),
@@ -137,6 +129,8 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
 
         // 🎯 Tab button colors
         tab_close_hover: Color32::from_rgb(200, 52, 52),
+        tab_close_active: Color32::WHITE,
+        tab_close_normal: Color32::from_rgb(160, 170, 180),
         tab_add_hover: Color32::from_rgb(54, 168, 82),
 
         // 🎯 Drive usage colors
@@ -191,26 +185,21 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         primary_hover: Color32::from_rgba_unmultiplied(110, 85, 160, 90),
         primary_active: Color32::from_rgb(140, 120, 200),
         primary_subtle: Color32::from_rgba_unmultiplied(110, 85, 160, 40),
-        secondary: Color32::from_rgb(0, 0, 0),
+        secondary: Color32::BLACK,
+        text_normal: Color32::from_rgb(70, 78, 86),
+        text_header_section: Color32::BLACK,
 
         // 🧱 Application surfaces
         application_bg_color: Color32::from_rgb(245, 245, 245),
         modal_background_effect_color: Color32::from_black_alpha(180),
 
-        // 🎯 Selection / box selection
-        box_selection_stroke: Color32::from_rgba_unmultiplied(110, 85, 160, 40),
-        box_selection_fill: base,
-
         // 🎯 Icons & text
         icon_color: Color32::from_rgb(40, 40, 40),
         icon_windows: Color32::WHITE,
         icon_colored_hover: Color32::WHITE,
-        item_viewer_row_text_selected: Color32::from_rgb(0, 0, 0),
-        item_viewer_row_text_normal: Color32::from_rgb(70, 78, 86),
-        item_viewer_col_header_text: Color32::from_rgb(0, 0, 0),
+        item_viewer_row_text_selected: Color32::BLACK,
         tooltip_text_color: Color32::from_rgb(40, 40, 40),
         tab_text_selected: Color32::WHITE,
-        tab_text_normal: Color32::from_rgb(70, 78, 86),
 
         // 🎯 Rows / list items
         row_selected_bg: Color32::from_rgb(70, 78, 86),
@@ -223,6 +212,8 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
 
         // 🎯 Tab button colors
         tab_close_hover: Color32::from_rgb(200, 52, 52),
+        tab_close_active: Color32::WHITE,
+        tab_close_normal: Color32::from_rgb(40, 40, 40),
         tab_add_hover: Color32::from_rgb(54, 168, 82),
 
         // 🎯 Drive usage colors
