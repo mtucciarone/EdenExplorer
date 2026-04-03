@@ -1,9 +1,10 @@
 {
-  "branches": ["main"],
+  "branches": [
+    "main"
+  ],
   "plugins": [
     "@semantic-release/commit-analyzer",
     "@semantic-release/release-notes-generator",
-
     [
       "@semantic-release/exec",
       {
@@ -11,14 +12,13 @@
         "publishCmd": "pwsh -File ./scripts/build-and-package.ps1"
       }
     ],
-
     [
       "@semantic-release/github",
       {
         "assets": [
           {
-            "path": "release/**",
-            "label": "Windows Build"
+            "path": "release/EdenExplorer.exe",
+            "name": "EdenExplorer-v${nextRelease.version}-win_x86-64.exe"
           }
         ]
       }
