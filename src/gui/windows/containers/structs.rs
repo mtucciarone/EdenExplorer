@@ -17,6 +17,7 @@ pub struct TabInfo {
     pub id: u64,
     pub title: String,
     pub full_path: PathBuf,
+    pub is_pinned: bool,
 }
 
 #[derive(Default)]
@@ -24,6 +25,7 @@ pub struct TabsAction {
     pub activate: Option<u64>,
     pub close: Option<u64>,
     pub open_new: bool,
+    pub toggle_pin: Option<PathBuf>,
 }
 
 pub struct TabState {

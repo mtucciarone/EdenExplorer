@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <b>Blazing-fast, open-source file manager for Windows 11.</b>
+  <b>Blazing-fast, open-source file manager for Windows 10/11*.</b>
 </p>
 
 <p align="center">
@@ -30,6 +30,10 @@
 
 <p align="center">
   <img src="src/demo.gif" width="600" />
+</p>
+
+<p align="center">
+  *Users reported no issues on Windows 10, but I'm cautious in declaring official support.
 </p>
 
 <h1 align="center"> ⭐ Support</h1>
@@ -265,7 +269,7 @@
 ## 🗺️ Roadmap
 
 ### ✅ Implemented Features
-- [x] **Tabbed interface** with tab management and navigation
+- [x] **Tabbed interface** with tab management, tab pinning (automatic restore on startup), and navigation
 - [x] **Search and filter engine** with real-time file indexing
 - [x] **Dark/Light theme switching** with toggle controls
 - [x] **Comprehensive navigation** with back/forward/up controls

@@ -86,26 +86,49 @@ pub struct MainWindow {
 impl Default for MainWindow {
     fn default() -> Self {
         // Load saved settings
-        let (folder_scanning_enabled, window_size_mode, start_path, saved_theme) =
+        let (folder_scanning_enabled, window_size_mode, start_path, saved_theme, pinned_tabs) =
             load_app_settings();
         let loaded_settings = AppSettings {
             folder_scanning_enabled,
             window_size_mode: window_size_mode.clone(),
             start_path: Some(start_path.clone()), // 👈 important
+            pinned_tabs: pinned_tabs.clone(),
         };
 
-        let mut app = Self {
-            tabs: vec![TabState {
-                id: 1,
+        let pinned_tabs = pinned_tabs;
+        let mut tabs = Vec::new();
+        let mut next_tab_id = 1;
+
+        if pinned_tabs.is_empty() {
+            tabs.push(TabState {
+                id: next_tab_id,
                 nav: Navigation::new(start_path),
                 breadcrumb_path_editing: false,
                 breadcrumb_path_buffer: String::new(),
                 breadcrumb_just_started_editing: false,
                 breadcrumb_path_error: false,
                 breadcrumb_path_error_animation_time: 0.0,
-            }],
+            });
+            next_tab_id += 1;
+        } else {
+            for path in &pinned_tabs {
+                tabs.push(TabState {
+                    id: next_tab_id,
+                    nav: Navigation::new(path.clone()),
+                    breadcrumb_path_editing: false,
+                    breadcrumb_path_buffer: String::new(),
+                    breadcrumb_just_started_editing: false,
+                    breadcrumb_path_error: false,
+                    breadcrumb_path_error_animation_time: 0.0,
+                });
+                next_tab_id += 1;
+            }
+        }
+
+        let mut app = Self {
+            tabs,
             active_tab: 0,
-            next_tab_id: 2,
+            next_tab_id,
             files: vec![],
             rx: None,
             size_req_tx: None,
@@ -215,6 +238,12 @@ impl MainWindow {
                 } else {
                     tab.nav.current.clone()
                 },
+                is_pinned: self
+                    .settings_window
+                    .current_settings
+                    .pinned_tabs
+                    .iter()
+                    .any(|p| p == &tab.nav.current),
             })
             .collect();
         self.tab_infos_dirty = false;

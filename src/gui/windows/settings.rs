@@ -13,6 +13,7 @@ impl Default for AppSettings {
             folder_scanning_enabled: true,
             start_path: Some(PathBuf::from(MY_PC_PATH)),
             window_size_mode: WindowSizeMode::default(),
+            pinned_tabs: Vec::new(),
         }
     }
 }
