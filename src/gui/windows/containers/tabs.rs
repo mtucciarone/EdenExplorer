@@ -141,13 +141,19 @@ fn handle_draw_tab_new_allocated(
     } else {
         palette.text_normal
     };
+    let icon_color = if tab.is_pinned {
+        palette.pinned_tab_color
+    } else {
+        label_color
+    };
 
     // --- Layout parameters ---
     let icon_size = 16.0;
     let spacing = 6.0;
     let padding = 8.0;
     let close_button_width = 20.0;
-    let icon_pos = egui::pos2(rect.left() + padding, rect.center().y);
+    let icon_top_left = egui::pos2(rect.left() + padding, rect.center().y - icon_size * 0.5);
+    let icon_rect = egui::Rect::from_min_size(icon_top_left, egui::vec2(icon_size, icon_size));
     let text_pos = egui::pos2(rect.left() + padding + icon_size + spacing, rect.center().y);
     let text_width = rect.width() - icon_size - spacing - 2.0 * padding - close_button_width;
 
@@ -160,13 +166,38 @@ fn handle_draw_tab_new_allocated(
     // --- Paint background ---
     painter.rect_filled(rect, corner, tab_fill);
 
-    // --- Draw folder icon ---
+    let icon_resp = ui.interact(
+        icon_rect,
+        ui.id().with(("tab_pin", tab.id)),
+        egui::Sense::click(),
+    );
+    let icon_resp = icon_resp.on_hover_text(
+        egui::RichText::new(if tab.is_pinned {
+            "Unpin tab"
+        } else {
+            "Pin tab"
+        })
+        .size(palette.tooltip_text_size)
+        .color(palette.tooltip_text_color),
+    );
+    let icon_glyph = if tab.is_pinned {
+        if icon_resp.hovered() {
+            regular::FOLDER_SIMPLE
+        } else {
+            fill::PUSH_PIN
+        }
+    } else if icon_resp.hovered() {
+        regular::PUSH_PIN
+    } else {
+        regular::FOLDER_SIMPLE
+    };
+
     painter.text(
-        icon_pos,
+        icon_rect.left_center(),
         egui::Align2::LEFT_CENTER,
-        regular::FOLDER_SIMPLE,
+        icon_glyph,
         font_id.clone(),
-        label_color,
+        icon_color,
     );
 
     painter.text(
@@ -203,8 +234,14 @@ fn handle_draw_tab_new_allocated(
     let close_resp = tab_close_button(ui, rect, tab.id, is_active, palette);
     if close_resp.clicked() {
         action.close = Some(tab.id);
+    } else if icon_resp.clicked() {
+        action.toggle_pin = Some(tab.full_path.clone());
     } else if resp.clicked() {
         action.activate = Some(tab.id);
+    }
+
+    if icon_resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
 
     if resp.hovered() {

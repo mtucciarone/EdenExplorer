@@ -1,4 +1,5 @@
 use crate::core::drives::mark_drive_cache_dirty;
+use crate::core::indexer::{WindowSizeMode, load_app_settings, save_app_settings};
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::clickable_icon;
 use eframe::egui;
@@ -50,6 +51,47 @@ pub fn consume_clipboard_dirty() -> bool {
 
 pub fn mark_clipboard_dirty() {
     CLIPBOARD_DIRTY.store(true, Ordering::Release);
+}
+
+fn save_manual_window_size(hwnd: HWND) {
+    unsafe {
+        let mut placement = WINDOWPLACEMENT {
+            length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+            ..Default::default()
+        };
+
+        if GetWindowPlacement(hwnd, &mut placement).is_ok() {
+            if placement.showCmd == SW_SHOWMAXIMIZED.0 as u32
+                || placement.showCmd == SW_SHOWMINIMIZED.0 as u32
+            {
+                return;
+            }
+        }
+
+        let mut rect = RECT::default();
+        if GetClientRect(hwnd, &mut rect).is_err() {
+            return;
+        }
+
+        let width = (rect.right - rect.left) as f32;
+        let height = (rect.bottom - rect.top) as f32;
+
+        if width <= 0.0 || height <= 0.0 {
+            return;
+        }
+
+        let (folder_scanning_enabled, _window_size_mode, start_path, saved_theme, pinned_tabs) =
+            load_app_settings();
+        let window_size_mode = WindowSizeMode::Custom { width, height };
+
+        save_app_settings(
+            folder_scanning_enabled,
+            &window_size_mode,
+            &Some(start_path),
+            saved_theme.as_deref(),
+            &pinned_tabs,
+        );
+    }
 }
 
 fn color32_to_dwm(color: egui::Color32) -> u32 {
@@ -176,6 +218,14 @@ unsafe extern "system" fn custom_wndproc(
         }
         WM_NCDESTROY => {
             let _ = RemoveClipboardFormatListener(hwnd);
+            if let Some(orig) = ORIGINAL_WNDPROC {
+                CallWindowProcW(orig, hwnd, msg, wparam, lparam)
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        }
+        WM_EXITSIZEMOVE => {
+            save_manual_window_size(hwnd);
             if let Some(orig) = ORIGINAL_WNDPROC {
                 CallWindowProcW(orig, hwnd, msg, wparam, lparam)
             } else {

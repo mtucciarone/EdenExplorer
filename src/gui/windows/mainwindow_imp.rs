@@ -539,6 +539,7 @@ impl MainWindow {
                             crate::gui::theme::ThemeMode::Dark => "dark",
                             crate::gui::theme::ThemeMode::Light => "light",
                         }),
+                        &self.settings_window.current_settings.pinned_tabs,
                     );
                 }
                 SettingsAction::ResetToDefaults => {
@@ -650,13 +651,49 @@ impl MainWindow {
                         self.load_path();
                     }
                 } else {
-                    let (_folder_scanning_enabled, _window_size_mode, start_path, _saved_theme) =
-                        load_app_settings();
+                    let (
+                        _folder_scanning_enabled,
+                        _window_size_mode,
+                        start_path,
+                        _saved_theme,
+                        _pinned_tabs,
+                    ) = load_app_settings();
                     self.tabs[0].nav = Navigation::new(start_path);
                     self.active_tab = 0;
                     self.mark_tab_infos_dirty();
                     self.load_path();
                 }
+            }
+            if let Some(path) = action.toggle_pin {
+                if self
+                    .settings_window
+                    .current_settings
+                    .pinned_tabs
+                    .iter()
+                    .any(|p| p == &path)
+                {
+                    self.settings_window
+                        .current_settings
+                        .pinned_tabs
+                        .retain(|p| p != &path);
+                } else {
+                    self.settings_window.current_settings.pinned_tabs.push(path);
+                }
+
+                save_app_settings(
+                    self.settings_window
+                        .current_settings
+                        .folder_scanning_enabled,
+                    &self.settings_window.current_settings.window_size_mode,
+                    &self.settings_window.current_settings.start_path,
+                    Some(match self.theme {
+                        ThemeMode::Dark => "dark",
+                        ThemeMode::Light => "light",
+                    }),
+                    &self.settings_window.current_settings.pinned_tabs,
+                );
+
+                self.mark_tab_infos_dirty();
             }
         }
     }
@@ -721,6 +758,7 @@ impl MainWindow {
                         ThemeMode::Dark => "dark",
                         ThemeMode::Light => "light",
                     }),
+                    &self.settings_window.current_settings.pinned_tabs,
                 );
             }
 

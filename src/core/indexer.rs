@@ -14,6 +14,8 @@ struct AppSettingsSnapshot {
     window_size_mode: WindowSizeMode,
     pub start_path: Option<PathBuf>,
     theme: Option<String>,
+    #[serde(default)]
+    pinned_tabs: Vec<PathBuf>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -86,7 +88,7 @@ pub fn save_favorites(drive: char, favorites: &[String]) {
     }
 }
 
-pub fn load_app_settings() -> (bool, WindowSizeMode, PathBuf, Option<String>) {
+pub fn load_app_settings() -> (bool, WindowSizeMode, PathBuf, Option<String>, Vec<PathBuf>) {
     let default_path = PathBuf::from(MY_PC_PATH);
     let path = match settings_cache_path() {
         Some(path) => path,
@@ -99,6 +101,7 @@ pub fn load_app_settings() -> (bool, WindowSizeMode, PathBuf, Option<String>) {
                 },
                 default_path,
                 None,
+                Vec::new(),
             );
         }
     };
@@ -113,6 +116,7 @@ pub fn load_app_settings() -> (bool, WindowSizeMode, PathBuf, Option<String>) {
                 },
                 default_path,
                 None,
+                Vec::new(),
             );
         }
     };
@@ -122,6 +126,7 @@ pub fn load_app_settings() -> (bool, WindowSizeMode, PathBuf, Option<String>) {
             snapshot.window_size_mode,
             snapshot.start_path.unwrap_or(default_path),
             snapshot.theme,
+            snapshot.pinned_tabs,
         ),
         Err(_) => (
             true,
@@ -131,6 +136,7 @@ pub fn load_app_settings() -> (bool, WindowSizeMode, PathBuf, Option<String>) {
             },
             default_path,
             None,
+            Vec::new(),
         ),
     }
 }
@@ -140,6 +146,7 @@ pub fn save_app_settings(
     window_size_mode: &WindowSizeMode,
     start_path: &Option<PathBuf>,
     theme: Option<&str>,
+    pinned_tabs: &[PathBuf],
 ) {
     let path = match settings_cache_path() {
         Some(path) => path,
@@ -151,6 +158,7 @@ pub fn save_app_settings(
         window_size_mode: window_size_mode.clone(),
         start_path: start_path.clone(),
         theme: theme.map(|s| s.to_string()),
+        pinned_tabs: pinned_tabs.to_vec(),
     };
     if let Ok(data) = bincode::serialize(&snapshot) {
         let _ = std::fs::write(path, data);

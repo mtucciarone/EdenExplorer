@@ -55,6 +55,7 @@ pub struct ThemePalette {
     pub tab_close_active: Color32,
     pub tab_close_normal: Color32,
     pub tab_add_hover: Color32,
+    pub pinned_tab_color: Color32,
 
     // 🎯 Drive usage colors
     pub drive_usage_critical: Color32,
@@ -132,6 +133,7 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         tab_close_active: Color32::WHITE,
         tab_close_normal: Color32::from_rgb(160, 170, 180),
         tab_add_hover: Color32::from_rgb(54, 168, 82),
+        pinned_tab_color: Color32::from_rgb(242, 201, 76),
 
         // 🎯 Drive usage colors
         drive_usage_critical: Color32::from_rgb(220, 60, 60),
@@ -215,6 +217,7 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         tab_close_active: Color32::WHITE,
         tab_close_normal: Color32::from_rgb(40, 40, 40),
         tab_add_hover: Color32::from_rgb(54, 168, 82),
+        pinned_tab_color: Color32::from_rgb(242, 201, 76),
 
         // 🎯 Drive usage colors
         drive_usage_critical: Color32::from_rgb(200, 52, 52),
