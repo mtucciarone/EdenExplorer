@@ -1,19 +1,18 @@
-use crate::core::fs::{FileItem, MY_PC_PATH};
+use crate::core::fs::FileItem;
 use crate::core::indexer::{load_app_settings, load_favorites, load_theme_settings};
 use crate::gui::icons::IconCache;
 use crate::gui::theme::{ThemeMode, apply_theme, get_palette, set_palette};
 use crate::gui::utils::SortColumn;
 use crate::gui::windows::containers::enums::ItemViewerAction;
-use crate::gui::windows::containers::itemviewer::draw_item_viewer;
+use crate::gui::windows::containers::explorer::draw_explorer;
 use crate::gui::windows::containers::sidebar::draw_sidebar;
 use crate::gui::windows::containers::structs::{
     DragState, ExplorerState, FavoriteItem, FilterState, ItemViewerFolderSizeState, RenameState,
     SidebarAction, TabInfo, TabState,
 };
-use crate::gui::windows::containers::tabs::{draw_tabbar, draw_tabs};
 use crate::gui::windows::containers::topbar::draw_topbar;
 use crate::gui::windows::mainwindow_imp::{
-    handle_draw_customizetheme_window, handle_pending_actions, tab_title_for,
+    handle_draw_customizetheme_window, handle_pending_actions,
 };
 use crate::gui::windows::structs::{
     AboutWindow, AppSettings, Navigation, SettingsWindow, SidebarState, ThemeCustomizer,
@@ -225,29 +224,6 @@ impl MainWindow {
     pub fn mark_tab_infos_dirty(&mut self) {
         self.tab_infos_dirty = true;
     }
-
-    fn rebuild_tab_infos(&mut self) {
-        self.tab_infos_cache = self
-            .tabs
-            .iter()
-            .map(|tab| TabInfo {
-                id: tab.id,
-                title: tab_title_for(&tab.nav),
-                full_path: if tab.nav.is_root() {
-                    PathBuf::from(MY_PC_PATH)
-                } else {
-                    tab.nav.current.clone()
-                },
-                is_pinned: self
-                    .settings_window
-                    .current_settings
-                    .pinned_tabs
-                    .iter()
-                    .any(|p| p == &tab.nav.current),
-            })
-            .collect();
-        self.tab_infos_dirty = false;
-    }
 }
 
 impl Drop for MainWindow {
@@ -408,100 +384,43 @@ impl eframe::App for MainWindow {
                                     .min(sidebar_width_max);
                         }
 
-                        // --- Tabs column ---
-                        let tabs_width = ui.available_width();
-                        ui.allocate_ui_with_layout(
-                            egui::vec2(tabs_width, ui.available_height() - 16.0),
-                            egui::Layout::top_down(egui::Align::Min),
-                            |ui| {
-                                let old_spacing = ui.spacing().item_spacing;
-                                ui.spacing_mut().item_spacing.y = 0.0;
+                        // --- Explorer column ---
+                        let (next_tabs_action, next_tabbar_action, next_pending_action) =
+                            draw_explorer(
+                                ui,
+                                &icon_cache,
+                                &palette,
+                                self.hwnd,
+                                &mut self.tabs,
+                                self.active_tab,
+                                &mut self.tab_infos_cache,
+                                &mut self.tab_infos_dirty,
+                                &mut self.pending_tab_scroll_id,
+                                &self.sidebar_state,
+                                &self.files,
+                                &self.folder_sizes,
+                                self.clipboard_has_files,
+                                &self.clipboard_set,
+                                self.clipboard_is_cut,
+                                self.sort_column,
+                                self.sort_ascending,
+                                &mut self.rename_state,
+                                &mut self.file_type_cache,
+                                &mut self.file_size_text_cache,
+                                &mut self.folder_size_text_cache,
+                                &mut self.drive_size_text_cache,
+                                &mut self.external_drag_to_internal_hover,
+                                &mut self.drag_state,
+                                &mut self.item_viewer_filter_state,
+                                self.is_loading,
+                                &mut self.explorer_state,
+                                &mut self.theme_customizer,
+                                &mut self.settings_window,
+                            );
 
-                                if self.tab_infos_dirty
-                                    || self.tab_infos_cache.len() != self.tabs.len()
-                                {
-                                    self.rebuild_tab_infos();
-                                }
-                                let active_id = self.tabs[self.active_tab].id;
-
-                                egui::Frame::NONE.show(ui, |ui| {
-                                    ui.add_space(8.0);
-                                    let scroll_to_id = self.pending_tab_scroll_id;
-                                    tabs_action = Some(draw_tabs(
-                                        ui,
-                                        &self.tab_infos_cache,
-                                        active_id,
-                                        &palette,
-                                        self.hwnd,
-                                        scroll_to_id,
-                                    ));
-                                    if scroll_to_id.is_some() {
-                                        self.pending_tab_scroll_id = None;
-                                    }
-                                });
-
-                                let container = egui::Frame::NONE
-                                    .stroke(egui::Stroke::NONE)
-                                    .fill(egui::Color32::TRANSPARENT)
-                                    .inner_margin(egui::Margin::symmetric(10, 8));
-
-                                let active_index = self.active_tab;
-                                let is_drive_view = self.current_nav().is_root();
-                                let display_files = &self.files;
-
-                                container.show(ui, |ui| {
-                                    tabbar_action = {
-                                        let tab = &mut self.tabs[active_index];
-                                        let is_favorited = self
-                                            .sidebar_state
-                                            .favorites
-                                            .iter()
-                                            .any(|fav| fav.path == tab.nav.current);
-
-                                        Some(draw_tabbar(
-                                            ui,
-                                            &icon_cache,
-                                            tab,
-                                            &palette,
-                                            is_favorited,
-                                        ))
-                                    };
-
-                                    ui.add_space(4.0);
-
-                                    pending_action = draw_item_viewer(
-                                        ui,
-                                        display_files,
-                                        &self.folder_sizes,
-                                        self.clipboard_has_files,
-                                        &self.clipboard_set,
-                                        self.clipboard_is_cut,
-                                        is_drive_view,
-                                        self.sort_column,
-                                        self.sort_ascending,
-                                        &icon_cache,
-                                        &mut self.rename_state,
-                                        &palette,
-                                        &mut self.file_type_cache,
-                                        &mut self.file_size_text_cache,
-                                        &mut self.folder_size_text_cache,
-                                        &mut self.drive_size_text_cache,
-                                        &mut self.external_drag_to_internal_hover,
-                                        &mut tabbar_action,
-                                        &mut self.drag_state,
-                                        &mut self.item_viewer_filter_state,
-                                        self.is_loading,
-                                        &mut self.explorer_state,
-                                        &mut self.theme_customizer,
-                                        &mut self.settings_window,
-                                    );
-
-                                    ui.add_space(16.0);
-                                });
-
-                                ui.spacing_mut().item_spacing = old_spacing;
-                            },
-                        );
+                        tabs_action = Some(next_tabs_action);
+                        tabbar_action = next_tabbar_action;
+                        pending_action = next_pending_action;
                     },
                 );
             });

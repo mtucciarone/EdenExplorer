@@ -6,7 +6,9 @@ use crate::gui::utils::{
     clear_clipboard_files, clickable_icon, expand_environment_variables, truncate_item_text,
 };
 use crate::gui::windows::containers::enums::TabbarNavAction;
-use crate::gui::windows::containers::structs::{TabInfo, TabState, TabbarAction, TabsAction};
+use crate::gui::windows::containers::structs::{
+    DragState, TabInfo, TabState, TabbarAction, TabsAction,
+};
 use crate::gui::windows::windowsoverrides::handle_draw_windows_buttons;
 use eframe::egui;
 use egui::{FontFamily, FontId};
@@ -21,8 +23,13 @@ pub fn draw_tabs(
     palette: &ThemePalette,
     hwnd: Option<HWND>,
     scroll_to_id: Option<u64>,
+    drag_state: &DragState,
 ) -> TabsAction {
     let mut action: TabsAction = TabsAction::default();
+    let pointer_pos = ui.input(|i| i.pointer.interact_pos().or_else(|| i.pointer.hover_pos()));
+    let pointer_released =
+        ui.input(|i| i.pointer.any_released() && i.pointer.interact_pos().is_some());
+    let mut tab_drop_target: Option<PathBuf> = None;
     let controls_width = 64.0;
     let full_width = ui.available_width();
     let tabs_width = (full_width - controls_width).max(0.0);
@@ -54,6 +61,30 @@ pub fn draw_tabs(
                                     if Some(tab.id) == scroll_to_id {
                                         resp.scroll_to_me(Some(egui::Align::Center));
                                     }
+
+                                    if drag_state.active && tab.id != active_id {
+                                        if let Some(pointer) = pointer_pos {
+                                            if rect.contains(pointer) {
+                                                let painter = ui
+                                                    .ctx()
+                                                    .layer_painter(egui::LayerId::new(
+                                                        egui::Order::Background,
+                                                        ui.id().with("tab_drop_bg").with(tab.id),
+                                                    ))
+                                                    .with_clip_rect(ui.clip_rect());
+                                                painter.rect_filled(
+                                                    rect,
+                                                    egui::CornerRadius::same(palette.medium_radius),
+                                                    palette.primary_hover,
+                                                );
+
+                                                if pointer_released {
+                                                    tab_drop_target = Some(tab.full_path.clone());
+                                                }
+                                            }
+                                        }
+                                    }
+
                                     handle_draw_tab_new_allocated(
                                         ui,
                                         tab,
@@ -110,6 +141,7 @@ pub fn draw_tabs(
             );
         },
     );
+    action.move_files_to_tab_dir = tab_drop_target;
     action
 }
 
@@ -535,8 +567,13 @@ pub fn draw_tabbar(
     tab: &mut TabState,
     palette: &ThemePalette,
     is_favorited: bool,
+    drag_state: &DragState,
 ) -> TabbarAction {
     let mut action = TabbarAction::default();
+    let pointer_pos = ui.input(|i| i.pointer.interact_pos().or_else(|| i.pointer.hover_pos()));
+    let pointer_released =
+        ui.input(|i| i.pointer.any_released() && i.pointer.interact_pos().is_some());
+    let mut breadcrumb_drop_target: Option<PathBuf> = None;
 
     ui.horizontal(|ui| {
         let toolbar_action = toolbar_buttons(ui, palette, is_favorited, tab.nav.is_root());
@@ -744,11 +781,40 @@ pub fn draw_tabbar(
 
                 let resp = inner.response.union(inner.inner);
 
+                if drag_state.active {
+                    if let Some(pointer) = pointer_pos {
+                        if resp.rect.contains(pointer) {
+                            let painter = ui
+                                .ctx()
+                                .layer_painter(egui::LayerId::new(
+                                    egui::Order::Background,
+                                    ui.id().with("breadcrumb_drop_bg").with(path),
+                                ))
+                                .with_clip_rect(ui.clip_rect());
+                            painter.rect_filled(
+                                resp.rect,
+                                egui::CornerRadius::same(palette.medium_radius),
+                                palette.primary_hover,
+                            );
+
+                            if pointer_released {
+                                if label == "..." {
+                                    if let Some((_, root_path)) = segments.first() {
+                                        breadcrumb_drop_target = Some(root_path.clone());
+                                    }
+                                } else {
+                                    breadcrumb_drop_target = Some(path.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if resp.hovered() {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                 }
 
-                if resp.clicked() {
+                if !drag_state.active && resp.clicked() {
                     // If "..." clicked, navigate to root
                     if label == "..." {
                         if let Some((_, root_path)) = segments.first() {
@@ -783,6 +849,7 @@ pub fn draw_tabbar(
         }
     });
 
+    action.move_files_to_breadcrumb_dir = breadcrumb_drop_target;
     action
 }
 
