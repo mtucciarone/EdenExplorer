@@ -11,7 +11,9 @@ use crate::gui::windows::containers::structs::{
     SidebarAction, TabInfo, TabState,
 };
 use crate::gui::windows::containers::topbar::draw_topbar;
-use crate::gui::windows::mainwindow_imp::{handle_draw_customizetheme_window, handle_pending_actions};
+use crate::gui::windows::mainwindow_imp::{
+    handle_draw_customizetheme_window, handle_pending_actions,
+};
 use crate::gui::windows::structs::{
     AboutWindow, AppSettings, Navigation, SettingsWindow, SidebarState, ThemeCustomizer,
 };
@@ -222,7 +224,6 @@ impl MainWindow {
     pub fn mark_tab_infos_dirty(&mut self) {
         self.tab_infos_dirty = true;
     }
-
 }
 
 impl Drop for MainWindow {

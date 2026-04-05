@@ -287,12 +287,13 @@
 - [x] **Window management improvements** with proper maximization bounds and minimum size constraints
 - [x] **File/Directory filtering** - typing characters automatically start filtering items in the item viewer
 - [x] **Windows environment variables PATH support** - Automatically expands Windows PATHs in breadcrumb input
+- [x] Drag and drop files into breadcrumb folders and directory tabs
 
 ### 🚀 Upcoming Features
 - [ ] Image previews using Spacebar - GPU texture via wgpu / egui_wgpu_backend
-- [ ] Drag and drop files into breadcrumb folders and directory tabs
 - [ ] Support network devices
 - [ ] Drag and drop files from EdenExplorer into Windows objects (Desktop, File Explorer, applications, etc.)
+- [ ] Enable/Disable Windows context menu integration. By enabling, the context menu will populate with default Windows registry context menu items
 
 ## 🐛 Known Bugs
 - Hitting "Shift" after already shift-selecting files drops the entire file selection

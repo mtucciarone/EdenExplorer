@@ -87,7 +87,15 @@ pub fn draw_explorer(
             egui::Frame::NONE.show(ui, |ui| {
                 ui.add_space(8.0);
                 let scroll_to_id = *pending_tab_scroll_id;
-                tabs_action = draw_tabs(ui, tab_infos_cache, active_id, palette, hwnd, scroll_to_id);
+                tabs_action = draw_tabs(
+                    ui,
+                    tab_infos_cache,
+                    active_id,
+                    palette,
+                    hwnd,
+                    scroll_to_id,
+                    drag_state,
+                );
                 if scroll_to_id.is_some() {
                     *pending_tab_scroll_id = None;
                 }
@@ -110,7 +118,14 @@ pub fn draw_explorer(
                         .iter()
                         .any(|fav| fav.path == tab.nav.current);
 
-                    Some(draw_tabbar(ui, icon_cache, tab, palette, is_favorited))
+                    Some(draw_tabbar(
+                        ui,
+                        icon_cache,
+                        tab,
+                        palette,
+                        is_favorited,
+                        drag_state,
+                    ))
                 };
 
                 ui.add_space(4.0);
@@ -119,6 +134,7 @@ pub fn draw_explorer(
                 let status_bottom_gap = 4.0;
                 let item_viewer_height =
                     (ui.available_height() - status_height - status_bottom_gap).max(0.0);
+                let mut hovered_drop_target: Option<PathBuf> = None;
 
                 ui.allocate_ui_with_layout(
                     egui::vec2(ui.available_width(), item_viewer_height),
@@ -145,6 +161,7 @@ pub fn draw_explorer(
                             &mut tabbar_action,
                             drag_state,
                             item_viewer_filter_state,
+                            &mut hovered_drop_target,
                             is_loading,
                             explorer_state,
                             theme_customizer,
@@ -153,56 +170,83 @@ pub fn draw_explorer(
                     },
                 );
 
-                let mut dir_count = 0usize;
-                let mut file_count = 0usize;
-                for &idx in item_viewer_filter_state.cached_indices.iter() {
-                    if display_files[idx].is_dir {
-                        dir_count += 1;
-                    } else {
-                        file_count += 1;
+                let pointer_released = ui
+                    .ctx()
+                    .input(|i| i.pointer.any_released() && i.pointer.interact_pos().is_some());
+
+                if drag_state.active && pointer_released && !drag_state.source_items.is_empty() {
+                    if let Some(target_dir) = tabs_action.move_files_to_tab_dir.clone() {
+                        if pending_action.is_none() {
+                            pending_action = Some(ItemViewerAction::MoveFilesToTabDirectory {
+                                sources: drag_state.source_items.clone(),
+                                target_dir,
+                            });
+                        }
+                    } else if let Some(target_dir) = tabbar_action
+                        .as_ref()
+                        .and_then(|a| a.move_files_to_breadcrumb_dir.clone())
+                    {
+                        if pending_action.is_none() {
+                            pending_action =
+                                Some(ItemViewerAction::MoveFilesToBreadcrumbDirectory {
+                                    sources: drag_state.source_items.clone(),
+                                    target_dir,
+                                });
+                        }
+                    } else if let Some(target_dir) = hovered_drop_target {
+                        if pending_action.is_none() {
+                            pending_action = Some(ItemViewerAction::MoveItems {
+                                sources: drag_state.source_items.clone(),
+                                target_dir,
+                            });
+                        }
                     }
+
+                    drag_state.active = false;
+                    drag_state.start_pos = None;
+                    drag_state.source_items.clear();
                 }
 
-                let status_frame = egui::Frame::NONE
-                    .fill(egui::Color32::TRANSPARENT)
-                    .inner_margin(egui::Margin {
-                        left: 10,
-                        right: 10,
-                        top: 2,
-                        bottom: 2,
-                    });
+                if !is_drive_view {
+                    let mut dir_count = 0usize;
+                    let mut file_count = 0usize;
+                    for &idx in item_viewer_filter_state.cached_indices.iter() {
+                        if display_files[idx].is_dir {
+                            dir_count += 1;
+                        } else {
+                            file_count += 1;
+                        }
+                    }
 
-                status_frame.show(ui, |ui| {
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(ui.available_width(), status_height),
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| {
-                            let text_color = ui.visuals().text_color();
-                            let text_size = palette.text_size;
-                            let selected_count = explorer_state.selected_paths.len();
-                            let selected_label =
-                                if selected_count == 1 { "Item" } else { "Items" };
+                    let status_frame = egui::Frame::NONE
+                        .fill(egui::Color32::TRANSPARENT)
+                        .inner_margin(egui::Margin {
+                            left: 10,
+                            right: 10,
+                            top: 2,
+                            bottom: 2,
+                        });
 
-                            ui.label(
-                                egui::RichText::new(format!("{} {}", regular::FILE, file_count))
+                    status_frame.show(ui, |ui| {
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(ui.available_width(), status_height),
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                let text_color = ui.visuals().text_color();
+                                let text_size = palette.text_size;
+                                let selected_count = explorer_state.selected_paths.len();
+                                let selected_label =
+                                    if selected_count == 1 { "Item" } else { "Items" };
+
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "{} {}",
+                                        regular::FILE,
+                                        file_count
+                                    ))
                                     .size(text_size)
                                     .color(text_color),
-                            );
-                            ui.label(
-                                egui::RichText::new("|")
-                                    .size(text_size)
-                                    .color(text_color.linear_multiply(0.6)),
-                            );
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "{} {}",
-                                    regular::FOLDER_SIMPLE,
-                                    dir_count
-                                ))
-                                .size(text_size)
-                                .color(text_color),
-                            );
-                            if selected_count > 0 {
+                                );
                                 ui.label(
                                     egui::RichText::new("|")
                                         .size(text_size)
@@ -210,15 +254,31 @@ pub fn draw_explorer(
                                 );
                                 ui.label(
                                     egui::RichText::new(format!(
-                                        "{selected_count} {selected_label} Selected"
+                                        "{} {}",
+                                        regular::FOLDER_SIMPLE,
+                                        dir_count
                                     ))
+                                    .size(text_size)
+                                    .color(text_color),
+                                );
+                                if selected_count > 0 {
+                                    ui.label(
+                                        egui::RichText::new("|")
+                                            .size(text_size)
+                                            .color(text_color.linear_multiply(0.6)),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "{selected_count} {selected_label} Selected"
+                                        ))
                                         .size(text_size)
                                         .color(text_color),
-                                );
-                            }
-                        },
-                    );
-                });
+                                    );
+                                }
+                            },
+                        );
+                    });
+                }
 
                 ui.add_space(status_bottom_gap);
             });

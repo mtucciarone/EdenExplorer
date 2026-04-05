@@ -318,6 +318,13 @@ pub fn draw_sidebar(
                         action.open_new_tab = Some(PathBuf::from(MY_PC_PATH));
                     }
 
+                    resp.context_menu(|ui| {
+                        if ui.button("Open in new tab (middle-click)").clicked() {
+                            action.open_new_tab = Some(PathBuf::from(MY_PC_PATH));
+                            ui.close();
+                        }
+                    });
+
                     if let Some(home) = dirs::home_dir() {
                         let resp = draw_sidebar_item(
                             ui,
@@ -334,8 +341,14 @@ pub fn draw_sidebar(
                             action.nav_to = Some(home.clone());
                         }
                         if resp.middle_clicked() {
-                            action.open_new_tab = Some(home);
+                            action.open_new_tab = Some(home.clone());
                         }
+                        resp.context_menu(|ui| {
+                            if ui.button("Open in new tab (middle-click)").clicked() {
+                                action.open_new_tab = Some(home.clone());
+                                ui.close();
+                            }
+                        });
                     }
 
                     ui.add_space(6.0);
@@ -430,6 +443,10 @@ pub fn draw_sidebar(
                         }
 
                         resp.context_menu(|ui| {
+                            if ui.button("Open in new tab (middle-click)").clicked() {
+                                action.open_new_tab = Some(favorite.path.clone());
+                                ui.close();
+                            }
                             if ui.button("Remove Favorite").clicked() {
                                 action.remove_favorite = Some(favorite.path.clone());
                                 ui.close();

@@ -40,6 +40,7 @@ pub fn draw_item_viewer(
     tabbar_action: &mut Option<TabbarAction>,
     drag_state: &mut DragState,
     filter_state: &mut FilterState,
+    hovered_drop_target_out: &mut Option<PathBuf>,
     is_loading: bool,
     explorer_state: &mut ExplorerState,
     theme_customizer_window: &mut ThemeCustomizer,
@@ -480,29 +481,7 @@ pub fn draw_item_viewer(
             );
         }
 
-        let pointer_released = ui
-            .ctx()
-            .input(|i| i.pointer.any_released() && i.pointer.interact_pos().is_some());
-
-        if drag_state.active && pointer_released {
-            if let Some(target_dir) = hovered_drop_target {
-                // Drop into hovered folder
-                action = Some(ItemViewerAction::MoveItems {
-                    sources: drag_state.source_items.clone(),
-                    target_dir,
-                });
-            } else {
-                // Optional: drop into current directory
-                // action = Some(ItemViewerAction::MoveItems {
-                //     sources: drag_state.source_items.clone(),
-                //     target_dir: current_directory.clone(),
-                // });
-            }
-
-            drag_state.active = false;
-            drag_state.start_pos = None;
-            drag_state.source_items.clear();
-        }
+        *hovered_drop_target_out = hovered_drop_target.clone();
 
         if let Some(a) = handle_keyboard_navigation(
             ui.ctx(),
@@ -674,7 +653,10 @@ fn handle_context_menu_actions(
 
     // Add the button
     if ui
-        .add_enabled(enable_open_in_tab, egui::Button::new("Open in new tab"))
+        .add_enabled(
+            enable_open_in_tab,
+            egui::Button::new("Open in new tab (middle-click"),
+        )
         .clicked()
     {
         if let Some(path) = explorer_state.selected_paths.iter().next() {
@@ -708,7 +690,10 @@ fn handle_context_menu_actions(
 
     ui.separator();
 
-    if ui.add_enabled(!is_cut, egui::Button::new("Cut")).clicked() {
+    if ui
+        .add_enabled(!is_cut, egui::Button::new("Cut (ctrl+x)"))
+        .clicked()
+    {
         let paths = if !explorer_state.selected_paths.is_empty() {
             explorer_state.selected_paths.iter().cloned().collect()
         } else {
@@ -720,7 +705,7 @@ fn handle_context_menu_actions(
         )));
         ui.close();
     }
-    if ui.button("Copy").clicked() {
+    if ui.button("Copy (ctrl+c)").clicked() {
         let paths = if !explorer_state.selected_paths.is_empty() {
             explorer_state.selected_paths.iter().cloned().collect()
         } else {
@@ -733,7 +718,7 @@ fn handle_context_menu_actions(
         ui.close();
     }
     if ui
-        .add_enabled(paste_enabled, egui::Button::new("Paste"))
+        .add_enabled(paste_enabled, egui::Button::new("Paste (ctrl+v)"))
         .clicked()
     {
         *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
@@ -747,7 +732,7 @@ fn handle_context_menu_actions(
         ui.close();
     }
 
-    if ui.button("Delete").clicked() {
+    if ui.button("Delete (del)").clicked() {
         let paths = if !explorer_state.selected_paths.is_empty() {
             explorer_state.selected_paths.iter().cloned().collect()
         } else {

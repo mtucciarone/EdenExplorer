@@ -1168,6 +1168,90 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 explorer.explorer_state.selection_focus = None;
                 explorer.load_path();
             }
+            ItemViewerAction::MoveFilesToBreadcrumbDirectory {
+                sources,
+                target_dir,
+            } => {
+                unsafe {
+                    let file_op: IFileOperation =
+                        CoCreateInstance(&FileOperation, None, CLSCTX_ALL).unwrap();
+
+                    // Optional: show UI + allow TeraCopy hooks
+                    file_op
+                        .SetOperationFlags(
+                            FOF_SIMPLEPROGRESS | FOF_ALLOWUNDO | FOFX_SHOWELEVATIONPROMPT,
+                        )
+                        .ok();
+
+                    // Convert target dir to IShellItem
+                    let target_item: IShellItem = SHCreateItemFromParsingName(
+                        &HSTRING::from(target_dir.to_string_lossy().to_string()),
+                        None,
+                    )
+                    .unwrap();
+
+                    for source in sources {
+                        let source_item: IShellItem = SHCreateItemFromParsingName(
+                            &HSTRING::from(source.to_string_lossy().to_string()),
+                            None,
+                        )
+                        .unwrap();
+
+                        file_op
+                            .MoveItem(&source_item, &target_item, None, None)
+                            .ok();
+                    }
+
+                    file_op.PerformOperations().ok();
+                }
+
+                explorer.explorer_state.selected_paths.clear();
+                explorer.explorer_state.selection_anchor = None;
+                explorer.explorer_state.selection_focus = None;
+                explorer.load_path();
+            }
+            ItemViewerAction::MoveFilesToTabDirectory {
+                sources,
+                target_dir,
+            } => {
+                unsafe {
+                    let file_op: IFileOperation =
+                        CoCreateInstance(&FileOperation, None, CLSCTX_ALL).unwrap();
+
+                    // Optional: show UI + allow TeraCopy hooks
+                    file_op
+                        .SetOperationFlags(
+                            FOF_SIMPLEPROGRESS | FOF_ALLOWUNDO | FOFX_SHOWELEVATIONPROMPT,
+                        )
+                        .ok();
+
+                    // Convert target dir to IShellItem
+                    let target_item: IShellItem = SHCreateItemFromParsingName(
+                        &HSTRING::from(target_dir.to_string_lossy().to_string()),
+                        None,
+                    )
+                    .unwrap();
+
+                    for source in sources {
+                        let source_item: IShellItem = SHCreateItemFromParsingName(
+                            &HSTRING::from(source.to_string_lossy().to_string()),
+                            None,
+                        )
+                        .unwrap();
+
+                        file_op
+                            .MoveItem(&source_item, &target_item, None, None)
+                            .ok();
+                    }
+
+                    file_op.PerformOperations().ok();
+                }
+
+                explorer.explorer_state.selected_paths.clear();
+                explorer.explorer_state.selection_anchor = None;
+                explorer.explorer_state.selection_focus = None;
+                explorer.load_path();
+            }
         }
     }
 }

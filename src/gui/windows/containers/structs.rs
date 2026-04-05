@@ -26,6 +26,7 @@ pub struct TabsAction {
     pub close: Option<u64>,
     pub open_new: bool,
     pub toggle_pin: Option<PathBuf>,
+    pub move_files_to_tab_dir: Option<PathBuf>,
 }
 
 pub struct TabState {
@@ -48,6 +49,7 @@ pub struct TabbarAction {
     pub nav_to: Option<PathBuf>,
     pub refresh_current_directory: bool,
     pub is_breadcrumb_path_edit_active: bool,
+    pub move_files_to_breadcrumb_dir: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy)]
