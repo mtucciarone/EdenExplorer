@@ -476,7 +476,7 @@ pub fn draw_item_viewer(
                 rect,
                 egui::CornerRadius::same(palette.medium_radius),
                 egui::Stroke::new(1.5, palette.primary_active),
-                egui::StrokeKind::Inside,
+                egui::StrokeKind::Outside,
             );
         }
 

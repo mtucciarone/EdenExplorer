@@ -548,7 +548,7 @@ pub fn draw_object_drag_ghost(
         painter.rect_filled(
             ghost_rect,
             CornerRadius::same(palette.medium_radius),
-            palette.primary_hover,
+            palette.primary_subtle,
         );
 
         // --- Text ---
@@ -559,7 +559,7 @@ pub fn draw_object_drag_ghost(
             Align2::LEFT_CENTER,
             label,
             font_id,
-            palette.icon_color.gamma_multiply(0.7),
+            palette.icon_color.gamma_multiply(0.2),
         );
 
         ui.ctx().set_cursor_icon(CursorIcon::Grab);
