@@ -11,6 +11,8 @@ struct FavoritesSnapshot {
 #[derive(Serialize, Deserialize)]
 struct AppSettingsSnapshot {
     folder_scanning_enabled: bool,
+    #[serde(default)]
+    windows_context_menu_enabled: bool,
     window_size_mode: WindowSizeMode,
     pub start_path: Option<PathBuf>,
     theme: Option<String>,
@@ -88,13 +90,21 @@ pub fn save_favorites(drive: char, favorites: &[String]) {
     }
 }
 
-pub fn load_app_settings() -> (bool, WindowSizeMode, PathBuf, Option<String>, Vec<PathBuf>) {
+pub fn load_app_settings() -> (
+    bool,
+    bool,
+    WindowSizeMode,
+    PathBuf,
+    Option<String>,
+    Vec<PathBuf>,
+) {
     let default_path = PathBuf::from(MY_PC_PATH);
     let path = match settings_cache_path() {
         Some(path) => path,
         None => {
             return (
                 true,
+                false,
                 WindowSizeMode::Custom {
                     width: 1200.0,
                     height: 800.0,
@@ -110,6 +120,7 @@ pub fn load_app_settings() -> (bool, WindowSizeMode, PathBuf, Option<String>, Ve
         Err(_) => {
             return (
                 true,
+                false,
                 WindowSizeMode::Custom {
                     width: 1200.0,
                     height: 800.0,
@@ -123,6 +134,7 @@ pub fn load_app_settings() -> (bool, WindowSizeMode, PathBuf, Option<String>, Ve
     match bincode::deserialize::<AppSettingsSnapshot>(&data) {
         Ok(snapshot) => (
             snapshot.folder_scanning_enabled,
+            snapshot.windows_context_menu_enabled,
             snapshot.window_size_mode,
             snapshot.start_path.unwrap_or(default_path),
             snapshot.theme,
@@ -130,6 +142,7 @@ pub fn load_app_settings() -> (bool, WindowSizeMode, PathBuf, Option<String>, Ve
         ),
         Err(_) => (
             true,
+            false,
             WindowSizeMode::Custom {
                 width: 1200.0,
                 height: 800.0,
@@ -143,6 +156,7 @@ pub fn load_app_settings() -> (bool, WindowSizeMode, PathBuf, Option<String>, Ve
 
 pub fn save_app_settings(
     folder_scanning_enabled: bool,
+    windows_context_menu_enabled: bool,
     window_size_mode: &WindowSizeMode,
     start_path: &Option<PathBuf>,
     theme: Option<&str>,
@@ -155,6 +169,7 @@ pub fn save_app_settings(
     let _ = std::fs::create_dir_all(path.parent().unwrap());
     let snapshot = AppSettingsSnapshot {
         folder_scanning_enabled,
+        windows_context_menu_enabled,
         window_size_mode: window_size_mode.clone(),
         start_path: start_path.clone(),
         theme: theme.map(|s| s.to_string()),

@@ -14,6 +14,9 @@ fn default_tab_icon_size() -> f32 {
     12.0
 }
 
+fn default_context_menu_text_size() -> f32 {
+    11.0
+}
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub enum ThemeMode {
     Light,
@@ -31,6 +34,8 @@ pub struct ThemePalette {
     // 🔤 Typography
     pub text_size: f32,
     pub tooltip_text_size: f32,
+    #[serde(default = "default_context_menu_text_size")]
+    pub context_menu_text_size: f32,
     #[serde(default = "default_explorer_icon_size")]
     pub explorer_icon_size: f32,
     #[serde(default = "default_sidebar_icon_size")]
@@ -115,6 +120,7 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         // 🔤 Typography
         text_size: 12.0,
         tooltip_text_size: 13.0,
+        context_menu_text_size: 11.0,
         explorer_icon_size: 18.0,
         sidebar_icon_size: 20.0,
         tab_icon_size: 12.0,
@@ -202,6 +208,7 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         // 🔤 Typography
         text_size: 12.0,
         tooltip_text_size: 13.0,
+        context_menu_text_size: 11.0,
         explorer_icon_size: 18.0,
         sidebar_icon_size: 20.0,
         tab_icon_size: 12.0,

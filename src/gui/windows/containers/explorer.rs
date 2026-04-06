@@ -166,6 +166,7 @@ pub fn draw_explorer(
                             explorer_state,
                             theme_customizer,
                             settings_window,
+                            hwnd,
                         );
                     },
                 );

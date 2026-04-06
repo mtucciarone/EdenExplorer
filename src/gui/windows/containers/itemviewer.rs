@@ -11,13 +11,17 @@ use crate::gui::windows::containers::structs::{
     DragState, ExplorerState, FilterState, ItemViewerFolderSizeState, ItemViewerLayout,
     RenameState, TabbarAction,
 };
+use crate::gui::windows::shell_context_menu::ShellContextMenu;
 use crate::gui::windows::structs::{SettingsWindow, ThemeCustomizer};
 use eframe::egui;
+use egui::ScrollArea;
+use egui::containers::{Popup, PopupCloseBehavior};
 use egui::{FontFamily, FontId};
 use egui_extras::{Column, TableBuilder};
 use egui_phosphor::regular;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use windows::Win32::Foundation::HWND;
 
 pub fn draw_item_viewer(
     ui: &mut egui::Ui,
@@ -45,6 +49,7 @@ pub fn draw_item_viewer(
     explorer_state: &mut ExplorerState,
     theme_customizer_window: &mut ThemeCustomizer,
     settings_window: &mut SettingsWindow,
+    hwnd: Option<HWND>,
 ) -> Option<ItemViewerAction> {
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let mut hovered_drop_target: Option<PathBuf> = None;
@@ -435,19 +440,23 @@ pub fn draw_item_viewer(
                     }
 
                     if !is_non_ntfs_drive {
-                        row_resp.context_menu(|ui| {
-                            handle_context_menu_actions(
-                                ui,
-                                file,
-                                is_selected,
-                                paste_enabled,
-                                layout.is_drive_view,
-                                is_cut,
-                                &mut action,
-                                palette,
-                                explorer_state,
-                            );
-                        });
+                        Popup::context_menu(&row_resp)
+                            .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                            .show(|ui| {
+                                handle_context_menu_actions(
+                                    ui,
+                                    file,
+                                    is_selected,
+                                    paste_enabled,
+                                    layout.is_drive_view,
+                                    is_cut,
+                                    &mut action,
+                                    palette,
+                                    explorer_state,
+                                    settings_window,
+                                    hwnd,
+                                );
+                            });
                     }
                 });
                 if let Some((_, is_dir, path, rect)) = best_hovered_row.take() {
@@ -524,18 +533,20 @@ pub fn draw_item_viewer(
             action = Some(ItemViewerAction::DeselectAll);
         }
 
-        bg_response.context_menu(|ui| {
-            // 👇 Only show when NOT clicking on a row
-            if !any_row_hovered {
-                if ui
-                    .add_enabled(paste_enabled, egui::Button::new("Paste"))
-                    .clicked()
-                {
-                    action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
-                    ui.close();
+        Popup::context_menu(&bg_response)
+            .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| {
+                // 👇 Only show when NOT clicking on a row
+                if !any_row_hovered {
+                    if ui
+                        .add_enabled(paste_enabled, egui::Button::new("Paste"))
+                        .clicked()
+                    {
+                        action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
+                        ui.close();
+                    }
                 }
-            }
-        });
+            });
 
         if let Some(_path) = explorer_state.non_ntfs_popup_path.clone() {
             let mut open = true;
@@ -619,9 +630,47 @@ fn handle_context_menu_actions(
     is_drive_view: bool,
     is_cut: bool,
     action: &mut Option<ItemViewerAction>,
-    palette: &ThemePalette,
+    _palette: &ThemePalette,
     explorer_state: &mut ExplorerState,
+    settings_window: &SettingsWindow,
+    hwnd: Option<HWND>,
 ) {
+    // Apply context-menu-specific typography
+    let mut style = (*ui.ctx().style()).clone();
+    style.text_styles = [
+        (
+            egui::TextStyle::Body,
+            FontId::proportional(_palette.context_menu_text_size),
+        ),
+        (
+            egui::TextStyle::Button,
+            FontId::proportional(_palette.context_menu_text_size),
+        ),
+        (
+            egui::TextStyle::Small,
+            FontId::proportional(_palette.context_menu_text_size),
+        ),
+        (
+            egui::TextStyle::Heading,
+            FontId::proportional(_palette.context_menu_text_size + 2.0),
+        ),
+    ]
+    .into();
+    style.spacing.button_padding = egui::vec2(4.0, 2.0);
+    style.spacing.item_spacing = egui::vec2(6.0, 2.0);
+    style.spacing.menu_margin = egui::Margin::same(4);
+    style.spacing.interact_size = egui::vec2(
+        style.spacing.interact_size.x,
+        _palette.context_menu_text_size + 6.0,
+    );
+    style.visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
+    style.visuals.widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+    style.visuals.widgets.hovered.bg_fill = _palette.primary;
+    style.visuals.widgets.hovered.weak_bg_fill = _palette.primary;
+    style.visuals.widgets.active.bg_fill = _palette.primary;
+    style.visuals.widgets.active.weak_bg_fill = _palette.primary;
+    ui.set_style(style);
+
     // ✅ Match Explorer behavior: right-click selects if not already selected
     if !is_selected {
         *action = Some(ItemViewerAction::ReplaceSelection(file.path.clone()));
@@ -759,6 +808,89 @@ fn handle_context_menu_actions(
             ItemViewerContextAction::Properties(targets),
         ));
         ui.close();
+    }
+
+    if settings_window
+        .current_settings
+        .windows_context_menu_enabled
+    {
+        ui.separator();
+
+        let toggle_label = if explorer_state.windows_context_menu_expanded {
+            "Hide Windows menu items"
+        } else {
+            "Show Windows menu items"
+        };
+
+        if ui.button(toggle_label).clicked() {
+            explorer_state.windows_context_menu_expanded =
+                !explorer_state.windows_context_menu_expanded;
+            if !explorer_state.windows_context_menu_expanded {
+                explorer_state.windows_context_menu_cache = None;
+            }
+        }
+
+        if explorer_state.windows_context_menu_expanded {
+            let selected_paths: Vec<PathBuf> = if !explorer_state.selected_paths.is_empty() {
+                explorer_state.selected_paths.iter().cloned().collect()
+            } else {
+                vec![file.path.clone()]
+            };
+
+            if let Some(hwnd) = hwnd {
+                let cache_miss = explorer_state
+                    .windows_context_menu_cache
+                    .as_ref()
+                    .map(|cache| cache.selection != selected_paths)
+                    .unwrap_or(true);
+
+                if cache_miss {
+                    explorer_state.windows_context_menu_cache =
+                        ShellContextMenu::for_paths(&selected_paths, hwnd)
+                            .map(|menu| {
+                                crate::gui::windows::containers::structs::WindowsContextMenuCache {
+                                    selection: selected_paths.clone(),
+                                    menu,
+                                }
+                            })
+                            .map(Some)
+                            .unwrap_or_else(|err| {
+                                eprintln!("Windows menu load failed: {}", err);
+                                None
+                            });
+                }
+
+                if let Some(cache) = explorer_state.windows_context_menu_cache.as_ref() {
+                    if cache.menu.items().is_empty() {
+                        ui.label("No Windows menu items for this selection.");
+                    } else {
+                        let row_height = _palette.context_menu_text_size + 6.0;
+                        let min_height = (row_height * 6.0) + (ui.spacing().item_spacing.y * 5.0);
+                        let max_height = ui.ctx().viewport_rect().height() * 0.8;
+                        ScrollArea::vertical()
+                            .max_height(max_height)
+                            .min_scrolled_height(min_height)
+                            .show(ui, |ui| {
+                                for item in cache.menu.items() {
+                                    if ui
+                                        .add_enabled(!item.disabled, egui::Button::new(&item.label))
+                                        .clicked()
+                                    {
+                                        if let Err(err) = cache.menu.invoke(hwnd, item.id) {
+                                            eprintln!("Windows menu invoke failed: {}", err);
+                                        }
+                                        ui.close();
+                                    }
+                                }
+                            });
+                    }
+                } else {
+                    ui.label("Windows menu unavailable for this selection.");
+                }
+            } else {
+                ui.label("Windows menu unavailable (missing window handle).");
+            }
+        }
     }
 }
 

@@ -98,13 +98,6 @@ pub fn draw_theme_customizer(
 
             // TOP SECTION: select which palette to edit
             ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new("Editing theme:")
-                        .font(font_id.clone())
-                        .size(palette.text_size)
-                        .color(label_color),
-                );
-
                 if selectable_mode(
                     ui,
                     palette,
@@ -189,6 +182,29 @@ pub fn draw_theme_customizer(
                                                 egui::vec2(90.0, 0.0),
                                                 egui::DragValue::new(
                                                     &mut editing_palette.tooltip_text_size,
+                                                )
+                                                .range(8.0..=24.0)
+                                                .speed(0.2),
+                                            )
+                                            .changed();
+                                    },
+                                );
+                                ui.end_row();
+
+                                ui.label(
+                                    egui::RichText::new("Context Menu Text Size")
+                                        .font(font_id.clone())
+                                        .size(palette.text_size)
+                                        .color(label_color),
+                                );
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        changed |= ui
+                                            .add_sized(
+                                                egui::vec2(90.0, 0.0),
+                                                egui::DragValue::new(
+                                                    &mut editing_palette.context_menu_text_size,
                                                 )
                                                 .range(8.0..=24.0)
                                                 .speed(0.2),

@@ -533,6 +533,9 @@ impl MainWindow {
                         self.settings_window
                             .current_settings
                             .folder_scanning_enabled,
+                        self.settings_window
+                            .current_settings
+                            .windows_context_menu_enabled,
                         &self.settings_window.current_settings.window_size_mode,
                         &self.settings_window.current_settings.start_path,
                         Some(match self.theme {
@@ -653,6 +656,7 @@ impl MainWindow {
                 } else {
                     let (
                         _folder_scanning_enabled,
+                        _windows_context_menu_enabled,
                         _window_size_mode,
                         start_path,
                         _saved_theme,
@@ -684,6 +688,9 @@ impl MainWindow {
                     self.settings_window
                         .current_settings
                         .folder_scanning_enabled,
+                    self.settings_window
+                        .current_settings
+                        .windows_context_menu_enabled,
                     &self.settings_window.current_settings.window_size_mode,
                     &self.settings_window.current_settings.start_path,
                     Some(match self.theme {
@@ -752,6 +759,9 @@ impl MainWindow {
                     self.settings_window
                         .current_settings
                         .folder_scanning_enabled,
+                    self.settings_window
+                        .current_settings
+                        .windows_context_menu_enabled,
                     &self.settings_window.current_settings.window_size_mode,
                     &self.settings_window.current_settings.start_path,
                     Some(match self.theme {
