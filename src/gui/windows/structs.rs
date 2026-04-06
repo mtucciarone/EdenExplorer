@@ -40,6 +40,7 @@ pub struct Navigation {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AppSettings {
     pub folder_scanning_enabled: bool,
+    pub windows_context_menu_enabled: bool,
     pub start_path: Option<PathBuf>,
     pub window_size_mode: WindowSizeMode,
     pub pinned_tabs: Vec<PathBuf>,

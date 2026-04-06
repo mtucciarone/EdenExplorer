@@ -16,6 +16,48 @@ use egui_phosphor::{fill, regular};
 use std::path::{Path, PathBuf};
 use windows::Win32::Foundation::HWND;
 
+fn nav_icon_button(
+    ui: &mut egui::Ui,
+    icon: &str,
+    palette: &ThemePalette,
+    enabled: bool,
+    hover_text: &str,
+) -> egui::Response {
+    let font_id = egui::FontId::default();
+    let resp = ui.add_enabled(
+        enabled,
+        egui::Label::new(
+            egui::RichText::new(icon)
+                .font(font_id.clone())
+                .color(ui.visuals().text_color()),
+        )
+        .selectable(false)
+        .sense(egui::Sense::click()),
+    );
+
+    if enabled && resp.hovered() {
+        ui.painter().text(
+            resp.rect.center(),
+            egui::Align2::CENTER_CENTER,
+            icon,
+            font_id.clone(),
+            palette.primary,
+        );
+    }
+
+    let resp = resp.on_hover_text(
+        egui::RichText::new(hover_text)
+            .size(palette.tooltip_text_size)
+            .color(palette.tooltip_text_color),
+    );
+
+    if enabled {
+        resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+    } else {
+        resp
+    }
+}
+
 pub fn draw_tabs(
     ui: &mut egui::Ui,
     tabs: &[TabInfo],
@@ -168,6 +210,7 @@ fn handle_draw_tab_new_allocated(
 
     // --- Font and colors ---
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
+    let icon_font_id = FontId::new(palette.tab_icon_size, FontFamily::Proportional);
     let label_color = if is_active {
         palette.tab_text_selected
     } else {
@@ -180,23 +223,12 @@ fn handle_draw_tab_new_allocated(
     };
 
     // --- Layout parameters ---
-    let icon_size = 16.0;
+    let icon_size = palette.tab_icon_size;
     let spacing = 6.0;
     let padding = 8.0;
     let close_button_width = 20.0;
     let icon_top_left = egui::pos2(rect.left() + padding, rect.center().y - icon_size * 0.5);
     let icon_rect = egui::Rect::from_min_size(icon_top_left, egui::vec2(icon_size, icon_size));
-    let text_pos = egui::pos2(rect.left() + padding + icon_size + spacing, rect.center().y);
-    let text_width = rect.width() - icon_size - spacing - 2.0 * padding - close_button_width;
-
-    let (display_title, truncated) =
-        truncate_item_text(ui, &tab.title, text_width, &font_id, label_color);
-
-    // --- NOW safe to use painter ---
-    let painter = ui.painter();
-
-    // --- Paint background ---
-    painter.rect_filled(rect, corner, tab_fill);
 
     let icon_resp = ui.interact(
         icon_rect,
@@ -224,11 +256,32 @@ fn handle_draw_tab_new_allocated(
         regular::FOLDER_SIMPLE
     };
 
+    let icon_glyph_width = ui
+        .painter()
+        .layout_no_wrap(icon_glyph.to_string(), icon_font_id.clone(), icon_color)
+        .size()
+        .x;
+    let icon_draw_width = icon_size.max(icon_glyph_width);
+    let text_pos = egui::pos2(
+        rect.left() + padding + icon_draw_width + spacing,
+        rect.center().y,
+    );
+    let text_width = rect.width() - icon_draw_width - spacing - 2.0 * padding - close_button_width;
+
+    let (display_title, truncated) =
+        truncate_item_text(ui, &tab.title, text_width, &font_id, label_color);
+
+    // --- NOW safe to use painter ---
+    let painter = ui.painter();
+
+    // --- Paint background ---
+    painter.rect_filled(rect, corner, tab_fill);
+
     painter.text(
         icon_rect.left_center(),
         egui::Align2::LEFT_CENTER,
         icon_glyph,
-        font_id.clone(),
+        icon_font_id,
         icon_color,
     );
 
@@ -424,42 +477,48 @@ fn toolbar_buttons(
     palette: &ThemePalette,
     is_favorited: bool,
     is_root: bool,
+    can_go_back: bool,
+    can_go_forward: bool,
 ) -> TabbarAction {
     let mut action = TabbarAction::default();
 
     // Navigation buttons
-    if clickable_icon(ui, regular::ARROW_LEFT, palette.primary)
-        .on_hover_text(
-            egui::RichText::new("Navigate to previous directory")
-                .size(palette.tooltip_text_size)
-                .color(palette.tooltip_text_color),
-        )
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .clicked()
+    if nav_icon_button(
+        ui,
+        regular::ARROW_LEFT,
+        palette,
+        can_go_back,
+        "Navigate to previous directory",
+    )
+    .clicked()
+        && can_go_back
     {
         action.nav = Some(TabbarNavAction::Back);
     }
 
-    if clickable_icon(ui, regular::ARROW_RIGHT, palette.primary)
-        .on_hover_text(
-            egui::RichText::new("Navigate to next directory")
-                .size(palette.tooltip_text_size)
-                .color(palette.tooltip_text_color),
-        )
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .clicked()
+    if nav_icon_button(
+        ui,
+        regular::ARROW_RIGHT,
+        palette,
+        can_go_forward,
+        "Navigate to next directory",
+    )
+    .clicked()
+        && can_go_forward
     {
         action.nav = Some(TabbarNavAction::Forward);
     }
 
-    if clickable_icon(ui, regular::ARROW_UP, palette.primary)
-        .on_hover_text(
-            egui::RichText::new("Navigate to parent directory")
-                .size(palette.tooltip_text_size)
-                .color(palette.tooltip_text_color),
-        )
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .clicked()
+    let can_go_up = !is_root;
+    if nav_icon_button(
+        ui,
+        regular::ARROW_UP,
+        palette,
+        can_go_up,
+        "Navigate to parent directory",
+    )
+    .clicked()
+        && can_go_up
     {
         action.nav = Some(TabbarNavAction::Up);
     }
@@ -570,13 +629,26 @@ pub fn draw_tabbar(
     drag_state: &DragState,
 ) -> TabbarAction {
     let mut action = TabbarAction::default();
+    let tabbar_rect = ui.available_rect_before_wrap();
     let pointer_pos = ui.input(|i| i.pointer.interact_pos().or_else(|| i.pointer.hover_pos()));
     let pointer_released =
         ui.input(|i| i.pointer.any_released() && i.pointer.interact_pos().is_some());
     let mut breadcrumb_drop_target: Option<PathBuf> = None;
+    let pointer_in_tabbar = pointer_pos
+        .map(|pos| tabbar_rect.contains(pos))
+        .unwrap_or(false);
+    let can_go_back = tab.nav.can_go_back();
+    let can_go_forward = tab.nav.can_go_forward();
 
     ui.horizontal(|ui| {
-        let toolbar_action = toolbar_buttons(ui, palette, is_favorited, tab.nav.is_root());
+        let toolbar_action = toolbar_buttons(
+            ui,
+            palette,
+            is_favorited,
+            tab.nav.is_root(),
+            can_go_back,
+            can_go_forward,
+        );
 
         // Merge toolbar actions
         if toolbar_action.nav.is_some() {
@@ -848,6 +920,17 @@ pub fn draw_tabbar(
             }
         }
     });
+
+    // Mouse side buttons for history navigation.
+    if action.nav.is_none() && pointer_in_tabbar && !tab.breadcrumb_path_editing {
+        if can_go_back && ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Extra1)) {
+            action.nav = Some(TabbarNavAction::Back);
+        } else if can_go_forward
+            && ui.input(|i| i.pointer.button_pressed(egui::PointerButton::Extra2))
+        {
+            action.nav = Some(TabbarNavAction::Forward);
+        }
+    }
 
     action.move_files_to_breadcrumb_dir = breadcrumb_drop_target;
     action

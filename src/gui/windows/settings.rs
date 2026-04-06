@@ -11,6 +11,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             folder_scanning_enabled: true,
+            windows_context_menu_enabled: false,
             start_path: Some(PathBuf::from(MY_PC_PATH)),
             window_size_mode: WindowSizeMode::default(),
             pinned_tabs: Vec::new(),
@@ -33,6 +34,8 @@ fn info_icon(ui: &mut egui::Ui, hover_text: &str, palette: &ThemePalette) -> egu
     }
 
     if resp.hovered() {
+        ui.ctx()
+            .output_mut(|o| o.cursor_icon = egui::CursorIcon::Default);
         egui::containers::Area::new(ui.next_auto_id())
             .current_pos(resp.rect.right_top())
             .show(ui.ctx(), |ui| {
@@ -147,9 +150,6 @@ pub fn draw_settings_window(
                         );
 
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(regular::QUESTION)
-                                .on_hover_text("Set the default directory...");
-
                             if ui.button(regular::ARROW_COUNTER_CLOCKWISE)
                                 .on_hover_text("Reset to default")
                                 .clicked()
@@ -203,10 +203,32 @@ pub fn draw_settings_window(
                             if ui.add(egui::DragValue::new(height).range(300.0..=2160.0)).changed() {
                                 action = Some(SettingsAction::ApplySettings);
                             }
-                            info_icon(ui, "Configure the window size when the application launches.", palette);
+                            info_icon(ui, "Configure the window size when the application launches. Changes are applied after restart", palette);
                         });
-                        ui.label("Changes are applied after restarting");
                     }
+                    ui.add_space(8.0);
+                    // Context Menu Section
+                    ui.heading("Context Menu");
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        ui.scope(|ui| {
+                            apply_checkbox_colors(ui, palette, false);
+                            if ui.checkbox(
+                                &mut settings.current_settings.windows_context_menu_enabled,
+                                RichText::new("Enable Windows context menu items")
+                                    .color(palette.text_normal),
+                            )
+                            .changed()
+                            {
+                                action = Some(SettingsAction::ApplySettings);
+                            }
+                        });
+                        info_icon(
+                            ui,
+                            "Adds a Windows section to the right-click menu with shell actions.",
+                            palette,
+                        );
+                    });
                     ui.add_space(8.0);
                     // Favorites Reset
                     ui.horizontal(|ui| {
@@ -217,7 +239,6 @@ pub fn draw_settings_window(
                             .clicked() {
                             settings.show_reset_favorites_confirmation = true;
                         }
-                        info_icon(ui, "Clear all saved favourite locations and restore defaults.", palette);
                     });
                 });
             // Reset Favorites Confirmation Dialog

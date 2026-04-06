@@ -80,12 +80,19 @@ fn save_manual_window_size(hwnd: HWND) {
             return;
         }
 
-        let (folder_scanning_enabled, _window_size_mode, start_path, saved_theme, pinned_tabs) =
-            load_app_settings();
+        let (
+            folder_scanning_enabled,
+            windows_context_menu_enabled,
+            _window_size_mode,
+            start_path,
+            saved_theme,
+            pinned_tabs,
+        ) = load_app_settings();
         let window_size_mode = WindowSizeMode::Custom { width, height };
 
         save_app_settings(
             folder_scanning_enabled,
+            windows_context_menu_enabled,
             &window_size_mode,
             &Some(start_path),
             saved_theme.as_deref(),

@@ -85,10 +85,17 @@ pub struct MainWindow {
 impl Default for MainWindow {
     fn default() -> Self {
         // Load saved settings
-        let (folder_scanning_enabled, window_size_mode, start_path, saved_theme, pinned_tabs) =
-            load_app_settings();
+        let (
+            folder_scanning_enabled,
+            windows_context_menu_enabled,
+            window_size_mode,
+            start_path,
+            saved_theme,
+            pinned_tabs,
+        ) = load_app_settings();
         let loaded_settings = AppSettings {
             folder_scanning_enabled,
+            windows_context_menu_enabled,
             window_size_mode: window_size_mode.clone(),
             start_path: Some(start_path.clone()), // 👈 important
             pinned_tabs: pinned_tabs.clone(),

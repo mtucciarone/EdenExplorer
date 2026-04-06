@@ -66,4 +66,12 @@ impl Navigation {
     pub fn is_root(&self) -> bool {
         self.current.to_string_lossy() == MY_PC_PATH
     }
+
+    pub fn can_go_back(&self) -> bool {
+        !self.back.is_empty()
+    }
+
+    pub fn can_go_forward(&self) -> bool {
+        !self.forward.is_empty()
+    }
 }

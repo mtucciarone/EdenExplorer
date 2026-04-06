@@ -2,6 +2,23 @@ use eframe::egui::{Color32, CornerRadius};
 use serde::{Deserialize, Serialize};
 use std::sync::{LazyLock, RwLock};
 
+pub const THEME_VERSION: u32 = 2;
+
+fn default_explorer_icon_size() -> f32 {
+    18.0
+}
+
+fn default_sidebar_icon_size() -> f32 {
+    20.0
+}
+
+fn default_tab_icon_size() -> f32 {
+    12.0
+}
+
+fn default_context_menu_text_size() -> f32 {
+    11.0
+}
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub enum ThemeMode {
     Light,
@@ -19,6 +36,14 @@ pub struct ThemePalette {
     // 🔤 Typography
     pub text_size: f32,
     pub tooltip_text_size: f32,
+    #[serde(default = "default_context_menu_text_size")]
+    pub context_menu_text_size: f32,
+    #[serde(default = "default_explorer_icon_size")]
+    pub explorer_icon_size: f32,
+    #[serde(default = "default_sidebar_icon_size")]
+    pub sidebar_icon_size: f32,
+    #[serde(default = "default_tab_icon_size")]
+    pub tab_icon_size: f32,
 
     // 🎯 Brand / primary colors
     pub primary: Color32,
@@ -97,6 +122,10 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         // 🔤 Typography
         text_size: 12.0,
         tooltip_text_size: 13.0,
+        context_menu_text_size: 11.0,
+        explorer_icon_size: 18.0,
+        sidebar_icon_size: 20.0,
+        tab_icon_size: 12.0,
 
         // 🎯 Brand / primary colors
         primary: base,
@@ -181,6 +210,10 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         // 🔤 Typography
         text_size: 12.0,
         tooltip_text_size: 13.0,
+        context_menu_text_size: 11.0,
+        explorer_icon_size: 18.0,
+        sidebar_icon_size: 20.0,
+        tab_icon_size: 12.0,
 
         // 🎯 Brand / primary colors
         primary: base,
