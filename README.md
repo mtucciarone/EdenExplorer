@@ -297,6 +297,7 @@
 
 ## 🐛 Known Bugs
 - Hitting "Shift" after already shift-selecting files drops the entire file selection
+- Dragging EdenExplorer across multiple monitors causes strange visual glitches
 
 ## Star History
 
