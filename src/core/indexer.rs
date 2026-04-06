@@ -1,5 +1,5 @@
 use crate::core::fs::MY_PC_PATH;
-use crate::gui::theme::{ThemePalette, get_default_palette};
+use crate::gui::theme::{THEME_VERSION, ThemePalette, get_default_palette};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -22,6 +22,7 @@ struct AppSettingsSnapshot {
 
 #[derive(Serialize, Deserialize)]
 struct ThemeSettingsSnapshot {
+    version: u32,
     light: ThemePalette,
     dark: ThemePalette,
 }
@@ -185,12 +186,9 @@ pub fn load_theme_settings() -> Option<(ThemePalette, ThemePalette)> {
     let data = std::fs::read(path).ok()?;
 
     match bincode::deserialize::<ThemeSettingsSnapshot>(&data) {
-        Ok(snapshot) => Some((snapshot.light, snapshot.dark)),
-        Err(e) => {
-            eprintln!(
-                "Theme deserialization failed (likely due to theme variable changes): {}. Resetting to defaults.",
-                e
-            );
+        Ok(snapshot) if snapshot.version == THEME_VERSION => Some((snapshot.light, snapshot.dark)),
+        Ok(_) | Err(_) => {
+            eprintln!("Theme version mismatch or corruption. Resetting.");
             reset_theme_to_defaults();
             None
         }
@@ -204,6 +202,7 @@ pub fn save_theme_settings(light: &ThemePalette, dark: &ThemePalette) {
     };
     let _ = std::fs::create_dir_all(path.parent().unwrap());
     let snapshot = ThemeSettingsSnapshot {
+        version: THEME_VERSION,
         light: light.clone(),
         dark: dark.clone(),
     };

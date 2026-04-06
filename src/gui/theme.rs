@@ -2,6 +2,8 @@ use eframe::egui::{Color32, CornerRadius};
 use serde::{Deserialize, Serialize};
 use std::sync::{LazyLock, RwLock};
 
+pub const THEME_VERSION: u32 = 2;
+
 fn default_explorer_icon_size() -> f32 {
     18.0
 }
