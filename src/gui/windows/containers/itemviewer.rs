@@ -655,7 +655,7 @@ fn handle_context_menu_actions(
     if ui
         .add_enabled(
             enable_open_in_tab,
-            egui::Button::new("Open in new tab (middle-click"),
+            egui::Button::new("Open in new tab (middle-click)"),
         )
         .clicked()
     {
@@ -781,7 +781,7 @@ fn handle_draw_col_name(
     );
 
     // --- ICON ---
-    let icon_size = egui::vec2(18.0, 18.0);
+    let icon_size = egui::vec2(palette.explorer_icon_size, palette.explorer_icon_size);
     let icon_padding = 4.0;
 
     let text_offset_x = if let Some(icon) = icon_cache.get(&file.path, file.is_dir) {
@@ -800,7 +800,7 @@ fn handle_draw_col_name(
 
         8.0 + icon_size.x + icon_padding
     } else {
-        8.0 + 16.0 + icon_padding
+        8.0 + palette.explorer_icon_size + icon_padding
     };
 
     let text_rect =
@@ -1196,9 +1196,6 @@ fn handle_global_actions(
         return None;
     }
 
-    // =====================================================
-    // 🥇 PRIORITY 1: RENAME MODE (let TextEdit own everything)
-    // =====================================================
     if rename_state.is_some() || is_text_edit_active {
         return None;
     }
@@ -1210,9 +1207,6 @@ fn handle_global_actions(
         }
     }
 
-    // =====================================================
-    // 🥈 PRIORITY 2: FILTER MODE (TextEdit owns input)
-    // =====================================================
     if filter_state.active {
         let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
@@ -1254,9 +1248,6 @@ fn handle_global_actions(
         return None;
     }
 
-    // =====================================================
-    // 🥉 PRIORITY 3: DRAG STATE
-    // =====================================================
     if drag_state.active {
         if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
             drag_state.active = false;
@@ -1265,9 +1256,6 @@ fn handle_global_actions(
         }
     }
 
-    // =====================================================
-    // 🔹 GLOBAL SHORTCUTS
-    // =====================================================
     ui.input(|i| {
         for event in &i.events {
             match event {
@@ -1340,9 +1328,6 @@ fn handle_global_actions(
         }
     });
 
-    // =====================================================
-    // PRIORITY 4: GLOBAL INPUT (navigation + shortcuts)
-    // =====================================================
     let mut start_filter = String::new();
 
     ui.input(|i| {

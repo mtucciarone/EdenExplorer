@@ -73,7 +73,7 @@ pub fn draw_sidebar_item(
     }
 
     // --- Icon ---
-    let icon_size = egui::vec2(20.0, 20.0);
+    let icon_size = egui::vec2(palette.sidebar_icon_size, palette.sidebar_icon_size);
     let icon_padding = 4.0;
 
     let text_offset_x = if let Some(icon) = icon_cache.get(path, is_dir) {
@@ -174,7 +174,7 @@ fn sidebar_drive_item(
     }
 
     // --- Top row: icon + label ---
-    let icon_size = egui::vec2(20.0, 20.0);
+    let icon_size = egui::vec2(palette.sidebar_icon_size, palette.sidebar_icon_size);
     let icon_padding = 4.0;
 
     let text_offset_x = if let Some(icon) = icon_cache.get(&drive.path, true) {
