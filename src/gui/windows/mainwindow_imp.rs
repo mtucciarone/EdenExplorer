@@ -1029,24 +1029,53 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 // Set selection_focus to the edge of the range that is farthest from the anchor
                 if let Some(anchor_idx) = explorer.explorer_state.selection_anchor {
                     if let (Some(first_path), Some(last_path)) = (paths.first(), paths.last()) {
-                        let first_idx = explorer
-                            .files
-                            .iter()
-                            .position(|f| &f.path == first_path)
-                            .unwrap_or(anchor_idx);
-                        let last_idx = explorer
-                            .files
-                            .iter()
-                            .position(|f| &f.path == last_path)
-                            .unwrap_or(anchor_idx);
+                        // Check if we're in a filtered view
+                        let is_filtered = explorer.item_viewer_filter_state.active
+                            && !explorer.item_viewer_filter_state.query.is_empty();
 
-                        // If moving down, focus the last item; if moving up, focus the first item
-                        explorer.explorer_state.selection_focus =
-                            Some(if anchor_idx <= first_idx {
-                                last_idx // moved down
-                            } else {
-                                first_idx // moved up
-                            });
+                        if is_filtered {
+                            // Use filtered indices
+                            let first_idx = explorer
+                                .item_viewer_filter_state
+                                .cached_indices
+                                .iter()
+                                .position(|&i| &explorer.files[i].path == first_path)
+                                .unwrap_or(anchor_idx);
+                            let last_idx = explorer
+                                .item_viewer_filter_state
+                                .cached_indices
+                                .iter()
+                                .position(|&i| &explorer.files[i].path == last_path)
+                                .unwrap_or(anchor_idx);
+
+                            // If moving down, focus the last item; if moving up, focus the first item
+                            explorer.explorer_state.selection_focus =
+                                Some(if anchor_idx <= first_idx {
+                                    last_idx // moved down
+                                } else {
+                                    first_idx // moved up
+                                });
+                        } else {
+                            // Use original file indices (unfiltered view)
+                            let first_idx = explorer
+                                .files
+                                .iter()
+                                .position(|f| &f.path == first_path)
+                                .unwrap_or(anchor_idx);
+                            let last_idx = explorer
+                                .files
+                                .iter()
+                                .position(|f| &f.path == last_path)
+                                .unwrap_or(anchor_idx);
+
+                            // If moving down, focus the last item; if moving up, focus the first item
+                            explorer.explorer_state.selection_focus =
+                                Some(if anchor_idx <= first_idx {
+                                    last_idx // moved down
+                                } else {
+                                    first_idx // moved up
+                                });
+                        }
                     }
                 }
             }
@@ -1104,7 +1133,24 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             ItemViewerAction::ReplaceSelection(path) => {
                 explorer.explorer_state.selected_paths.clear();
                 explorer.explorer_state.selected_paths.insert(path.clone());
-                if let Some(idx) = explorer.files.iter().position(|f| f.path == path) {
+
+                // Check if we're in a filtered view
+                let is_filtered = explorer.item_viewer_filter_state.active
+                    && !explorer.item_viewer_filter_state.query.is_empty();
+
+                let idx = if is_filtered {
+                    // Use filtered indices
+                    explorer
+                        .item_viewer_filter_state
+                        .cached_indices
+                        .iter()
+                        .position(|&i| explorer.files[i].path == path)
+                } else {
+                    // Use original file indices (unfiltered view)
+                    explorer.files.iter().position(|f| f.path == path)
+                };
+
+                if let Some(idx) = idx {
                     explorer.explorer_state.selection_anchor = Some(idx);
                     explorer.explorer_state.selection_focus = Some(idx);
                 }

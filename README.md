@@ -5,6 +5,11 @@
 <h1 align="center">EdenExplorer</h1>
 
 <p align="center">
+  <a href="https://thetalabs.ca/eden-explorer/">
+    <img src="https://img.shields.io/badge/🚀%20LIVE%20NOW!-Official%20Website%20Launched!-2ecc71?style=for-the-badge&link=https://thetalabs.ca/eden-explorer/" alt="Official Website Launched">
+  </a>
+</p>
+<p align="center">
   <img src="https://img.shields.io/badge/Public%20Alpha-Now%20Available-2ecc71?style=for-the-badge" />
 </p>
 
@@ -294,10 +299,12 @@
 - [ ] Image previews using Spacebar - GPU texture via wgpu / egui_wgpu_backend
 - [ ] Support network devices
 - [ ] Drag and drop files from EdenExplorer into Windows objects (Desktop, File Explorer, applications, etc.)
+- [ ] New shortcut and context menu command for getting a file's Full Path (using ctrl+shift+c for example).
 
 ## 🐛 Known Bugs
 - Hitting "Shift" after already shift-selecting files drops the entire file selection
 - Dragging EdenExplorer across multiple monitors causes strange visual glitches
+- If you filter objects in the item viewer then try to select an object among the filtered list, it removes the filter and doesn't select anything
 
 ## Star History
 

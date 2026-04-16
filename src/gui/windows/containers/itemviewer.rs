@@ -1370,11 +1370,24 @@ fn handle_global_actions(
         }
 
         if response.clicked_elsewhere() {
-            ui.memory_mut(|mem| {
-                mem.data
-                    .remove::<egui::text_edit::TextEditState>(text_edit_id)
-            });
-            *filter_state = FilterState::default();
+            // Check if click is within the item viewer area (table)
+            let click_pos = ui.input(|i| i.pointer.interact_pos());
+            let should_clear_filter = if let Some(pos) = click_pos {
+                let item_viewer_rect = ui.available_rect_before_wrap();
+                // Don't clear filter if clicking within the item viewer area
+                !item_viewer_rect.contains(pos)
+            } else {
+                // If no click position, clear filter (fallback behavior)
+                true
+            };
+
+            if should_clear_filter {
+                ui.memory_mut(|mem| {
+                    mem.data
+                        .remove::<egui::text_edit::TextEditState>(text_edit_id)
+                });
+                *filter_state = FilterState::default();
+            }
         }
 
         return None;
@@ -1753,6 +1766,17 @@ fn handle_keyboard_navigation(
         let anchor = explorer_state.selection_anchor.unwrap_or(current_idx);
         let focus = explorer_state.selection_focus.unwrap_or(current_idx);
 
+        // Validate that anchor and focus are within bounds
+        let anchor_valid = anchor < filtered_indices.len();
+        let focus_valid = focus < filtered_indices.len();
+
+        if !anchor_valid || !focus_valid {
+            // Reset to current position if indices are invalid
+            explorer_state.selection_anchor = Some(current_idx);
+            explorer_state.selection_focus = Some(current_idx);
+            return None;
+        }
+
         let mut new_focus = focus;
 
         if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
@@ -1832,17 +1856,25 @@ fn handle_row_click(
     if modifiers.shift {
         if let Some(anchor_idx) = explorer_state.selection_anchor {
             let current_idx = row_idx;
-            let range_start = anchor_idx.min(current_idx);
-            let range_end = anchor_idx.max(current_idx);
 
-            let range_paths: Vec<PathBuf> = filtered_indices[range_start..=range_end]
-                .iter()
-                .map(|&i| files[i].path.clone())
-                .collect();
+            // Validate that anchor_idx is still within bounds of filtered_indices
+            if anchor_idx < filtered_indices.len() {
+                let range_start = anchor_idx.min(current_idx);
+                let range_end = anchor_idx.max(current_idx);
 
-            explorer_state.selection_focus = Some(current_idx);
+                let range_paths: Vec<PathBuf> = filtered_indices[range_start..=range_end]
+                    .iter()
+                    .map(|&i| files[i].path.clone())
+                    .collect();
 
-            Some(ItemViewerAction::RangeSelect(range_paths))
+                explorer_state.selection_focus = Some(current_idx);
+                Some(ItemViewerAction::RangeSelect(range_paths))
+            } else {
+                // Anchor is out of bounds, treat as simple selection
+                explorer_state.selection_anchor = Some(row_idx);
+                explorer_state.selection_focus = Some(row_idx);
+                Some(ItemViewerAction::Select(file.path.clone()))
+            }
         } else {
             explorer_state.selection_anchor = Some(row_idx);
             explorer_state.selection_focus = Some(row_idx);
