@@ -303,6 +303,16 @@ impl MainWindow {
                 let _ = set_clipboard_files(&paths, false);
                 mark_clipboard_dirty();
             }
+            ItemViewerContextAction::CopyPath(paths) => {
+                use crate::gui::utils::copy_text_to_clipboard;
+
+                // Convert paths to strings and join with newlines
+                let path_strings: Vec<String> =
+                    paths.iter().map(|p| p.display().to_string()).collect();
+
+                let text = path_strings.join("\r\n");
+                let _ = copy_text_to_clipboard(&text);
+            }
             ItemViewerContextAction::Paste => {
                 if let Err(e) = self.paste_clipboard_native() {
                     eprintln!("Paste failed: {}", e);

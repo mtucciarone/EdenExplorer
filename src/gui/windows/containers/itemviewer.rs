@@ -766,6 +766,18 @@ fn handle_context_menu_actions(
         )));
         ui.close();
     }
+    if ui.button("Copy Path (ctrl+shift+c)").clicked() {
+        let paths = if !explorer_state.selected_paths.is_empty() {
+            explorer_state.selected_paths.iter().cloned().collect()
+        } else {
+            vec![file.path.clone()]
+        };
+
+        *action = Some(ItemViewerAction::Context(
+            ItemViewerContextAction::CopyPath(paths),
+        ));
+        ui.close();
+    }
     if ui
         .add_enabled(paste_enabled, egui::Button::new("Paste (ctrl+v)"))
         .clicked()
@@ -1457,6 +1469,15 @@ fn handle_global_actions(
         if i.modifiers.command && i.key_released(egui::Key::V) {
             // Any other key functions won't work with egui v0.33.x
             action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
+        }
+        if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::C) {
+            // Copy path shortcut - only enabled when exactly one item is selected
+            if explorer_state.selected_paths.len() == 1 {
+                let path = explorer_state.selected_paths.iter().next().unwrap().clone();
+                action = Some(ItemViewerAction::Context(
+                    ItemViewerContextAction::CopyPath(vec![path]),
+                ));
+            }
         }
         if i.key_pressed(egui::Key::Delete) {
             let paths: Vec<PathBuf> = if !explorer_state.selected_paths.is_empty() {

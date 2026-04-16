@@ -373,6 +373,48 @@ pub fn clipboard_has_files() -> bool {
     has
 }
 
+pub fn copy_text_to_clipboard(text: &str) -> bool {
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::System::DataExchange::{
+        CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+    };
+    use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock};
+
+    if unsafe { OpenClipboard(None).is_err() } {
+        return false;
+    }
+
+    let _ = unsafe { EmptyClipboard() };
+
+    // Convert string to wide string (UTF-16)
+    let wide_text: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    let text_size = wide_text.len() * std::mem::size_of::<u16>();
+
+    let hglobal = match unsafe { GlobalAlloc(GMEM_MOVEABLE, text_size) } {
+        Ok(h) => h,
+        Err(_) => {
+            let _ = unsafe { CloseClipboard() };
+            return false;
+        }
+    };
+
+    let ptr = unsafe { GlobalLock(hglobal) };
+    if !ptr.is_null() {
+        unsafe {
+            std::ptr::copy_nonoverlapping(wide_text.as_ptr(), ptr as *mut u16, wide_text.len());
+            let _ = GlobalUnlock(hglobal);
+            // CF_UNICODETEXT is 13
+            let _ = SetClipboardData(13, Some(HANDLE(hglobal.0)));
+        }
+    } else {
+        let _ = unsafe { CloseClipboard() };
+        return false;
+    }
+
+    let _ = unsafe { CloseClipboard() };
+    true
+}
+
 pub fn get_file_type_name<'a>(ext: &str, cache: &'a mut HashMap<String, String>) -> &'a str {
     use std::collections::hash_map::Entry;
 
