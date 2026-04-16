@@ -39,6 +39,7 @@ pub enum ItemViewerAction {
 #[derive(Clone, Debug)]
 pub enum ItemViewerContextAction {
     Copy(Vec<PathBuf>),
+    CopyPath(Vec<PathBuf>),
     Cut(Vec<PathBuf>),
     Paste,
     RenameRequest(PathBuf, String),
