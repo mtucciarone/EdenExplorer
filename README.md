@@ -294,17 +294,23 @@
 - [x] **Windows environment variables PATH support** - Automatically expands Windows PATHs in breadcrumb input
 - [x] Drag and drop files into breadcrumb folders and directory tabs
 - [x] Enable/Disable Windows shell integration. By enabling, the context menu will populate with default Windows registry context menu items
+- [x] New context menu command (Copy Path) with keyboard shortcut of Ctrl+Shift+C
 
 ### 🚀 Upcoming Features
 - [ ] Image previews using Spacebar - GPU texture via wgpu / egui_wgpu_backend
 - [ ] Support network devices
 - [ ] Drag and drop files from EdenExplorer into Windows objects (Desktop, File Explorer, applications, etc.)
-- [ ] New shortcut and context menu command for getting a file's Full Path (using ctrl+shift+c for example).
+- [ ] Enhanced theme customization, such as custom layouts, mix/match UI elements, styles, etc
+- [ ] Sorting of file objects should be saved
+
 
 ## 🐛 Known Bugs
 - Hitting "Shift" after already shift-selecting files drops the entire file selection
 - Dragging EdenExplorer across multiple monitors causes strange visual glitches
 - If you filter objects in the item viewer then try to select an object among the filtered list, it removes the filter and doesn't select anything
+
+## 🐛 Bugs To Investigate
+- Resizing the window while the Settings is open doesn't seem persist the size
 
 ## Star History
 
