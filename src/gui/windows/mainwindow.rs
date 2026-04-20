@@ -99,6 +99,7 @@ impl Default for MainWindow {
             window_size_mode: window_size_mode.clone(),
             start_path: Some(start_path.clone()), // 👈 important
             pinned_tabs: pinned_tabs.clone(),
+            time_format_24h: true, // Default to 24-hour format
         };
 
         let pinned_tabs = pinned_tabs;

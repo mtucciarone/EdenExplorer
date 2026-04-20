@@ -18,7 +18,7 @@ use windows::core::PCWSTR;
 const STATUS_NO_MORE_FILES: i32 = 0x80000006u32 as i32;
 pub const MY_PC_PATH: &str = "::MY_PC::";
 
-fn filetime_to_string(filetime: i64) -> Option<String> {
+pub fn filetime_to_string(filetime: i64, time_format_24h: bool) -> Option<String> {
     if filetime == 0 {
         return None;
     }
@@ -32,7 +32,13 @@ fn filetime_to_string(filetime: i64) -> Option<String> {
     let dt_utc = Utc.timestamp_opt(unix_time, 0).single()?;
     let dt_local: DateTime<Local> = dt_utc.into();
 
-    Some(dt_local.format("%Y-%m-%d %H:%M").to_string())
+    let format_string = if time_format_24h {
+        "%Y-%m-%d %H:%M"
+    } else {
+        "%Y-%m-%d %I:%M %p"
+    };
+
+    Some(dt_local.format(format_string).to_string())
 }
 
 /// Convert PathBuf -> UTF-16
@@ -172,14 +178,14 @@ pub fn calculate_folder_size_fast(path: PathBuf) -> u64 {
 }
 
 /// 🚀 Async directory scan
-pub fn scan_dir_async(path: PathBuf, tx: Sender<FileItem>) {
+pub fn scan_dir_async(path: PathBuf, tx: Sender<FileItem>, time_format_24h: bool) {
     thread::spawn(move || {
         if path.to_string_lossy() == MY_PC_PATH {
             return;
         }
 
         if portable::is_portable_path(&path) {
-            portable::scan_portable_async(path, tx);
+            portable::scan_portable_async(path, tx, time_format_24h);
             return;
         }
 
@@ -245,8 +251,10 @@ pub fn scan_dir_async(path: PathBuf, tx: Sender<FileItem>) {
                         Some(*entry.EndOfFile.QuadPart() as u64)
                     };
 
-                    let modified_time = filetime_to_string(*entry.LastWriteTime.QuadPart());
-                    let created_time = filetime_to_string(*entry.CreationTime.QuadPart());
+                    let modified_time =
+                        filetime_to_string(*entry.LastWriteTime.QuadPart(), time_format_24h);
+                    let created_time =
+                        filetime_to_string(*entry.CreationTime.QuadPart(), time_format_24h);
 
                     let item = FileItem::new(
                         name,

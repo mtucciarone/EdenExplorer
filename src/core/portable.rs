@@ -137,7 +137,7 @@ pub fn build_breadcrumb_segments(path: &PathBuf) -> Option<Vec<(String, PathBuf)
     Some(segments)
 }
 
-pub fn scan_portable_async(path: PathBuf, tx: Sender<FileItem>) {
+pub fn scan_portable_async(path: PathBuf, tx: Sender<FileItem>, time_format_24h: bool) {
     std::thread::spawn(move || {
         let mut should_uninit = false;
         unsafe {
@@ -407,6 +407,7 @@ fn enumerate_portable_children(
         };
         cache_object_info(device_id, &path_object_id, &name, parent_override);
 
+        // Portable devices don't provide reliable time information, so use None
         let item = FileItem::new(name, virtual_path, is_dir, file_size, None, None);
         pending.push(item.clone());
 
@@ -437,9 +438,9 @@ unsafe fn pwstr_to_string(pw: PWSTR) -> String {
     let mut ptr = pw.0;
     while !ptr.is_null() && *ptr != 0 {
         len += 1;
-        ptr = ptr.add(1);
+        ptr = unsafe { ptr.add(1) };
     }
-    let slice = std::slice::from_raw_parts(pw.0, len);
+    let slice = unsafe { std::slice::from_raw_parts(pw.0, len) };
     String::from_utf16_lossy(slice)
 }
 

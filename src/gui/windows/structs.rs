@@ -44,6 +44,7 @@ pub struct AppSettings {
     pub start_path: Option<PathBuf>,
     pub window_size_mode: WindowSizeMode,
     pub pinned_tabs: Vec<PathBuf>,
+    pub time_format_24h: bool,
 }
 
 #[derive(Default)]

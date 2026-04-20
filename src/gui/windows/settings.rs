@@ -15,6 +15,7 @@ impl Default for AppSettings {
             start_path: Some(PathBuf::from(MY_PC_PATH)),
             window_size_mode: WindowSizeMode::default(),
             pinned_tabs: Vec::new(),
+            time_format_24h: true,
         }
     }
 }
@@ -206,6 +207,27 @@ pub fn draw_settings_window(
                             info_icon(ui, "Configure the window size when the application launches. Changes are applied after restart", palette);
                         });
                     }
+                    ui.add_space(8.0);
+                    // Time Format Section
+                    ui.horizontal(|ui| {
+                        ui.scope(|ui| {
+                            apply_checkbox_colors(ui, palette, false);
+                            if ui.checkbox(
+                                &mut settings.current_settings.time_format_24h,
+                                RichText::new("Use 24-hour time format")
+                                    .color(palette.text_normal),
+                            )
+                            .changed()
+                            {
+                                action = Some(SettingsAction::ApplySettings);
+                            }
+                        });
+                        info_icon(
+                            ui,
+                            "When enabled, times will be displayed in 24-hour format (e.g., 14:30). When disabled, 12-hour format will be used (e.g., 2:30 PM).",
+                            palette,
+                        );
+                    });
                     ui.add_space(8.0);
                     // Context Menu Section
                     ui.heading("Context Menu");

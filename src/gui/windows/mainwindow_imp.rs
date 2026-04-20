@@ -146,7 +146,11 @@ impl MainWindow {
 
         // Async directory listing
         let (tx, rx) = unbounded();
-        scan_dir_async(self.current_nav().current.clone(), tx);
+        scan_dir_async(
+            self.current_nav().current.clone(),
+            tx,
+            self.settings_window.current_settings.time_format_24h,
+        );
         self.rx = Some(rx);
         self.is_loading = true;
 
