@@ -20,10 +20,12 @@ fn main() -> eframe::Result<()> {
         _start_path,
         _saved_theme,
         _pinned_tabs,
+        _time_format_24h,
+        _sort_column,
+        _sort_ascending,
     ) = load_app_settings();
     let window_size = match window_size_mode {
         WindowSizeMode::FullScreen => egui::Vec2::new(1920.0, 1080.0),
-        WindowSizeMode::HalfScreen => egui::Vec2::new(960.0, 540.0),
         WindowSizeMode::Custom { width, height } => egui::Vec2::new(width, height),
     };
 

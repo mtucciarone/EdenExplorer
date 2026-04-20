@@ -54,7 +54,7 @@ impl BenchmarkSuite {
         let mut count = 0;
 
         // Start async scan
-        scan_dir_async(path.clone(), tx);
+        scan_dir_async(path.clone(), tx, true); // Use 24-hour format for benchmarking
 
         // Count results
         while let Ok(_) = rx.recv() {

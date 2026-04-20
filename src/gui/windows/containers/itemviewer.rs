@@ -162,6 +162,7 @@ pub fn draw_item_viewer(
             .ctx()
             .input(|i| i.key_pressed(egui::Key::ArrowDown) || i.key_pressed(egui::Key::ArrowUp));
 
+        let current_width = ui.available_width();
         let mut table = TableBuilder::new(ui)
             .striped(false)
             .sense(if layout.is_drive_view {
@@ -207,25 +208,25 @@ pub fn draw_item_viewer(
 
         table = table
             .column(
-                Column::initial(layout.available_width * 0.35)
+                Column::initial(current_width * 0.35)
                     .at_least(200.0)
                     .resizable(true),
             ) // Name
             .column(
-                Column::initial(layout.available_width * 0.1)
+                Column::initial(current_width * 0.1)
                     .at_least(60.0)
                     .resizable(true),
             ); // Type
 
         if layout.is_drive_view {
             table = table.column(
-                Column::initial(layout.available_width * 0.14)
+                Column::initial(current_width * 0.14)
                     .at_least(120.0)
                     .resizable(true),
             ); // Size
         } else {
             table = table.column(
-                Column::initial(layout.available_width * 0.1)
+                Column::initial(current_width * 0.1)
                     .at_least(75.0)
                     .resizable(true),
             ); // Size
@@ -237,7 +238,7 @@ pub fn draw_item_viewer(
         } else {
             table = table
                 .column(
-                    Column::initial(layout.available_width * 0.2)
+                    Column::initial(current_width * 0.2)
                         .at_least(120.0)
                         .resizable(true),
                 ) // Modified

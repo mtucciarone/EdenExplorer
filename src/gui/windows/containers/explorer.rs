@@ -12,6 +12,7 @@ use crate::gui::windows::containers::tabs::{draw_tabbar, draw_tabs};
 use crate::gui::windows::mainwindow_imp::tab_title_for;
 use crate::gui::windows::structs::{SettingsWindow, SidebarState, ThemeCustomizer};
 use eframe::egui;
+use egui::ScrollArea;
 use egui_phosphor::regular;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -140,34 +141,38 @@ pub fn draw_explorer(
                     egui::vec2(ui.available_width(), item_viewer_height),
                     egui::Layout::top_down(egui::Align::Min),
                     |ui| {
-                        pending_action = draw_item_viewer(
-                            ui,
-                            display_files,
-                            folder_sizes,
-                            clipboard_has_files,
-                            clipboard_set,
-                            clipboard_is_cut,
-                            is_drive_view,
-                            sort_column,
-                            sort_ascending,
-                            icon_cache,
-                            rename_state,
-                            palette,
-                            file_type_cache,
-                            file_size_text_cache,
-                            folder_size_text_cache,
-                            drive_size_text_cache,
-                            external_drag_to_internal_hover,
-                            &mut tabbar_action,
-                            drag_state,
-                            item_viewer_filter_state,
-                            &mut hovered_drop_target,
-                            is_loading,
-                            explorer_state,
-                            theme_customizer,
-                            settings_window,
-                            hwnd,
-                        );
+                        ScrollArea::horizontal()
+                            .id_salt("item_viewer_horizontal_scroll")
+                            .show(ui, |ui| {
+                                pending_action = draw_item_viewer(
+                                    ui,
+                                    display_files,
+                                    folder_sizes,
+                                    clipboard_has_files,
+                                    clipboard_set,
+                                    clipboard_is_cut,
+                                    is_drive_view,
+                                    sort_column,
+                                    sort_ascending,
+                                    icon_cache,
+                                    rename_state,
+                                    palette,
+                                    file_type_cache,
+                                    file_size_text_cache,
+                                    folder_size_text_cache,
+                                    drive_size_text_cache,
+                                    external_drag_to_internal_hover,
+                                    &mut tabbar_action,
+                                    drag_state,
+                                    item_viewer_filter_state,
+                                    &mut hovered_drop_target,
+                                    is_loading,
+                                    explorer_state,
+                                    theme_customizer,
+                                    settings_window,
+                                    hwnd,
+                                );
+                            });
                     },
                 );
 

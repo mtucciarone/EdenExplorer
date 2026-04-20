@@ -3,6 +3,7 @@ use crate::gui::theme::ThemePalette;
 use eframe::egui::*;
 use egui_phosphor::regular::DOTS_SIX_VERTICAL;
 use lru::LruCache;
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering::{Greater, Less};
 use std::collections::HashMap;
 use std::env;
@@ -519,7 +520,7 @@ pub fn format_size(size: u64) -> String {
     }
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum SortColumn {
     Name,
     Size,
