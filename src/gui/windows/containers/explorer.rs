@@ -12,6 +12,7 @@ use crate::gui::windows::containers::tabs::{draw_tabbar, draw_tabs};
 use crate::gui::windows::mainwindow_imp::tab_title_for;
 use crate::gui::windows::structs::{SettingsWindow, SidebarState, ThemeCustomizer};
 use eframe::egui;
+use egui::ScrollArea;
 use egui_phosphor::regular;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -140,7 +141,10 @@ pub fn draw_explorer(
                     egui::vec2(ui.available_width(), item_viewer_height),
                     egui::Layout::top_down(egui::Align::Min),
                     |ui| {
-                        pending_action = draw_item_viewer(
+                        ScrollArea::horizontal()
+                            .id_salt("item_viewer_horizontal_scroll")
+                            .show(ui, |ui| {
+                                pending_action = draw_item_viewer(
                             ui,
                             display_files,
                             folder_sizes,
@@ -168,6 +172,7 @@ pub fn draw_explorer(
                             settings_window,
                             hwnd,
                         );
+                            });
                     },
                 );
 

@@ -100,7 +100,31 @@ impl MainWindow {
             self.sort_ascending = true;
         }
 
+        // Update settings window with new sorting values
+        self.settings_window.current_settings.sort_column = self.sort_column;
+        self.settings_window.current_settings.sort_ascending = self.sort_ascending;
+
         sort_files(&mut self.files, self.sort_column, self.sort_ascending);
+
+        // Automatically save settings when sorting changes
+        save_app_settings(
+            self.settings_window
+                .current_settings
+                .folder_scanning_enabled,
+            self.settings_window
+                .current_settings
+                .windows_context_menu_enabled,
+            &self.settings_window.current_settings.window_size_mode,
+            &self.settings_window.current_settings.start_path,
+            Some(match self.theme {
+                ThemeMode::Dark => "dark",
+                ThemeMode::Light => "light",
+            }),
+            &self.settings_window.current_settings.pinned_tabs,
+            self.settings_window.current_settings.time_format_24h,
+            self.settings_window.current_settings.sort_column,
+            self.settings_window.current_settings.sort_ascending,
+        );
     }
 
     pub fn load_path(&mut self) {
@@ -557,6 +581,9 @@ impl MainWindow {
                             crate::gui::theme::ThemeMode::Light => "light",
                         }),
                         &self.settings_window.current_settings.pinned_tabs,
+                        self.settings_window.current_settings.time_format_24h,
+                        self.settings_window.current_settings.sort_column,
+                        self.settings_window.current_settings.sort_ascending,
                     );
                 }
                 SettingsAction::ResetToDefaults => {
@@ -675,6 +702,9 @@ impl MainWindow {
                         start_path,
                         _saved_theme,
                         _pinned_tabs,
+                        _time_format_24h,
+                        _sort_column,
+                        _sort_ascending,
                     ) = load_app_settings();
                     self.tabs[0].nav = Navigation::new(start_path);
                     self.active_tab = 0;
@@ -712,6 +742,9 @@ impl MainWindow {
                         ThemeMode::Light => "light",
                     }),
                     &self.settings_window.current_settings.pinned_tabs,
+                    self.settings_window.current_settings.time_format_24h,
+                    self.settings_window.current_settings.sort_column,
+                    self.settings_window.current_settings.sort_ascending,
                 );
 
                 self.mark_tab_infos_dirty();
@@ -783,6 +816,9 @@ impl MainWindow {
                         ThemeMode::Light => "light",
                     }),
                     &self.settings_window.current_settings.pinned_tabs,
+                    self.settings_window.current_settings.time_format_24h,
+                    self.settings_window.current_settings.sort_column,
+                    self.settings_window.current_settings.sort_ascending,
                 );
             }
 

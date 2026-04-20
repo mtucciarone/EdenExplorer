@@ -87,6 +87,9 @@ fn save_manual_window_size(hwnd: HWND) {
             start_path,
             saved_theme,
             pinned_tabs,
+            time_format_24h,
+            sort_column,
+            sort_ascending,
         ) = load_app_settings();
         let window_size_mode = WindowSizeMode::Custom { width, height };
 
@@ -97,6 +100,9 @@ fn save_manual_window_size(hwnd: HWND) {
             &Some(start_path),
             saved_theme.as_deref(),
             &pinned_tabs,
+            time_format_24h,
+            sort_column,
+            sort_ascending,
         );
     }
 }

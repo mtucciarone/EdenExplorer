@@ -2,6 +2,7 @@ use crate::core::drives::DriveInfo;
 use crate::core::indexer::WindowSizeMode;
 use crate::core::networkdevices::NetworkDevicesState;
 use crate::gui::theme::{ThemeMode, ThemePalette};
+use crate::gui::utils::SortColumn;
 use crate::gui::windows::containers::structs::FavoriteItem;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -45,6 +46,8 @@ pub struct AppSettings {
     pub window_size_mode: WindowSizeMode,
     pub pinned_tabs: Vec<PathBuf>,
     pub time_format_24h: bool,
+    pub sort_column: SortColumn,
+    pub sort_ascending: bool,
 }
 
 #[derive(Default)]

@@ -1,5 +1,9 @@
+use crate::core::drives::{get_drive_infos, is_raw_physical_drive_path};
 use crate::core::fs::FileItem;
-use crate::core::indexer::{load_app_settings, load_favorites, load_theme_settings};
+use crate::core::fs::{parallel_directory_scan, scan_dir_async};
+use crate::core::indexer::{
+    load_app_settings, load_favorites, load_theme_settings, save_app_settings,
+};
 use crate::gui::icons::IconCache;
 use crate::gui::theme::{ThemeMode, apply_theme, get_palette, set_palette};
 use crate::gui::utils::SortColumn;
@@ -44,6 +48,7 @@ pub struct MainWindow {
     pub(crate) shutdown: Arc<AtomicBool>,
     pub(crate) size_threads: Vec<std::thread::JoinHandle<()>>,
     pub(crate) hwnd: Option<HWND>,
+    pub(crate) last_window_size: Option<(f32, f32)>,
 
     // File Explorer Variables
     pub(crate) tabs: Vec<TabState>,
@@ -92,14 +97,19 @@ impl Default for MainWindow {
             start_path,
             saved_theme,
             pinned_tabs,
+            time_format_24h,
+            sort_column,
+            sort_ascending,
         ) = load_app_settings();
         let loaded_settings = AppSettings {
             folder_scanning_enabled,
             windows_context_menu_enabled,
             window_size_mode: window_size_mode.clone(),
-            start_path: Some(start_path.clone()), // 👈 important
+            start_path: Some(start_path.clone()), // important
             pinned_tabs: pinned_tabs.clone(),
-            time_format_24h: true, // Default to 24-hour format
+            time_format_24h,
+            sort_column,
+            sort_ascending,
         };
 
         let pinned_tabs = pinned_tabs;
@@ -154,8 +164,8 @@ impl Default for MainWindow {
             theme_dirty: true,
             window_override_set: false,
             drag_state: DragState::default(),
-            sort_column: SortColumn::Name,
-            sort_ascending: true,
+            sort_column: loaded_settings.sort_column,
+            sort_ascending: loaded_settings.sort_ascending,
             icon_cache: None,
 
             file_type_cache: HashMap::new(),
@@ -170,6 +180,7 @@ impl Default for MainWindow {
             size_threads: Vec::new(),
 
             hwnd: None,
+            last_window_size: None,
             item_viewer_filter_state: FilterState::default(),
             clipboard_paths: Vec::new(),
             clipboard_set: HashSet::new(),
@@ -274,6 +285,55 @@ impl eframe::App for MainWindow {
         if self.theme_dirty {
             apply_theme(ctx, self.theme);
             self.theme_dirty = false;
+        }
+
+        // Auto-save window size when it changes (including maximize/restore)
+        if let Some(viewport_rect) = ctx.input(|i| i.viewport().inner_rect) {
+            let current_size = (viewport_rect.width(), viewport_rect.height());
+
+            // Check if window size changed from last recorded size
+            if let Some(last_size) = self.last_window_size {
+                let size_changed = (current_size.0 - last_size.0).abs() > 1.0
+                    || (current_size.1 - last_size.1).abs() > 1.0;
+
+                if size_changed {
+                    // Update the window size mode in settings
+                    let is_fullscreen = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
+                    self.settings_window.current_settings.window_size_mode = if is_fullscreen {
+                        crate::core::indexer::WindowSizeMode::FullScreen
+                    } else {
+                        crate::core::indexer::WindowSizeMode::Custom {
+                            width: current_size.0,
+                            height: current_size.1,
+                        }
+                    };
+
+                    // Save the updated settings
+                    save_app_settings(
+                        self.settings_window
+                            .current_settings
+                            .folder_scanning_enabled,
+                        self.settings_window
+                            .current_settings
+                            .windows_context_menu_enabled,
+                        &self.settings_window.current_settings.window_size_mode,
+                        &self.settings_window.current_settings.start_path,
+                        Some(match self.theme {
+                            crate::gui::theme::ThemeMode::Dark => "dark",
+                            crate::gui::theme::ThemeMode::Light => "light",
+                        }),
+                        &self.settings_window.current_settings.pinned_tabs,
+                        self.settings_window.current_settings.time_format_24h,
+                        self.settings_window.current_settings.sort_column,
+                        self.settings_window.current_settings.sort_ascending,
+                    );
+
+                    self.last_window_size = Some(current_size);
+                }
+            } else {
+                // First time, just record the size
+                self.last_window_size = Some(current_size);
+            }
         }
 
         if consume_clipboard_dirty() {

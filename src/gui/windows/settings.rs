@@ -1,5 +1,6 @@
 use crate::core::{fs::MY_PC_PATH, indexer::WindowSizeMode};
 use crate::gui::theme::{ThemePalette, apply_checkbox_colors};
+use crate::gui::utils::SortColumn;
 use crate::gui::windows::enums::SettingsAction;
 use crate::gui::windows::structs::{AppSettings, SettingsWindow};
 use eframe::egui;
@@ -16,6 +17,8 @@ impl Default for AppSettings {
             window_size_mode: WindowSizeMode::default(),
             pinned_tabs: Vec::new(),
             time_format_24h: true,
+            sort_column: SortColumn::Name,
+            sort_ascending: true,
         }
     }
 }
@@ -170,43 +173,6 @@ pub fn draw_settings_window(
                             }
                         });
                     });
-                    ui.add_space(8.0);
-                    // Display Settings Section
-                    ui.heading(format!("{} Display Settings", regular::MONITOR));
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        ui.label("Launch mode:");
-                        let mut full_screen = matches!(settings.current_settings.window_size_mode, WindowSizeMode::FullScreen);
-                        let mut half_screen = matches!(settings.current_settings.window_size_mode, WindowSizeMode::HalfScreen);
-                        let mut custom = matches!(settings.current_settings.window_size_mode, WindowSizeMode::Custom { .. });
-                        if ui.checkbox(&mut full_screen, "Fullscreen").changed() & half_screen {
-                            settings.current_settings.window_size_mode = WindowSizeMode::FullScreen;
-                            action = Some(SettingsAction::ApplySettings);
-                        }
-                        if ui.checkbox(&mut half_screen, "Half Screen").changed() & half_screen {
-                            settings.current_settings.window_size_mode = WindowSizeMode::HalfScreen;
-                            action = Some(SettingsAction::ApplySettings);
-                        }
-                        if ui.checkbox(&mut custom, "Custom").changed() & custom {
-                            settings.current_settings.window_size_mode = WindowSizeMode::Custom { width: 1200.0, height: 800.0 };
-                            action = Some(SettingsAction::ApplySettings);
-                        }
-                    });
-                    // Custom size inputs
-                    if let WindowSizeMode::Custom { width, height } = &mut settings.current_settings.window_size_mode {
-                        ui.add_space(8.0);
-                        ui.horizontal(|ui| {
-                            ui.label("Width:");
-                            if ui.add(egui::DragValue::new(width).range(400.0..=3840.0)).changed() {
-                                action = Some(SettingsAction::ApplySettings);
-                            }
-                            ui.label("Height:");
-                            if ui.add(egui::DragValue::new(height).range(300.0..=2160.0)).changed() {
-                                action = Some(SettingsAction::ApplySettings);
-                            }
-                            info_icon(ui, "Configure the window size when the application launches. Changes are applied after restart", palette);
-                        });
-                    }
                     ui.add_space(8.0);
                     // Time Format Section
                     ui.horizontal(|ui| {

@@ -128,6 +128,9 @@ pub fn draw_about_window(ctx: &egui::Context, settings: &mut AboutWindow, palett
                                     ui.label("lru");
                                     ui.label("0.16");
                                     ui.end_row();
+                                    ui.label("chrono");
+                                    ui.label("0.4.44");
+                                    ui.end_row();
                                 });
                     });
             ui.add_space(8.0);
