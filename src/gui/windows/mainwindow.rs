@@ -5,7 +5,7 @@ use crate::core::indexer::{
     load_app_settings, load_favorites, load_theme_settings, save_app_settings,
 };
 use crate::gui::icons::IconCache;
-use crate::gui::theme::{ThemeMode, apply_theme, get_palette, set_palette};
+use crate::gui::theme::{ThemeMode, apply_theme, get_default_palette, get_palette, set_palette};
 use crate::gui::utils::SortColumn;
 use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::explorer::draw_explorer;
@@ -198,9 +198,19 @@ impl Default for MainWindow {
         // Initialize settings window with loaded values
         app.settings_window.current_settings = loaded_settings;
 
-        if let Some((light, dark)) = load_theme_settings() {
-            set_palette(ThemeMode::Light, light);
-            set_palette(ThemeMode::Dark, dark);
+        match load_theme_settings() {
+            Some((light, dark)) => {
+                set_palette(ThemeMode::Light, light);
+                set_palette(ThemeMode::Dark, dark);
+            }
+            None => {
+                // 🔥 FORCE DEFAULTS INTO MEMORY
+                let light = get_default_palette(ThemeMode::Light);
+                let dark = get_default_palette(ThemeMode::Dark);
+
+                set_palette(ThemeMode::Light, light);
+                set_palette(ThemeMode::Dark, dark);
+            }
         }
 
         app.theme_customizer.light_palette = get_palette(ThemeMode::Light);
