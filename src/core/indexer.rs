@@ -106,6 +106,38 @@ impl Default for WindowSizeMode {
     }
 }
 
+fn load_or_migrate_bincode_to_postcard<T>(path: &std::path::Path) -> Option<T>
+where
+    T: serde::de::DeserializeOwned + serde::Serialize,
+{
+    let data = std::fs::read(path).ok()?;
+
+    // 1️⃣ Try OLD format first (bincode)
+    if let Ok(v) = bincode::deserialize::<T>(&data) {
+        println!("Loaded via bincode (migrating)");
+
+        // migrate → postcard
+        if let Ok(new_bytes) = postcard::to_allocvec(&v) {
+            let tmp_path = path.with_extension("tmp");
+
+            if std::fs::write(&tmp_path, new_bytes).is_ok() {
+                let _ = std::fs::rename(tmp_path, path);
+            }
+        }
+
+        return Some(v);
+    }
+
+    // 2️⃣ Try NEW format (postcard)
+    if let Ok(v) = postcard::from_bytes::<T>(&data) {
+        println!("Loaded via postcard");
+        return Some(v);
+    }
+
+    // 3️⃣ Corrupt
+    None
+}
+
 fn default_sort_column() -> crate::gui::utils::SortColumn {
     crate::gui::utils::SortColumn::Name
 }
@@ -134,14 +166,10 @@ pub fn load_favorites(drive: char) -> Vec<String> {
         Some(path) => path,
         None => return Vec::new(),
     };
-    let data = match std::fs::read(path) {
-        Ok(data) => data,
-        Err(_) => return Vec::new(),
-    };
-    match bincode::deserialize::<FavoritesSnapshot>(&data) {
-        Ok(snapshot) => snapshot.favorites,
-        Err(_) => Vec::new(),
-    }
+
+    load_or_migrate_bincode_to_postcard::<FavoritesSnapshot>(&path)
+        .map(|s| s.favorites)
+        .unwrap_or_default()
 }
 
 pub fn save_favorites(drive: char, favorites: &[String]) {
@@ -153,7 +181,7 @@ pub fn save_favorites(drive: char, favorites: &[String]) {
     let snapshot = FavoritesSnapshot {
         favorites: favorites.to_vec(),
     };
-    if let Ok(data) = bincode::serialize(&snapshot) {
+    if let Ok(data) = postcard::to_allocvec(&snapshot) {
         let _ = std::fs::write(path, data);
     }
 }
@@ -170,69 +198,20 @@ pub fn load_app_settings() -> (
     bool,
 ) {
     let default_path = PathBuf::from(MY_PC_PATH);
+
     let path = match settings_cache_path() {
         Some(path) => path,
-        None => {
-            return (
-                true,
-                false,
-                WindowSizeMode::Custom {
-                    width: 1200.0,
-                    height: 800.0,
-                },
-                default_path,
-                None,
-                Vec::new(),
-                true,                                // time_format_24h
-                crate::gui::utils::SortColumn::Name, // sort_column
-                true,                                // sort_ascending
-            );
-        }
+        None => return default_app_settings(default_path),
     };
-    let data = match std::fs::read(path) {
-        Ok(data) => data,
-        Err(_) => {
-            return (
-                true,
-                false,
-                WindowSizeMode::Custom {
-                    width: 1200.0,
-                    height: 800.0,
-                },
-                default_path,
-                None,
-                Vec::new(),
-                true,                                // time_format_24h
-                crate::gui::utils::SortColumn::Name, // sort_column
-                true,                                // sort_ascending
-            );
-        }
-    };
-    // Try to deserialize as new format first, then fall back to legacy
-    let snapshot = match bincode::deserialize::<AppSettingsSnapshot>(&data) {
-        Ok(snapshot) => snapshot,
-        Err(_) => {
-            // Try legacy format
-            match bincode::deserialize::<LegacyAppSettingsSnapshot>(&data) {
-                Ok(legacy_snapshot) => legacy_snapshot.into(),
-                Err(_) => {
-                    return (
-                        true,
-                        false,
-                        WindowSizeMode::Custom {
-                            width: 1200.0,
-                            height: 800.0,
-                        },
-                        default_path,
-                        None,
-                        Vec::new(),
-                        true,                                // time_format_24h
-                        crate::gui::utils::SortColumn::Name, // sort_column
-                        true,                                // sort_ascending
-                    );
-                }
-            }
-        }
+
+    let snapshot =
+        load_or_migrate_bincode_to_postcard::<AppSettingsSnapshot>(&path).or_else(|| {
+            load_or_migrate_bincode_to_postcard::<LegacyAppSettingsSnapshot>(&path).map(Into::into)
+        });
+
+    let snapshot = match snapshot {
+        Some(s) => s,
+        None => return default_app_settings(default_path),
     };
 
     (
@@ -245,6 +224,32 @@ pub fn load_app_settings() -> (
         snapshot.time_format_24h,
         snapshot.sort_column,
         snapshot.sort_ascending,
+    )
+}
+
+fn default_app_settings(
+    default_path: PathBuf,
+) -> (
+    bool,
+    bool,
+    WindowSizeMode,
+    PathBuf,
+    Option<String>,
+    Vec<PathBuf>,
+    bool,
+    crate::gui::utils::SortColumn,
+    bool,
+) {
+    (
+        true,
+        false,
+        WindowSizeMode::default(),
+        default_path,
+        None,
+        Vec::new(),
+        true,
+        crate::gui::utils::SortColumn::Name,
+        true,
     )
 }
 
@@ -275,18 +280,19 @@ pub fn save_app_settings(
         sort_column,
         sort_ascending,
     };
-    if let Ok(data) = bincode::serialize(&snapshot) {
+    if let Ok(data) = postcard::to_allocvec(&snapshot) {
         let _ = std::fs::write(path, data);
     }
 }
 
 pub fn load_theme_settings() -> Option<(ThemePalette, ThemePalette)> {
     let path = theme_cache_path()?;
-    let data = std::fs::read(path).ok()?;
 
-    match bincode::deserialize::<ThemeSettingsSnapshot>(&data) {
-        Ok(snapshot) if snapshot.version == THEME_VERSION => Some((snapshot.light, snapshot.dark)),
-        Ok(_) | Err(_) => {
+    match load_or_migrate_bincode_to_postcard::<ThemeSettingsSnapshot>(&path) {
+        Some(snapshot) if snapshot.version == THEME_VERSION => {
+            Some((snapshot.light, snapshot.dark))
+        }
+        _ => {
             eprintln!("Theme version mismatch or corruption. Resetting.");
             reset_theme_to_defaults();
             None
@@ -305,7 +311,7 @@ pub fn save_theme_settings(light: &ThemePalette, dark: &ThemePalette) {
         light: light.clone(),
         dark: dark.clone(),
     };
-    if let Ok(data) = bincode::serialize(&snapshot) {
+    if let Ok(data) = postcard::to_allocvec(&snapshot) {
         let _ = std::fs::write(path, data);
     }
 }
