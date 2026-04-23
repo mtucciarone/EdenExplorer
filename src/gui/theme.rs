@@ -445,3 +445,37 @@ pub fn apply_checkbox_colors(ui: &mut egui::Ui, palette: &ThemePalette, checked:
     visuals.hovered.fg_stroke.color = palette.checkbox_checkmark_color;
     visuals.active.fg_stroke.color = palette.checkbox_checkmark_color;
 }
+
+// 🎯 Regenerate all base-derived colors when primary color changes
+pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool) {
+    let base = palette.primary;
+
+    if is_dark {
+        // Dark theme calculations
+        palette.primary_hover = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 128);
+        palette.primary_active = Color32::from_rgb(
+            ((base.r() as u16 * 7) / 10) as u8, // 70% of red
+            ((base.g() as u16 * 7) / 10) as u8, // 70% of green
+            ((base.b() as u16 * 7) / 10) as u8, // 70% of blue
+        );
+        palette.primary_subtle = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 60);
+        palette.tab_border_default =
+            Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 60);
+    } else {
+        // Light theme calculations
+        palette.primary_hover = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 90);
+        palette.primary_active = Color32::from_rgb(
+            ((base.r() as u16 * 14) / 10).min(255) as u8, // 140% of red
+            ((base.g() as u16 * 14) / 10).min(255) as u8, // 140% of green
+            ((base.b() as u16 * 14) / 10).min(255) as u8, // 140% of blue
+        );
+        palette.primary_subtle = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 40);
+        palette.tab_border_default =
+            Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 40);
+    }
+
+    // Common to both themes
+    palette.tab_border_active = base;
+    palette.checkbox_bg_hover = base;
+    palette.checkbox_bg_active = base;
+}
