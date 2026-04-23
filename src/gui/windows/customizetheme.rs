@@ -1,4 +1,6 @@
-use crate::gui::theme::{ThemeMode, ThemePalette, get_default_palette};
+use crate::gui::theme::{
+    ThemeMode, ThemePalette, get_default_palette, regenerate_base_derived_colors,
+};
 use crate::gui::windows::enums::ThemeCustomizerAction;
 use crate::gui::windows::structs::ThemeCustomizer;
 use eframe::egui;
@@ -301,13 +303,22 @@ pub fn draw_theme_customizer(
                             .num_columns(2)
                             .spacing([12.0, 6.0])
                             .show(ui, |ui| {
-                                changed |= color_picker(
+                                let primary_changed = color_picker(
                                     ui,
                                     "Primary",
                                     &mut editing_palette.primary,
                                     &font_id,
                                     label_color,
                                 );
+
+                                // If primary color changed, regenerate all base-derived colors
+                                if primary_changed {
+                                    regenerate_base_derived_colors(
+                                        editing_palette,
+                                        customizer.selected_mode == ThemeMode::Dark,
+                                    );
+                                    changed = true;
+                                }
                                 ui.end_row();
                                 changed |= color_picker(
                                     ui,
@@ -383,8 +394,6 @@ fn color_picker(
     font_id: &FontId,
     label_color: egui::Color32,
 ) -> bool {
-    let mut changed = false;
-
     ui.label(
         egui::RichText::new(label)
             .font(font_id.clone())
@@ -392,72 +401,25 @@ fn color_picker(
             .color(label_color),
     );
 
-    ui.horizontal(|ui| {
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
+    // Convert Color32 to Rgba for the color picker
+    let mut rgba = egui::Rgba::from(*color);
 
-        let painter = ui.painter();
-        let radius = egui::CornerRadius::same(4);
+    // Use egui's native color picker with alpha support
+    let response = egui::widgets::color_picker::color_edit_button_rgba(
+        ui,
+        &mut rgba,
+        egui::widgets::color_picker::Alpha::OnlyBlend,
+    );
 
-        // === Checkerboard background ===
-        let checker_size = 4.0;
-        let light = egui::Color32::from_gray(160);
-        let dark = egui::Color32::from_gray(100);
-
-        let mut y = rect.top();
-        let mut row = 0;
-
-        while y < rect.bottom() {
-            let mut x = rect.left();
-            let mut col = row;
-
-            while x < rect.right() {
-                let tile_color = if col % 2 == 0 { light } else { dark };
-
-                let tile_rect = egui::Rect::from_min_size(
-                    egui::pos2(x, y),
-                    egui::vec2(checker_size, checker_size),
-                );
-
-                painter.rect_filled(tile_rect, 0.0, tile_color);
-
-                x += checker_size;
-                col += 1;
-            }
-
-            y += checker_size;
-            row += 1;
-        }
-
-        // === Foreground color (with transparency) ===
-        painter.rect_filled(rect, radius, *color);
-
-        // === Optional border (nice polish) ===
-        painter.rect_stroke(
-            rect,
-            radius,
-            egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color),
-            egui::StrokeKind::Inside,
+    // Convert back to Color32 if changed
+    if response.changed() {
+        *color = egui::Color32::from_rgba_premultiplied(
+            (rgba.r() * 255.0) as u8,
+            (rgba.g() * 255.0) as u8,
+            (rgba.b() * 255.0) as u8,
+            (rgba.a() * 255.0) as u8,
         );
+    }
 
-        // === RGBA controls ===
-        let a = color.a().max(1);
-
-        let mut rgba = [
-            ((color.r() as u16 * 255) / a as u16) as u8,
-            ((color.g() as u16 * 255) / a as u16) as u8,
-            ((color.b() as u16 * 255) / a as u16) as u8,
-            color.a(),
-        ];
-        let labels = ["R", "G", "B", "A"];
-        for (i, c) in rgba.iter_mut().enumerate() {
-            ui.label(labels[i]);
-            changed |= ui.add(egui::DragValue::new(c).range(0..=255)).changed();
-        }
-
-        if changed {
-            *color = egui::Color32::from_rgba_unmultiplied(rgba[0], rgba[1], rgba[2], rgba[3]);
-        }
-    });
-
-    changed
+    response.changed()
 }
