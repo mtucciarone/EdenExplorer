@@ -4,6 +4,7 @@ use crate::core::fs::{parallel_directory_scan, scan_dir_async};
 use crate::core::indexer::{
     load_app_settings, load_favorites, load_theme_settings, save_app_settings,
 };
+use crate::gui::dragdrop::{DragDropBackend, DropTargets};
 use crate::gui::icons::IconCache;
 use crate::gui::theme::{ThemeMode, apply_theme, get_default_palette, get_palette, set_palette};
 use crate::gui::utils::SortColumn;
@@ -33,6 +34,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use windows::Win32::Foundation::HWND;
+use windows::Win32::Foundation::{POINT, RECT};
+use windows::Win32::Graphics::Gdi::ClientToScreen;
+use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, GetCursorPos};
 
 pub struct MainWindow {
     // MainWindow General Variables
@@ -59,6 +63,7 @@ pub struct MainWindow {
     pub(crate) rename_state: Option<RenameState>,
     pub(crate) sort_column: SortColumn,
     pub(crate) drag_state: DragState,
+    pub(crate) dragdrop: Option<Box<dyn DragDropBackend>>,
     pub(crate) sort_ascending: bool,
     pub(crate) file_type_cache: HashMap<String, String>,
     pub(crate) explorer_state: ExplorerState,
@@ -164,6 +169,7 @@ impl Default for MainWindow {
             theme_dirty: true,
             window_override_set: false,
             drag_state: DragState::default(),
+            dragdrop: None,
             sort_column: loaded_settings.sort_column,
             sort_ascending: loaded_settings.sort_ascending,
             icon_cache: None,
@@ -244,6 +250,9 @@ impl MainWindow {
             unsafe {
                 install_wndproc(hwnd);
             }
+            app.dragdrop = Some(Box::new(
+                crate::gui::windows::dragdrop::WindowsDragDropBackend::new(Some(hwnd)),
+            ));
         }
 
         app.hwnd = hwnd;
@@ -274,22 +283,18 @@ impl eframe::App for MainWindow {
 
         // Main layout: sidebar + tabs column
         let mut pending_action: Option<ItemViewerAction> = None;
-
-        // 🔥 Detect external drag-over (files hovering)
-        self.external_drag_to_internal_hover = ctx.input(|i| !i.raw.hovered_files.is_empty());
-
-        // 🔥 Detect dropped files from OS
-        let dropped_files: Vec<PathBuf> = ctx.input(|i| {
-            i.raw
-                .dropped_files
-                .iter()
-                .filter_map(|f| f.path.clone())
-                .collect()
-        });
-
-        if !dropped_files.is_empty() {
-            // Send into your existing system
-            pending_action = Some(ItemViewerAction::FilesDropped(dropped_files));
+        let mut drop_targets = DropTargets::default();
+        let dragdrop = self.dragdrop.as_deref();
+        let native_drag_active = dragdrop
+            .map(|backend| backend.is_drag_active())
+            .unwrap_or(false);
+        let native_inbound_drag_active = dragdrop
+            .map(|backend| backend.is_inbound_drag_active())
+            .unwrap_or(false);
+        let drag_hover_target = dragdrop.and_then(|backend| backend.hovered_drop_target());
+        let drag_active = self.drag_state.active || native_drag_active;
+        if let Some(backend) = dragdrop {
+            backend.set_scale_factor(ctx.pixels_per_point());
         }
 
         if self.theme_dirty {
@@ -489,11 +494,16 @@ impl eframe::App for MainWindow {
                                 &mut self.drive_size_text_cache,
                                 &mut self.external_drag_to_internal_hover,
                                 &mut self.drag_state,
+                                drag_active,
+                                native_inbound_drag_active,
+                                drag_hover_target.clone(),
+                                dragdrop,
                                 &mut self.item_viewer_filter_state,
                                 self.is_loading,
                                 &mut self.explorer_state,
                                 &mut self.theme_customizer,
                                 &mut self.settings_window,
+                                &mut drop_targets,
                             );
 
                         tabs_action = Some(next_tabs_action);
@@ -504,13 +514,116 @@ impl eframe::App for MainWindow {
             });
         });
 
+        if let Some(backend) = self.dragdrop.as_ref() {
+            backend.update_drop_targets(drop_targets);
+        }
+
+        if pending_action.is_none() {
+            let dropped_paths: Vec<PathBuf> = ctx.input(|i| {
+                i.raw
+                    .dropped_files
+                    .iter()
+                    .filter_map(|file| file.path.clone())
+                    .collect()
+            });
+            if !dropped_paths.is_empty() {
+                pending_action = Some(ItemViewerAction::FilesDropped(dropped_paths));
+            }
+        }
+
+        if pending_action.is_none() && self.drag_state.active && !native_drag_active {
+            let pointer_inside = if let Some(hwnd) = self.hwnd {
+                unsafe {
+                    let mut screen_pt = POINT::default();
+                    if GetCursorPos(&mut screen_pt).is_err() {
+                        false
+                    } else {
+                        let mut client_rect = RECT::default();
+                        if GetClientRect(hwnd, &mut client_rect).is_err() {
+                            false
+                        } else {
+                            let mut top_left = POINT {
+                                x: client_rect.left,
+                                y: client_rect.top,
+                            };
+                            let mut bottom_right = POINT {
+                                x: client_rect.right,
+                                y: client_rect.bottom,
+                            };
+                            let _ = ClientToScreen(hwnd, &mut top_left);
+                            let _ = ClientToScreen(hwnd, &mut bottom_right);
+                            screen_pt.x >= top_left.x
+                                && screen_pt.x < bottom_right.x
+                                && screen_pt.y >= top_left.y
+                                && screen_pt.y < bottom_right.y
+                        }
+                    }
+                }
+            } else {
+                true
+            };
+
+            if !pointer_inside {
+                if let Some(backend) = self.dragdrop.as_ref() {
+                    if backend.begin_file_drag(&self.drag_state.source_items) {
+                        self.drag_state.active = false;
+                        self.drag_state.start_pos = None;
+                        self.drag_state.source_items.clear();
+                        self.load_path();
+                    }
+                }
+            }
+        }
+
+        let drag_sources = if self.drag_state.source_items.is_empty() {
+            None
+        } else {
+            Some(self.drag_state.source_items.clone())
+        };
+        let tabs_move_target = tabs_action
+            .as_ref()
+            .and_then(|a| a.move_files_to_tab_dir.as_ref())
+            .is_some();
+        let tabbar_move_target = tabbar_action
+            .as_ref()
+            .and_then(|a| a.move_files_to_breadcrumb_dir.as_ref())
+            .is_some();
+
         self.handle_directory_batch_recieve(ctx);
         self.handle_directory_size_updates(ctx);
         self.handle_throttle_size_requests(ctx);
         self.handle_topbar_action(topbar_action);
         self.handle_sidebar_action(sidebar_action);
-        self.handle_tabs_action(tabs_action);
-        self.handle_tabbar_action(tabbar_action);
+        self.handle_tabs_action(tabs_action, drag_sources.as_deref());
+        self.handle_tabbar_action(tabbar_action, drag_sources.as_deref());
+
+        if tabs_move_target || tabbar_move_target {
+            self.drag_state.active = false;
+            self.drag_state.start_pos = None;
+            self.drag_state.source_items.clear();
+        }
+
+        if pending_action.is_none() {
+            if let Some(command) = self
+                .dragdrop
+                .as_ref()
+                .and_then(|backend| backend.poll_command())
+            {
+                pending_action = Some(match command {
+                    crate::gui::dragdrop::NativeDropCommand::ImportFiles(paths) => {
+                        ItemViewerAction::FilesDropped(paths)
+                    }
+                    crate::gui::dragdrop::NativeDropCommand::MoveFiles {
+                        sources,
+                        target_dir,
+                    } => ItemViewerAction::MoveItems {
+                        sources,
+                        target_dir,
+                    },
+                });
+            }
+        }
+
         handle_pending_actions(pending_action, self);
         handle_draw_customizetheme_window(
             ctx,

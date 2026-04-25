@@ -1,4 +1,5 @@
 use crate::core::fs::{FileItem, MY_PC_PATH};
+use crate::gui::dragdrop::{DragDropBackend, DropTargets};
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::SortColumn;
@@ -44,11 +45,16 @@ pub fn draw_explorer(
     drive_size_text_cache: &mut HashMap<PathBuf, (u64, u64, String)>,
     external_drag_to_internal_hover: &mut bool,
     drag_state: &mut DragState,
+    drag_active: bool,
+    native_drag_active: bool,
+    drag_hover_target: Option<PathBuf>,
+    dragdrop: Option<&dyn DragDropBackend>,
     item_viewer_filter_state: &mut FilterState,
     is_loading: bool,
     explorer_state: &mut ExplorerState,
     theme_customizer: &mut ThemeCustomizer,
     settings_window: &mut SettingsWindow,
+    drop_targets: &mut DropTargets,
 ) -> (TabsAction, Option<TabbarAction>, Option<ItemViewerAction>) {
     let mut tabs_action = TabsAction::default();
     let mut tabbar_action: Option<TabbarAction> = None;
@@ -96,6 +102,8 @@ pub fn draw_explorer(
                     hwnd,
                     scroll_to_id,
                     drag_state,
+                    drag_active,
+                    drag_hover_target.clone(),
                 );
                 if scroll_to_id.is_some() {
                     *pending_tab_scroll_id = None;
@@ -126,6 +134,8 @@ pub fn draw_explorer(
                         palette,
                         is_favorited,
                         drag_state,
+                        drag_active,
+                        drag_hover_target.clone(),
                     ))
                 };
 
@@ -136,6 +146,7 @@ pub fn draw_explorer(
                 let item_viewer_height =
                     (ui.available_height() - status_height - status_bottom_gap).max(0.0);
                 let mut hovered_drop_target: Option<PathBuf> = None;
+                let mut hovered_drop_target_rect: Option<egui::Rect> = None;
 
                 ui.allocate_ui_with_layout(
                     egui::vec2(ui.available_width(), item_viewer_height),
@@ -164,8 +175,13 @@ pub fn draw_explorer(
                                     external_drag_to_internal_hover,
                                     &mut tabbar_action,
                                     drag_state,
+                                    drag_active,
+                                    native_drag_active,
+                                    drag_hover_target.clone(),
+                                    dragdrop,
                                     item_viewer_filter_state,
                                     &mut hovered_drop_target,
+                                    &mut hovered_drop_target_rect,
                                     is_loading,
                                     explorer_state,
                                     theme_customizer,
@@ -176,42 +192,16 @@ pub fn draw_explorer(
                     },
                 );
 
-                let pointer_released = ui
-                    .ctx()
-                    .input(|i| i.pointer.any_released() && i.pointer.interact_pos().is_some());
-
-                if drag_state.active && pointer_released && !drag_state.source_items.is_empty() {
-                    if let Some(target_dir) = tabs_action.move_files_to_tab_dir.clone() {
-                        if pending_action.is_none() {
-                            pending_action = Some(ItemViewerAction::MoveFilesToTabDirectory {
-                                sources: drag_state.source_items.clone(),
-                                target_dir,
-                            });
-                        }
-                    } else if let Some(target_dir) = tabbar_action
-                        .as_ref()
-                        .and_then(|a| a.move_files_to_breadcrumb_dir.clone())
-                    {
-                        if pending_action.is_none() {
-                            pending_action =
-                                Some(ItemViewerAction::MoveFilesToBreadcrumbDirectory {
-                                    sources: drag_state.source_items.clone(),
-                                    target_dir,
-                                });
-                        }
-                    } else if let Some(target_dir) = hovered_drop_target {
-                        if pending_action.is_none() {
-                            pending_action = Some(ItemViewerAction::MoveItems {
-                                sources: drag_state.source_items.clone(),
-                                target_dir,
-                            });
-                        }
-                    }
-
-                    drag_state.active = false;
-                    drag_state.start_pos = None;
-                    drag_state.source_items.clear();
-                }
+                drop_targets.item_target.target = hovered_drop_target.clone();
+                drop_targets.item_target.rect = hovered_drop_target_rect;
+                drop_targets.tab_target.target = tabs_action.move_files_to_tab_dir.clone();
+                drop_targets.tab_target.rect = tabs_action.move_files_to_tab_dir_rect;
+                drop_targets.breadcrumb_target.target = tabbar_action
+                    .as_ref()
+                    .and_then(|a| a.move_files_to_breadcrumb_dir.clone());
+                drop_targets.breadcrumb_target.rect = tabbar_action
+                    .as_ref()
+                    .and_then(|a| a.move_files_to_breadcrumb_dir_rect);
 
                 if !is_drive_view {
                     let mut dir_count = 0usize;

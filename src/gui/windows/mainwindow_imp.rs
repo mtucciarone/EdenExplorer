@@ -602,7 +602,11 @@ impl MainWindow {
         draw_about_window(ctx, &mut self.about_window, palette);
     }
 
-    pub fn handle_tabbar_action(&mut self, tabbar_action: Option<TabbarAction>) {
+    pub fn handle_tabbar_action(
+        &mut self,
+        tabbar_action: Option<TabbarAction>,
+        drag_sources: Option<&[PathBuf]>,
+    ) {
         if let Some(action) = tabbar_action.as_ref().and_then(|t| t.nav.as_ref()) {
             match action {
                 TabbarNavAction::Back => self.current_nav_mut().go_back(),
@@ -623,6 +627,14 @@ impl MainWindow {
                 .unwrap_or(false)
             {
                 self.load_path();
+            }
+            if let Some(target_dir) = tabbar_action
+                .as_ref()
+                .and_then(|t| t.move_files_to_breadcrumb_dir.as_ref())
+            {
+                if let Some(sources) = drag_sources {
+                    self.move_selected_paths_to_dir(sources, target_dir.clone());
+                }
             }
             if tabbar_action
                 .as_ref()
@@ -656,7 +668,11 @@ impl MainWindow {
         }
     }
 
-    pub fn handle_tabs_action(&mut self, tabs_action: Option<TabsAction>) {
+    pub fn handle_tabs_action(
+        &mut self,
+        tabs_action: Option<TabsAction>,
+        drag_sources: Option<&[PathBuf]>,
+    ) {
         if let Some(action) = tabs_action {
             if let Some(id) = action.activate {
                 self.active_tab = self.tabs.iter().position(|t| t.id == id).unwrap();
@@ -749,7 +765,52 @@ impl MainWindow {
 
                 self.mark_tab_infos_dirty();
             }
+            if let Some(target_dir) = action.move_files_to_tab_dir.as_ref() {
+                if let Some(sources) = drag_sources {
+                    self.move_selected_paths_to_dir(sources, target_dir.clone());
+                }
+            }
         }
+    }
+
+    fn move_selected_paths_to_dir(&mut self, sources: &[PathBuf], target_dir: PathBuf) {
+        if sources.is_empty() {
+            return;
+        }
+
+        unsafe {
+            let file_op: IFileOperation =
+                CoCreateInstance(&FileOperation, None, CLSCTX_ALL).unwrap();
+
+            file_op
+                .SetOperationFlags(FOF_SIMPLEPROGRESS | FOF_ALLOWUNDO | FOFX_SHOWELEVATIONPROMPT)
+                .ok();
+
+            let target_item: IShellItem = SHCreateItemFromParsingName(
+                &HSTRING::from(target_dir.to_string_lossy().to_string()),
+                None,
+            )
+            .unwrap();
+
+            for source in sources {
+                let source_item: IShellItem = SHCreateItemFromParsingName(
+                    &HSTRING::from(source.to_string_lossy().to_string()),
+                    None,
+                )
+                .unwrap();
+
+                file_op
+                    .MoveItem(&source_item, &target_item, None, None)
+                    .ok();
+            }
+
+            file_op.PerformOperations().ok();
+        }
+
+        self.explorer_state.selected_paths.clear();
+        self.explorer_state.selection_anchor = None;
+        self.explorer_state.selection_focus = None;
+        self.load_path();
     }
 
     pub fn handle_sidebar_action(&mut self, sidebar_action: Option<SidebarAction>) {

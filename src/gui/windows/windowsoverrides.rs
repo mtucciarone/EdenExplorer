@@ -45,6 +45,14 @@ pub fn set_egui_ctx(ctx: &Context) {
     *EGUI_CTX.write().unwrap() = Some(ctx.clone());
 }
 
+pub fn request_repaint() {
+    if let Ok(ctx) = EGUI_CTX.read() {
+        if let Some(ctx) = ctx.as_ref() {
+            ctx.request_repaint();
+        }
+    }
+}
+
 pub fn consume_clipboard_dirty() -> bool {
     CLIPBOARD_DIRTY.swap(false, Ordering::AcqRel)
 }
