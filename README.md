@@ -27,6 +27,7 @@
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/github/downloads/mtucciarone/EdenExplorer/total?style=for-the-badge&color=5F4B87&labelColor=14161A" />
   <img src="https://img.shields.io/github/v/release/mtucciarone/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" />
   <img src="https://img.shields.io/github/license/mtucciarone/EdenExplorer?style=for-the-badge&color=5F4B87&labelColor=14161A" />
   <img src="https://img.shields.io/github/actions/workflow/status/mtucciarone/EdenExplorer/release.yml?style=for-the-badge&color=5F4B87&labelColor=14161A" />
