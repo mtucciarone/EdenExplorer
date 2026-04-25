@@ -1,5 +1,6 @@
 use crate::core::drives::is_raw_physical_drive_path;
 use crate::core::fs::FileItem;
+use crate::gui::dragdrop::DragDropBackend;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::{ThemePalette, apply_checkbox_colors};
 use crate::gui::utils::{
@@ -43,8 +44,13 @@ pub fn draw_item_viewer(
     external_drag_to_internal_hover: &mut bool,
     tabbar_action: &mut Option<TabbarAction>,
     drag_state: &mut DragState,
+    drag_active: bool,
+    native_drag_active: bool,
+    drag_hover_target: Option<PathBuf>,
+    dragdrop: Option<&dyn DragDropBackend>,
     filter_state: &mut FilterState,
     hovered_drop_target_out: &mut Option<PathBuf>,
+    hovered_drop_target_rect_out: &mut Option<egui::Rect>,
     is_loading: bool,
     explorer_state: &mut ExplorerState,
     theme_customizer_window: &mut ThemeCustomizer,
@@ -62,21 +68,6 @@ pub fn draw_item_viewer(
     let mut any_row_hovered = false;
 
     if files.is_empty() {
-        // Handle drag and drop for empty folders
-        if ui.ctx().input(|i| !i.raw.dropped_files.is_empty()) {
-            let dropped_paths: Vec<PathBuf> = ui.ctx().input(|i| {
-                i.raw
-                    .dropped_files
-                    .iter()
-                    .filter_map(|f| f.path.clone())
-                    .collect()
-            });
-
-            if !dropped_paths.is_empty() {
-                action = Some(ItemViewerAction::FilesDropped(dropped_paths));
-            }
-        }
-
         ui.centered_and_justified(|ui| {
             if is_loading {
                 ui.add(egui::Spinner::new().size(28.0));
@@ -115,7 +106,7 @@ pub fn draw_item_viewer(
         }
     }
 
-    if drag_state.active {
+    if drag_active {
         let label = if drag_state.source_items.len() == 1 {
             drag_state.source_items[0]
                 .file_name()
@@ -148,12 +139,21 @@ pub fn draw_item_viewer(
     let mut current_hovered_drop_target: Option<PathBuf> = None;
     let mut current_hovered_drop_target_rect: Option<egui::Rect> = None;
     let mut best_hovered_row: Option<(f32, bool, PathBuf, egui::Rect)> = None;
-    let drag_hover_active = ui
+    let drag_hover_active = ui.ctx().input(|i| {
+        drag_active
+            || native_drag_active
+            || i.raw.hovered_files.iter().any(|file| file.path.is_some())
+    });
+    let external_file_hover = ui
         .ctx()
-        .input(|i| drag_state.active || i.raw.hovered_files.iter().any(|file| file.path.is_some()));
+        .input(|i| i.raw.hovered_files.iter().any(|file| file.path.is_some()));
     let pointer_pos = ui
         .ctx()
         .input(|i| i.pointer.interact_pos().or_else(|| i.pointer.hover_pos()));
+    let pointer_released = ui
+        .ctx()
+        .input(|i| i.pointer.any_released() && i.pointer.interact_pos().is_some());
+    let hovered_target_ref = drag_hover_target.as_ref();
 
     if !files.is_empty() {
         let modifiers = ui.ctx().input(|i| i.modifiers);
@@ -366,7 +366,12 @@ pub fn draw_item_viewer(
                     let row_resp = row.response();
 
                     if drag_hover_active {
-                        if let Some(pointer) = pointer_pos {
+                        if let Some(target) = hovered_target_ref {
+                            if &file.path == target && file.is_dir {
+                                current_hovered_drop_target = Some(file.path.clone());
+                                current_hovered_drop_target_rect = Some(row_resp.rect);
+                            }
+                        } else if let Some(pointer) = pointer_pos {
                             if row_resp.rect.contains(pointer) {
                                 let is_dir = file.is_dir;
                                 let row_top = row_resp.rect.top();
@@ -394,20 +399,27 @@ pub fn draw_item_viewer(
                         drag_state.active = false; // threshold not passed yet
                         drag_state.source_items.clear();
 
-                        // ✅ LOCK drag payload immediately
-                        drag_state.source_items =
-                            if explorer_state.selected_paths.contains(&file.path) {
-                                explorer_state.selected_paths.iter().cloned().collect()
-                            } else {
-                                vec![file.path.clone()]
-                            };
+                        if explorer_state.selected_paths.contains(&file.path) {
+                            drag_state.source_items =
+                                explorer_state.selected_paths.iter().cloned().collect();
+                        } else {
+                            // Click-drag on a row should promote that row into the selection.
+                            explorer_state.selected_paths.clear();
+                            explorer_state.selected_paths.insert(file.path.clone());
+                            explorer_state.selection_anchor = Some(idx);
+                            explorer_state.selection_focus = Some(idx);
+                            drag_state.source_items = vec![file.path.clone()];
+                        }
                     }
 
                     if let (Some(start), Some(current)) = (
                         drag_state.start_pos,
                         row_resp.ctx.input(|i| i.pointer.hover_pos()),
                     ) {
-                        if !drag_state.active && start.distance(current) > 4.0 {
+                        if !drag_state.active
+                            && !drag_state.source_items.is_empty()
+                            && start.distance(current) > 4.0
+                        {
                             drag_state.active = true;
                         }
                     }
@@ -467,6 +479,18 @@ pub fn draw_item_viewer(
                     }
                 }
 
+                if drag_state.active && pointer_released {
+                    if let Some(target_dir) = current_hovered_drop_target.clone() {
+                        action = Some(ItemViewerAction::MoveItems {
+                            sources: drag_state.source_items.clone(),
+                            target_dir,
+                        });
+                        drag_state.active = false;
+                        drag_state.start_pos = None;
+                        drag_state.source_items.clear();
+                    }
+                }
+
                 *hovered_drop_target = current_hovered_drop_target;
                 hovered_drop_target_rect = current_hovered_drop_target_rect;
             });
@@ -492,6 +516,7 @@ pub fn draw_item_viewer(
         }
 
         *hovered_drop_target_out = hovered_drop_target.clone();
+        *hovered_drop_target_rect_out = hovered_drop_target_rect;
 
         if let Some(a) = handle_keyboard_navigation(
             ui.ctx(),
@@ -504,26 +529,7 @@ pub fn draw_item_viewer(
         }
 
         // --- Drag and Drop Detection ---
-        // Check for external drag and drop
-
-        if ui.ctx().input(|i| !i.raw.dropped_files.is_empty()) {
-            let dropped_paths: Vec<PathBuf> = ui.ctx().input(|i| {
-                i.raw
-                    .dropped_files
-                    .iter()
-                    .filter_map(|f| f.path.clone())
-                    .collect()
-            });
-
-            if !dropped_paths.is_empty() {
-                action = Some(ItemViewerAction::FilesDropped(dropped_paths));
-            }
-        }
-
-        // Update drag hover state
-        *external_drag_to_internal_hover = ui
-            .ctx()
-            .input(|i| i.raw.hovered_files.iter().any(|f| f.path.is_some()));
+        *external_drag_to_internal_hover = native_drag_active || external_file_hover;
 
         // 👇 Fill remaining space so empty area is interactable
         let remaining_rect = ui.available_rect_before_wrap();

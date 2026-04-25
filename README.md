@@ -296,11 +296,11 @@
 - [x] Enable/Disable Windows shell integration. By enabling, the context menu will populate with default Windows registry context menu items
 - [x] New context menu command (Copy Path) with keyboard shortcut of Ctrl+Shift+C
 - [x] Column sorting saves across sessions
+- [x] Drag and drop files from EdenExplorer into native Operating System (Windows) objects (Desktop, File Explorer, applications, etc.)
 
 ### 🚀 Upcoming Features
 - [ ] Image previews using Spacebar - GPU texture via wgpu / egui_wgpu_backend
 - [ ] Support network devices
-- [ ] Drag and drop files from EdenExplorer into Windows objects (Desktop, File Explorer, applications, etc.)
 - [ ] Enhanced theme customization, such as custom layouts, mix/match UI elements, styles, etc
 
 ## 🐛 Known Bugs

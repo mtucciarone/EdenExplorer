@@ -35,6 +35,7 @@ pub struct TabsAction {
     pub open_new: bool,
     pub toggle_pin: Option<PathBuf>,
     pub move_files_to_tab_dir: Option<PathBuf>,
+    pub move_files_to_tab_dir_rect: Option<egui::Rect>,
 }
 
 pub struct TabState {
@@ -58,6 +59,7 @@ pub struct TabbarAction {
     pub refresh_current_directory: bool,
     pub is_breadcrumb_path_edit_active: bool,
     pub move_files_to_breadcrumb_dir: Option<PathBuf>,
+    pub move_files_to_breadcrumb_dir_rect: Option<egui::Rect>,
 }
 
 #[derive(Clone, Copy)]
