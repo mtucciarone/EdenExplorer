@@ -307,6 +307,8 @@
 ## 🐛 Known Bugs
 - Hitting "Shift" after already shift-selecting files drops the entire file selection
 - Dragging EdenExplorer across multiple monitors causes strange visual glitches
+- Typing an invalid character into a folder/file during rename/creation causes a strange reaction from Windows service layer
+- If you navigate into a folder and then press "backspace" or navigate back, you lose the folder selection
 
 ## Star History
 
