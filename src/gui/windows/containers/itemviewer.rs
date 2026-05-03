@@ -24,6 +24,44 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use windows::Win32::Foundation::HWND;
 
+/// Checks if a filename contains valid characters for real-time validation
+/// Used during typing to immediately filter invalid characters
+fn filename_has_valid_characters_realtime(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+
+    // Check maximum length
+    if name.len() > 255 {
+        return false;
+    }
+
+    // Windows reserved characters that cannot be used in filenames
+    let invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+
+    // Check for invalid characters
+    for ch in name.chars() {
+        if invalid_chars.contains(&ch) {
+            return false;
+        }
+    }
+
+    // Windows reserved names (case-insensitive)
+    let reserved_names = [
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+
+    let name_upper = name.to_uppercase();
+    for reserved in &reserved_names {
+        if name_upper == *reserved {
+            return false;
+        }
+    }
+
+    true
+}
+
 pub fn draw_item_viewer(
     ui: &mut egui::Ui,
     files: &Vec<FileItem>,
@@ -1282,6 +1320,10 @@ fn handle_editing_file_name(
         visuals.override_text_color = Some(get_row_color(is_selected, palette));
 
         let edit_id = ui.id().with("rename_input").with(&file.path);
+
+        // Store original length to detect changes
+        let original_len = rename_state.new_name.len();
+
         let edit_response = ui.add(
             egui::TextEdit::singleline(&mut rename_state.new_name)
                 .id(edit_id)
@@ -1298,6 +1340,75 @@ fn handle_editing_file_name(
             }
         }
 
+        // Real-time character validation
+        if rename_state.new_name.len() != original_len {
+            // Use the real-time validation function for each character typed
+            if !filename_has_valid_characters_realtime(&rename_state.new_name) {
+                // Remove invalid characters by keeping only valid ones
+                let invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+                let mut cleaned_name = String::new();
+
+                for ch in rename_state.new_name.chars() {
+                    if !invalid_chars.contains(&ch) {
+                        cleaned_name.push(ch);
+                    }
+                }
+
+                // Check for reserved names
+                let reserved_names = [
+                    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6",
+                    "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7",
+                    "LPT8", "LPT9",
+                ];
+
+                let name_upper = cleaned_name.to_uppercase();
+                for reserved in &reserved_names {
+                    if name_upper == *reserved {
+                        cleaned_name.clear(); // Clear the invalid reserved name
+                    }
+                }
+
+                rename_state.new_name = cleaned_name;
+                rename_state.validation_error_show = true; // Show error popup
+            } else {
+                // If valid, clear any existing error
+                if rename_state.validation_error_show {
+                    rename_state.validation_error_show = false;
+                }
+            }
+        }
+
+        // Show validation tooltip if error flag is set
+        if rename_state.validation_error_show {
+            let tooltip_text = "Invalid filename characters detected!\n\
+                Characters not allowed: < > : \" / \\ | ? *\n\
+                Reserved names: CON, PRN, AUX, NUL, COM1-9, LPT1-9\n\
+                Maximum length: 255 characters";
+
+            // Calculate position above the input field
+            let popup_pos = egui::pos2(edit_response.rect.left(), edit_response.rect.top() - 60.0);
+
+            // Show error message positioned above the input field
+            egui::Area::new(ui.id().with("error_popup"))
+                .pivot(egui::Align2::LEFT_BOTTOM)
+                .current_pos(popup_pos)
+                .show(ui.ctx(), |ui| {
+                    ui.set_min_width(350.0);
+                    egui::Frame::popup(ui.style())
+                        .fill(egui::Color32::from_rgb(40, 40, 40))
+                        .stroke(egui::Stroke::new(1.0, egui::Color32::RED))
+                        .show(ui, |ui| {
+                            ui.add_space(8.0);
+                            ui.vertical_centered(|ui| {
+                                ui.colored_label(egui::Color32::RED, tooltip_text);
+                            });
+                            ui.add_space(8.0);
+                        });
+                });
+
+            // TODO: Add Windows alert sound when API compatibility is resolved
+        }
+
         // ✅ Input handling (same pattern as tabs)
         let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
         let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
@@ -1305,14 +1416,23 @@ fn handle_editing_file_name(
         if enter {
             let new_name = rename_state.new_name.trim().to_string();
 
+            // Clear validation error on successful action
+            rename_state.validation_error_show = false;
+
             action = Some(ItemViewerAction::Context(
                 ItemViewerContextAction::RenameRequest(file.path.clone(), new_name),
             ));
         } else if escape {
+            // Clear validation error on cancel
+            rename_state.validation_error_show = false;
+
             action = Some(ItemViewerAction::Context(
                 ItemViewerContextAction::RenameCancel,
             ));
         } else if edit_response.lost_focus() {
+            // Clear validation error on focus loss
+            rename_state.validation_error_show = false;
+
             // 👈 matches Windows: clicking away cancels rename
             action = Some(ItemViewerAction::Context(
                 ItemViewerContextAction::RenameCancel,

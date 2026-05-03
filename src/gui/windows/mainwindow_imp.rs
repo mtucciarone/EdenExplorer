@@ -40,6 +40,64 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::{Win32::System::Com::*, Win32::UI::Shell::*, core::*};
 
 impl MainWindow {
+    /// Comprehensive validation for submitted filenames
+    /// Used when user submits/commits the filename (Enter, create new file/folder)
+    fn is_submitted_filename_valid(name: &str) -> bool {
+        if name.is_empty() {
+            return false;
+        }
+
+        if name.len() > 255 {
+            return false;
+        }
+
+        // Cannot be "." or ".."
+        if name == "." || name == ".." {
+            return false;
+        }
+
+        // Cannot start or end with space
+        if name.starts_with(' ') || name.ends_with(' ') {
+            return false;
+        }
+
+        // Cannot end with dot
+        if name.ends_with('.') {
+            return false;
+        }
+
+        // Invalid characters
+        let invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+        if name.chars().any(|c| invalid_chars.contains(&c)) {
+            return false;
+        }
+
+        // Control characters (0x00–0x1F)
+        if name.chars().any(|c| c < '\u{20}') {
+            return false;
+        }
+
+        // Reserved names (check base name before extension)
+        let reserved_names = [
+            "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
+            "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+        ];
+
+        let base = name.split('.').next().unwrap_or("");
+        let base_upper = base.to_uppercase();
+
+        if reserved_names.contains(&base_upper.as_str()) {
+            return false;
+        }
+
+        // Optional: max length
+        if name.len() > 255 {
+            return false;
+        }
+
+        true
+    }
+
     pub fn current_nav(&self) -> &Navigation {
         &self.tabs[self.active_tab].nav
     }
@@ -209,27 +267,41 @@ impl MainWindow {
         let mut name = "New Folder".to_string();
         let mut counter = 1;
         let mut path = base.join(&name);
+
+        // Find a valid, non-existent name
         while path.exists() {
             counter += 1;
             name = format!("New Folder ({})", counter);
             path = base.join(&name);
         }
 
-        if std::fs::create_dir(&path).is_ok() {
-            let path_for_selection = path.clone();
-            self.load_path();
-            // Immediately start renaming the new folder
+        // Validate the final name before creating
+        if Self::is_submitted_filename_valid(&name) {
+            if std::fs::create_dir(&path).is_ok() {
+                let path_for_selection = path.clone();
+                self.load_path();
+                // Immediately start renaming the new folder
+                self.rename_state = Some(RenameState {
+                    path: path.clone(),
+                    new_name: name,
+                    should_focus: true,
+                    validation_error_show: false,
+                });
+                // Select the new folder
+                self.explorer_state.selected_paths.clear();
+                self.explorer_state
+                    .selected_paths
+                    .insert(path_for_selection.clone());
+                self.explorer_state.newly_created_path = Some(path_for_selection.clone());
+            }
+        } else {
+            // Don't create the folder, just start rename with invalid name so user can fix it
             self.rename_state = Some(RenameState {
-                path: path.clone(),
+                path: base.clone(), // Use parent directory as the path since we're not creating yet
                 new_name: name,
                 should_focus: true,
+                validation_error_show: true, // Show error immediately
             });
-            // Select the new folder
-            self.explorer_state.selected_paths.clear();
-            self.explorer_state
-                .selected_paths
-                .insert(path_for_selection.clone());
-            self.explorer_state.newly_created_path = Some(path_for_selection.clone());
         }
     }
 
@@ -242,28 +314,42 @@ impl MainWindow {
         let mut name = "New File.txt".to_string();
         let mut counter = 1;
         let mut path = base.join(&name);
+
+        // Find a valid, non-existent name
         while path.exists() {
             counter += 1;
             name = format!("New File ({}).txt", counter);
             path = base.join(&name);
         }
 
-        // Create an empty file
-        if std::fs::write(&path, "").is_ok() {
-            let path_for_selection = path.clone();
-            self.load_path();
-            // Immediately start renaming the new file
+        // Validate the final name before creating
+        if Self::is_submitted_filename_valid(&name) {
+            // Create an empty file
+            if std::fs::write(&path, "").is_ok() {
+                let path_for_selection = path.clone();
+                self.load_path();
+                // Immediately start renaming the new file
+                self.rename_state = Some(RenameState {
+                    path: path.clone(),
+                    new_name: name,
+                    should_focus: true,
+                    validation_error_show: false,
+                });
+                // Select the new file
+                self.explorer_state.selected_paths.clear();
+                self.explorer_state
+                    .selected_paths
+                    .insert(path_for_selection.clone());
+                self.explorer_state.newly_created_path = Some(path_for_selection.clone());
+            }
+        } else {
+            // Don't create the file, just start rename with invalid name so user can fix it
             self.rename_state = Some(RenameState {
-                path: path.clone(),
+                path: base.clone(), // Use parent directory as the path since we're not creating yet
                 new_name: name,
                 should_focus: true,
+                validation_error_show: true, // Show error immediately
             });
-            // Select the new file
-            self.explorer_state.selected_paths.clear();
-            self.explorer_state
-                .selected_paths
-                .insert(path_for_selection.clone());
-            self.explorer_state.newly_created_path = Some(path_for_selection.clone());
         }
     }
 
@@ -351,6 +437,17 @@ impl MainWindow {
 
                 if trimmed.is_empty() {
                     self.rename_state = None;
+                    return;
+                }
+
+                // Validate the new name for Windows filename rules
+                if !Self::is_submitted_filename_valid(trimmed) {
+                    // Don't cancel the rename, keep user in input state with error shown
+                    if let Some(rename_state) = &mut self.rename_state {
+                        rename_state.new_name = trimmed.to_string();
+                        rename_state.should_focus = true;
+                        rename_state.validation_error_show = true;
+                    }
                     return;
                 }
 
@@ -1239,6 +1336,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     path,
                     new_name: name,
                     should_focus: true,
+                    validation_error_show: false,
                 });
             }
             ItemViewerAction::ReplaceSelection(path) => {

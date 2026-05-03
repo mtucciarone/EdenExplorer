@@ -72,6 +72,7 @@ pub struct RenameState {
     pub path: PathBuf,
     pub new_name: String,
     pub should_focus: bool,
+    pub validation_error_show: bool,
 }
 
 #[derive(Clone)]
