@@ -298,6 +298,7 @@
 - [x] New context menu command (Copy Path) with keyboard shortcut of Ctrl+Shift+C
 - [x] Column sorting saves across sessions
 - [x] Drag and drop files from EdenExplorer into native Operating System (Windows) objects (Desktop, File Explorer, applications, etc.)
+- [x] Full navigation history is saved and restored with Back/Forward/Up buttons
 
 ### 🚀 Upcoming Features
 - [ ] Image previews using Spacebar - GPU texture via wgpu / egui_wgpu_backend
@@ -307,8 +308,6 @@
 ## 🐛 Known Bugs
 - Hitting "Shift" after already shift-selecting files drops the entire file selection
 - Dragging EdenExplorer across multiple monitors causes strange visual glitches
-- Typing an invalid character into a folder/file during rename/creation causes a strange reaction from Windows service layer
-- If you navigate into a folder and then press "backspace" or navigate back, you lose the folder selection
 
 ## Star History
 

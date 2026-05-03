@@ -217,7 +217,7 @@ pub fn draw_item_viewer(
             if let Some(idx) = filter_state
                 .cached_indices
                 .iter()
-                .position(|&i| files[i].path == *new_path)
+                .position(|&i| &files[i].path == new_path)
             {
                 table = table.scroll_to_row(idx, Some(egui::Align::Center));
 
@@ -228,6 +228,25 @@ pub fn draw_item_viewer(
                 explorer_state.selection_focus = Some(idx);
 
                 explorer_state.newly_created_path = None;
+            }
+        }
+
+        // If we have a navigation selection, scroll to it and select it
+        if let Some(nav_path) = &explorer_state.navigation_selection {
+            if let Some(idx) = filter_state
+                .cached_indices
+                .iter()
+                .position(|&i| &files[i].path == nav_path)
+            {
+                table = table.scroll_to_row(idx, Some(egui::Align::Center));
+
+                // Auto-select the navigation item
+                explorer_state.selected_paths.clear();
+                explorer_state.selected_paths.insert(nav_path.clone());
+                explorer_state.selection_anchor = Some(idx);
+                explorer_state.selection_focus = Some(idx);
+
+                explorer_state.navigation_selection = None;
             }
         }
 
