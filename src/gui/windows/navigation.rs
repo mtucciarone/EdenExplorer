@@ -25,6 +25,24 @@ impl Navigation {
         }
     }
 
+    /// Get the parent directory of the current path
+    pub fn get_parent(&self) -> Option<PathBuf> {
+        if self.current.to_string_lossy() == MY_PC_PATH {
+            return None;
+        }
+
+        if let Some(parent) = self.current.parent() {
+            if parent.as_os_str().is_empty() {
+                Some(PathBuf::from(MY_PC_PATH))
+            } else {
+                Some(parent.to_path_buf())
+            }
+        } else {
+            // Drive root (e.g., "C:\\") has no parent in PathBuf.
+            Some(PathBuf::from(MY_PC_PATH))
+        }
+    }
+
     pub fn go_back(&mut self) {
         if let Some(prev) = self.back.pop() {
             self.forward.push(self.current.clone());

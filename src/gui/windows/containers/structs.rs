@@ -1,6 +1,7 @@
 use crate::gui::windows::containers::enums::TabbarNavAction;
 use crate::gui::windows::shell_context_menu::ShellContextMenu;
 use crate::gui::windows::structs::Navigation;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
@@ -13,6 +14,8 @@ pub struct ExplorerState {
     pub non_ntfs_popup_path: Option<PathBuf>,
     pub windows_context_menu_expanded: bool,
     pub windows_context_menu_cache: Option<WindowsContextMenuCache>,
+    pub navigation_history: HashMap<PathBuf, PathBuf>, // parent_dir -> last_visited_child
+    pub navigation_selection: Option<PathBuf>,         // path to select after navigation loads
 }
 
 pub struct WindowsContextMenuCache {
@@ -72,6 +75,7 @@ pub struct RenameState {
     pub path: PathBuf,
     pub new_name: String,
     pub should_focus: bool,
+    pub validation_error_show: bool,
 }
 
 #[derive(Clone)]
