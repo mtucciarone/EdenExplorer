@@ -300,10 +300,12 @@
 - [x] Drag and drop files from EdenExplorer into native Operating System (Windows) objects (Desktop, File Explorer, applications, etc.)
 - [x] Full navigation history is saved and restored with Back/Forward/Up buttons
 
-### 🚀 Upcoming Features
+### 🚀 Upcoming Beta Features
 - [ ] Image previews using Spacebar - GPU texture via wgpu / egui_wgpu_backend
 - [ ] Support network devices
 - [ ] Enhanced theme customization, such as custom layouts, mix/match UI elements, styles, etc
+- [ ] Add folder tags and custom folder colors
+- [ ] Add Chinese language support in the interface (Simplified Chinese - zh_CN, Traditional Chinese - zh_TW, HK Chinese - zh_HK)
 
 ## 🐛 Known Bugs
 - Hitting "Shift" after already shift-selecting files drops the entire file selection
