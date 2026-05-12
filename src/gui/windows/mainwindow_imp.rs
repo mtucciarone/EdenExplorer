@@ -5,6 +5,7 @@ use crate::core::indexer::{
     load_app_settings, save_app_settings, save_favorites, save_theme_settings,
 };
 use crate::gui::MainWindow;
+use crate::gui::i18n::I18n;
 use crate::gui::theme::{ThemeMode, ThemePalette, get_default_palette, set_palette};
 use crate::gui::utils::{
     SortColumn, get_clipboard_files, is_clipboard_cut, set_clipboard_files,
@@ -661,7 +662,9 @@ impl MainWindow {
     }
 
     pub fn handle_draw_settings_window(&mut self, ctx: &egui::Context, palette: &ThemePalette) {
-        if let Some(action) = draw_settings_window(ctx, &mut self.settings_window, palette) {
+        if let Some(action) =
+            draw_settings_window(ctx, &mut self.settings_window, &mut self.i18n, palette)
+        {
             match action {
                 SettingsAction::ApplySettings => {
                     save_app_settings(
@@ -696,7 +699,7 @@ impl MainWindow {
 
     pub fn handle_draw_about_window(&mut self, ctx: &egui::Context, palette: &ThemePalette) {
         // TODO: Implement about window
-        draw_about_window(ctx, &mut self.about_window, palette);
+        draw_about_window(&mut self.i18n, ctx, &mut self.about_window, palette);
     }
 
     pub fn handle_tabbar_action(
@@ -1596,13 +1599,14 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
 }
 
 pub fn handle_draw_customizetheme_window(
+    i18n: &I18n,
     ctx: &egui::Context,
     theme_customizer: &mut ThemeCustomizer,
     palette: &ThemePalette,
     current_mode: ThemeMode,
     theme_dirty: &mut bool,
 ) {
-    if let Some(action) = draw_theme_customizer(ctx, theme_customizer, palette) {
+    if let Some(action) = draw_theme_customizer(&i18n, ctx, theme_customizer, palette) {
         match action {
             ThemeCustomizerAction::ThemeUpdated(mode) => {
                 let updated = match mode {

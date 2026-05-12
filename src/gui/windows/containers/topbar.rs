@@ -1,3 +1,4 @@
+use crate::gui::i18n::I18n;
 use crate::gui::utils::clickable_icon;
 use crate::gui::windows::containers::structs::TopbarAction;
 use eframe::egui;
@@ -6,6 +7,7 @@ use egui_phosphor::regular;
 
 pub fn draw_topbar(
     ui: &mut egui::Ui,
+    i18n: &I18n,
     is_dark: bool,
     palette: &crate::gui::theme::ThemePalette,
 ) -> TopbarAction {
@@ -19,7 +21,7 @@ pub fn draw_topbar(
 
         if clickable_icon(ui, regular::LIST, palette.primary)
             .on_hover_text(
-                egui::RichText::new("Menu")
+                egui::RichText::new(&i18n.tr("tooltip_mainmenu"))
                     .size(palette.tooltip_text_size)
                     .color(palette.tooltip_text_color),
             )
@@ -39,22 +41,23 @@ pub fn draw_topbar(
                     egui::containers::Frame::popup(ui.style()).show(ui, |ui| {
                         ui.set_min_width(120.0);
 
-                        if menu_item(ui, regular::PALETTE, "Theme", palette).clicked() {
+                        if menu_item(ui, regular::PALETTE, &i18n.tr("theme"), palette).clicked() {
                             action.customize_theme = true;
                             ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
                         }
 
-                        if menu_item(ui, regular::SLIDERS, "Settings", palette).clicked() {
+                        if menu_item(ui, regular::SLIDERS, &i18n.tr("settings"), palette).clicked()
+                        {
                             action.open_settings = true;
                             ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
                         }
 
-                        if menu_item(ui, regular::QUESTION, "About", palette).clicked() {
+                        if menu_item(ui, regular::QUESTION, &i18n.tr("about"), palette).clicked() {
                             action.about = true;
                             ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
                         }
 
-                        if menu_item(ui, regular::X, "Exit", palette).clicked() {
+                        if menu_item(ui, regular::X, &i18n.tr("exit"), palette).clicked() {
                             action.exit = true;
                             ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
                         }
@@ -67,7 +70,7 @@ pub fn draw_topbar(
 
             if clickable_icon(ui, icon, palette.primary)
                 .on_hover_text(
-                    egui::RichText::new("Toggle theme")
+                    egui::RichText::new(&i18n.tr("tooltip_theme"))
                         .size(palette.tooltip_text_size)
                         .color(palette.tooltip_text_color),
                 )

@@ -1,3 +1,4 @@
+use crate::gui::i18n::I18n;
 use crate::gui::theme::{
     ThemeMode, ThemePalette, get_default_palette, regenerate_base_derived_colors,
 };
@@ -27,6 +28,7 @@ fn selectable_mode(
 }
 
 pub fn draw_theme_customizer(
+    i18n: &I18n,
     ctx: &egui::Context,
     customizer: &mut ThemeCustomizer,
     palette: &ThemePalette,
@@ -47,7 +49,7 @@ pub fn draw_theme_customizer(
                 .rect_filled(rect, 0.0, palette.modal_background_effect_color);
         });
 
-    egui::Window::new("Theme Customizer")
+    egui::Window::new(&i18n.tr("theme_title"))
         .collapsible(false)
         .resizable(false)
         .fixed_size([600.0, 500.0])
@@ -81,9 +83,9 @@ pub fn draw_theme_customizer(
 
             // HEADER
             ui.horizontal(|ui| {
-                ui.heading("Theme Configuration");
+                ui.heading(&i18n.tr("theme_header"));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Reset Theme").clicked() {
+                    if ui.button(&i18n.tr("theme_reset")).clicked() {
                         let default = get_default_palette(customizer.selected_mode);
                         match customizer.selected_mode {
                             ThemeMode::Dark => customizer.dark_palette = default,
@@ -105,7 +107,7 @@ pub fn draw_theme_customizer(
                     palette,
                     customizer.selected_mode,
                     ThemeMode::Dark,
-                    "Dark",
+                    &i18n.tr("theme_dark"),
                 ) {
                     customizer.selected_mode = ThemeMode::Dark;
                 }
@@ -115,7 +117,7 @@ pub fn draw_theme_customizer(
                     palette,
                     customizer.selected_mode,
                     ThemeMode::Light,
-                    "Light",
+                    &i18n.tr("theme_light"),
                 ) {
                     customizer.selected_mode = ThemeMode::Light;
                 }
@@ -136,7 +138,7 @@ pub fn draw_theme_customizer(
                 .show(ui, |ui| {
                     ui.group(|ui| {
                         ui.label(
-                            egui::RichText::new("Typography")
+                            egui::RichText::new(&i18n.tr("theme_typography"))
                                 .font(font_id.clone())
                                 .size(palette.text_size)
                                 .color(label_color),
@@ -148,7 +150,7 @@ pub fn draw_theme_customizer(
                             .spacing([12.0, 6.0])
                             .show(ui, |ui| {
                                 ui.label(
-                                    egui::RichText::new("Text Font")
+                                    egui::RichText::new(&i18n.tr("theme_textsize"))
                                         .font(font_id.clone())
                                         .size(palette.text_size)
                                         .color(label_color),
@@ -171,7 +173,7 @@ pub fn draw_theme_customizer(
                                 ui.end_row();
 
                                 ui.label(
-                                    egui::RichText::new("Tooltip Text Size")
+                                    egui::RichText::new(&i18n.tr("theme_tooltip_textsize"))
                                         .font(font_id.clone())
                                         .size(palette.text_size)
                                         .color(label_color),
@@ -194,7 +196,7 @@ pub fn draw_theme_customizer(
                                 ui.end_row();
 
                                 ui.label(
-                                    egui::RichText::new("Context Menu Text Size")
+                                    egui::RichText::new(&i18n.tr("theme_contextmenu_textsize"))
                                         .font(font_id.clone())
                                         .size(palette.text_size)
                                         .color(label_color),
@@ -217,7 +219,7 @@ pub fn draw_theme_customizer(
                                 ui.end_row();
 
                                 ui.label(
-                                    egui::RichText::new("Explorer Icon Size")
+                                    egui::RichText::new(&i18n.tr("theme_explorer_iconsize"))
                                         .font(font_id.clone())
                                         .size(palette.text_size)
                                         .color(label_color),
@@ -240,7 +242,7 @@ pub fn draw_theme_customizer(
                                 ui.end_row();
 
                                 ui.label(
-                                    egui::RichText::new("Sidebar Icon Size")
+                                    egui::RichText::new(&i18n.tr("theme_sidebar_iconsize"))
                                         .font(font_id.clone())
                                         .size(palette.text_size)
                                         .color(label_color),
@@ -263,7 +265,7 @@ pub fn draw_theme_customizer(
                                 ui.end_row();
 
                                 ui.label(
-                                    egui::RichText::new("Tab Icon Size")
+                                    egui::RichText::new(&i18n.tr("theme_tab_iconsize"))
                                         .font(font_id.clone())
                                         .size(palette.text_size)
                                         .color(label_color),
@@ -291,7 +293,7 @@ pub fn draw_theme_customizer(
 
                     ui.group(|ui| {
                         ui.label(
-                            egui::RichText::new("Core Colors")
+                            egui::RichText::new(&i18n.tr("theme_core_colors"))
                                 .font(font_id.clone())
                                 .size(palette.text_size)
                                 .color(label_color),
@@ -299,13 +301,13 @@ pub fn draw_theme_customizer(
 
                         ui.add_space(6.0);
 
-                        egui::Grid::new("theme_core_colors")
+                        egui::Grid::new("theme_corecolors")
                             .num_columns(2)
                             .spacing([12.0, 6.0])
                             .show(ui, |ui| {
                                 let primary_changed = color_picker(
                                     ui,
-                                    "Primary",
+                                    &i18n.tr("theme_colors_primary"),
                                     &mut editing_palette.primary,
                                     &font_id,
                                     label_color,
@@ -322,7 +324,7 @@ pub fn draw_theme_customizer(
                                 ui.end_row();
                                 changed |= color_picker(
                                     ui,
-                                    "Primary Hover",
+                                    &i18n.tr("theme_colors_primary_hover"),
                                     &mut editing_palette.primary_hover,
                                     &font_id,
                                     label_color,
@@ -330,7 +332,7 @@ pub fn draw_theme_customizer(
                                 ui.end_row();
                                 changed |= color_picker(
                                     ui,
-                                    "Primary Active",
+                                    &i18n.tr("theme_colors_primary_active"),
                                     &mut editing_palette.primary_active,
                                     &font_id,
                                     label_color,
@@ -338,7 +340,7 @@ pub fn draw_theme_customizer(
                                 ui.end_row();
                                 changed |= color_picker(
                                     ui,
-                                    "Primary Subtle",
+                                    &i18n.tr("theme_colors_primary_subtle"),
                                     &mut editing_palette.primary_subtle,
                                     &font_id,
                                     label_color,
@@ -346,7 +348,7 @@ pub fn draw_theme_customizer(
                                 ui.end_row();
                                 changed |= color_picker(
                                     ui,
-                                    "Secondary",
+                                    &i18n.tr("theme_colors_secondary"),
                                     &mut editing_palette.secondary,
                                     &font_id,
                                     label_color,
@@ -354,7 +356,7 @@ pub fn draw_theme_customizer(
                                 ui.end_row();
                                 changed |= color_picker(
                                     ui,
-                                    "Application Background",
+                                    &i18n.tr("theme_colors_application_background"),
                                     &mut editing_palette.application_bg_color,
                                     &font_id,
                                     label_color,
@@ -368,11 +370,11 @@ pub fn draw_theme_customizer(
 
             // FOOTER
             ui.horizontal(|ui| {
-                if ui.button("Export Theme").clicked() {
+                if ui.button(&i18n.tr("theme_export")).clicked() {
                     action = Some(ThemeCustomizerAction::ExportTheme(customizer.selected_mode));
                 }
 
-                if ui.button("Import Theme").clicked() {
+                if ui.button(&i18n.tr("theme_import")).clicked() {
                     action = Some(ThemeCustomizerAction::ImportTheme(customizer.selected_mode));
                 }
             });

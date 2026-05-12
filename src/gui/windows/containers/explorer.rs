@@ -1,5 +1,6 @@
 use crate::core::fs::{FileItem, MY_PC_PATH};
 use crate::gui::dragdrop::{DragDropBackend, DropTargets};
+use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::SortColumn;
@@ -22,6 +23,7 @@ use windows::Win32::Foundation::HWND;
 
 pub fn draw_explorer(
     ui: &mut egui::Ui,
+    i18n: &I18n,
     icon_cache: &IconCache,
     palette: &ThemePalette,
     hwnd: Option<HWND>,
@@ -96,6 +98,7 @@ pub fn draw_explorer(
                 let scroll_to_id = *pending_tab_scroll_id;
                 tabs_action = draw_tabs(
                     ui,
+                    i18n,
                     tab_infos_cache,
                     active_id,
                     palette,
@@ -129,6 +132,7 @@ pub fn draw_explorer(
 
                     Some(draw_tabbar(
                         ui,
+                        i18n,
                         icon_cache,
                         tab,
                         palette,
@@ -157,6 +161,7 @@ pub fn draw_explorer(
                             .show(ui, |ui| {
                                 pending_action = draw_item_viewer(
                                     ui,
+                                    i18n,
                                     display_files,
                                     folder_sizes,
                                     clipboard_has_files,
@@ -231,8 +236,11 @@ pub fn draw_explorer(
                                 let text_color = ui.visuals().text_color();
                                 let text_size = palette.text_size;
                                 let selected_count = explorer_state.selected_paths.len();
-                                let selected_label =
-                                    if selected_count == 1 { "Item" } else { "Items" };
+                                let selected_label = if selected_count == 1 {
+                                    i18n.tr("item_capital")
+                                } else {
+                                    i18n.tr("items_capital")
+                                };
 
                                 ui.label(
                                     egui::RichText::new(format!(
@@ -265,7 +273,8 @@ pub fn draw_explorer(
                                     );
                                     ui.label(
                                         egui::RichText::new(format!(
-                                            "{selected_count} {selected_label} Selected"
+                                            "{selected_count} {selected_label} {}",
+                                            i18n.tr("selected")
                                         ))
                                         .size(text_size)
                                         .color(text_color),
