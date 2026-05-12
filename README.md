@@ -247,6 +247,7 @@
   <li><b>Drag and drop files/folders</b> within the viewer</li>
   <li><b>Portable device support</b> (iPhone, Android, external devices)</li>
   <li><b>Raw/unmounted drive detection</b> (ISO, Linux partitions)</li>
+  <li><b>Multi-language Support using i18n</li>
 </ul>
 
 <h3>System Integration</h3>
@@ -299,13 +300,13 @@
 - [x] Column sorting saves across sessions
 - [x] Drag and drop files from EdenExplorer into native Operating System (Windows) objects (Desktop, File Explorer, applications, etc.)
 - [x] Full navigation history is saved and restored with Back/Forward/Up buttons
+- [x] Added English, Indonesian, Japanese, and multi-Chinese language support
 
 ### 🚀 Upcoming Beta Features
 - [ ] Image previews using Spacebar - GPU texture via wgpu / egui_wgpu_backend
 - [ ] Support network devices
 - [ ] Enhanced theme customization, such as custom layouts, mix/match UI elements, styles, etc
 - [ ] Add folder tags and custom folder colors
-- [ ] Add Chinese language support in the interface (Simplified Chinese - zh_CN, Traditional Chinese - zh_TW, HK Chinese - zh_HK)
 
 ## 🐛 Known Bugs
 - Hitting "Shift" after already shift-selecting files drops the entire file selection
