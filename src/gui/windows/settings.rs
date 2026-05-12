@@ -20,6 +20,7 @@ impl Default for AppSettings {
             time_format_24h: true,
             sort_column: SortColumn::Name,
             sort_ascending: true,
+            language: "en-US".to_string(),
         }
     }
 }
@@ -130,73 +131,85 @@ pub fn draw_settings_window(
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(i18n.tr("language")).color(palette.text_normal));
 
+                        let mut selected_locale = settings.current_settings.language.clone();
+                        
                         egui::ComboBox::from_id_salt("language_selector")
-                            .selected_text(match i18n.current_locale() {
+                            .selected_text(match selected_locale.as_str() {
                                 "ja-JP" => i18n.tr("japanese"),
                                 "id-ID" => i18n.tr("indonesian"),
+                                "zh-CN" => i18n.tr("chinese_simple"),
+                                "zh-TW" => i18n.tr("chinese_traditional"),
+                                "zh-HK" => i18n.tr("chinese_traditional_hk"),
                                 _ => i18n.tr("english"),
                             })
                             .show_ui(ui, |ui| {
                                 if ui
                                     .selectable_label(
-                                        i18n.current_locale() == "en-US",
+                                        selected_locale == "en-US",
                                         i18n.tr("english"),
                                     )
                                     .clicked()
                                 {
-                                    i18n.set_locale("en-US");
+                                    selected_locale = "en-US".to_string();
                                 }
 
                                 if ui
                                     .selectable_label(
-                                        i18n.current_locale() == "ja-JP",
+                                        selected_locale == "ja-JP",
                                         i18n.tr("japanese"),
                                     )
                                     .clicked()
                                 {
-                                    i18n.set_locale("ja-JP");
+                                    selected_locale = "ja-JP".to_string();
                                 }
 
                                 if ui
                                     .selectable_label(
-                                        i18n.current_locale() == "id-ID",
+                                        selected_locale == "id-ID",
                                         i18n.tr("indonesian"),
                                     )
                                     .clicked()
                                 {
-                                    i18n.set_locale("id-ID");
+                                    selected_locale = "id-ID".to_string();
                                 }
 
                                 if ui
                                     .selectable_label(
-                                        i18n.current_locale() == "zh-CN",
+                                        selected_locale == "zh-CN",
                                         i18n.tr("chinese_simple"),
                                     )
                                     .clicked()
                                 {
-                                    i18n.set_locale("zh-CN");
+                                    selected_locale = "zh-CN".to_string();
                                 }
 
                                 if ui
                                     .selectable_label(
-                                        i18n.current_locale() == "zh-TW",
+                                        selected_locale == "zh-TW",
                                         i18n.tr("chinese_traditional"),
                                     )
                                     .clicked()
                                 {
-                                    i18n.set_locale("zh-TW");
+                                    selected_locale = "zh-TW".to_string();
                                 }
 
                                 if ui
                                     .selectable_label(
-                                        i18n.current_locale() == "zh-HK",
+                                        selected_locale == "zh-HK",
                                         i18n.tr("chinese_traditional_hk"),
                                     )
                                     .clicked()
                                 {
-                                    i18n.set_locale("zh-HK");
+                                    selected_locale = "zh-HK".to_string();
                                 }
                             });
+                            
+                        // Check if language changed and update both i18n and settings
+                        if selected_locale != settings.current_settings.language {
+                            i18n.set_locale(&selected_locale);
+                            settings.current_settings.language = selected_locale;
+                            action = Some(SettingsAction::ApplySettings);
+                        }
                     });
 
                     // Folder Scanning

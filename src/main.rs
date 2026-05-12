@@ -23,6 +23,7 @@ fn main() -> eframe::Result<()> {
         _time_format_24h,
         _sort_column,
         _sort_ascending,
+        _language,
     ) = load_app_settings();
     let window_size = match window_size_mode {
         WindowSizeMode::FullScreen => egui::Vec2::new(1920.0, 1080.0),

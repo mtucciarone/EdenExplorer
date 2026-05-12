@@ -183,6 +183,7 @@ impl MainWindow {
             self.settings_window.current_settings.time_format_24h,
             self.settings_window.current_settings.sort_column,
             self.settings_window.current_settings.sort_ascending,
+            &self.settings_window.current_settings.language,
         );
     }
 
@@ -684,6 +685,7 @@ impl MainWindow {
                         self.settings_window.current_settings.time_format_24h,
                         self.settings_window.current_settings.sort_column,
                         self.settings_window.current_settings.sort_ascending,
+                        &self.settings_window.current_settings.language,
                     );
                 }
                 SettingsAction::ResetToDefaults => {
@@ -859,6 +861,7 @@ impl MainWindow {
                         _time_format_24h,
                         _sort_column,
                         _sort_ascending,
+                        _language,
                     ) = load_app_settings();
                     self.tabs[0].nav = Navigation::new(start_path);
                     self.active_tab = 0;
@@ -899,6 +902,7 @@ impl MainWindow {
                     self.settings_window.current_settings.time_format_24h,
                     self.settings_window.current_settings.sort_column,
                     self.settings_window.current_settings.sort_ascending,
+                    &self.settings_window.current_settings.language,
                 );
 
                 self.mark_tab_infos_dirty();
@@ -1025,6 +1029,7 @@ impl MainWindow {
                     self.settings_window.current_settings.time_format_24h,
                     self.settings_window.current_settings.sort_column,
                     self.settings_window.current_settings.sort_ascending,
+                    &self.settings_window.current_settings.language,
                 );
             }
 

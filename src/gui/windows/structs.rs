@@ -48,6 +48,7 @@ pub struct AppSettings {
     pub time_format_24h: bool,
     pub sort_column: SortColumn,
     pub sort_ascending: bool,
+    pub language: String,
 }
 
 #[derive(Default)]
@@ -55,6 +56,7 @@ pub struct SettingsWindow {
     pub open: bool,
     pub current_settings: AppSettings,
     pub show_reset_favorites_confirmation: bool,
+    pub current_language: String,
 }
 
 pub struct SidebarState {
