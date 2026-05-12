@@ -1,6 +1,7 @@
 use crate::core::drives::is_raw_physical_drive_path;
 use crate::core::fs::FileItem;
 use crate::gui::dragdrop::DragDropBackend;
+use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::{ThemePalette, apply_checkbox_colors};
 use crate::gui::utils::{
@@ -64,6 +65,7 @@ fn filename_has_valid_characters_realtime(name: &str) -> bool {
 
 pub fn draw_item_viewer(
     ui: &mut egui::Ui,
+    i18n: &I18n,
     files: &Vec<FileItem>,
     folder_sizes: &HashMap<PathBuf, ItemViewerFolderSizeState>,
     paste_enabled: bool,
@@ -98,7 +100,7 @@ pub fn draw_item_viewer(
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let mut hovered_drop_target: Option<PathBuf> = None;
     let mut hovered_drop_target_rect: Option<egui::Rect> = None;
-    draw_external_to_internal_drag_overlay(ui, *external_drag_to_internal_hover);
+    draw_external_to_internal_drag_overlay(ui, i18n, *external_drag_to_internal_hover);
 
     let layout = compute_layout(ui, is_drive_view);
 
@@ -110,7 +112,7 @@ pub fn draw_item_viewer(
             if is_loading {
                 ui.add(egui::Spinner::new().size(28.0));
             } else {
-                ui.label("This folder is empty");
+                ui.label(i18n.tr("folder_is_empty"));
             }
         });
     }
@@ -145,17 +147,19 @@ pub fn draw_item_viewer(
     }
 
     if drag_active {
+        let unknown_label = &i18n.tr("unknown");
         let label = if drag_state.source_items.len() == 1 {
-            drag_state.source_items[0]
-                .file_name()
+            drag_state
+                .source_items
+                .first()
+                .and_then(|p| p.file_name())
                 .and_then(|n| n.to_str())
-                .unwrap_or("Unknown")
-                .to_string()
+                .unwrap_or(unknown_label)
         } else {
-            format!("{} items", drag_state.source_items.len())
+            &i18n.tr("items")
         };
 
-        draw_object_drag_ghost(ui, palette, &label, false);
+        draw_object_drag_ghost(ui, palette, label, false);
     }
 
     if let Some(global_action) = handle_global_actions(
@@ -306,6 +310,7 @@ pub fn draw_item_viewer(
         table
             .header(layout.header_height, |mut header| {
                 if let Some(a) = draw_item_viewer_header(
+                    i18n,
                     &mut header,
                     layout.is_drive_view,
                     &filter_state.cached_indices,
@@ -355,6 +360,7 @@ pub fn draw_item_viewer(
                     row.col(|ui| {
                         if let Some(a) = handle_draw_col_name(
                             ui,
+                            i18n,
                             file,
                             &layout,
                             icon_cache,
@@ -515,6 +521,7 @@ pub fn draw_item_viewer(
                             .show(|ui| {
                                 handle_context_menu_actions(
                                     ui,
+                                    i18n,
                                     file,
                                     is_selected,
                                     paste_enabled,
@@ -614,14 +621,14 @@ pub fn draw_item_viewer(
 
         if let Some(_path) = explorer_state.non_ntfs_popup_path.clone() {
             let mut open = true;
-            egui::Window::new("Non-NTFS Drive")
+            egui::Window::new(i18n.tr("non_nftsdrive"))
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
                 .open(&mut open)
                 .show(ui.ctx(), |ui| {
                     ui.label(
-                        egui::RichText::new("This is a non-NTFS drive. Please mount it first if you'd like to explore it, or use an external tool to access this filesystem.")
+                        egui::RichText::new(i18n.tr("non_nftsdrive_fulllabel"))
                             .size(palette.text_size)
                             .color(palette.tooltip_text_color)
                             .font(font_id.clone()),
@@ -629,7 +636,10 @@ pub fn draw_item_viewer(
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.button(format!("{} Ok", regular::CHECK)).clicked() {
+                            if ui
+                                .button(format!("{} {}", regular::CHECK, i18n.tr("ok")))
+                                .clicked()
+                            {
                                 explorer_state.non_ntfs_popup_path = None;
                             }
                         });
@@ -648,6 +658,7 @@ pub fn draw_item_viewer(
 
 fn draw_external_to_internal_drag_overlay(
     ui: &mut egui::Ui,
+    i18n: &I18n,
     external_drag_to_internal_hover: bool,
 ) {
     if external_drag_to_internal_hover {
@@ -662,7 +673,7 @@ fn draw_external_to_internal_drag_overlay(
         ui.painter().text(
             rect.center(),
             egui::Align2::CENTER_CENTER,
-            "Move to this folder",
+            i18n.tr("move_to_this_folder"),
             egui::TextStyle::Heading.resolve(ui.style()),
             ui.visuals().text_color(),
         );
@@ -688,6 +699,7 @@ fn compute_layout(ui: &egui::Ui, is_drive_view: bool) -> ItemViewerLayout {
 
 fn handle_context_menu_actions(
     ui: &mut egui::Ui,
+    i18n: &I18n,
     file: &FileItem,
     is_selected: bool,
     paste_enabled: bool,
@@ -742,7 +754,7 @@ fn handle_context_menu_actions(
 
     // 🚗 DRIVE VIEW MODE → ONLY PROPERTIES
     if is_drive_view {
-        if ui.button("Properties").clicked() {
+        if ui.button(i18n.tr("properties")).clicked() {
             let targets: Vec<PathBuf> = if is_selected {
                 explorer_state.selected_paths.iter().cloned().collect()
             } else {
@@ -768,7 +780,7 @@ fn handle_context_menu_actions(
     if ui
         .add_enabled(
             enable_open_in_tab,
-            egui::Button::new("Open in new tab (middle-click)"),
+            egui::Button::new(i18n.tr("inputs_newtab")),
         )
         .clicked()
     {
@@ -780,9 +792,9 @@ fn handle_context_menu_actions(
 
     // Determine button label based on selection count
     let label = if explorer_state.selected_paths.len() == 1 {
-        "Open in Default Program"
+        i18n.tr("open_default_program")
     } else {
-        "Open Files in Default Program"
+        i18n.tr("open_files_default_program")
     };
 
     // Check if all selected files are not directories
@@ -804,7 +816,7 @@ fn handle_context_menu_actions(
     ui.separator();
 
     if ui
-        .add_enabled(!is_cut, egui::Button::new("Cut (ctrl+x)"))
+        .add_enabled(!is_cut, egui::Button::new(i18n.tr("inputs_cut")))
         .clicked()
     {
         let paths = if !explorer_state.selected_paths.is_empty() {
@@ -818,7 +830,7 @@ fn handle_context_menu_actions(
         )));
         ui.close();
     }
-    if ui.button("Copy (ctrl+c)").clicked() {
+    if ui.button(i18n.tr("inputs_copy")).clicked() {
         let paths = if !explorer_state.selected_paths.is_empty() {
             explorer_state.selected_paths.iter().cloned().collect()
         } else {
@@ -830,7 +842,7 @@ fn handle_context_menu_actions(
         )));
         ui.close();
     }
-    if ui.button("Copy Path (ctrl+shift+c)").clicked() {
+    if ui.button(i18n.tr("inputs_copy_path")).clicked() {
         let paths = if !explorer_state.selected_paths.is_empty() {
             explorer_state.selected_paths.iter().cloned().collect()
         } else {
@@ -843,7 +855,7 @@ fn handle_context_menu_actions(
         ui.close();
     }
     if ui
-        .add_enabled(paste_enabled, egui::Button::new("Paste (ctrl+v)"))
+        .add_enabled(paste_enabled, egui::Button::new(i18n.tr("inputs_paste")))
         .clicked()
     {
         *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
@@ -852,12 +864,12 @@ fn handle_context_menu_actions(
 
     ui.separator();
 
-    if ui.button("Rename").clicked() {
+    if ui.button(i18n.tr("inputs_rename")).clicked() {
         *action = Some(ItemViewerAction::StartEdit(file.path.clone()));
         ui.close();
     }
 
-    if ui.button("Delete (del)").clicked() {
+    if ui.button(i18n.tr("inputs_delete")).clicked() {
         let paths = if !explorer_state.selected_paths.is_empty() {
             explorer_state.selected_paths.iter().cloned().collect()
         } else {
@@ -873,7 +885,7 @@ fn handle_context_menu_actions(
     ui.separator();
 
     // Properties (multi-select aware)
-    if ui.button("Properties").clicked() {
+    if ui.button(i18n.tr("properties")).clicked() {
         let targets: Vec<PathBuf> = if is_selected {
             explorer_state.selected_paths.iter().cloned().collect()
         } else {
@@ -893,9 +905,9 @@ fn handle_context_menu_actions(
         ui.separator();
 
         let toggle_label = if explorer_state.windows_context_menu_expanded {
-            "Hide Windows menu items"
+            i18n.tr("contextmenu_hide_windows_menu_items")
         } else {
-            "Show Windows menu items"
+            i18n.tr("contextmenu_show_windows_menu_items")
         };
 
         if ui.button(toggle_label).clicked() {
@@ -961,10 +973,10 @@ fn handle_context_menu_actions(
                             });
                     }
                 } else {
-                    ui.label("Windows menu unavailable for this selection.");
+                    ui.label(i18n.tr("contextmenu_windows_menu_unavailable"));
                 }
             } else {
-                ui.label("Windows menu unavailable (missing window handle).");
+                ui.label(i18n.tr("contextmenu_windows_menu_available_missing"));
             }
         }
     }
@@ -972,6 +984,7 @@ fn handle_context_menu_actions(
 
 fn handle_draw_col_name(
     ui: &mut egui::Ui,
+    i18n: &I18n,
     file: &FileItem,
     layout: &ItemViewerLayout,
     icon_cache: &IconCache,
@@ -1020,6 +1033,7 @@ fn handle_draw_col_name(
         if path == file.path {
             return handle_editing_file_name(
                 ui,
+                i18n,
                 file,
                 is_selected,
                 palette,
@@ -1303,6 +1317,7 @@ fn get_row_color(
 
 fn handle_editing_file_name(
     ui: &mut egui::Ui,
+    i18n: &I18n,
     file: &FileItem,
     is_selected: bool,
     palette: &ThemePalette,
@@ -1399,10 +1414,16 @@ fn handle_editing_file_name(
 
         // Show validation tooltip if error flag is set
         if rename_state.validation_error_show {
-            let tooltip_text = "Invalid filename characters detected!\n\
-                Characters not allowed: < > : \" / \\ | ? *\n\
-                Reserved names: CON, PRN, AUX, NUL, COM1-9, LPT1-9\n\
-                Maximum length: 255 characters";
+            let tooltip_text = format!(
+                "{}{}{}{}{}{}{}",
+                &i18n.tr("tooltip_rename_invalid_text1"),
+                "\n",
+                &i18n.tr("tooltip_rename_invalid_text2"),
+                "\n",
+                &i18n.tr("tooltip_rename_invalid_text3"),
+                "\n",
+                &i18n.tr("tooltip_rename_invalid_text4")
+            );
 
             // Calculate position above the input field
             let popup_pos = egui::pos2(edit_response.rect.left(), edit_response.rect.top() - 60.0);
@@ -1666,6 +1687,7 @@ fn handle_global_actions(
 }
 
 fn draw_item_viewer_header(
+    i18n: &I18n,
     header: &mut egui_extras::TableRow<'_, '_>,
     is_drive_view: bool,
     filtered_indices: &[usize],
@@ -1700,14 +1722,14 @@ fn draw_item_viewer_header(
     header.col(|ui| {
         let (label, arrow) = match sort_column {
             SortColumn::Name => (
-                "Name",
+                i18n.tr("explorer_cols_name"),
                 if sort_ascending {
                     regular::CARET_UP
                 } else {
                     regular::CARET_DOWN
                 },
             ),
-            _ => ("Name", ""),
+            _ => (i18n.tr("explorer_cols_name"), ""),
         };
         let resp = ui.add(
             egui::Label::new(
@@ -1727,14 +1749,14 @@ fn draw_item_viewer_header(
     header.col(|ui| {
         let (label, arrow) = match sort_column {
             SortColumn::Type => (
-                "Type",
+                i18n.tr("explorer_cols_type"),
                 if sort_ascending {
                     regular::CARET_UP
                 } else {
                     regular::CARET_DOWN
                 },
             ),
-            _ => ("Type", ""),
+            _ => (i18n.tr("explorer_cols_type"), ""),
         };
         let resp = ui.add(
             egui::Label::new(
@@ -1754,14 +1776,14 @@ fn draw_item_viewer_header(
     header.col(|ui| {
         let (label, arrow) = match sort_column {
             SortColumn::Size => (
-                "Size",
+                i18n.tr("explorer_cols_size"),
                 if sort_ascending {
                     regular::CARET_UP
                 } else {
                     regular::CARET_DOWN
                 },
             ),
-            _ => ("Size", ""),
+            _ => (i18n.tr("explorer_cols_size"), ""),
         };
         let resp = ui.add(
             egui::Label::new(
@@ -1785,7 +1807,7 @@ fn draw_item_viewer_header(
         header.col(|ui| {
             ui.add(
                 egui::Label::new(
-                    egui::RichText::new(format!("Usage").trim_end())
+                    egui::RichText::new(format!("{}", i18n.tr("explorer_cols_usage")).trim_end())
                         .font(font_id.clone())
                         .size(palette.text_size)
                         .color(palette.text_header_section),
@@ -1798,14 +1820,14 @@ fn draw_item_viewer_header(
         header.col(|ui| {
             let (label, arrow) = match sort_column {
                 SortColumn::Modified => (
-                    "Modified",
+                    i18n.tr("explorer_cols_modified"),
                     if sort_ascending {
                         regular::CARET_UP
                     } else {
                         regular::CARET_DOWN
                     },
                 ),
-                _ => ("Modified", ""),
+                _ => (i18n.tr("explorer_cols_modified"), ""),
             };
             let resp = ui.add(
                 egui::Label::new(
@@ -1825,14 +1847,14 @@ fn draw_item_viewer_header(
         header.col(|ui| {
             let (label, arrow) = match sort_column {
                 SortColumn::Created => (
-                    "Created",
+                    i18n.tr("explorer_cols_created"),
                     if sort_ascending {
                         regular::CARET_UP
                     } else {
                         regular::CARET_DOWN
                     },
                 ),
-                _ => ("Created", ""),
+                _ => (i18n.tr("explorer_cols_created"), ""),
             };
             let resp = ui.add(
                 egui::Label::new(

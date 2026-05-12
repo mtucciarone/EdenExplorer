@@ -1,5 +1,6 @@
 use crate::core::fs::MY_PC_PATH;
 use crate::core::portable;
+use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{
@@ -18,6 +19,7 @@ use windows::Win32::Foundation::HWND;
 
 fn nav_icon_button(
     ui: &mut egui::Ui,
+
     icon: &str,
     palette: &ThemePalette,
     enabled: bool,
@@ -60,6 +62,7 @@ fn nav_icon_button(
 
 pub fn draw_tabs(
     ui: &mut egui::Ui,
+    i18n: &I18n,
     tabs: &[TabInfo],
     active_id: u64,
     palette: &ThemePalette,
@@ -138,6 +141,7 @@ pub fn draw_tabs(
 
                                     handle_draw_tab_new_allocated(
                                         ui,
+                                        i18n,
                                         tab,
                                         rect,
                                         resp.clone(),
@@ -198,6 +202,7 @@ pub fn draw_tabs(
 
 fn handle_draw_tab_new_allocated(
     ui: &mut egui::Ui,
+    i18n: &I18n,
     tab: &TabInfo,
     rect: egui::Rect,
     resp: egui::Response,
@@ -246,9 +251,9 @@ fn handle_draw_tab_new_allocated(
     );
     let icon_resp = icon_resp.on_hover_text(
         egui::RichText::new(if tab.is_pinned {
-            "Unpin tab"
+            i18n.tr("tooltip_tab_unpin")
         } else {
-            "Pin tab"
+            i18n.tr("tooltip_tab_pin")
         })
         .size(palette.tooltip_text_size)
         .color(palette.tooltip_text_color),
@@ -363,17 +368,14 @@ fn handle_draw_add_new_tab_button(
     let size = egui::vec2(28.0, 28.0);
 
     let frame = egui::Frame::NONE
-        .inner_margin(egui::Margin::same(0)) // 👈 controls padding inside border
+        .inner_margin(egui::Margin::same(0))
         .corner_radius(palette.tab_inactive_radius)
         .stroke(egui::Stroke::new(1.0, palette.tab_border_default));
 
     let response = frame
         .show(ui, |ui| {
             let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
-
-            // ✅ shrink AFTER allocation
             let rect = rect.shrink(1.5);
-
             let resp = tab_add_button(ui, rect, resp, palette);
             resp
         })
@@ -460,7 +462,6 @@ fn tab_add_button(
     let color = if hovered {
         palette.icon_colored_hover
     } else {
-        //ui.visuals().widgets.noninteractive.fg_stroke.color
         palette.icon_color
     };
 
@@ -483,6 +484,7 @@ fn tab_add_button(
 
 fn toolbar_buttons(
     ui: &mut egui::Ui,
+    i18n: &I18n,
     palette: &ThemePalette,
     is_favorited: bool,
     is_root: bool,
@@ -497,7 +499,7 @@ fn toolbar_buttons(
         regular::ARROW_LEFT,
         palette,
         can_go_back,
-        "Navigate to previous directory",
+        &i18n.tr("tooltip_nav_back"),
     )
     .clicked()
         && can_go_back
@@ -510,7 +512,7 @@ fn toolbar_buttons(
         regular::ARROW_RIGHT,
         palette,
         can_go_forward,
-        "Navigate to next directory",
+        &i18n.tr("tooltip_nav_forward"),
     )
     .clicked()
         && can_go_forward
@@ -524,7 +526,7 @@ fn toolbar_buttons(
         regular::ARROW_UP,
         palette,
         can_go_up,
-        "Navigate to parent directory",
+        &i18n.tr("tooltip_nav_up"),
     )
     .clicked()
         && can_go_up
@@ -534,7 +536,7 @@ fn toolbar_buttons(
 
     if clickable_icon(ui, regular::ARROWS_CLOCKWISE, palette.primary)
         .on_hover_text(
-            egui::RichText::new("Refresh current directory")
+            egui::RichText::new(i18n.tr("tooltip_refresh"))
                 .size(palette.tooltip_text_size)
                 .color(palette.tooltip_text_color),
         )
@@ -548,7 +550,7 @@ fn toolbar_buttons(
     // Action buttons
     if clickable_icon(ui, regular::FOLDER_PLUS, palette.primary)
         .on_hover_text(
-            egui::RichText::new("Create new folder")
+            egui::RichText::new(i18n.tr("tooltip_newfolder"))
                 .size(palette.tooltip_text_size)
                 .color(palette.tooltip_text_color),
         )
@@ -560,7 +562,7 @@ fn toolbar_buttons(
 
     if clickable_icon(ui, regular::FILE_PLUS, palette.primary)
         .on_hover_text(
-            egui::RichText::new("Create new file")
+            egui::RichText::new(i18n.tr("tooltip_newfile"))
                 .size(palette.tooltip_text_size)
                 .color(palette.tooltip_text_color),
         )
@@ -600,7 +602,7 @@ fn toolbar_buttons(
 
     let star_resp = if is_root {
         star_resp.on_hover_text(
-            egui::RichText::new("Favorites are disabled on This PC")
+            egui::RichText::new(i18n.tr("tooltip_favorites_disabled"))
                 .size(palette.tooltip_text_size)
                 .color(palette.tooltip_text_color),
         )
@@ -608,9 +610,9 @@ fn toolbar_buttons(
         star_resp
             .on_hover_text(
                 egui::RichText::new(if is_favorited {
-                    "Remove current directory from favorites"
+                    i18n.tr("tooltip_favorites_remove")
                 } else {
-                    "Add current directory to favorites"
+                    i18n.tr("tooltip_favorites_add")
                 })
                 .size(palette.tooltip_text_size)
                 .color(palette.tooltip_text_color),
@@ -631,6 +633,7 @@ fn toolbar_buttons(
 
 pub fn draw_tabbar(
     ui: &mut egui::Ui,
+    i18n: &I18n,
     icon_cache: &IconCache,
     tab: &mut TabState,
     palette: &ThemePalette,
@@ -655,6 +658,7 @@ pub fn draw_tabbar(
     ui.horizontal(|ui| {
         let toolbar_action = toolbar_buttons(
             ui,
+            i18n,
             palette,
             is_favorited,
             tab.nav.is_root(),
@@ -736,7 +740,7 @@ pub fn draw_tabbar(
 
             if tab.breadcrumb_path_error && resp.hovered() {
                 resp = resp.on_hover_text(
-                    egui::RichText::new("Path does not exist")
+                    egui::RichText::new(i18n.tr("tooltip_path_does_not_exist"))
                         .size(palette.tooltip_text_size)
                         .color(palette.tooltip_text_color),
                 );
@@ -768,8 +772,11 @@ pub fn draw_tabbar(
                     exit_edit_mode = true;
                 } else {
                     println!(
-                        "Invalid path: {} (expanded to: {})",
-                        tab.breadcrumb_path_buffer, expanded_input
+                        "{}: {} ({}: {})",
+                        i18n.tr("tooltip_invalid_path"),
+                        tab.breadcrumb_path_buffer,
+                        i18n.tr("tooltip_invalid_path_expanded"),
+                        expanded_input
                     );
                     tab.breadcrumb_path_error = true;
                     tab.breadcrumb_path_error_animation_time = ui.input(|i| i.time);
@@ -798,7 +805,7 @@ pub fn draw_tabbar(
             if ui
                 .add(
                     egui::Label::new(
-                        egui::RichText::new("This PC")
+                        egui::RichText::new(i18n.tr("thispc"))
                             .size(palette.text_size)
                             .color(palette.text_header_section),
                     )

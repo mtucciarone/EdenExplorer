@@ -2,6 +2,7 @@ use crate::core::drives::{
     DriveInfo, consume_drive_list_dirty, get_drive_infos, is_raw_physical_drive_path,
 };
 use crate::core::fs::MY_PC_PATH;
+use crate::gui::i18n::I18n;
 // use crate::core::networkdevices::NetworkDevicesState;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
@@ -272,6 +273,7 @@ fn sidebar_drive_item(
 /// Draw the sidebar, supporting favorites reordering
 pub fn draw_sidebar(
     ui: &mut egui::Ui,
+    i18n: &I18n,
     icon_cache: &IconCache,
     sidebar_state: &mut SidebarState,
     palette: &ThemePalette,
@@ -293,7 +295,7 @@ pub fn draw_sidebar(
                     ui.spacing_mut().item_spacing.y *= 0.5;
 
                     ui.add(egui::Label::new(
-                        egui::RichText::new("Places")
+                        egui::RichText::new(&i18n.tr("places"))
                             .size(palette.text_size)
                             .color(palette.text_header_section)
                             .strong(),
@@ -305,7 +307,7 @@ pub fn draw_sidebar(
                         ui,
                         icon_cache,
                         &pc_icon_path,
-                        "This PC",
+                        &i18n.tr("thispc"),
                         true,
                         palette,
                         false,
@@ -319,7 +321,7 @@ pub fn draw_sidebar(
                     }
 
                     resp.context_menu(|ui| {
-                        if ui.button("Open in new tab (middle-click)").clicked() {
+                        if ui.button(&i18n.tr("inputs_newtab")).clicked() {
                             action.open_new_tab = Some(PathBuf::from(MY_PC_PATH));
                             ui.close();
                         }
@@ -330,7 +332,7 @@ pub fn draw_sidebar(
                             ui,
                             icon_cache,
                             &home,
-                            "My User Home",
+                            &i18n.tr("my_user_home"),
                             true,
                             palette,
                             false,
@@ -344,7 +346,7 @@ pub fn draw_sidebar(
                             action.open_new_tab = Some(home.clone());
                         }
                         resp.context_menu(|ui| {
-                            if ui.button("Open in new tab (middle-click)").clicked() {
+                            if ui.button(&i18n.tr("inputs_newtab")).clicked() {
                                 action.open_new_tab = Some(home.clone());
                                 ui.close();
                             }
@@ -353,7 +355,7 @@ pub fn draw_sidebar(
 
                     ui.add_space(6.0);
                     ui.add(egui::Label::new(
-                        egui::RichText::new("Favorites")
+                        egui::RichText::new(&i18n.tr("favorites"))
                             .size(palette.text_size)
                             .color(palette.text_header_section)
                             .strong(),
@@ -443,11 +445,11 @@ pub fn draw_sidebar(
                         }
 
                         resp.context_menu(|ui| {
-                            if ui.button("Open in new tab (middle-click)").clicked() {
+                            if ui.button(&i18n.tr("inputs_newtab")).clicked() {
                                 action.open_new_tab = Some(favorite.path.clone());
                                 ui.close();
                             }
-                            if ui.button("Remove Favorite").clicked() {
+                            if ui.button(&i18n.tr("remove_favorite")).clicked() {
                                 action.remove_favorite = Some(favorite.path.clone());
                                 ui.close();
                             }
@@ -516,7 +518,7 @@ pub fn draw_sidebar(
 
                     ui.add_space(6.0);
                     ui.add(egui::Label::new(
-                        egui::RichText::new("Storage")
+                        egui::RichText::new(&i18n.tr("storage"))
                             .size(palette.text_size)
                             .color(palette.text_header_section)
                             .strong(),
@@ -557,17 +559,17 @@ pub fn draw_sidebar(
 
                     if let Some(_path) = sidebar_state.non_ntfs_popup_path.clone() {
                         let mut open = true;
-                        egui::Window::new("Non-NTFS Drive")
+                        egui::Window::new(&i18n.tr("non_nftsdrive"))
                             .collapsible(false)
                             .resizable(false)
                             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
                             .open(&mut open)
                             .show(ui.ctx(), |ui| {
-                                ui.label("This is a non-NTFS drive.");
-                                ui.label("Please mount it first if you'd like to explore it,");
-                                ui.label("or use an external tool to access this filesystem.");
+                                ui.label(&i18n.tr("non_nftsdrive_label1"));
+                                ui.label(&i18n.tr("non_nftsdrive_label2"));
+                                ui.label(&i18n.tr("non_nftsdrive_label3"));
                                 ui.add_space(8.0);
-                                if ui.button("OK").clicked() {
+                                if ui.button(&i18n.tr("ok")).clicked() {
                                     sidebar_state.non_ntfs_popup_path = None;
                                 }
                             });

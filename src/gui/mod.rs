@@ -1,5 +1,6 @@
 // gui/mod.rs
 pub mod dragdrop;
+pub mod i18n;
 pub mod icons;
 pub mod theme;
 pub mod utils;

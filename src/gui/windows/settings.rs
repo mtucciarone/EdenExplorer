@@ -1,4 +1,5 @@
 use crate::core::{fs::MY_PC_PATH, indexer::WindowSizeMode};
+use crate::gui::i18n::I18n;
 use crate::gui::theme::{ThemePalette, apply_checkbox_colors};
 use crate::gui::utils::SortColumn;
 use crate::gui::windows::enums::SettingsAction;
@@ -61,6 +62,7 @@ fn info_icon(ui: &mut egui::Ui, hover_text: &str, palette: &ThemePalette) -> egu
 pub fn draw_settings_window(
     ctx: &egui::Context,
     settings: &mut SettingsWindow,
+    i18n: &mut I18n,
     palette: &ThemePalette,
 ) -> Option<SettingsAction> {
     let mut action = None;
@@ -81,7 +83,7 @@ pub fn draw_settings_window(
                 .rect_filled(rect, 0.0, palette.modal_background_effect_color);
         });
 
-    egui::Window::new("EdenExplorer Settings")
+    egui::Window::new(format!("EdenExplorer - {}", i18n.tr("settings")))
         .collapsible(false)
         .resizable(false)
         .fixed_size([400.0, 400.0])
@@ -92,9 +94,18 @@ pub fn draw_settings_window(
             let mut style = (*ui.ctx().style()).clone();
             style.text_styles = [
                 (egui::TextStyle::Heading, egui::FontId::proportional(14.0)),
-                (egui::TextStyle::Body, egui::FontId::proportional(palette.text_size)),
-                (egui::TextStyle::Button, egui::FontId::proportional(palette.text_size)),
-                (egui::TextStyle::Small, egui::FontId::proportional(palette.text_size)),
+                (
+                    egui::TextStyle::Body,
+                    egui::FontId::proportional(palette.text_size),
+                ),
+                (
+                    egui::TextStyle::Button,
+                    egui::FontId::proportional(palette.text_size),
+                ),
+                (
+                    egui::TextStyle::Small,
+                    egui::FontId::proportional(palette.text_size),
+                ),
             ]
             .into();
             ui.set_style(style);
@@ -104,33 +115,119 @@ pub fn draw_settings_window(
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        if ui.button(format!("{} Reset", regular::ARROW_CLOCKWISE)).clicked() {
+                        if ui
+                            .button(format!(
+                                "{} {}",
+                                regular::ARROW_CLOCKWISE,
+                                i18n.tr("settings_reset")
+                            ))
+                            .clicked()
+                        {
                             action = Some(SettingsAction::ResetToDefaults);
                         }
                     });
+
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(i18n.tr("language")).color(palette.text_normal));
+
+                        egui::ComboBox::from_id_salt("language_selector")
+                            .selected_text(match i18n.current_locale() {
+                                "ja-JP" => i18n.tr("japanese"),
+                                "id-ID" => i18n.tr("indonesian"),
+                                _ => i18n.tr("english"),
+                            })
+                            .show_ui(ui, |ui| {
+                                if ui
+                                    .selectable_label(
+                                        i18n.current_locale() == "en-US",
+                                        i18n.tr("english"),
+                                    )
+                                    .clicked()
+                                {
+                                    i18n.set_locale("en-US");
+                                }
+
+                                if ui
+                                    .selectable_label(
+                                        i18n.current_locale() == "ja-JP",
+                                        i18n.tr("japanese"),
+                                    )
+                                    .clicked()
+                                {
+                                    i18n.set_locale("ja-JP");
+                                }
+
+                                if ui
+                                    .selectable_label(
+                                        i18n.current_locale() == "id-ID",
+                                        i18n.tr("indonesian"),
+                                    )
+                                    .clicked()
+                                {
+                                    i18n.set_locale("id-ID");
+                                }
+
+                                if ui
+                                    .selectable_label(
+                                        i18n.current_locale() == "zh-CN",
+                                        i18n.tr("chinese_simple"),
+                                    )
+                                    .clicked()
+                                {
+                                    i18n.set_locale("zh-CN");
+                                }
+
+                                if ui
+                                    .selectable_label(
+                                        i18n.current_locale() == "zh-TW",
+                                        i18n.tr("chinese_traditional"),
+                                    )
+                                    .clicked()
+                                {
+                                    i18n.set_locale("zh-TW");
+                                }
+
+                                if ui
+                                    .selectable_label(
+                                        i18n.current_locale() == "zh-HK",
+                                        i18n.tr("chinese_traditional_hk"),
+                                    )
+                                    .clicked()
+                                {
+                                    i18n.set_locale("zh-HK");
+                                }
+                            });
+                    });
+
                     // Folder Scanning
                     ui.horizontal(|ui| {
                         ui.scope(|ui| {
                             apply_checkbox_colors(ui, palette, false);
-                            if ui.checkbox(
-                                &mut settings.current_settings.folder_scanning_enabled,
-                                RichText::new("Enable folder size scanning").color(palette.text_normal)
-                            ).changed() {
+                            if ui
+                                .checkbox(
+                                    &mut settings.current_settings.folder_scanning_enabled,
+                                    RichText::new(&i18n.tr("settings_folderscanning"))
+                                        .color(palette.text_normal),
+                                )
+                                .changed()
+                            {
                                 // Auto-save when setting changes
                                 action = Some(SettingsAction::ApplySettings);
                             }
                         });
-                    info_icon(ui, "When enabled, the application will scan folders to calculate their sizes. This may impact performance on large directories.", palette);
+                        info_icon(ui, &i18n.tr("tooltip_settings_folderscanning"), palette);
                     });
                     ui.add_space(8.0);
                     // Starting Path
-                    ui.label("Startup Directory:");
+                    ui.label(&i18n.tr("settings_startpath"));
                     ui.horizontal(|ui| {
-                        let path_text = settings.current_settings.start_path
+                        let path_text = settings
+                            .current_settings
+                            .start_path
                             .as_ref()
                             .map(|p| {
                                 if p.as_os_str() == MY_PC_PATH {
-                                    return "Default (My PC)".to_string();
+                                    return i18n.tr("settings_startpath_default");
                                 }
 
                                 let s = p.to_string_lossy();
@@ -141,29 +238,32 @@ pub fn draw_settings_window(
                                     s.to_string()
                                 }
                             })
-                            .unwrap_or_else(|| "Default (My PC)".to_string());
+                            .unwrap_or_else(|| i18n.tr("settings_startpath_default"));
 
-                        ui.add_sized(
-                            [200.0, 18.0],
-                            egui::Label::new(path_text),
-                        ).on_hover_text(
-                            settings.current_settings.start_path
-                                .as_ref()
-                                .map(|p| p.to_string_lossy().to_string())
-                                .unwrap_or_default()
-                        );
+                        ui.add_sized([200.0, 18.0], egui::Label::new(path_text))
+                            .on_hover_text(
+                                settings
+                                    .current_settings
+                                    .start_path
+                                    .as_ref()
+                                    .map(|p| p.to_string_lossy().to_string())
+                                    .unwrap_or_default(),
+                            );
 
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.button(regular::ARROW_COUNTER_CLOCKWISE)
-                                .on_hover_text("Reset to default")
+                            if ui
+                                .button(regular::ARROW_COUNTER_CLOCKWISE)
+                                .on_hover_text(i18n.tr("settings_startpath_reset_hover"))
                                 .clicked()
                             {
-                                settings.current_settings.start_path = Some(PathBuf::from(MY_PC_PATH));
+                                settings.current_settings.start_path =
+                                    Some(PathBuf::from(MY_PC_PATH));
                                 action = Some(SettingsAction::ApplySettings);
                             }
 
-                            if ui.button(regular::FOLDER_OPEN)
-                                .on_hover_text("Choose a folder")
+                            if ui
+                                .button(regular::FOLDER_OPEN)
+                                .on_hover_text(i18n.tr("settings_startpath_choose_hover"))
                                 .clicked()
                             {
                                 if let Some(path) = rfd::FileDialog::new().pick_folder() {
@@ -178,53 +278,55 @@ pub fn draw_settings_window(
                     ui.horizontal(|ui| {
                         ui.scope(|ui| {
                             apply_checkbox_colors(ui, palette, false);
-                            if ui.checkbox(
-                                &mut settings.current_settings.time_format_24h,
-                                RichText::new("Use 24-hour time format")
-                                    .color(palette.text_normal),
-                            )
-                            .changed()
+                            if ui
+                                .checkbox(
+                                    &mut settings.current_settings.time_format_24h,
+                                    RichText::new(i18n.tr("settings_timeformat_24h"))
+                                        .color(palette.text_normal),
+                                )
+                                .changed()
                             {
                                 action = Some(SettingsAction::ApplySettings);
                             }
                         });
-                        info_icon(
-                            ui,
-                            "When enabled, times will be displayed in 24-hour format (e.g., 14:30). When disabled, 12-hour format will be used (e.g., 2:30 PM).",
-                            palette,
-                        );
+                        info_icon(ui, &i18n.tr("tooltip_settings_timeformat"), palette);
                     });
                     ui.add_space(8.0);
                     // Context Menu Section
-                    ui.heading("Context Menu");
+                    ui.heading(i18n.tr("settings_contextmenu"));
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         ui.scope(|ui| {
                             apply_checkbox_colors(ui, palette, false);
-                            if ui.checkbox(
-                                &mut settings.current_settings.windows_context_menu_enabled,
-                                RichText::new("Enable Windows context menu items")
-                                    .color(palette.text_normal),
-                            )
-                            .changed()
+                            if ui
+                                .checkbox(
+                                    &mut settings.current_settings.windows_context_menu_enabled,
+                                    RichText::new(&i18n.tr("settings_contextmenu_enable"))
+                                        .color(palette.text_normal),
+                                )
+                                .changed()
                             {
                                 action = Some(SettingsAction::ApplySettings);
                             }
                         });
-                        info_icon(
-                            ui,
-                            "Adds a Windows section to the right-click menu with shell actions.",
-                            palette,
-                        );
+                        info_icon(ui, &i18n.tr("tooltip_settings_contextmenu"), palette);
                     });
                     ui.add_space(8.0);
                     // Favorites Reset
                     ui.horizontal(|ui| {
-                        if ui.button(format!("{} Reset Sidebar Favorites", regular::TRASH))
-                            .on_hover_text( egui::RichText::new("Reset favorites to default")
+                        if ui
+                            .button(format!(
+                                "{} {}",
+                                regular::TRASH,
+                                i18n.tr("settings_favorites_reset")
+                            ))
+                            .on_hover_text(
+                                egui::RichText::new(&i18n.tr("tooltip_settings_favorites_reset"))
                                     .size(palette.tooltip_text_size)
-                                    .color(palette.tooltip_text_color))
-                            .clicked() {
+                                    .color(palette.tooltip_text_color),
+                            )
+                            .clicked()
+                        {
                             settings.show_reset_favorites_confirmation = true;
                         }
                     });
@@ -232,33 +334,42 @@ pub fn draw_settings_window(
             // Reset Favorites Confirmation Dialog
             if settings.show_reset_favorites_confirmation {
                 let mut should_close = false;
-                egui::Window::new("Reset Favorites")
+                egui::Window::new(i18n.tr("settings_favorites_reset_confirm"))
                     .collapsible(false)
                     .resizable(false)
                     .fixed_size([400.0, 150.0])
                     .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-                    .frame(egui::Frame::popup(&ctx.style()).corner_radius(egui::CornerRadius::same(8)))
+                    .frame(
+                        egui::Frame::popup(&ctx.style()).corner_radius(egui::CornerRadius::same(8)),
+                    )
                     .show(ctx, |ui| {
                         ui.vertical_centered(|ui| {
                             ui.label(
-                                egui::RichText::new("This will clear all your saved favorite locations")
-                                    .size(palette.text_size)
+                                egui::RichText::new(
+                                    &i18n.tr("settings_favorite_reset_confirm_label1"),
+                                )
+                                .size(palette.text_size),
                             );
                             ui.label(
-                                egui::RichText::new("and restore the default favorites.")
-                                    .size(palette.text_size)
+                                egui::RichText::new(
+                                    &i18n.tr("settings_favorite_reset_confirm_label2"),
+                                )
+                                .size(palette.text_size),
                             );
                             ui.add_space(20.0);
                             ui.horizontal(|ui| {
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    if ui.button("Close").clicked() {
-                                        should_close = true;
-                                    }
-                                    if ui.button("Reset").clicked() {
-                                        action = Some(SettingsAction::ResetFavourites);
-                                        should_close = true;
-                                    }
-                                });
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if ui.button(i18n.tr("close")).clicked() {
+                                            should_close = true;
+                                        }
+                                        if ui.button(i18n.tr("reset")).clicked() {
+                                            action = Some(SettingsAction::ResetFavourites);
+                                            should_close = true;
+                                        }
+                                    },
+                                );
                             });
                         });
                     });
@@ -269,9 +380,12 @@ pub fn draw_settings_window(
             ui.separator();
             // Footer
             ui.horizontal(|ui| {
-                ui.label("Changes are automatically saved when modified.");
+                ui.label(i18n.tr("settings_changes_auto_saved"));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(format!("{} Close", regular::X)).clicked() {
+                    if ui
+                        .button(format!("{} {}", regular::X, i18n.tr("close")))
+                        .clicked()
+                    {
                         should_close = true;
                     }
                 });

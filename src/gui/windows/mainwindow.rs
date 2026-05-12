@@ -5,6 +5,7 @@ use crate::core::indexer::{
     load_app_settings, load_favorites, load_theme_settings, save_app_settings,
 };
 use crate::gui::dragdrop::{DragDropBackend, DropTargets};
+use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::{ThemeMode, apply_theme, get_default_palette, get_palette, set_palette};
 use crate::gui::utils::SortColumn;
@@ -90,6 +91,9 @@ pub struct MainWindow {
     pub(crate) pending_size_queue: VecDeque<PathBuf>,
     pub(crate) pending_size_set: HashSet<PathBuf>,
     pub(crate) icon_cache: Option<IconCache>,
+
+    // i18n
+    pub(crate) i18n: I18n,
 }
 
 impl Default for MainWindow {
@@ -115,6 +119,17 @@ impl Default for MainWindow {
             time_format_24h,
             sort_column,
             sort_ascending,
+        };
+
+        let system_locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
+
+        let default_locale = match system_locale.as_str() {
+            l if l.starts_with("ja") => "ja-JP",
+            l if l.starts_with("id") => "id-ID",
+            l if l.starts_with("zh") => "zh-CN",
+            l if l.starts_with("zh-HK") => "zh-HK",
+            l if l.starts_with("zh-TW") => "zh-TW",
+            _ => "en-US",
         };
 
         let pinned_tabs = pinned_tabs;
@@ -199,6 +214,8 @@ impl Default for MainWindow {
             drive_size_text_cache: HashMap::new(),
             is_loading: false,
             pending_tab_scroll_id: None,
+
+            i18n: I18n::new(default_locale),
         };
 
         // Initialize settings window with loaded values
@@ -412,6 +429,7 @@ impl eframe::App for MainWindow {
                                     ui.add_space(8.0);
                                     topbar_action = Some(draw_topbar(
                                         ui,
+                                        &self.i18n,
                                         self.theme == ThemeMode::Dark,
                                         &palette,
                                     ));
@@ -419,6 +437,7 @@ impl eframe::App for MainWindow {
                                 sidebar_frame.show(ui, |ui| {
                                     sidebar_action = Some(draw_sidebar(
                                         ui,
+                                        &self.i18n,
                                         &icon_cache,
                                         &mut self.sidebar_state,
                                         &palette,
@@ -471,6 +490,7 @@ impl eframe::App for MainWindow {
                         let (next_tabs_action, next_tabbar_action, next_pending_action) =
                             draw_explorer(
                                 ui,
+                                &self.i18n,
                                 &icon_cache,
                                 &palette,
                                 self.hwnd,
@@ -626,6 +646,7 @@ impl eframe::App for MainWindow {
 
         handle_pending_actions(pending_action, self);
         handle_draw_customizetheme_window(
+            &mut self.i18n,
             ctx,
             &mut self.theme_customizer,
             &palette,
