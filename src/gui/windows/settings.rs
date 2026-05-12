@@ -132,7 +132,7 @@ pub fn draw_settings_window(
                         ui.label(RichText::new(i18n.tr("language")).color(palette.text_normal));
 
                         let mut selected_locale = settings.current_settings.language.clone();
-                        
+
                         egui::ComboBox::from_id_salt("language_selector")
                             .selected_text(match selected_locale.as_str() {
                                 "ja-JP" => i18n.tr("japanese"),
@@ -203,7 +203,7 @@ pub fn draw_settings_window(
                                     selected_locale = "zh-HK".to_string();
                                 }
                             });
-                            
+
                         // Check if language changed and update both i18n and settings
                         if selected_locale != settings.current_settings.language {
                             i18n.set_locale(&selected_locale);
