@@ -109,6 +109,7 @@ impl Default for MainWindow {
             time_format_24h,
             sort_column,
             sort_ascending,
+            language,
         ) = load_app_settings();
         let loaded_settings = AppSettings {
             folder_scanning_enabled,
@@ -119,6 +120,7 @@ impl Default for MainWindow {
             time_format_24h,
             sort_column,
             sort_ascending,
+            language,
         };
 
         let system_locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
@@ -218,7 +220,8 @@ impl Default for MainWindow {
             i18n: I18n::new(default_locale),
         };
 
-        // Initialize settings window with loaded values
+        // Initialize i18n with loaded language
+        app.i18n.set_locale(&loaded_settings.language);
         app.settings_window.current_settings = loaded_settings;
 
         match load_theme_settings() {
@@ -358,6 +361,7 @@ impl eframe::App for MainWindow {
                         self.settings_window.current_settings.time_format_24h,
                         self.settings_window.current_settings.sort_column,
                         self.settings_window.current_settings.sort_ascending,
+                        &self.settings_window.current_settings.language,
                     );
 
                     self.last_window_size = Some(current_size);

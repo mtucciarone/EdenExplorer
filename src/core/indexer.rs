@@ -24,6 +24,8 @@ struct AppSettingsSnapshot {
     sort_column: crate::gui::utils::SortColumn,
     #[serde(default)]
     sort_ascending: bool,
+    #[serde(default = "default_language")]
+    language: String,
 }
 
 // Legacy snapshot struct for deserializing old settings with HalfScreen
@@ -57,6 +59,7 @@ impl From<LegacyAppSettingsSnapshot> for AppSettingsSnapshot {
             time_format_24h: legacy.time_format_24h,
             sort_column: legacy.sort_column,
             sort_ascending: legacy.sort_ascending,
+            language: default_language(),
         }
     }
 }
@@ -142,6 +145,10 @@ fn default_sort_column() -> crate::gui::utils::SortColumn {
     crate::gui::utils::SortColumn::Name
 }
 
+fn default_language() -> String {
+    "en-US".to_string()
+}
+
 fn favorites_cache_path(drive: char) -> Option<PathBuf> {
     let base = dirs::data_local_dir()?;
     Some(
@@ -196,6 +203,7 @@ pub fn load_app_settings() -> (
     bool,
     crate::gui::utils::SortColumn,
     bool,
+    String,
 ) {
     let default_path = PathBuf::from(MY_PC_PATH);
 
@@ -224,6 +232,7 @@ pub fn load_app_settings() -> (
         snapshot.time_format_24h,
         snapshot.sort_column,
         snapshot.sort_ascending,
+        snapshot.language,
     )
 }
 
@@ -239,6 +248,7 @@ fn default_app_settings(
     bool,
     crate::gui::utils::SortColumn,
     bool,
+    String,
 ) {
     (
         true,
@@ -250,6 +260,7 @@ fn default_app_settings(
         true,
         crate::gui::utils::SortColumn::Name,
         true,
+        default_language(),
     )
 }
 
@@ -263,6 +274,7 @@ pub fn save_app_settings(
     time_format_24h: bool,
     sort_column: crate::gui::utils::SortColumn,
     sort_ascending: bool,
+    language: &str,
 ) {
     let path = match settings_cache_path() {
         Some(path) => path,
@@ -279,6 +291,7 @@ pub fn save_app_settings(
         time_format_24h,
         sort_column,
         sort_ascending,
+        language: language.to_string(),
     };
     if let Ok(data) = postcard::to_allocvec(&snapshot) {
         let _ = std::fs::write(path, data);
