@@ -8,7 +8,7 @@ use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::itemviewer::draw_item_viewer;
 use crate::gui::windows::containers::structs::{
     DragState, ExplorerState, FilterState, ItemViewerFolderSizeState, RenameState, TabInfo,
-    TabState, TabbarAction, TabsAction,
+    TabState, TabbarAction, TabsAction, TagsState,
 };
 use crate::gui::windows::containers::tabs::{draw_tabbar, draw_tabs};
 use crate::gui::windows::mainwindow_imp::tab_title_for;
@@ -54,6 +54,7 @@ pub fn draw_explorer(
     item_viewer_filter_state: &mut FilterState,
     is_loading: bool,
     explorer_state: &mut ExplorerState,
+    tags_state: &mut TagsState,
     theme_customizer: &mut ThemeCustomizer,
     settings_window: &mut SettingsWindow,
     drop_targets: &mut DropTargets,
@@ -189,6 +190,7 @@ pub fn draw_explorer(
                                     &mut hovered_drop_target_rect,
                                     is_loading,
                                     explorer_state,
+                                    tags_state,
                                     theme_customizer,
                                     settings_window,
                                     hwnd,

@@ -2,6 +2,7 @@ use crate::gui::i18n::I18n;
 use crate::gui::theme::{
     ThemeMode, ThemePalette, get_default_palette, regenerate_base_derived_colors,
 };
+use crate::gui::utils::rgba_color_edit_button;
 use crate::gui::windows::enums::ThemeCustomizerAction;
 use crate::gui::windows::structs::ThemeCustomizer;
 use eframe::egui;
@@ -403,25 +404,5 @@ fn color_picker(
             .color(label_color),
     );
 
-    // Convert Color32 to Rgba for the color picker
-    let mut rgba = egui::Rgba::from(*color);
-
-    // Use egui's native color picker with alpha support
-    let response = egui::widgets::color_picker::color_edit_button_rgba(
-        ui,
-        &mut rgba,
-        egui::widgets::color_picker::Alpha::OnlyBlend,
-    );
-
-    // Convert back to Color32 if changed
-    if response.changed() {
-        *color = egui::Color32::from_rgba_premultiplied(
-            (rgba.r() * 255.0) as u8,
-            (rgba.g() * 255.0) as u8,
-            (rgba.b() * 255.0) as u8,
-            (rgba.a() * 255.0) as u8,
-        );
-    }
-
-    response.changed()
+    rgba_color_edit_button(ui, color).changed()
 }

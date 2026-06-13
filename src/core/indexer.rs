@@ -9,6 +9,24 @@ struct FavoritesSnapshot {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct TagGroupSnapshot {
+    pub id: u64,
+    pub name: String,
+    pub color: [u8; 4],
+    pub items: Vec<PathBuf>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TagsSnapshot {
+    #[serde(default = "default_tags_version")]
+    pub version: u32,
+    #[serde(default = "default_next_tag_group_id")]
+    pub next_group_id: u64,
+    #[serde(default)]
+    pub groups: Vec<TagGroupSnapshot>,
+}
+
+#[derive(Serialize, Deserialize)]
 struct AppSettingsSnapshot {
     folder_scanning_enabled: bool,
     #[serde(default)]
@@ -149,6 +167,14 @@ fn default_language() -> String {
     "en-US".to_string()
 }
 
+fn default_tags_version() -> u32 {
+    1
+}
+
+fn default_next_tag_group_id() -> u64 {
+    1
+}
+
 fn favorites_cache_path(drive: char) -> Option<PathBuf> {
     let base = dirs::data_local_dir()?;
     Some(
@@ -166,6 +192,11 @@ fn settings_cache_path() -> Option<PathBuf> {
 fn theme_cache_path() -> Option<PathBuf> {
     let base = dirs::data_local_dir()?;
     Some(base.join("ExplorerEden").join("theme.bin"))
+}
+
+fn tags_cache_path() -> Option<PathBuf> {
+    let base = dirs::data_local_dir()?;
+    Some(base.join("ExplorerEden").join("tags.bin"))
 }
 
 pub fn load_favorites(drive: char) -> Vec<String> {
@@ -189,6 +220,22 @@ pub fn save_favorites(drive: char, favorites: &[String]) {
         favorites: favorites.to_vec(),
     };
     if let Ok(data) = postcard::to_allocvec(&snapshot) {
+        let _ = std::fs::write(path, data);
+    }
+}
+
+pub fn load_tags() -> Option<TagsSnapshot> {
+    let path = tags_cache_path()?;
+    load_or_migrate_bincode_to_postcard::<TagsSnapshot>(&path)
+}
+
+pub fn save_tags(snapshot: &TagsSnapshot) {
+    let path = match tags_cache_path() {
+        Some(path) => path,
+        None => return,
+    };
+    let _ = std::fs::create_dir_all(path.parent().unwrap());
+    if let Ok(data) = postcard::to_allocvec(snapshot) {
         let _ = std::fs::write(path, data);
     }
 }

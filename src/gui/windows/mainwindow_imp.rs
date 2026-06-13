@@ -2,7 +2,7 @@ use crate::core::drives::{get_drive_infos, is_raw_physical_drive_path};
 use crate::core::fs::FileItem;
 use crate::core::fs::{parallel_directory_scan, scan_dir_async};
 use crate::core::indexer::{
-    load_app_settings, save_app_settings, save_favorites, save_theme_settings,
+    load_app_settings, save_app_settings, save_favorites, save_tags, save_theme_settings,
 };
 use crate::gui::MainWindow;
 use crate::gui::i18n::I18n;
@@ -405,6 +405,23 @@ impl MainWindow {
         save_favorites('C', &items);
     }
 
+    pub fn persist_tags(&self) {
+        save_tags(&self.tags_state.to_snapshot());
+    }
+
+    fn move_tagged_paths_to_dir(&mut self, sources: &[PathBuf], target_dir: &Path) -> bool {
+        let mut changed = false;
+
+        for source in sources {
+            if let Some(file_name) = source.file_name() {
+                let new_path = target_dir.join(file_name);
+                changed |= self.tags_state.remap_path_prefix(source, &new_path);
+            }
+        }
+
+        changed
+    }
+
     pub fn handle_context_action(&mut self, action: ItemViewerContextAction) {
         match action {
             ItemViewerContextAction::Cut(paths) => {
@@ -432,6 +449,14 @@ impl MainWindow {
             ItemViewerContextAction::Paste => {
                 if let Err(e) = self.paste_clipboard_native() {
                     eprintln!("Paste failed: {}", e);
+                }
+            }
+            ItemViewerContextAction::AddTag(paths) => {
+                self.tags_state.open_picker(paths);
+            }
+            ItemViewerContextAction::RemoveTag(paths) => {
+                if self.tags_state.remove_paths(&paths) {
+                    self.persist_tags();
                 }
             }
             ItemViewerContextAction::RenameRequest(path, new_name) => {
@@ -486,7 +511,11 @@ impl MainWindow {
                         }
 
                         // Set the renamed file path for auto-selection and scrolling
-                        self.explorer_state.newly_created_path = Some(target);
+                        self.explorer_state.newly_created_path = Some(target.clone());
+
+                        if self.tags_state.remap_path_prefix(path.as_path(), &target) {
+                            self.persist_tags();
+                        }
                     }
                 }
 
@@ -502,9 +531,18 @@ impl MainWindow {
                     eprintln!("Native delete failed: {:?}", e);
 
                     // fallback (rare, but safe)
-                    for path in paths {
-                        self.delete_path(&path);
+                    for path in &paths {
+                        self.delete_path(path);
                     }
+                }
+
+                let mut tags_changed = false;
+                for path in &paths {
+                    tags_changed |= self.tags_state.remove_path_prefix(path);
+                }
+
+                if tags_changed {
+                    self.persist_tags();
                 }
 
                 self.load_path();
@@ -529,6 +567,7 @@ impl MainWindow {
         };
 
         let is_cut = is_clipboard_cut();
+        let target_dir = self.current_nav().current.clone();
 
         unsafe {
             let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
@@ -541,7 +580,7 @@ impl MainWindow {
                 None,
             )?;
 
-            for path in paths {
+            for path in &paths {
                 let source_item: IShellItem = SHCreateItemFromParsingName(
                     &HSTRING::from(path.to_string_lossy().to_string()),
                     None,
@@ -555,6 +594,10 @@ impl MainWindow {
             }
 
             file_op.PerformOperations()?;
+        }
+
+        if is_cut && self.move_tagged_paths_to_dir(&paths, &target_dir) {
+            self.persist_tags();
         }
 
         self.load_path();
@@ -1052,6 +1095,13 @@ impl MainWindow {
                     }
                 }
             }
+            if action.toggle_file_explorer {
+                self.display_file_explorer = !self.display_file_explorer;
+                self.drag_state.active = false;
+                self.drag_state.start_pos = None;
+                self.drag_state.source_items.clear();
+                self.tags_state.drag_state = None;
+            }
         }
     }
 
@@ -1495,7 +1545,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     )
                     .unwrap();
 
-                    for source in sources {
+                    for source in &sources {
                         let source_item: IShellItem = SHCreateItemFromParsingName(
                             &HSTRING::from(source.to_string_lossy().to_string()),
                             None,
@@ -1508,6 +1558,10 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     }
 
                     file_op.PerformOperations().ok();
+                }
+
+                if explorer.move_tagged_paths_to_dir(&sources, &target_dir) {
+                    explorer.persist_tags();
                 }
 
                 explorer.explorer_state.selected_paths.clear();
@@ -1537,7 +1591,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     )
                     .unwrap();
 
-                    for source in sources {
+                    for source in &sources {
                         let source_item: IShellItem = SHCreateItemFromParsingName(
                             &HSTRING::from(source.to_string_lossy().to_string()),
                             None,
@@ -1550,6 +1604,10 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     }
 
                     file_op.PerformOperations().ok();
+                }
+
+                if explorer.move_tagged_paths_to_dir(&sources, &target_dir) {
+                    explorer.persist_tags();
                 }
 
                 explorer.explorer_state.selected_paths.clear();
@@ -1579,7 +1637,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     )
                     .unwrap();
 
-                    for source in sources {
+                    for source in &sources {
                         let source_item: IShellItem = SHCreateItemFromParsingName(
                             &HSTRING::from(source.to_string_lossy().to_string()),
                             None,
@@ -1592,6 +1650,10 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     }
 
                     file_op.PerformOperations().ok();
+                }
+
+                if explorer.move_tagged_paths_to_dir(&sources, &target_dir) {
+                    explorer.persist_tags();
                 }
 
                 explorer.explorer_state.selected_paths.clear();

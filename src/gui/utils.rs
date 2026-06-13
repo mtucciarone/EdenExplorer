@@ -42,6 +42,39 @@ lazy_static::lazy_static! {
         RwLock::new(LruCache::new(NonZeroUsize::new(1024).unwrap()));
 }
 
+pub fn clickable_active_icon(
+    ui: &mut Ui,
+    icon: &str,
+    default_color: Color32,
+    is_active: bool,
+    is_active_color: Color32,
+) -> Response {
+    let font_id = egui::FontId::default();
+
+    // Measure exact text size
+    let galley = ui
+        .painter()
+        .layout_no_wrap(icon.to_string(), font_id.clone(), default_color);
+
+    let (rect, resp) = ui.allocate_exact_size(galley.size(), egui::Sense::click());
+
+    let color = if is_active {
+        is_active_color
+    } else {
+        default_color
+    };
+
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        icon,
+        font_id,
+        color,
+    );
+
+    resp
+}
+
 pub fn clickable_icon(ui: &mut Ui, icon: &str, hover_color: Color32) -> Response {
     let font_id = egui::FontId::default();
 
@@ -67,6 +100,22 @@ pub fn clickable_icon(ui: &mut Ui, icon: &str, hover_color: Color32) -> Response
     );
 
     resp
+}
+
+pub fn rgba_color_edit_button(ui: &mut Ui, color: &mut Color32) -> Response {
+    let mut rgba = egui::Rgba::from(*color);
+
+    let response = egui::widgets::color_picker::color_edit_button_rgba(
+        ui,
+        &mut rgba,
+        egui::widgets::color_picker::Alpha::OnlyBlend,
+    );
+
+    if response.changed() {
+        *color = rgba.into();
+    }
+
+    response
 }
 
 pub fn drive_usage_color(ratio: f32, palette: &ThemePalette) -> Color32 {
