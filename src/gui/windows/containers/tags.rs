@@ -151,46 +151,37 @@ pub fn draw_tags(
                                     );
                                 }
 
-                                
-
                                 ui.with_layout(
                                     egui::Layout::right_to_left(egui::Align::Center),
                                     |ui| {
-                                        
-
                                         if rgba_color_edit_button(ui, &mut group.color).changed() {
                                             changed = true;
                                         }
-
                                         ui.label(
                                             egui::RichText::new(format!("({})", group_items.len()))
                                                 .size(palette.text_size)
                                                 .color(palette.tooltip_text_color),
                                         );
-
-                                        
-                                    if clickable_icon(ui, regular::TRASH, palette.primary)
-                                        .on_hover_text(i18n.tr("tag_delete_group"))
-                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                        .clicked()
-                                    {
-                                        delete_confirmation = Some(group_id);
-                                    }
-                                        if clickable_icon(ui, regular::PENCIL_SIMPLE, palette.primary)
-                                        .on_hover_text(i18n.tr("inputs_rename"))
-                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                        .clicked()
-                                    {
-                                        rename_state = Some(
-                                            crate::gui::windows::containers::structs::TagRenameState {
-                                                group_id,
-                                                buffer: group_name.clone(),
-                                                should_focus: true,
-                                            },
-                                        );
-                                    }
-
-                                        
+                                        if clickable_icon(ui, regular::TRASH, palette.primary)
+                                            .on_hover_text(i18n.tr("tag_delete_group"))
+                                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                            .clicked()
+                                        {
+                                            delete_confirmation = Some(group_id);
+                                        }
+                                            if clickable_icon(ui, regular::PENCIL_SIMPLE, palette.primary)
+                                            .on_hover_text(i18n.tr("inputs_rename"))
+                                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                            .clicked()
+                                        {
+                                            rename_state = Some(
+                                                crate::gui::windows::containers::structs::TagRenameState {
+                                                    group_id,
+                                                    buffer: group_name.clone(),
+                                                    should_focus: true,
+                                                },
+                                            );
+                                        }
                                     },
                                 );
                             });
