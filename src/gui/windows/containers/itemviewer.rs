@@ -818,7 +818,7 @@ fn handle_context_menu_actions(
         i18n.tr("tag_add")
     };
 
-        if ui.button(tag_label).clicked() {
+    if ui.button(tag_label).clicked() {
         *action = Some(ItemViewerAction::Context(if has_tag {
             ItemViewerContextAction::RemoveTag(context_paths.clone())
         } else {

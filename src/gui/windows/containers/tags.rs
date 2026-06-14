@@ -768,19 +768,19 @@ pub fn draw_container_header(
                 |ui| {
                     let tabs_rect = ui.available_rect_before_wrap();
                     let empty_left = tabs_rect.min.x;
-                        let drag_rect = egui::Rect::from_min_max(
-                            egui::pos2(empty_left, tabs_rect.min.y),
-                            tabs_rect.max,
-                        );
-                        if drag_rect.width() > 4.0 {
-                            let resp = ui.allocate_rect(drag_rect, egui::Sense::click_and_drag());
-                            if resp.drag_started() || resp.dragged() {
-                                ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
-                            }
-                            if resp.hovered() {
-                                ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
-                            }
+                    let drag_rect = egui::Rect::from_min_max(
+                        egui::pos2(empty_left, tabs_rect.min.y),
+                        tabs_rect.max,
+                    );
+                    if drag_rect.width() > 4.0 {
+                        let resp = ui.allocate_rect(drag_rect, egui::Sense::click_and_drag());
+                        if resp.drag_started() || resp.dragged() {
+                            ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
                         }
+                        if resp.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                        }
+                    }
                 },
             );
 
@@ -795,7 +795,6 @@ pub fn draw_container_header(
         },
     );
 }
-
 
 fn handle_context_menu_actions(
     ui: &mut egui::Ui,
@@ -891,10 +890,7 @@ fn handle_context_menu_actions(
     }
 }
 
-fn handle_row_click(
-    object: &FileItem,
-) -> Option<ItemViewerAction> {
-
+fn handle_row_click(object: &FileItem) -> Option<ItemViewerAction> {
     return Some(if object.is_dir {
         ItemViewerAction::Open(object.path.clone())
     } else {

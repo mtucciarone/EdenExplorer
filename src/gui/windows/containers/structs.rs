@@ -1,13 +1,13 @@
 use crate::core::indexer::TagsSnapshot;
+use crate::gui::utils::hsl_to_color32;
 use crate::gui::windows::containers::enums::{ItemViewerAction, TabbarNavAction};
 use crate::gui::windows::shell_context_menu::ShellContextMenu;
 use crate::gui::windows::structs::Navigation;
+use egui::Color32;
+use rand::Rng;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use rand::Rng;
-use egui::Color32;
-use crate::gui::utils::hsl_to_color32;
 
 #[derive(Default)]
 pub struct ExplorerState {

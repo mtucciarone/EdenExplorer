@@ -33,16 +33,15 @@ impl I18n {
 
         let path = format!("{}/main.ftl", locale);
 
-        let file = Localizations::get(&path)
-            .unwrap_or_else(|| panic!("Missing locale file: {}", path));
+        let file =
+            Localizations::get(&path).unwrap_or_else(|| panic!("Missing locale file: {}", path));
 
         let source = match file.data {
             Cow::Borrowed(bytes) => std::str::from_utf8(bytes).unwrap().to_string(),
             Cow::Owned(bytes) => String::from_utf8(bytes).unwrap(),
         };
 
-        let resource =
-            FluentResource::try_new(source).expect("Failed to parse Fluent resource");
+        let resource = FluentResource::try_new(source).expect("Failed to parse Fluent resource");
 
         let langid: LanguageIdentifier = locale.parse().expect("Invalid language identifier");
 

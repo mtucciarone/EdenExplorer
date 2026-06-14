@@ -1,6 +1,7 @@
 use crate::core::fs::FileItem;
 use crate::gui::theme::ThemePalette;
 use eframe::egui::*;
+use egui::Color32;
 use egui_phosphor::regular::DOTS_SIX_VERTICAL;
 use lru::LruCache;
 use serde::{Deserialize, Serialize};
@@ -34,7 +35,6 @@ use windows::Win32::UI::Shell::{
 };
 use windows::core::PCWSTR;
 use windows::core::Result;
-use egui::Color32;
 
 type TruncKey = (String, u32, u32); // (text, width_bucket, font_size_bucket)
 
