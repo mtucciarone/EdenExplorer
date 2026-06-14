@@ -557,6 +557,10 @@ impl eframe::App for MainWindow {
                             tags_changed = true;
                         }
 
+                        if let Some(tags_action) = self.tags_state.pending_action.take() {
+                            pending_action = Some(tags_action);
+                        }
+
                         if draw_delete_confirmation_popup(
                             ui.ctx(),
                             &self.i18n,

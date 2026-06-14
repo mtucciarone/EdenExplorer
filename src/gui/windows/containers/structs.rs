@@ -1,10 +1,13 @@
 use crate::core::indexer::TagsSnapshot;
-use crate::gui::windows::containers::enums::TabbarNavAction;
+use crate::gui::windows::containers::enums::{ItemViewerAction, TabbarNavAction};
 use crate::gui::windows::shell_context_menu::ShellContextMenu;
 use crate::gui::windows::structs::Navigation;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use rand::Rng;
+use egui::Color32;
+use crate::gui::utils::hsl_to_color32;
 
 #[derive(Default)]
 pub struct ExplorerState {
@@ -181,6 +184,7 @@ pub struct TagsState {
     pub rename_state: Option<TagRenameState>,
     pub drag_state: Option<TagDragState>,
     pub delete_confirmation: Option<u64>,
+    pub pending_action: Option<ItemViewerAction>,
 }
 
 impl Default for TagsState {
@@ -192,6 +196,7 @@ impl Default for TagsState {
             rename_state: None,
             drag_state: None,
             delete_confirmation: None,
+            pending_action: None,
         }
     }
 }
@@ -230,6 +235,7 @@ impl TagsState {
             rename_state: None,
             drag_state: None,
             delete_confirmation: None,
+            pending_action: None,
         }
     }
 
@@ -474,6 +480,7 @@ impl TagsState {
     }
 }
 
-fn default_tag_color() -> egui::Color32 {
-    egui::Color32::from_rgba_unmultiplied(110, 85, 160, 255)
+pub fn default_tag_color() -> Color32 {
+    let hue = rand::rng().random_range(0.0..360.0);
+    hsl_to_color32(hue, 0.55, 0.88)
 }

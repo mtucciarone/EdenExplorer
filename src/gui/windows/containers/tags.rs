@@ -1,7 +1,9 @@
+use crate::core::fs::FileItem;
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{clickable_icon, draw_object_drag_ghost, rgba_color_edit_button};
+use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
 use crate::gui::windows::containers::sidebar::draw_sidebar_item;
 use crate::gui::windows::containers::structs::TagsState;
 use crate::gui::windows::windowsoverrides::handle_draw_windows_buttons;
@@ -54,16 +56,19 @@ pub fn draw_tags(
                     return;
                 }
 
+                ScrollArea::vertical()
+                    .max_height(ui.available_height())
+                    .min_scrolled_height(ui.available_height())
+                    .show(ui, |ui| {
                 ui.vertical(|ui| {
                     ui.add_space(-4.0); // align the first group vertically with the side bar border
                     ui.spacing_mut().item_spacing.y = 8.0;
 
                     for group_index in 0..groups_len {
-                        let group = &mut tags_state.groups[group_index];
-                        let group_id = group.id;
-                        let group_name = group.name.clone();
-                        let group_items = group.items.clone();
-                        let group_color = group.color;
+                        let group_id = tags_state.groups[group_index].id;
+                        let group_name = tags_state.groups[group_index].name.clone();
+                        let group_items = tags_state.groups[group_index].items.clone();
+                        let group_color = tags_state.groups[group_index].color;
                         let editing_this_group = rename_state
                             .as_ref()
                             .map(|state| state.group_id == group_id)
@@ -75,6 +80,12 @@ pub fn draw_tags(
                         let mut drop_index: Option<usize> = None;
                         let mut should_clear_drag = false;
                         let mut clear_rename_state = false;
+
+                        // Pre-compute is_tagged status for all items to avoid borrow conflict
+                        let item_tagged_status: std::collections::HashMap<std::path::PathBuf, bool> =
+                            group_items.iter().map(|path| (path.clone(), tags_state.is_tagged(path))).collect();
+
+                        let group = &mut tags_state.groups[group_index];
 
                         let group_frame = egui::Frame::NONE
                             .stroke(egui::Stroke::NONE)
@@ -102,7 +113,7 @@ pub fn draw_tags(
                                         let edit_response = ui.add(
                                             egui::TextEdit::singleline(&mut rename.buffer)
                                                 .id(edit_id)
-                                                .desired_width(150.0)
+                                                .desired_width(ui.available_width() - 180.0)
                                                 .font(egui::FontId::new(
                                                     palette.text_size,
                                                     egui::FontFamily::Proportional,
@@ -138,7 +149,34 @@ pub fn draw_tags(
                                             .color(ui.visuals().text_color())
                                             .strong(),
                                     );
-                                    if clickable_icon(ui, regular::PENCIL_SIMPLE, palette.primary)
+                                }
+
+                                
+
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        
+
+                                        if rgba_color_edit_button(ui, &mut group.color).changed() {
+                                            changed = true;
+                                        }
+
+                                        ui.label(
+                                            egui::RichText::new(format!("({})", group_items.len()))
+                                                .size(palette.text_size)
+                                                .color(palette.tooltip_text_color),
+                                        );
+
+                                        
+                                    if clickable_icon(ui, regular::TRASH, palette.primary)
+                                        .on_hover_text(i18n.tr("tag_delete_group"))
+                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                        .clicked()
+                                    {
+                                        delete_confirmation = Some(group_id);
+                                    }
+                                        if clickable_icon(ui, regular::PENCIL_SIMPLE, palette.primary)
                                         .on_hover_text(i18n.tr("inputs_rename"))
                                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                                         .clicked()
@@ -151,27 +189,8 @@ pub fn draw_tags(
                                             },
                                         );
                                     }
-                                    if clickable_icon(ui, regular::TRASH, palette.primary)
-                                        .on_hover_text(i18n.tr("tag_delete_group"))
-                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                                        .clicked()
-                                    {
-                                        delete_confirmation = Some(group_id);
-                                    }
-                                }
 
-                                ui.label(
-                                    egui::RichText::new(format!("({})", group_items.len()))
-                                        .size(palette.text_size)
-                                        .color(palette.tooltip_text_color),
-                                );
-
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        if rgba_color_edit_button(ui, &mut group.color).changed() {
-                                            changed = true;
-                                        }
+                                        
                                     },
                                 );
                             });
@@ -184,7 +203,6 @@ pub fn draw_tags(
 
                                 collapsible_body_frame.show(ui, |ui| {
                                     if group_items.is_empty() {
-                                        // ui.add_space(4.0);
                                         ui.label(
                                             egui::RichText::new(i18n.tr("tag_empty_group"))
                                                 .size(palette.text_size)
@@ -252,16 +270,48 @@ pub fn draw_tags(
                                             });
                                         }
 
+                                        if resp.clicked() && drag_state.is_none() {
+                                            let file_item = FileItem {
+                                                name: label.clone(),
+                                                path: path.clone(),
+                                                is_dir,
+                                                file_size: None,
+                                                modified_time: None,
+                                                created_time: None,
+                                                total_space: None,
+                                                free_space: None,
+                                            };
+                                            if let Some(action) = handle_row_click(&file_item) {
+                                                tags_state.pending_action = Some(action);
+                                            }
+                                        }
+
+                                        let is_tagged = item_tagged_status.get(path).copied().unwrap_or(false);
                                         Popup::context_menu(&resp)
                                             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                                             .show(|ui| {
-                                                apply_context_menu_style(ui, palette);
-                                                if ui.button(i18n.tr("tag_remove")).clicked() {
-                                                    if item_index < group.items.len() {
-                                                        group.items.remove(item_index);
-                                                        changed = true;
-                                                    }
-                                                    ui.close();
+                                                let file_item = FileItem {
+                                                    name: label.clone(),
+                                                    path: path.clone(),
+                                                    is_dir,
+                                                    file_size: None,
+                                                    modified_time: None,
+                                                    created_time: None,
+                                                    total_space: None,
+                                                    free_space: None,
+                                                };
+                                                let mut action = None;
+                                                handle_context_menu_actions(
+                                                    ui,
+                                                    i18n,
+                                                    &file_item,
+                                                    &mut action,
+                                                    palette,
+                                                    is_tagged,
+                                                    hwnd,
+                                                );
+                                                if let Some(a) = action {
+                                                    tags_state.pending_action = Some(a);
                                                 }
                                             });
                                     }
@@ -340,6 +390,7 @@ pub fn draw_tags(
                         }
                     }
                 });
+            });
             });
 
     if pointer_released && drag_state.is_some() {
@@ -558,7 +609,11 @@ pub fn draw_tag_picker_popup(
                             .fill(group_color.gamma_multiply(0.25))
                             .stroke(egui::Stroke::new(1.0, group_color.gamma_multiply(0.6)));
 
-                        if ui.add(button).clicked() {
+                        if ui
+                            .add(button)
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
                             if tags_state.add_paths_to_group(*group_id, &picker.paths) {
                                 changed = true;
                             }
@@ -707,57 +762,12 @@ pub fn draw_container_header(
         egui::vec2(ui.available_width(), 32.0),
         egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
-            // --- TABS AREA (CLIPPED) ---
             ui.allocate_ui_with_layout(
                 egui::vec2(tabs_width, 32.0),
                 egui::Layout::left_to_right(egui::Align::Min),
                 |ui| {
                     let tabs_rect = ui.available_rect_before_wrap();
-                    // 🔥 THIS is where overflow must be handled
-                    // egui::ScrollArea::horizontal()
-                    // .id_salt("tabs_scroll")
-                    // .auto_shrink([false, true])
-                    // .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
-                    // .show(ui, |ui| {
-                    //     ui.horizontal(|ui| {
-                    //         ui.add_space(4.0);
-                    //         let label_text = i18n.tr("tags");
-                    //         let label_color = palette.tab_text_selected;
-                    //         let label_font_id =
-                    //             egui::FontId::proportional(palette.text_size + 2.0);
-                    //         let label_galley = ui.fonts_mut(|fonts| {
-                    //             fonts.layout_no_wrap(
-                    //                 label_text.clone(),
-                    //                 label_font_id.clone(),
-                    //                 label_color,
-                    //             )
-                    //         });
-                    //         let label_padding = egui::vec2(20.0, 4.0);
-                    //         let (rect, _) = ui.allocate_exact_size(
-                    //             label_galley.size() + label_padding * 2.0,
-                    //             egui::Sense::hover(),
-                    //         );
-                    //         let painter = ui.painter();
-                    //         painter.rect_filled(
-                    //             rect,
-                    //             egui::CornerRadius::same(palette.medium_radius),
-                    //             palette.primary,
-                    //         );
-                    //         painter.text(
-                    //             rect.left_center() + egui::vec2(label_padding.x, 0.0),
-                    //             egui::Align2::LEFT_CENTER,
-                    //             label_text,
-                    //             label_font_id,
-                    //             label_color,
-                    //         );
-                    //     });
-                    // });
-
-                    // Drag region: empty space to the right of the last tab
-                    let content_width = 0.0;
-
-                    if content_width < tabs_rect.width() {
-                        let empty_left = tabs_rect.min.x + content_width;
+                    let empty_left = tabs_rect.min.x;
                         let drag_rect = egui::Rect::from_min_max(
                             egui::pos2(empty_left, tabs_rect.min.y),
                             tabs_rect.max,
@@ -771,7 +781,6 @@ pub fn draw_container_header(
                                 ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
                             }
                         }
-                    }
                 },
             );
 
@@ -785,4 +794,110 @@ pub fn draw_container_header(
             );
         },
     );
+}
+
+
+fn handle_context_menu_actions(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    file: &FileItem,
+    action: &mut Option<ItemViewerAction>,
+    _palette: &ThemePalette,
+    is_tagged: bool,
+    hwnd: Option<HWND>,
+) {
+    // Apply context-menu-specific typography
+    let mut style = (*ui.ctx().style()).clone();
+    style.text_styles = [
+        (
+            egui::TextStyle::Body,
+            FontId::proportional(_palette.context_menu_text_size),
+        ),
+        (
+            egui::TextStyle::Button,
+            FontId::proportional(_palette.context_menu_text_size),
+        ),
+        (
+            egui::TextStyle::Small,
+            FontId::proportional(_palette.context_menu_text_size),
+        ),
+        (
+            egui::TextStyle::Heading,
+            FontId::proportional(_palette.context_menu_text_size + 2.0),
+        ),
+    ]
+    .into();
+    style.spacing.button_padding = egui::vec2(4.0, 2.0);
+    style.spacing.item_spacing = egui::vec2(6.0, 2.0);
+    style.spacing.menu_margin = egui::Margin::same(4);
+    style.spacing.interact_size = egui::vec2(
+        style.spacing.interact_size.x,
+        _palette.context_menu_text_size + 6.0,
+    );
+    style.visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
+    style.visuals.widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+    style.visuals.widgets.hovered.bg_fill = _palette.primary;
+    style.visuals.widgets.hovered.weak_bg_fill = _palette.primary;
+    style.visuals.widgets.active.bg_fill = _palette.primary;
+    style.visuals.widgets.active.weak_bg_fill = _palette.primary;
+    ui.set_style(style);
+
+    let context_paths = vec![file.path.clone()];
+
+    // --- NORMAL FILE VIEW ---
+    // Determine button label based on selection count
+    let label = i18n.tr("open_default_program");
+
+    // Check if all selected files are not directories
+    let all_files = context_paths.iter().all(|path| !path.is_dir());
+
+    // Add the button with dynamic label
+    if ui
+        .add_enabled(all_files, egui::Button::new(label))
+        .clicked()
+    {
+        *action = Some(ItemViewerAction::OpenWithDefault(context_paths.clone()));
+        ui.close();
+    }
+
+    if ui.button(i18n.tr("inputs_copy_path")).clicked() {
+        *action = Some(ItemViewerAction::Context(
+            ItemViewerContextAction::CopyPath(context_paths.clone()),
+        ));
+        ui.close();
+    }
+
+    // Properties (multi-select aware)
+    if ui.button(i18n.tr("properties")).clicked() {
+        *action = Some(ItemViewerAction::Context(
+            ItemViewerContextAction::Properties(context_paths.clone()),
+        ));
+        ui.close();
+    }
+
+    let tag_label = if is_tagged {
+        i18n.tr("tag_remove")
+    } else {
+        i18n.tr("tag_add")
+    };
+
+    if ui.button(tag_label).clicked() {
+        *action = Some(ItemViewerAction::Context(if is_tagged {
+            ItemViewerContextAction::RemoveTag(context_paths.clone())
+        } else {
+            ItemViewerContextAction::AddTag(context_paths.clone())
+        }));
+        ui.close();
+    }
+}
+
+fn handle_row_click(
+    object: &FileItem,
+) -> Option<ItemViewerAction> {
+
+    return Some(if object.is_dir {
+        ItemViewerAction::Open(object.path.clone())
+    } else {
+        ItemViewerAction::OpenWithDefault(vec![object.path.clone()])
+    });
 }

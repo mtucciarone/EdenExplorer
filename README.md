@@ -237,6 +237,7 @@
   <li><b>Interactive breadcrumb navigation</b> with inline editing</li>
   <li><b>Responsive design</b> across window sizes</li>
   <li><b>Modern toolbar</b> with file and folder actions</li>
+  <li><b>Tag management system</b> for organizing files and folders</li>
 </ul>
 
 <h3>Advanced Features</h3>
@@ -301,12 +302,12 @@
 - [x] Drag and drop files from EdenExplorer into native Operating System (Windows) objects (Desktop, File Explorer, applications, etc.)
 - [x] Full navigation history is saved and restored with Back/Forward/Up buttons
 - [x] Added English, Indonesian, Japanese, and multi-Chinese language support
+- [x] Add folder tags and custom folder colors
 
 ### 🚀 Upcoming Beta Features
 - [ ] Image previews using Spacebar - GPU texture via wgpu / egui_wgpu_backend
 - [ ] Support network devices
 - [ ] Enhanced theme customization, such as custom layouts, mix/match UI elements, styles, etc
-- [ ] Add folder tags and custom folder colors
 
 ## 🐛 Known Bugs
 - Hitting "Shift" after already shift-selecting files drops the entire file selection

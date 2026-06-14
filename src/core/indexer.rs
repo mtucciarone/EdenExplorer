@@ -135,8 +135,6 @@ where
 
     // 1️⃣ Try OLD format first (bincode)
     if let Ok(v) = bincode::deserialize::<T>(&data) {
-        println!("Loaded via bincode (migrating)");
-
         // migrate → postcard
         if let Ok(new_bytes) = postcard::to_allocvec(&v) {
             let tmp_path = path.with_extension("tmp");
@@ -151,7 +149,6 @@ where
 
     // 2️⃣ Try NEW format (postcard)
     if let Ok(v) = postcard::from_bytes::<T>(&data) {
-        println!("Loaded via postcard");
         return Some(v);
     }
 
@@ -238,6 +235,27 @@ pub fn save_tags(snapshot: &TagsSnapshot) {
     if let Ok(data) = postcard::to_allocvec(snapshot) {
         let _ = std::fs::write(path, data);
     }
+}
+
+pub fn load_windows_size_mode_on_start() -> WindowSizeMode {
+    let default_path = PathBuf::from(MY_PC_PATH);
+
+    let path = match settings_cache_path() {
+        Some(path) => path,
+        None => return WindowSizeMode::default(),
+    };
+
+    let snapshot =
+        load_or_migrate_bincode_to_postcard::<AppSettingsSnapshot>(&path).or_else(|| {
+            load_or_migrate_bincode_to_postcard::<LegacyAppSettingsSnapshot>(&path).map(Into::into)
+        });
+
+    let snapshot = match snapshot {
+        Some(s) => s,
+        None => return WindowSizeMode::default(),
+    };
+
+    snapshot.window_size_mode
 }
 
 pub fn load_app_settings() -> (

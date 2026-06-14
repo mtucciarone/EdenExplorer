@@ -811,6 +811,22 @@ fn handle_context_menu_actions(
         i18n.tr("open_files_default_program")
     };
 
+    let has_tag = context_paths.iter().any(|path| tags_state.is_tagged(path));
+    let tag_label = if has_tag {
+        i18n.tr("tag_remove")
+    } else {
+        i18n.tr("tag_add")
+    };
+
+        if ui.button(tag_label).clicked() {
+        *action = Some(ItemViewerAction::Context(if has_tag {
+            ItemViewerContextAction::RemoveTag(context_paths.clone())
+        } else {
+            ItemViewerContextAction::AddTag(context_paths.clone())
+        }));
+        ui.close();
+    }
+
     // Check if all selected files are not directories
     let all_files = context_paths.iter().all(|path| !path.is_dir());
 
@@ -855,8 +871,6 @@ fn handle_context_menu_actions(
         ui.close();
     }
 
-    ui.separator();
-
     if ui.button(i18n.tr("inputs_rename")).clicked() {
         *action = Some(ItemViewerAction::StartEdit(file.path.clone()));
         ui.close();
@@ -869,31 +883,11 @@ fn handle_context_menu_actions(
         ui.close();
     }
 
-    ui.separator();
-
     // Properties (multi-select aware)
     if ui.button(i18n.tr("properties")).clicked() {
         *action = Some(ItemViewerAction::Context(
             ItemViewerContextAction::Properties(context_paths.clone()),
         ));
-        ui.close();
-    }
-
-    ui.separator();
-
-    let has_tag = context_paths.iter().any(|path| tags_state.is_tagged(path));
-    let tag_label = if has_tag {
-        i18n.tr("tag_remove")
-    } else {
-        i18n.tr("tag_add")
-    };
-
-    if ui.button(tag_label).clicked() {
-        *action = Some(ItemViewerAction::Context(if has_tag {
-            ItemViewerContextAction::RemoveTag(context_paths.clone())
-        } else {
-            ItemViewerContextAction::AddTag(context_paths.clone())
-        }));
         ui.close();
     }
 
