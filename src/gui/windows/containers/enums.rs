@@ -42,6 +42,8 @@ pub enum ItemViewerContextAction {
     CopyPath(Vec<PathBuf>),
     Cut(Vec<PathBuf>),
     Paste,
+    AddTag(Vec<PathBuf>),
+    RemoveTag(Vec<PathBuf>),
     RenameRequest(PathBuf, String),
     RenameCancel,
     Delete(Vec<PathBuf>),

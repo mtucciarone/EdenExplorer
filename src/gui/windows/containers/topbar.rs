@@ -1,5 +1,5 @@
 use crate::gui::i18n::I18n;
-use crate::gui::utils::clickable_icon;
+use crate::gui::utils::{clickable_active_icon, clickable_icon};
 use crate::gui::windows::containers::structs::TopbarAction;
 use eframe::egui;
 use egui::Pos2;
@@ -9,6 +9,7 @@ pub fn draw_topbar(
     ui: &mut egui::Ui,
     i18n: &I18n,
     is_dark: bool,
+    is_file_explorer: bool,
     palette: &crate::gui::theme::ThemePalette,
 ) -> TopbarAction {
     let mut action = TopbarAction::default();
@@ -78,6 +79,48 @@ pub fn draw_topbar(
                 .clicked()
             {
                 action.toggle_theme = true;
+            }
+
+            let file_explorer_icon = if is_file_explorer {
+                regular::FOLDER_OPEN
+            } else {
+                regular::FOLDER
+            };
+
+            if clickable_active_icon(
+                ui,
+                file_explorer_icon,
+                ui.visuals().text_color(),
+                is_file_explorer,
+                palette.primary,
+            )
+            .on_hover_text(
+                egui::RichText::new(&i18n.tr("tooltip_show_file_explorer"))
+                    .size(palette.tooltip_text_size)
+                    .color(palette.tooltip_text_color),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+            {
+                action.toggle_file_explorer = true;
+            }
+
+            if clickable_active_icon(
+                ui,
+                regular::TAG,
+                ui.visuals().text_color(),
+                !is_file_explorer,
+                palette.primary,
+            )
+            .on_hover_text(
+                egui::RichText::new(&i18n.tr("tooltip_show_tags"))
+                    .size(palette.tooltip_text_size)
+                    .color(palette.tooltip_text_color),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+            {
+                action.toggle_file_explorer = true;
             }
         });
 

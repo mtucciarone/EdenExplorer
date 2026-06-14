@@ -2,7 +2,7 @@ use crate::core::drives::{get_drive_infos, is_raw_physical_drive_path};
 use crate::core::fs::FileItem;
 use crate::core::fs::{parallel_directory_scan, scan_dir_async};
 use crate::core::indexer::{
-    load_app_settings, load_favorites, load_theme_settings, save_app_settings,
+    load_app_settings, load_favorites, load_tags, load_theme_settings, save_app_settings,
 };
 use crate::gui::dragdrop::{DragDropBackend, DropTargets};
 use crate::gui::i18n::I18n;
@@ -14,7 +14,10 @@ use crate::gui::windows::containers::explorer::draw_explorer;
 use crate::gui::windows::containers::sidebar::draw_sidebar;
 use crate::gui::windows::containers::structs::{
     DragState, ExplorerState, FavoriteItem, FilterState, ItemViewerFolderSizeState, RenameState,
-    SidebarAction, TabInfo, TabState,
+    SidebarAction, TabInfo, TabState, TagsState,
+};
+use crate::gui::windows::containers::tags::{
+    draw_delete_confirmation_popup, draw_tag_picker_popup, draw_tags,
 };
 use crate::gui::windows::containers::topbar::draw_topbar;
 use crate::gui::windows::mainwindow_imp::{
@@ -54,6 +57,7 @@ pub struct MainWindow {
     pub(crate) size_threads: Vec<std::thread::JoinHandle<()>>,
     pub(crate) hwnd: Option<HWND>,
     pub(crate) last_window_size: Option<(f32, f32)>,
+    pub(crate) display_file_explorer: bool,
 
     // File Explorer Variables
     pub(crate) tabs: Vec<TabState>,
@@ -68,6 +72,7 @@ pub struct MainWindow {
     pub(crate) sort_ascending: bool,
     pub(crate) file_type_cache: HashMap<String, String>,
     pub(crate) explorer_state: ExplorerState,
+    pub(crate) tags_state: TagsState,
     pub(crate) item_viewer_filter_state: FilterState,
     pub(crate) clipboard_paths: Vec<PathBuf>,
     pub(crate) clipboard_set: HashSet<PathBuf>,
@@ -183,6 +188,7 @@ impl Default for MainWindow {
                 Some("light") => ThemeMode::Light,
                 Some("dark") | _ => ThemeMode::Dark,
             },
+            display_file_explorer: true,
             theme_dirty: true,
             window_override_set: false,
             drag_state: DragState::default(),
@@ -193,6 +199,9 @@ impl Default for MainWindow {
 
             file_type_cache: HashMap::new(),
             explorer_state: Default::default(),
+            tags_state: load_tags()
+                .map(TagsState::from_snapshot)
+                .unwrap_or_default(),
             theme_customizer: Default::default(),
             settings_window: Default::default(),
             about_window: Default::default(),
@@ -396,6 +405,7 @@ impl eframe::App for MainWindow {
         let mut sidebar_action: Option<SidebarAction> = None;
         let mut tabs_action = None;
         let mut tabbar_action = None;
+        let mut tags_changed = false;
 
         let offset = egui::vec2(8.0, 8.0);
 
@@ -435,6 +445,7 @@ impl eframe::App for MainWindow {
                                         ui,
                                         &self.i18n,
                                         self.theme == ThemeMode::Dark,
+                                        self.display_file_explorer,
                                         &palette,
                                     ));
                                 });
@@ -491,48 +502,73 @@ impl eframe::App for MainWindow {
                         }
 
                         // --- Explorer column ---
-                        let (next_tabs_action, next_tabbar_action, next_pending_action) =
-                            draw_explorer(
-                                ui,
-                                &self.i18n,
-                                &icon_cache,
-                                &palette,
-                                self.hwnd,
-                                &mut self.tabs,
-                                self.active_tab,
-                                &mut self.tab_infos_cache,
-                                &mut self.tab_infos_dirty,
-                                &mut self.pending_tab_scroll_id,
-                                &self.sidebar_state,
-                                &self.files,
-                                &self.folder_sizes,
-                                self.clipboard_has_files,
-                                &self.clipboard_set,
-                                self.clipboard_is_cut,
-                                self.sort_column,
-                                self.sort_ascending,
-                                &mut self.rename_state,
-                                &mut self.file_type_cache,
-                                &mut self.file_size_text_cache,
-                                &mut self.folder_size_text_cache,
-                                &mut self.drive_size_text_cache,
-                                &mut self.external_drag_to_internal_hover,
-                                &mut self.drag_state,
-                                drag_active,
-                                native_inbound_drag_active,
-                                drag_hover_target.clone(),
-                                dragdrop,
-                                &mut self.item_viewer_filter_state,
-                                self.is_loading,
-                                &mut self.explorer_state,
-                                &mut self.theme_customizer,
-                                &mut self.settings_window,
-                                &mut drop_targets,
-                            );
+                        if self.display_file_explorer {
+                            let (next_tabs_action, next_tabbar_action, next_pending_action) =
+                                draw_explorer(
+                                    ui,
+                                    &self.i18n,
+                                    &icon_cache,
+                                    &palette,
+                                    self.hwnd,
+                                    &mut self.tabs,
+                                    self.active_tab,
+                                    &mut self.tab_infos_cache,
+                                    &mut self.tab_infos_dirty,
+                                    &mut self.pending_tab_scroll_id,
+                                    &self.sidebar_state,
+                                    &self.files,
+                                    &self.folder_sizes,
+                                    self.clipboard_has_files,
+                                    &self.clipboard_set,
+                                    self.clipboard_is_cut,
+                                    self.sort_column,
+                                    self.sort_ascending,
+                                    &mut self.rename_state,
+                                    &mut self.file_type_cache,
+                                    &mut self.file_size_text_cache,
+                                    &mut self.folder_size_text_cache,
+                                    &mut self.drive_size_text_cache,
+                                    &mut self.external_drag_to_internal_hover,
+                                    &mut self.drag_state,
+                                    drag_active,
+                                    native_inbound_drag_active,
+                                    drag_hover_target.clone(),
+                                    dragdrop,
+                                    &mut self.item_viewer_filter_state,
+                                    self.is_loading,
+                                    &mut self.explorer_state,
+                                    &mut self.tags_state,
+                                    &mut self.theme_customizer,
+                                    &mut self.settings_window,
+                                    &mut drop_targets,
+                                );
 
-                        tabs_action = Some(next_tabs_action);
-                        tabbar_action = next_tabbar_action;
-                        pending_action = next_pending_action;
+                            tabs_action = Some(next_tabs_action);
+                            tabbar_action = next_tabbar_action;
+                            pending_action = next_pending_action;
+                        } else if draw_tags(
+                            ui,
+                            &self.i18n,
+                            &icon_cache,
+                            &palette,
+                            self.hwnd,
+                            &mut self.tags_state,
+                        ) {
+                            tags_changed = true;
+                        }
+
+                        if let Some(tags_action) = self.tags_state.pending_action.take() {
+                            pending_action = Some(tags_action);
+                        }
+
+                        if draw_delete_confirmation_popup(
+                            ui.ctx(),
+                            &self.i18n,
+                            &palette,
+                            &mut self.tags_state,
+                        ) {
+                            tags_changed = true;
+                        }
                     },
                 );
             });
@@ -649,6 +685,9 @@ impl eframe::App for MainWindow {
         }
 
         handle_pending_actions(pending_action, self);
+        if draw_tag_picker_popup(ctx, &self.i18n, &palette, &mut self.tags_state) {
+            tags_changed = true;
+        }
         handle_draw_customizetheme_window(
             &mut self.i18n,
             ctx,
@@ -659,6 +698,10 @@ impl eframe::App for MainWindow {
         );
         self.handle_draw_settings_window(ctx, &palette);
         self.handle_draw_about_window(ctx, &palette);
+
+        if tags_changed {
+            self.persist_tags();
+        }
 
         // ✅ Step 5: Apply Deferred Refresh (IMPORTANT)
         if self.dropped_files_pending_ui_refresh {

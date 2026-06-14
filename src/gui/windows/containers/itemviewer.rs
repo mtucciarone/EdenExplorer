@@ -11,7 +11,7 @@ use crate::gui::utils::{
 use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
 use crate::gui::windows::containers::structs::{
     DragState, ExplorerState, FilterState, ItemViewerFolderSizeState, ItemViewerLayout,
-    RenameState, TabbarAction,
+    RenameState, TabbarAction, TagsState,
 };
 use crate::gui::windows::shell_context_menu::ShellContextMenu;
 use crate::gui::windows::structs::{SettingsWindow, ThemeCustomizer};
@@ -93,6 +93,7 @@ pub fn draw_item_viewer(
     hovered_drop_target_rect_out: &mut Option<egui::Rect>,
     is_loading: bool,
     explorer_state: &mut ExplorerState,
+    tags_state: &mut TagsState,
     theme_customizer_window: &mut ThemeCustomizer,
     settings_window: &mut SettingsWindow,
     hwnd: Option<HWND>,
@@ -103,6 +104,8 @@ pub fn draw_item_viewer(
     draw_external_to_internal_drag_overlay(ui, i18n, *external_drag_to_internal_hover);
 
     let layout = compute_layout(ui, is_drive_view);
+    let modal_input_blocked =
+        tags_state.picker.is_some() || theme_customizer_window.open || settings_window.open;
 
     let mut action: Option<ItemViewerAction> = None;
     let mut any_row_hovered = false;
@@ -162,20 +165,22 @@ pub fn draw_item_viewer(
         draw_object_drag_ghost(ui, palette, label, false);
     }
 
-    if let Some(global_action) = handle_global_actions(
-        ui,
-        files,
-        palette,
-        tabbar_action,
-        rename_state,
-        filter_state,
-        drag_state,
-        explorer_state,
-        is_cut_mode,
-        theme_customizer_window,
-        settings_window,
-    ) {
-        action = Some(global_action);
+    if !modal_input_blocked {
+        if let Some(global_action) = handle_global_actions(
+            ui,
+            files,
+            palette,
+            tabbar_action,
+            rename_state,
+            filter_state,
+            drag_state,
+            explorer_state,
+            is_cut_mode,
+            theme_customizer_window,
+            settings_window,
+        ) {
+            action = Some(global_action);
+        }
     }
 
     let mut current_hovered_drop_target: Option<PathBuf> = None;
@@ -530,6 +535,7 @@ pub fn draw_item_viewer(
                                     &mut action,
                                     palette,
                                     explorer_state,
+                                    tags_state,
                                     settings_window,
                                     hwnd,
                                 );
@@ -582,14 +588,16 @@ pub fn draw_item_viewer(
         *hovered_drop_target_out = hovered_drop_target.clone();
         *hovered_drop_target_rect_out = hovered_drop_target_rect;
 
-        if let Some(a) = handle_keyboard_navigation(
-            ui.ctx(),
-            &filter_state.cached_indices,
-            files,
-            layout.is_drive_view,
-            explorer_state,
-        ) {
-            action = Some(a);
+        if !modal_input_blocked {
+            if let Some(a) = handle_keyboard_navigation(
+                ui.ctx(),
+                &filter_state.cached_indices,
+                files,
+                layout.is_drive_view,
+                explorer_state,
+            ) {
+                action = Some(a);
+            }
         }
 
         // --- Drag and Drop Detection ---
@@ -600,24 +608,27 @@ pub fn draw_item_viewer(
 
         let bg_response = ui.allocate_rect(remaining_rect, egui::Sense::click());
 
-        if bg_response.clicked() {
-            action = Some(ItemViewerAction::DeselectAll);
-        }
+        if !modal_input_blocked {
+            if bg_response.clicked() {
+                action = Some(ItemViewerAction::DeselectAll);
+            }
 
-        Popup::context_menu(&bg_response)
-            .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
-            .show(|ui| {
-                // 👇 Only show when NOT clicking on a row
-                if !any_row_hovered {
-                    if ui
-                        .add_enabled(paste_enabled, egui::Button::new("Paste"))
-                        .clicked()
-                    {
-                        action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
-                        ui.close();
+            Popup::context_menu(&bg_response)
+                .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                .show(|ui| {
+                    // 👇 Only show when NOT clicking on a row
+                    if !any_row_hovered {
+                        if ui
+                            .add_enabled(paste_enabled, egui::Button::new("Paste"))
+                            .clicked()
+                        {
+                            action =
+                                Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
+                            ui.close();
+                        }
                     }
-                }
-            });
+                });
+        }
 
         if let Some(_path) = explorer_state.non_ntfs_popup_path.clone() {
             let mut open = true;
@@ -708,6 +719,7 @@ fn handle_context_menu_actions(
     action: &mut Option<ItemViewerAction>,
     _palette: &ThemePalette,
     explorer_state: &mut ExplorerState,
+    tags_state: &mut TagsState,
     settings_window: &SettingsWindow,
     hwnd: Option<HWND>,
 ) {
@@ -752,17 +764,19 @@ fn handle_context_menu_actions(
         *action = Some(ItemViewerAction::ReplaceSelection(file.path.clone()));
     }
 
+    let mut context_paths: Vec<PathBuf> = if is_selected {
+        explorer_state.selected_paths.iter().cloned().collect()
+    } else {
+        vec![file.path.clone()]
+    };
+    context_paths.sort();
+    context_paths.dedup();
+
     // 🚗 DRIVE VIEW MODE → ONLY PROPERTIES
     if is_drive_view {
         if ui.button(i18n.tr("properties")).clicked() {
-            let targets: Vec<PathBuf> = if is_selected {
-                explorer_state.selected_paths.iter().cloned().collect()
-            } else {
-                vec![file.path.clone()]
-            };
-
             *action = Some(ItemViewerAction::Context(
-                ItemViewerContextAction::Properties(targets),
+                ItemViewerContextAction::Properties(context_paths.clone()),
             ));
             ui.close();
         }
@@ -774,7 +788,7 @@ fn handle_context_menu_actions(
 
     // Determine if "Open in new tab" should be enabled
     // Enable only if a single path is selected
-    let enable_open_in_tab = explorer_state.selected_paths.len() == 1;
+    let enable_open_in_tab = context_paths.len() == 1;
 
     // Add the button
     if ui
@@ -784,24 +798,37 @@ fn handle_context_menu_actions(
         )
         .clicked()
     {
-        if let Some(path) = explorer_state.selected_paths.iter().next() {
+        if let Some(path) = context_paths.first() {
             *action = Some(ItemViewerAction::OpenInNewTab(path.clone()));
             ui.close();
         }
     }
 
     // Determine button label based on selection count
-    let label = if explorer_state.selected_paths.len() == 1 {
+    let label = if context_paths.len() == 1 {
         i18n.tr("open_default_program")
     } else {
         i18n.tr("open_files_default_program")
     };
 
+    let has_tag = context_paths.iter().any(|path| tags_state.is_tagged(path));
+    let tag_label = if has_tag {
+        i18n.tr("tag_remove")
+    } else {
+        i18n.tr("tag_add")
+    };
+
+    if ui.button(tag_label).clicked() {
+        *action = Some(ItemViewerAction::Context(if has_tag {
+            ItemViewerContextAction::RemoveTag(context_paths.clone())
+        } else {
+            ItemViewerContextAction::AddTag(context_paths.clone())
+        }));
+        ui.close();
+    }
+
     // Check if all selected files are not directories
-    let all_files = explorer_state
-        .selected_paths
-        .iter()
-        .all(|path| !path.is_dir());
+    let all_files = context_paths.iter().all(|path| !path.is_dir());
 
     // Add the button with dynamic label
     if ui
@@ -819,38 +846,20 @@ fn handle_context_menu_actions(
         .add_enabled(!is_cut, egui::Button::new(i18n.tr("inputs_cut")))
         .clicked()
     {
-        let paths = if !explorer_state.selected_paths.is_empty() {
-            explorer_state.selected_paths.iter().cloned().collect()
-        } else {
-            vec![file.path.clone()]
-        };
-
         *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Cut(
-            paths,
+            context_paths.clone(),
         )));
         ui.close();
     }
     if ui.button(i18n.tr("inputs_copy")).clicked() {
-        let paths = if !explorer_state.selected_paths.is_empty() {
-            explorer_state.selected_paths.iter().cloned().collect()
-        } else {
-            vec![file.path.clone()]
-        };
-
         *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Copy(
-            paths,
+            context_paths.clone(),
         )));
         ui.close();
     }
     if ui.button(i18n.tr("inputs_copy_path")).clicked() {
-        let paths = if !explorer_state.selected_paths.is_empty() {
-            explorer_state.selected_paths.iter().cloned().collect()
-        } else {
-            vec![file.path.clone()]
-        };
-
         *action = Some(ItemViewerAction::Context(
-            ItemViewerContextAction::CopyPath(paths),
+            ItemViewerContextAction::CopyPath(context_paths.clone()),
         ));
         ui.close();
     }
@@ -862,38 +871,22 @@ fn handle_context_menu_actions(
         ui.close();
     }
 
-    ui.separator();
-
     if ui.button(i18n.tr("inputs_rename")).clicked() {
         *action = Some(ItemViewerAction::StartEdit(file.path.clone()));
         ui.close();
     }
 
     if ui.button(i18n.tr("inputs_delete")).clicked() {
-        let paths = if !explorer_state.selected_paths.is_empty() {
-            explorer_state.selected_paths.iter().cloned().collect()
-        } else {
-            vec![file.path.clone()]
-        };
-
         *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
-            paths,
+            context_paths.clone(),
         )));
         ui.close();
     }
 
-    ui.separator();
-
     // Properties (multi-select aware)
     if ui.button(i18n.tr("properties")).clicked() {
-        let targets: Vec<PathBuf> = if is_selected {
-            explorer_state.selected_paths.iter().cloned().collect()
-        } else {
-            vec![file.path.clone()]
-        };
-
         *action = Some(ItemViewerAction::Context(
-            ItemViewerContextAction::Properties(targets),
+            ItemViewerContextAction::Properties(context_paths.clone()),
         ));
         ui.close();
     }
@@ -919,11 +912,7 @@ fn handle_context_menu_actions(
         }
 
         if explorer_state.windows_context_menu_expanded {
-            let selected_paths: Vec<PathBuf> = if !explorer_state.selected_paths.is_empty() {
-                explorer_state.selected_paths.iter().cloned().collect()
-            } else {
-                vec![file.path.clone()]
-            };
+            let selected_paths = context_paths.clone();
 
             if let Some(hwnd) = hwnd {
                 let cache_miss = explorer_state

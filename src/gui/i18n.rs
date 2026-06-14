@@ -17,30 +17,8 @@ impl I18n {
     pub fn new(default_locale: &str) -> Self {
         let mut bundles = HashMap::new();
 
-        for locale in ["en-US", "ja-JP", "id-ID", "zh-CN", "zh-TW", "zh-HK"] {
-            let path = format!("{}/main.ftl", locale);
-
-            let file = Localizations::get(&path)
-                .unwrap_or_else(|| panic!("Missing locale file: {}", path));
-
-            let source = match file.data {
-                Cow::Borrowed(bytes) => std::str::from_utf8(bytes).unwrap().to_string(),
-                Cow::Owned(bytes) => String::from_utf8(bytes).unwrap(),
-            };
-
-            let resource =
-                FluentResource::try_new(source).expect("Failed to parse Fluent resource");
-
-            let langid: LanguageIdentifier = locale.parse().expect("Invalid language identifier");
-
-            let mut bundle = FluentBundle::new(vec![langid]);
-
-            bundle
-                .add_resource(resource)
-                .expect("Failed to add Fluent resource");
-
-            bundles.insert(locale.to_string(), bundle);
-        }
+        // Only load the default locale initially
+        Self::load_locale(&mut bundles, default_locale);
 
         Self {
             current_locale: default_locale.to_string(),
@@ -48,7 +26,38 @@ impl I18n {
         }
     }
 
+    fn load_locale(bundles: &mut HashMap<String, FluentBundle<FluentResource>>, locale: &str) {
+        if bundles.contains_key(locale) {
+            return; // Already loaded
+        }
+
+        let path = format!("{}/main.ftl", locale);
+
+        let file =
+            Localizations::get(&path).unwrap_or_else(|| panic!("Missing locale file: {}", path));
+
+        let source = match file.data {
+            Cow::Borrowed(bytes) => std::str::from_utf8(bytes).unwrap().to_string(),
+            Cow::Owned(bytes) => String::from_utf8(bytes).unwrap(),
+        };
+
+        let resource = FluentResource::try_new(source).expect("Failed to parse Fluent resource");
+
+        let langid: LanguageIdentifier = locale.parse().expect("Invalid language identifier");
+
+        let mut bundle = FluentBundle::new(vec![langid]);
+
+        bundle
+            .add_resource(resource)
+            .expect("Failed to add Fluent resource");
+
+        bundles.insert(locale.to_string(), bundle);
+    }
+
     pub fn set_locale(&mut self, locale: &str) {
+        // Load the locale if it's not already loaded
+        Self::load_locale(&mut self.bundles, locale);
+
         if self.bundles.contains_key(locale) {
             self.current_locale = locale.to_string();
         }

@@ -9,6 +9,24 @@ struct FavoritesSnapshot {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct TagGroupSnapshot {
+    pub id: u64,
+    pub name: String,
+    pub color: [u8; 4],
+    pub items: Vec<PathBuf>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TagsSnapshot {
+    #[serde(default = "default_tags_version")]
+    pub version: u32,
+    #[serde(default = "default_next_tag_group_id")]
+    pub next_group_id: u64,
+    #[serde(default)]
+    pub groups: Vec<TagGroupSnapshot>,
+}
+
+#[derive(Serialize, Deserialize)]
 struct AppSettingsSnapshot {
     folder_scanning_enabled: bool,
     #[serde(default)]
@@ -117,8 +135,6 @@ where
 
     // 1️⃣ Try OLD format first (bincode)
     if let Ok(v) = bincode::deserialize::<T>(&data) {
-        println!("Loaded via bincode (migrating)");
-
         // migrate → postcard
         if let Ok(new_bytes) = postcard::to_allocvec(&v) {
             let tmp_path = path.with_extension("tmp");
@@ -133,7 +149,6 @@ where
 
     // 2️⃣ Try NEW format (postcard)
     if let Ok(v) = postcard::from_bytes::<T>(&data) {
-        println!("Loaded via postcard");
         return Some(v);
     }
 
@@ -147,6 +162,14 @@ fn default_sort_column() -> crate::gui::utils::SortColumn {
 
 fn default_language() -> String {
     "en-US".to_string()
+}
+
+fn default_tags_version() -> u32 {
+    1
+}
+
+fn default_next_tag_group_id() -> u64 {
+    1
 }
 
 fn favorites_cache_path(drive: char) -> Option<PathBuf> {
@@ -166,6 +189,11 @@ fn settings_cache_path() -> Option<PathBuf> {
 fn theme_cache_path() -> Option<PathBuf> {
     let base = dirs::data_local_dir()?;
     Some(base.join("ExplorerEden").join("theme.bin"))
+}
+
+fn tags_cache_path() -> Option<PathBuf> {
+    let base = dirs::data_local_dir()?;
+    Some(base.join("ExplorerEden").join("tags.bin"))
 }
 
 pub fn load_favorites(drive: char) -> Vec<String> {
@@ -191,6 +219,43 @@ pub fn save_favorites(drive: char, favorites: &[String]) {
     if let Ok(data) = postcard::to_allocvec(&snapshot) {
         let _ = std::fs::write(path, data);
     }
+}
+
+pub fn load_tags() -> Option<TagsSnapshot> {
+    let path = tags_cache_path()?;
+    load_or_migrate_bincode_to_postcard::<TagsSnapshot>(&path)
+}
+
+pub fn save_tags(snapshot: &TagsSnapshot) {
+    let path = match tags_cache_path() {
+        Some(path) => path,
+        None => return,
+    };
+    let _ = std::fs::create_dir_all(path.parent().unwrap());
+    if let Ok(data) = postcard::to_allocvec(snapshot) {
+        let _ = std::fs::write(path, data);
+    }
+}
+
+pub fn load_windows_size_mode_on_start() -> WindowSizeMode {
+    let default_path = PathBuf::from(MY_PC_PATH);
+
+    let path = match settings_cache_path() {
+        Some(path) => path,
+        None => return WindowSizeMode::default(),
+    };
+
+    let snapshot =
+        load_or_migrate_bincode_to_postcard::<AppSettingsSnapshot>(&path).or_else(|| {
+            load_or_migrate_bincode_to_postcard::<LegacyAppSettingsSnapshot>(&path).map(Into::into)
+        });
+
+    let snapshot = match snapshot {
+        Some(s) => s,
+        None => return WindowSizeMode::default(),
+    };
+
+    snapshot.window_size_mode
 }
 
 pub fn load_app_settings() -> (

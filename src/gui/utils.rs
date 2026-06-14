@@ -1,6 +1,7 @@
 use crate::core::fs::FileItem;
 use crate::gui::theme::ThemePalette;
 use eframe::egui::*;
+use egui::Color32;
 use egui_phosphor::regular::DOTS_SIX_VERTICAL;
 use lru::LruCache;
 use serde::{Deserialize, Serialize};
@@ -42,6 +43,39 @@ lazy_static::lazy_static! {
         RwLock::new(LruCache::new(NonZeroUsize::new(1024).unwrap()));
 }
 
+pub fn clickable_active_icon(
+    ui: &mut Ui,
+    icon: &str,
+    default_color: Color32,
+    is_active: bool,
+    is_active_color: Color32,
+) -> Response {
+    let font_id = egui::FontId::default();
+
+    // Measure exact text size
+    let galley = ui
+        .painter()
+        .layout_no_wrap(icon.to_string(), font_id.clone(), default_color);
+
+    let (rect, resp) = ui.allocate_exact_size(galley.size(), egui::Sense::click());
+
+    let color = if is_active {
+        is_active_color
+    } else {
+        default_color
+    };
+
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        icon,
+        font_id,
+        color,
+    );
+
+    resp
+}
+
 pub fn clickable_icon(ui: &mut Ui, icon: &str, hover_color: Color32) -> Response {
     let font_id = egui::FontId::default();
 
@@ -67,6 +101,22 @@ pub fn clickable_icon(ui: &mut Ui, icon: &str, hover_color: Color32) -> Response
     );
 
     resp
+}
+
+pub fn rgba_color_edit_button(ui: &mut Ui, color: &mut Color32) -> Response {
+    let mut rgba = egui::Rgba::from(*color);
+
+    let response = egui::widgets::color_picker::color_edit_button_rgba(
+        ui,
+        &mut rgba,
+        egui::widgets::color_picker::Alpha::OnlyBlend,
+    );
+
+    if response.changed() {
+        *color = rgba.into();
+    }
+
+    response
 }
 
 pub fn drive_usage_color(ratio: f32, palette: &ThemePalette) -> Color32 {
@@ -860,4 +910,37 @@ mod tests {
             assert_eq!(expanded, format!("{}\\{}", appdata, windir));
         }
     }
+}
+
+pub fn tag_color(tag: &str) -> Color32 {
+    let mut h: i32 = 0;
+
+    for c in tag.chars() {
+        h = 31i32.wrapping_mul(h).wrapping_add(c as i32);
+    }
+
+    let hue = h.unsigned_abs() % 360;
+
+    hsl_to_color32(hue as f32, 0.55, 0.88)
+}
+
+pub fn hsl_to_color32(h: f32, s: f32, l: f32) -> Color32 {
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+    let x = c * (1.0 - (((h / 60.0) % 2.0) - 1.0).abs());
+    let m = l - c / 2.0;
+
+    let (r, g, b) = match h {
+        h if h < 60.0 => (c, x, 0.0),
+        h if h < 120.0 => (x, c, 0.0),
+        h if h < 180.0 => (0.0, c, x),
+        h if h < 240.0 => (0.0, x, c),
+        h if h < 300.0 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+
+    Color32::from_rgb(
+        ((r + m) * 255.0) as u8,
+        ((g + m) * 255.0) as u8,
+        ((b + m) * 255.0) as u8,
+    )
 }
