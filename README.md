@@ -305,7 +305,10 @@
 - [x] Add folder tags and custom folder colors
 
 ### 🚀 Upcoming Beta Features
-- [ ] Image previews using Spacebar - GPU texture via wgpu / egui_wgpu_backend
+- [ ] Support multi-column sorting
+- [ ] Add toggle for display hidden explorer objects
+- [ ] Collapse/Hide sections in the sidebar
+- [ ] Add a tags column in the Explorer view
 - [ ] Support network devices
 - [ ] Enhanced theme customization, such as custom layouts, mix/match UI elements, styles, etc
 
