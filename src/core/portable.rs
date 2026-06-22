@@ -394,6 +394,7 @@ fn enumerate_portable_children(
         } else {
             get_u64_value(&values, &WPD_OBJECT_SIZE)
         };
+        let is_hidden = name.starts_with('.') && name != "." && name != "..";
 
         let path_object_id = object_id.clone();
         let virtual_path = make_portable_path(device_id, &path_object_id);
@@ -408,7 +409,7 @@ fn enumerate_portable_children(
         cache_object_info(device_id, &path_object_id, &name, parent_override);
 
         // Portable devices don't provide reliable time information, so use None
-        let item = FileItem::new(name, virtual_path, is_dir, file_size, None, None);
+        let item = FileItem::new(name, virtual_path, is_dir, is_hidden, file_size, None, None);
         pending.push(item.clone());
 
         if is_root {

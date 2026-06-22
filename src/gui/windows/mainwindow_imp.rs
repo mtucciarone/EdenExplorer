@@ -172,6 +172,9 @@ impl MainWindow {
                 .folder_scanning_enabled,
             self.settings_window
                 .current_settings
+                .show_hidden_files_folders,
+            self.settings_window
+                .current_settings
                 .windows_context_menu_enabled,
             &self.settings_window.current_settings.window_size_mode,
             &self.settings_window.current_settings.start_path,
@@ -216,11 +219,11 @@ impl MainWindow {
                 let path = d.path;
                 if let (Some(total), Some(free)) = (d.total_space, d.free_space) {
                     self.files.push(FileItem::with_drive_info(
-                        label, path, true, None, None, None, total, free,
+                        label, path, true, false, None, None, None, total, free,
                     ));
                 } else {
                     self.files
-                        .push(FileItem::new(label, path, true, None, None, None));
+                        .push(FileItem::new(label, path, true, false, None, None, None));
                 }
             }
 
@@ -717,6 +720,9 @@ impl MainWindow {
                             .folder_scanning_enabled,
                         self.settings_window
                             .current_settings
+                            .show_hidden_files_folders,
+                        self.settings_window
+                            .current_settings
                             .windows_context_menu_enabled,
                         &self.settings_window.current_settings.window_size_mode,
                         &self.settings_window.current_settings.start_path,
@@ -896,6 +902,7 @@ impl MainWindow {
                 } else {
                     let (
                         _folder_scanning_enabled,
+                        _show_hidden_files_folders,
                         _windows_context_menu_enabled,
                         _window_size_mode,
                         start_path,
@@ -932,6 +939,9 @@ impl MainWindow {
                     self.settings_window
                         .current_settings
                         .folder_scanning_enabled,
+                    self.settings_window
+                        .current_settings
+                        .show_hidden_files_folders,
                     self.settings_window
                         .current_settings
                         .windows_context_menu_enabled,
@@ -1059,6 +1069,9 @@ impl MainWindow {
                     self.settings_window
                         .current_settings
                         .folder_scanning_enabled,
+                    self.settings_window
+                        .current_settings
+                        .show_hidden_files_folders,
                     self.settings_window
                         .current_settings
                         .windows_context_menu_enabled,
@@ -1310,7 +1323,14 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             ItemViewerAction::Select(path) => {
                 explorer.explorer_state.selected_paths.insert(path.clone());
 
-                if let Some(idx) = explorer.files.iter().position(|f| f.path == path) {
+                let idx = explorer
+                    .item_viewer_filter_state
+                    .cached_indices
+                    .iter()
+                    .position(|&i| explorer.files[i].path == path)
+                    .or_else(|| explorer.files.iter().position(|f| f.path == path));
+
+                if let Some(idx) = idx {
                     explorer.explorer_state.selection_anchor = Some(idx);
                     explorer.explorer_state.selection_focus = Some(idx);
                 }
@@ -1320,7 +1340,8 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             }
             ItemViewerAction::SelectAll => {
                 explorer.explorer_state.selected_paths.clear();
-                for file in &explorer.files {
+                for &idx in &explorer.item_viewer_filter_state.cached_indices {
+                    let file = &explorer.files[idx];
                     explorer
                         .explorer_state
                         .selected_paths
@@ -1341,8 +1362,10 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 if let Some(anchor_idx) = explorer.explorer_state.selection_anchor {
                     if let (Some(first_path), Some(last_path)) = (paths.first(), paths.last()) {
                         // Check if we're in a filtered view
-                        let is_filtered = explorer.item_viewer_filter_state.active
-                            && !explorer.item_viewer_filter_state.query.is_empty();
+                        let is_filtered = (explorer.item_viewer_filter_state.active
+                            && !explorer.item_viewer_filter_state.query.is_empty())
+                            || explorer.item_viewer_filter_state.cached_indices.len()
+                                != explorer.files.len();
 
                         if is_filtered {
                             // Use filtered indices

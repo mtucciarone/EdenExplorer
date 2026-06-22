@@ -10,8 +10,9 @@ use std::time::{Duration, Instant};
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
 use windows::Win32::Storage::FileSystem::{
-    CreateFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_FLAG_BACKUP_SEMANTICS, FILE_LIST_DIRECTORY,
-    FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, GetDiskFreeSpaceExW, OPEN_EXISTING,
+    CreateFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_HIDDEN, FILE_FLAG_BACKUP_SEMANTICS,
+    FILE_LIST_DIRECTORY, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, GetDiskFreeSpaceExW,
+    OPEN_EXISTING,
 };
 use windows::core::PCWSTR;
 
@@ -244,6 +245,7 @@ pub fn scan_dir_async(path: PathBuf, tx: Sender<FileItem>, time_format_24h: bool
                     let full_path = path.join(&name_os);
 
                     let is_dir = (entry.FileAttributes & FILE_ATTRIBUTE_DIRECTORY.0) != 0;
+                    let is_hidden = (entry.FileAttributes & FILE_ATTRIBUTE_HIDDEN.0) != 0;
 
                     let file_size = if is_dir {
                         None
@@ -260,6 +262,7 @@ pub fn scan_dir_async(path: PathBuf, tx: Sender<FileItem>, time_format_24h: bool
                         name,
                         full_path.clone(),
                         is_dir,
+                        is_hidden,
                         file_size,
                         modified_time,
                         created_time,
@@ -365,6 +368,7 @@ pub struct FileItem {
     pub name: String,
     pub path: PathBuf,
     pub is_dir: bool,
+    pub is_hidden: bool,
     pub file_size: Option<u64>,
     pub modified_time: Option<String>,
     pub created_time: Option<String>,
@@ -379,6 +383,7 @@ impl FileItem {
         name: String,
         path: PathBuf,
         is_dir: bool,
+        is_hidden: bool,
         file_size: Option<u64>,
         modified_time: Option<String>,
         created_time: Option<String>,
@@ -387,6 +392,7 @@ impl FileItem {
             name,
             path,
             is_dir,
+            is_hidden,
             file_size,
             modified_time,
             created_time,
@@ -399,6 +405,7 @@ impl FileItem {
         name: String,
         path: PathBuf,
         is_dir: bool,
+        is_hidden: bool,
         file_size: Option<u64>,
         modified_time: Option<String>,
         created_time: Option<String>,
@@ -409,6 +416,7 @@ impl FileItem {
             name,
             path,
             is_dir,
+            is_hidden,
             file_size,
             modified_time,
             created_time,
