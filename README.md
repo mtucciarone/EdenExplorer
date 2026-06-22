@@ -303,10 +303,10 @@
 - [x] Full navigation history is saved and restored with Back/Forward/Up buttons
 - [x] Added English, Indonesian, Japanese, and multi-Chinese language support
 - [x] Add folder tags and custom folder colors
+- [x]Add toggle for display hidden explorer objects
 
 ### 🚀 Upcoming Beta Features
 - [ ] Support multi-column sorting
-- [ ] Add toggle for display hidden explorer objects
 - [ ] Collapse/Hide sections in the sidebar
 - [ ] Add a tags column in the Explorer view
 - [ ] Support network devices
