@@ -74,6 +74,7 @@ pub fn draw_item_viewer(
     is_drive_view: bool,
     sort_column: SortColumn,
     sort_ascending: bool,
+    show_hidden_files_folders: bool,
     icon_cache: &IconCache,
     rename_state: &mut Option<RenameState>,
     palette: &ThemePalette,
@@ -110,43 +111,52 @@ pub fn draw_item_viewer(
     let mut action: Option<ItemViewerAction> = None;
     let mut any_row_hovered = false;
 
-    if files.is_empty() {
-        ui.centered_and_justified(|ui| {
-            if is_loading {
-                ui.add(egui::Spinner::new().size(28.0));
-            } else {
-                ui.label(i18n.tr("folder_is_empty"));
-            }
-        });
-    }
-
-    if filter_state.dirty
+    let filter_changed = filter_state.dirty
         || filter_state.query != filter_state.last_query
         || filter_state.last_files_len != files.len()
-    {
+        || filter_state.last_show_hidden_files_folders != show_hidden_files_folders;
+
+    if filter_changed {
         filter_state.cached_indices = files
             .iter()
             .enumerate()
-            .filter(|(_, f)| fuzzy_match(&f.name, &filter_state.query))
+            .filter(|(_, f)| {
+                (show_hidden_files_folders || !f.is_hidden)
+                    && fuzzy_match(&f.name, &filter_state.query)
+            })
             .map(|(i, _)| i)
             .collect();
 
         filter_state.last_query = filter_state.query.clone();
         filter_state.last_files_len = files.len();
+        filter_state.last_show_hidden_files_folders = show_hidden_files_folders;
         filter_state.dirty = false;
     }
 
+    let visible_items_empty = filter_state.cached_indices.is_empty();
+
     // 🔥 Ensure selection is valid within filtered view
-    if let Some(selected) = explorer_state.selected_paths.iter().next() {
-        if !filter_state
-            .cached_indices
-            .iter()
-            .any(|&i| &files[i].path == selected)
-        {
-            explorer_state.selected_paths.clear();
-            explorer_state.selection_anchor = None;
-            explorer_state.selection_focus = None;
-        }
+    if filter_changed
+        && explorer_state.selected_paths.iter().any(|selected| {
+            !filter_state
+                .cached_indices
+                .iter()
+                .any(|&i| &files[i].path == selected)
+        })
+    {
+        explorer_state.selected_paths.clear();
+        explorer_state.selection_anchor = None;
+        explorer_state.selection_focus = None;
+    }
+
+    if visible_items_empty {
+        ui.centered_and_justified(|ui| {
+            if is_loading && files.is_empty() {
+                ui.add(egui::Spinner::new().size(28.0));
+            } else {
+                ui.label(i18n.tr("folder_is_empty"));
+            }
+        });
     }
 
     if drag_active {
@@ -202,7 +212,7 @@ pub fn draw_item_viewer(
         .input(|i| i.pointer.any_released() && i.pointer.interact_pos().is_some());
     let hovered_target_ref = drag_hover_target.as_ref();
 
-    if !files.is_empty() {
+    if !visible_items_empty {
         let modifiers = ui.ctx().input(|i| i.modifiers);
 
         let arrow_nav = ui

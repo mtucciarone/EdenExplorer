@@ -130,6 +130,7 @@ pub struct FilterState {
     pub focus_requested: bool,
     pub last_query: String,
     pub last_files_len: usize,
+    pub last_show_hidden_files_folders: bool,
     pub cached_indices: Vec<usize>,
     pub dirty: bool,
 }
@@ -143,6 +144,7 @@ impl Default for FilterState {
             focus_requested: false,
             last_query: String::new(),
             last_files_len: 0,
+            last_show_hidden_files_folders: false,
             cached_indices: Vec::new(),
             dirty: true,
         }

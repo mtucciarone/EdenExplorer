@@ -106,6 +106,7 @@ impl Default for MainWindow {
         // Load saved settings
         let (
             folder_scanning_enabled,
+            show_hidden_files_folders,
             windows_context_menu_enabled,
             window_size_mode,
             start_path,
@@ -118,6 +119,7 @@ impl Default for MainWindow {
         ) = load_app_settings();
         let loaded_settings = AppSettings {
             folder_scanning_enabled,
+            show_hidden_files_folders,
             windows_context_menu_enabled,
             window_size_mode: window_size_mode.clone(),
             start_path: Some(start_path.clone()), // important
@@ -359,6 +361,9 @@ impl eframe::App for MainWindow {
                             .folder_scanning_enabled,
                         self.settings_window
                             .current_settings
+                            .show_hidden_files_folders,
+                        self.settings_window
+                            .current_settings
                             .windows_context_menu_enabled,
                         &self.settings_window.current_settings.window_size_mode,
                         &self.settings_window.current_settings.start_path,
@@ -523,6 +528,9 @@ impl eframe::App for MainWindow {
                                     self.clipboard_is_cut,
                                     self.sort_column,
                                     self.sort_ascending,
+                                    self.settings_window
+                                        .current_settings
+                                        .show_hidden_files_folders,
                                     &mut self.rename_state,
                                     &mut self.file_type_cache,
                                     &mut self.file_size_text_cache,

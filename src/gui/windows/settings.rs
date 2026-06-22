@@ -13,6 +13,7 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             folder_scanning_enabled: true,
+            show_hidden_files_folders: true,
             windows_context_menu_enabled: false,
             start_path: Some(PathBuf::from(MY_PC_PATH)),
             window_size_mode: WindowSizeMode::default(),
@@ -229,6 +230,29 @@ pub fn draw_settings_window(
                             }
                         });
                         info_icon(ui, &i18n.tr("tooltip_settings_folderscanning"), palette);
+                    });
+                    ui.add_space(8.0);
+                    // Hidden Files/Folders
+                    ui.horizontal(|ui| {
+                        ui.scope(|ui| {
+                            apply_checkbox_colors(ui, palette, false);
+                            if ui
+                                .checkbox(
+                                    &mut settings.current_settings.show_hidden_files_folders,
+                                    RichText::new(&i18n.tr("settings_show_hidden_files_folders"))
+                                        .color(palette.text_normal),
+                                )
+                                .changed()
+                            {
+                                // Auto-save when setting changes
+                                action = Some(SettingsAction::ApplySettings);
+                            }
+                        });
+                        info_icon(
+                            ui,
+                            &i18n.tr("tooltip_settings_show_hidden_files_folders"),
+                            palette,
+                        );
                     });
                     ui.add_space(8.0);
                     // Starting Path

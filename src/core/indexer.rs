@@ -29,6 +29,8 @@ pub struct TagsSnapshot {
 #[derive(Serialize, Deserialize)]
 struct AppSettingsSnapshot {
     folder_scanning_enabled: bool,
+    #[serde(default = "default_show_hidden_files_folders")]
+    show_hidden_files_folders: bool,
     #[serde(default)]
     windows_context_menu_enabled: bool,
     window_size_mode: WindowSizeMode,
@@ -69,6 +71,7 @@ impl From<LegacyAppSettingsSnapshot> for AppSettingsSnapshot {
     fn from(legacy: LegacyAppSettingsSnapshot) -> Self {
         Self {
             folder_scanning_enabled: legacy.folder_scanning_enabled,
+            show_hidden_files_folders: true,
             windows_context_menu_enabled: legacy.windows_context_menu_enabled,
             window_size_mode: legacy.window_size_mode.into(),
             start_path: legacy.start_path,
@@ -162,6 +165,10 @@ fn default_sort_column() -> crate::gui::utils::SortColumn {
 
 fn default_language() -> String {
     "en-US".to_string()
+}
+
+fn default_show_hidden_files_folders() -> bool {
+    true
 }
 
 fn default_tags_version() -> u32 {
@@ -261,6 +268,7 @@ pub fn load_windows_size_mode_on_start() -> WindowSizeMode {
 pub fn load_app_settings() -> (
     bool,
     bool,
+    bool,
     WindowSizeMode,
     PathBuf,
     Option<String>,
@@ -289,6 +297,7 @@ pub fn load_app_settings() -> (
 
     (
         snapshot.folder_scanning_enabled,
+        snapshot.show_hidden_files_folders,
         snapshot.windows_context_menu_enabled,
         snapshot.window_size_mode,
         snapshot.start_path.unwrap_or(default_path),
@@ -306,6 +315,7 @@ fn default_app_settings(
 ) -> (
     bool,
     bool,
+    bool,
     WindowSizeMode,
     PathBuf,
     Option<String>,
@@ -316,6 +326,7 @@ fn default_app_settings(
     String,
 ) {
     (
+        true,
         true,
         false,
         WindowSizeMode::default(),
@@ -331,6 +342,7 @@ fn default_app_settings(
 
 pub fn save_app_settings(
     folder_scanning_enabled: bool,
+    show_hidden_files_folders: bool,
     windows_context_menu_enabled: bool,
     window_size_mode: &WindowSizeMode,
     start_path: &Option<PathBuf>,
@@ -348,6 +360,7 @@ pub fn save_app_settings(
     let _ = std::fs::create_dir_all(path.parent().unwrap());
     let snapshot = AppSettingsSnapshot {
         folder_scanning_enabled,
+        show_hidden_files_folders,
         windows_context_menu_enabled,
         window_size_mode: window_size_mode.clone(),
         start_path: start_path.clone(),
