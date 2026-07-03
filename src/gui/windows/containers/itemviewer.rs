@@ -231,22 +231,35 @@ pub fn draw_item_viewer(
             .resizable(true)
             .id_salt("item_viewer_table");
 
-        // If we have a newly created row, scroll to it and select it
-        if let Some(new_path) = &explorer_state.newly_created_path {
-            if let Some(idx) = filter_state
-                .cached_indices
-                .iter()
-                .position(|&i| &files[i].path == new_path)
-            {
-                table = table.scroll_to_row(idx, Some(egui::Align::Center));
+        // If we have a pending selection from a refresh, scroll to it and select it
+        if let Some(pending_paths) = explorer_state.pending_selection_paths.clone() {
+            let mut selected_indices = Vec::with_capacity(pending_paths.len());
+            let mut all_found = true;
 
-                // Auto-select the newly created/renamed item
+            for path in &pending_paths {
+                if let Some(idx) = filter_state
+                    .cached_indices
+                    .iter()
+                    .position(|&i| &files[i].path == path)
+                {
+                    selected_indices.push(idx);
+                } else {
+                    all_found = false;
+                    break;
+                }
+            }
+
+            if all_found && !selected_indices.is_empty() {
+                selected_indices.sort_unstable();
+                table = table.scroll_to_row(selected_indices[0], Some(egui::Align::Center));
+
                 explorer_state.selected_paths.clear();
-                explorer_state.selected_paths.insert(new_path.clone());
-                explorer_state.selection_anchor = Some(idx);
-                explorer_state.selection_focus = Some(idx);
-
-                explorer_state.newly_created_path = None;
+                for path in pending_paths {
+                    explorer_state.selected_paths.insert(path);
+                }
+                explorer_state.selection_anchor = Some(selected_indices[0]);
+                explorer_state.selection_focus = Some(*selected_indices.last().unwrap());
+                explorer_state.pending_selection_paths = None;
             }
         }
 
@@ -713,7 +726,6 @@ fn compute_layout(ui: &egui::Ui, is_drive_view: bool) -> ItemViewerLayout {
         row_height,
         header_height,
         header_gap: 6.0,
-        available_width: ui.available_width(),
         is_drive_view,
     }
 }

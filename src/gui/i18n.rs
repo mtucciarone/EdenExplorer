@@ -17,7 +17,6 @@ impl I18n {
     pub fn new(default_locale: &str) -> Self {
         let mut bundles = HashMap::new();
 
-        // Only load the default locale initially
         Self::load_locale(&mut bundles, default_locale);
 
         Self {
@@ -27,44 +26,65 @@ impl I18n {
     }
 
     fn load_locale(bundles: &mut HashMap<String, FluentBundle<FluentResource>>, locale: &str) {
+        if locale.is_empty() {
+            return;
+        }
+
         if bundles.contains_key(locale) {
-            return; // Already loaded
+            return;
         }
 
         let path = format!("{}/main.ftl", locale);
 
-        let file =
-            Localizations::get(&path).unwrap_or_else(|| panic!("Missing locale file: {}", path));
+        let file = match Localizations::get(&path) {
+            Some(f) => f,
+            None => {
+                eprintln!("Missing locale file: {}", path);
+                return;
+            }
+        };
 
         let source = match file.data {
             Cow::Borrowed(bytes) => std::str::from_utf8(bytes).unwrap().to_string(),
             Cow::Owned(bytes) => String::from_utf8(bytes).unwrap(),
         };
 
-        let resource = FluentResource::try_new(source).expect("Failed to parse Fluent resource");
+        let resource = match FluentResource::try_new(source) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("Failed to parse Fluent resource for {}: {:?}", locale, e);
+                return;
+            }
+        };
 
-        let langid: LanguageIdentifier = locale.parse().expect("Invalid language identifier");
+        let langid: LanguageIdentifier = match locale.parse() {
+            Ok(id) => id,
+            Err(e) => {
+                eprintln!("Invalid language identifier '{}': {:?}", locale, e);
+                return;
+            }
+        };
 
         let mut bundle = FluentBundle::new(vec![langid]);
 
-        bundle
-            .add_resource(resource)
-            .expect("Failed to add Fluent resource");
+        if let Err(e) = bundle.add_resource(resource) {
+            eprintln!("Failed to add Fluent resource for {}: {:?}", locale, e);
+            return;
+        }
 
         bundles.insert(locale.to_string(), bundle);
     }
 
     pub fn set_locale(&mut self, locale: &str) {
-        // Load the locale if it's not already loaded
+        if locale.is_empty() {
+            return;
+        }
+
         Self::load_locale(&mut self.bundles, locale);
 
         if self.bundles.contains_key(locale) {
             self.current_locale = locale.to_string();
         }
-    }
-
-    pub fn current_locale(&self) -> &str {
-        &self.current_locale
     }
 
     pub fn tr(&self, key: &str) -> String {

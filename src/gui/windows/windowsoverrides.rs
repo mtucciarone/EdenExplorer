@@ -7,7 +7,7 @@ use egui::Context;
 use egui_phosphor::regular;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::sync::RwLock;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Dwm::*;
@@ -20,19 +20,28 @@ use windows::Win32::System::DataExchange::{
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
-static mut ORIGINAL_WNDPROC: Option<WNDPROC> = None;
 const MIN_WIDTH: i32 = 600;
 const MIN_HEIGHT: i32 = 400;
 const RESIZE_BORDER: i32 = 6;
 
-pub fn get_hwnd_from_cc(cc: &eframe::CreationContext<'_>) -> Option<HWND> {
-    let handle = cc.window_handle().ok()?;
-    let raw = handle.as_raw();
+// ✅ Fixed: Use AtomicPtr instead of static mut
+static ORIGINAL_WNDPROC: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
 
-    match raw {
-        RawWindowHandle::Win32(h) => Some(HWND(h.hwnd.get() as *mut std::ffi::c_void)),
-        _ => None,
+fn get_original_wndproc() -> Option<WNDPROC> {
+    let ptr = ORIGINAL_WNDPROC.load(Ordering::SeqCst);
+    if ptr.is_null() {
+        None
+    } else {
+        Some(unsafe { std::mem::transmute::<*mut std::ffi::c_void, WNDPROC>(ptr) })
     }
+}
+
+fn set_original_wndproc(proc: WNDPROC) {
+    let ptr = match proc {
+        Some(f) => f as *mut std::ffi::c_void,
+        None => std::ptr::null_mut(),
+    };
+    ORIGINAL_WNDPROC.store(ptr, Ordering::SeqCst);
 }
 
 lazy_static::lazy_static! {
@@ -42,12 +51,14 @@ lazy_static::lazy_static! {
 static CLIPBOARD_DIRTY: AtomicBool = AtomicBool::new(true);
 
 pub fn set_egui_ctx(ctx: &Context) {
-    *EGUI_CTX.write().unwrap() = Some(ctx.clone());
+    if let Ok(mut guard) = EGUI_CTX.write() {
+        *guard = Some(ctx.clone());
+    }
 }
 
 pub fn request_repaint() {
-    if let Ok(ctx) = EGUI_CTX.read() {
-        if let Some(ctx) = ctx.as_ref() {
+    if let Ok(guard) = EGUI_CTX.read() {
+        if let Some(ctx) = guard.as_ref() {
             ctx.request_repaint();
         }
     }
@@ -123,17 +134,14 @@ fn color32_to_dwm(color: egui::Color32) -> u32 {
     let r = color.r() as u32;
     let g = color.g() as u32;
     let b = color.b() as u32;
-
-    // Windows expects 0x00BBGGRR
     (b << 16) | (g << 8) | r
 }
 
 pub fn apply_window_override(hwnd: HWND, palette: &ThemePalette) {
     unsafe {
-        // --- 1. Keep minimal frame ---
         let style = GetWindowLongW(hwnd, GWL_STYLE);
 
-        let new_style = (style & !(WS_CAPTION.0 as i32)) // remove title bar
+        let new_style = (style & !(WS_CAPTION.0 as i32))
             | (WS_THICKFRAME.0 as i32)
             | (WS_MINIMIZEBOX.0 as i32)
             | (WS_MAXIMIZEBOX.0 as i32)
@@ -141,18 +149,16 @@ pub fn apply_window_override(hwnd: HWND, palette: &ThemePalette) {
 
         let _ = SetWindowLongW(hwnd, GWL_STYLE, new_style);
 
-        // --- 2. Disable DWM non-client rendering ---
-        let policy = DWMNCRENDERINGPOLICY(2); // 👈 DWMNCRP_DISABLED
-
+        let policy = DWMNCRENDERINGPOLICY(2);
         let _ = DwmSetWindowAttribute(
             hwnd,
-            DWMWINDOWATTRIBUTE(2), // 👈 DWMWA_NCRENDERING_POLICY
+            DWMWINDOWATTRIBUTE(2),
             &policy as *const _ as _,
             std::mem::size_of::<DWMNCRENDERINGPOLICY>() as u32,
         );
 
         const DWMWA_WINDOW_CORNER_PREFERENCE: DWMWINDOWATTRIBUTE = DWMWINDOWATTRIBUTE(33);
-        let preference: u32 = 2; // DWMWCP_ROUND
+        let preference: u32 = 2;
 
         let _ = DwmSetWindowAttribute(
             hwnd,
@@ -161,7 +167,6 @@ pub fn apply_window_override(hwnd: HWND, palette: &ThemePalette) {
             std::mem::size_of::<u32>() as u32,
         );
 
-        // --- 3. Remove frame insets (fix top gap) ---
         let margins = MARGINS {
             cxLeftWidth: 0,
             cxRightWidth: 0,
@@ -179,14 +184,12 @@ pub fn apply_window_override(hwnd: HWND, palette: &ThemePalette) {
             &border_color as *const _ as _,
             std::mem::size_of::<u32>() as u32,
         );
-
         let _ = DwmSetWindowAttribute(
             hwnd,
             DWMWINDOWATTRIBUTE(35),
             &caption_color as *const _ as _,
             std::mem::size_of::<u32>() as u32,
         );
-
         let _ = DwmSetWindowAttribute(
             hwnd,
             DWMWINDOWATTRIBUTE(36),
@@ -196,7 +199,6 @@ pub fn apply_window_override(hwnd: HWND, palette: &ThemePalette) {
 
         let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
 
-        // --- 4. Apply changes ---
         let _ = SetWindowPos(
             hwnd,
             None,
@@ -209,15 +211,23 @@ pub fn apply_window_override(hwnd: HWND, palette: &ThemePalette) {
     }
 }
 
-pub unsafe fn install_wndproc(hwnd: HWND) {
+pub unsafe fn install_wndproc(hwnd: HWND) -> Result<(), String> {
     unsafe {
-        ORIGINAL_WNDPROC = Some(std::mem::transmute::<isize, WNDPROC>(SetWindowLongPtrW(
-            hwnd,
-            GWLP_WNDPROC,
-            custom_wndproc as *const () as isize,
-        )));
-        let _ = AddClipboardFormatListener(hwnd);
+        let result = SetWindowLongPtrW(hwnd, GWLP_WNDPROC, custom_wndproc as *const () as isize);
+
+        if result == 0 {
+            let err = std::io::Error::last_os_error();
+            return Err(format!("SetWindowLongPtrW failed: {}", err));
+        }
+
+        set_original_wndproc(std::mem::transmute::<isize, WNDPROC>(result));
+
+        if AddClipboardFormatListener(hwnd).is_err() {
+            return Err("AddClipboardFormatListener failed".to_string());
+        }
+
         mark_clipboard_dirty();
+        Ok(())
     }
 }
 
@@ -234,16 +244,12 @@ unsafe extern "system" fn custom_wndproc(
         }
         WM_DEVICECHANGE => {
             mark_drive_cache_dirty();
-            if let Ok(ctx) = EGUI_CTX.read() {
-                if let Some(ctx) = ctx.as_ref() {
-                    ctx.request_repaint();
-                }
-            }
+            request_repaint(); // ✅ Uses the safe wrapper
             LRESULT(0)
         }
         WM_NCDESTROY => {
             let _ = RemoveClipboardFormatListener(hwnd);
-            if let Some(orig) = ORIGINAL_WNDPROC {
+            if let Some(orig) = get_original_wndproc() {
                 CallWindowProcW(orig, hwnd, msg, wparam, lparam)
             } else {
                 DefWindowProcW(hwnd, msg, wparam, lparam)
@@ -251,7 +257,7 @@ unsafe extern "system" fn custom_wndproc(
         }
         WM_EXITSIZEMOVE => {
             save_manual_window_size(hwnd);
-            if let Some(orig) = ORIGINAL_WNDPROC {
+            if let Some(orig) = get_original_wndproc() {
                 CallWindowProcW(orig, hwnd, msg, wparam, lparam)
             } else {
                 DefWindowProcW(hwnd, msg, wparam, lparam)
@@ -260,11 +266,9 @@ unsafe extern "system" fn custom_wndproc(
         WM_GETMINMAXINFO => {
             let info = &mut *(lparam.0 as *mut MINMAXINFO);
 
-            // minimum size
             info.ptMinTrackSize.x = MIN_WIDTH;
             info.ptMinTrackSize.y = MIN_HEIGHT;
 
-            // Get monitor work area
             unsafe {
                 let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
                 if !monitor.is_invalid() {
@@ -274,7 +278,6 @@ unsafe extern "system" fn custom_wndproc(
                         let work_area = monitor_info.rcWork;
                         let monitor_area = monitor_info.rcMonitor;
 
-                        // max window size = monitor work area (leaves taskbar visible)
                         info.ptMaxPosition.x = work_area.left - monitor_area.left;
                         info.ptMaxPosition.y = work_area.top - monitor_area.top;
                         info.ptMaxSize.x = work_area.right - work_area.left;
@@ -300,7 +303,6 @@ unsafe extern "system" fn custom_wndproc(
             let local_x = x - rect.left;
             let local_y = y - rect.top;
 
-            // 8 resize corners
             if local_x < RESIZE_BORDER && local_y < RESIZE_BORDER {
                 return LRESULT(HTTOPLEFT as _);
             }
@@ -314,7 +316,6 @@ unsafe extern "system" fn custom_wndproc(
                 return LRESULT(HTBOTTOMRIGHT as _);
             }
 
-            // edges
             if local_x < RESIZE_BORDER {
                 return LRESULT(HTLEFT as _);
             }
@@ -328,26 +329,22 @@ unsafe extern "system" fn custom_wndproc(
                 return LRESULT(HTBOTTOM as _);
             }
 
-            // everything else is client
             LRESULT(HTCLIENT as _)
         }
-        _ => {
-            unsafe {
-                // forward everything else to original WNDPROC
-                if let Some(orig) = ORIGINAL_WNDPROC {
-                    CallWindowProcW(orig, hwnd, msg, wparam, lparam)
-                } else {
-                    DefWindowProcW(hwnd, msg, wparam, lparam)
-                }
+        _ => unsafe {
+            if let Some(orig) = get_original_wndproc() {
+                CallWindowProcW(orig, hwnd, msg, wparam, lparam)
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
             }
-        }
+        },
     }
 }
 
-// helper
 fn get_x_lparam(lparam: LPARAM) -> i32 {
     (lparam.0 & 0xFFFF) as i16 as i32
 }
+
 fn get_y_lparam(lparam: LPARAM) -> i32 {
     ((lparam.0 >> 16) & 0xFFFF) as i16 as i32
 }
@@ -364,7 +361,6 @@ pub fn handle_draw_windows_buttons(ui: &mut egui::Ui, hwnd: Option<HWND>, palett
             .clicked()
         {
             unsafe {
-                use windows::Win32::UI::WindowsAndMessaging::*;
                 let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
             }
         }
@@ -379,7 +375,6 @@ pub fn handle_draw_windows_buttons(ui: &mut egui::Ui, hwnd: Option<HWND>, palett
             .clicked()
         {
             unsafe {
-                use windows::Win32::UI::WindowsAndMessaging::*;
                 let mut placement = WINDOWPLACEMENT {
                     length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
                     ..Default::default()
@@ -405,9 +400,25 @@ pub fn handle_draw_windows_buttons(ui: &mut egui::Ui, hwnd: Option<HWND>, palett
             .clicked()
         {
             unsafe {
-                use windows::Win32::UI::WindowsAndMessaging::*;
                 let _ = ShowWindow(hwnd, SW_MINIMIZE);
             }
         }
+    }
+}
+
+pub fn get_hwnd_from_frame(frame: &eframe::Frame) -> Option<HWND> {
+    let handle = frame.window_handle().ok()?;
+    let raw = handle.as_raw();
+
+    match raw {
+        RawWindowHandle::Win32(h) => {
+            let val = h.hwnd.get();
+            if val == 0 {
+                None
+            } else {
+                Some(HWND(val as *mut std::ffi::c_void))
+            }
+        }
+        _ => None,
     }
 }

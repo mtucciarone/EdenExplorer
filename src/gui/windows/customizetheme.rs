@@ -1,6 +1,8 @@
+use crate::core::utils::fonts::get_font_list;
 use crate::gui::i18n::I18n;
 use crate::gui::theme::{
-    ThemeMode, ThemePalette, get_default_palette, regenerate_base_derived_colors,
+    ThemeMode, ThemePalette, apply_font_to_context, get_default_palette,
+    regenerate_base_derived_colors,
 };
 use crate::gui::utils::rgba_color_edit_button;
 use crate::gui::windows::enums::ThemeCustomizerAction;
@@ -288,6 +290,57 @@ pub fn draw_theme_customizer(
                                 );
                                 ui.end_row();
                             });
+
+                        ui.add_space(8.0);
+
+                        egui::Grid::new("typography_font_settings")
+                            .num_columns(2)
+                            .spacing([12.0, 6.0])
+                            .show(ui, |ui| {
+                                ui.label(
+                                    egui::RichText::new(&i18n.tr("theme_font"))
+                                        .font(font_id.clone())
+                                        .size(palette.text_size)
+                                        .color(label_color),
+                                );
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if let Some(new_font) = font_selector(
+                                            ui,
+                                            "theme_font_selector",
+                                            &editing_palette.font_name,
+                                        ) {
+                                            editing_palette.font_name = new_font;
+                                            apply_font_to_context(ctx, &editing_palette);
+                                            changed = true;
+                                        }
+                                    },
+                                );
+                                ui.end_row();
+
+                                ui.label(
+                                    egui::RichText::new(&i18n.tr("theme_mono_font"))
+                                        .font(font_id.clone())
+                                        .size(palette.text_size)
+                                        .color(label_color),
+                                );
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if let Some(new_font) = font_selector(
+                                            ui,
+                                            "theme_mono_font_selector",
+                                            &editing_palette.mono_font_name,
+                                        ) {
+                                            editing_palette.mono_font_name = new_font;
+                                            apply_font_to_context(ctx, &editing_palette);
+                                            changed = true;
+                                        }
+                                    },
+                                );
+                                ui.end_row();
+                            });
                     });
 
                     ui.add_space(8.0);
@@ -405,4 +458,38 @@ fn color_picker(
     );
 
     rgba_color_edit_button(ui, color).changed()
+}
+
+fn font_selector(ui: &mut egui::Ui, label: &str, current_font: &str) -> Option<String> {
+    let fonts = get_font_list();
+
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        let mut selected_text = current_font.to_string();
+        let mut changed = false;
+
+        egui::ComboBox::from_id_source(egui::Id::new(label))
+            .width(200.0)
+            .selected_text(&selected_text)
+            .show_ui(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .max_height(200.0)
+                    .show(ui, |ui| {
+                        for font in fonts.iter() {
+                            let rich_text = egui::RichText::new(font.as_str());
+
+                            if ui
+                                .selectable_label(font == current_font, rich_text)
+                                .clicked()
+                            {
+                                selected_text = font.clone();
+                                changed = true;
+                                ui.close_menu();
+                            }
+                        }
+                    });
+            });
+
+        if changed { Some(selected_text) } else { None }
+    })
+    .inner
 }

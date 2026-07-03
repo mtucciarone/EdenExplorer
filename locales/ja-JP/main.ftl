@@ -129,3 +129,5 @@ tag_group_color = タグの色
 tag_create_group = タググループを作成
 tag_delete_group = タググループを削除
 tag_delete_confirm = このタググループを削除してもよろしいですか？
+theme_font = フォント
+theme_mono_font = モノスペースフォント
