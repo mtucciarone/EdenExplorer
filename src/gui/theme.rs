@@ -1,5 +1,7 @@
+use crate::core::utils::fonts::{apply_custom_font_definitions, load_font_data};
 use eframe::egui::{Color32, CornerRadius};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::sync::{LazyLock, RwLock};
 
 pub const THEME_VERSION: u32 = 2;
@@ -19,6 +21,15 @@ fn default_tab_icon_size() -> f32 {
 fn default_context_menu_text_size() -> f32 {
     11.0
 }
+
+fn default_font_name() -> String {
+    "Ubuntu-Light".to_string()
+}
+
+fn default_mono_font_name() -> String {
+    "Hack".to_string()
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub enum ThemeMode {
     Light,
@@ -44,6 +55,10 @@ pub struct ThemePalette {
     pub sidebar_icon_size: f32,
     #[serde(default = "default_tab_icon_size")]
     pub tab_icon_size: f32,
+    #[serde(default = "default_font_name")]
+    pub font_name: String,
+    #[serde(default = "default_mono_font_name")]
+    pub mono_font_name: String,
 
     // 🎯 Brand / primary colors
     pub primary: Color32,
@@ -126,6 +141,8 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         explorer_icon_size: 18.0,
         sidebar_icon_size: 20.0,
         tab_icon_size: 12.0,
+        font_name: default_font_name(),
+        mono_font_name: default_mono_font_name(),
 
         // 🎯 Brand / primary colors
         primary: base,
@@ -214,6 +231,8 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         explorer_icon_size: 18.0,
         sidebar_icon_size: 20.0,
         tab_icon_size: 12.0,
+        font_name: default_font_name(),
+        mono_font_name: default_mono_font_name(),
 
         // 🎯 Brand / primary colors
         primary: base,
@@ -478,4 +497,41 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
     palette.tab_border_active = base;
     palette.checkbox_bg_hover = base;
     palette.checkbox_bg_active = base;
+}
+
+pub fn apply_font_to_context(ctx: &egui::Context, palette: &ThemePalette) {
+    let mut fonts = egui::FontDefinitions::default();
+
+    // Load proportional font
+    if let Some(font_data) = load_font_data(&palette.font_name) {
+        fonts.font_data.insert(
+            "custom_proportional".to_string(),
+            Arc::new(egui::FontData::from_owned(font_data)),
+        );
+
+        fonts
+            .families
+            .entry(egui::FontFamily::Proportional)
+            .or_default()
+            .insert(0, "custom_proportional".to_string());
+    }
+
+    // Load monospace font
+    if let Some(font_data) = load_font_data(&palette.mono_font_name) {
+        fonts.font_data.insert(
+            "custom_monospace".to_string(),
+            Arc::new(egui::FontData::from_owned(font_data)),
+        );
+
+        fonts
+            .families
+            .entry(egui::FontFamily::Monospace)
+            .or_default()
+            .insert(0, "custom_monospace".to_string());
+    }
+
+    apply_custom_font_definitions(&mut fonts);
+
+    ctx.set_fonts(fonts);
+    ctx.request_repaint();
 }

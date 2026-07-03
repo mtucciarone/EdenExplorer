@@ -36,7 +36,6 @@ pub fn draw_tags(
         egui::vec2(tabs_width, ui.available_height()),
         egui::Layout::top_down(egui::Align::Min),
         |ui| {
-            let old_spacing = ui.spacing().item_spacing;
             ui.spacing_mut().item_spacing.y = 0.0;
 
             egui::Frame::NONE.show(ui, |ui| {
@@ -491,43 +490,6 @@ fn tag_item_layout(ui: &mut egui::Ui) -> (egui::Rect, egui::Response) {
         egui::vec2(ui.available_width(), 18.0),
         egui::Sense::click_and_drag(),
     )
-}
-
-fn apply_context_menu_style(ui: &mut egui::Ui, palette: &ThemePalette) {
-    let mut style = (*ui.ctx().style()).clone();
-    style.text_styles = [
-        (
-            egui::TextStyle::Body,
-            FontId::proportional(palette.context_menu_text_size),
-        ),
-        (
-            egui::TextStyle::Button,
-            FontId::proportional(palette.context_menu_text_size),
-        ),
-        (
-            egui::TextStyle::Small,
-            FontId::proportional(palette.context_menu_text_size),
-        ),
-        (
-            egui::TextStyle::Heading,
-            FontId::proportional(palette.context_menu_text_size + 2.0),
-        ),
-    ]
-    .into();
-    style.spacing.button_padding = egui::vec2(4.0, 2.0);
-    style.spacing.item_spacing = egui::vec2(6.0, 2.0);
-    style.spacing.menu_margin = egui::Margin::same(4);
-    style.spacing.interact_size = egui::vec2(
-        style.spacing.interact_size.x,
-        palette.context_menu_text_size + 6.0,
-    );
-    style.visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
-    style.visuals.widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
-    style.visuals.widgets.hovered.bg_fill = palette.primary;
-    style.visuals.widgets.hovered.weak_bg_fill = palette.primary;
-    style.visuals.widgets.active.bg_fill = palette.primary;
-    style.visuals.widgets.active.weak_bg_fill = palette.primary;
-    ui.set_style(style);
 }
 
 pub fn draw_tag_picker_popup(

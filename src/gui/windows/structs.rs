@@ -57,7 +57,6 @@ pub struct SettingsWindow {
     pub open: bool,
     pub current_settings: AppSettings,
     pub show_reset_favorites_confirmation: bool,
-    pub current_language: String,
 }
 
 pub struct SidebarState {

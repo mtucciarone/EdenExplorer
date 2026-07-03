@@ -106,7 +106,6 @@ pub fn draw_explorer(
                     palette,
                     hwnd,
                     scroll_to_id,
-                    drag_state,
                     drag_active,
                     drag_hover_target.clone(),
                 );
@@ -139,7 +138,6 @@ pub fn draw_explorer(
                         tab,
                         palette,
                         is_favorited,
-                        drag_state,
                         drag_active,
                         drag_hover_target.clone(),
                     ))

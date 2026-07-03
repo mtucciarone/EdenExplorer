@@ -129,3 +129,5 @@ tag_group_color = Warna tag
 tag_create_group = Buat Grup Tag
 tag_delete_group = Hapus Grup Tag
 tag_delete_confirm = Apakah Anda yakin ingin menghapus grup tag ini?
+theme_font = Font
+theme_mono_font = Font Monospace

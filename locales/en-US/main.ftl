@@ -131,3 +131,5 @@ tag_group_color = Tag color
 tag_create_group = Create Tag Group
 tag_delete_group = Delete Tag Group
 tag_delete_confirm = Are you sure you want to delete this tag group?
+theme_font = Font
+theme_mono_font = Monospace Font

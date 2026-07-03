@@ -14,7 +14,7 @@ pub struct ExplorerState {
     pub selected_paths: HashSet<PathBuf>,
     pub selection_anchor: Option<usize>,
     pub selection_focus: Option<usize>,
-    pub newly_created_path: Option<PathBuf>, // new folder or file
+    pub pending_selection_paths: Option<Vec<PathBuf>>, // select after refresh
     pub non_ntfs_popup_path: Option<PathBuf>,
     pub windows_context_menu_expanded: bool,
     pub windows_context_menu_cache: Option<WindowsContextMenuCache>,
@@ -112,7 +112,6 @@ pub struct ItemViewerLayout {
     pub row_height: f32,
     pub header_height: f32,
     pub header_gap: f32,
-    pub available_width: f32,
     pub is_drive_view: bool,
 }
 
@@ -269,41 +268,6 @@ impl TagsState {
         self.picker = Some(TagPickerState::new(paths));
     }
 
-    pub fn begin_rename_group(&mut self, group_id: u64) -> bool {
-        let Some(group) = self.groups.iter().find(|group| group.id == group_id) else {
-            return false;
-        };
-
-        self.rename_state = Some(TagRenameState {
-            group_id,
-            buffer: group.name.clone(),
-            should_focus: true,
-        });
-        true
-    }
-
-    pub fn cancel_rename_group(&mut self) {
-        self.rename_state = None;
-    }
-
-    pub fn rename_group(&mut self, group_id: u64, new_name: String) -> bool {
-        let new_name = new_name.trim();
-        if new_name.is_empty() {
-            return false;
-        }
-
-        let Some(group) = self.groups.iter_mut().find(|group| group.id == group_id) else {
-            return false;
-        };
-
-        if group.name == new_name {
-            return false;
-        }
-
-        group.name = new_name.to_string();
-        true
-    }
-
     pub fn is_tagged(&self, path: &Path) -> bool {
         self.groups
             .iter()
@@ -436,49 +400,6 @@ impl TagsState {
         }
 
         changed
-    }
-
-    pub fn replace_path(&mut self, old_path: &Path, new_path: PathBuf) -> bool {
-        let mut changed = false;
-
-        for group in &mut self.groups {
-            if let Some(item_index) = group.items.iter().position(|item| item == old_path) {
-                if group.items.iter().any(|item| item == &new_path) {
-                    group.items.remove(item_index);
-                } else {
-                    group.items[item_index] = new_path.clone();
-                }
-                changed = true;
-            }
-        }
-
-        changed
-    }
-
-    pub fn reorder_within_group(
-        &mut self,
-        group_id: u64,
-        from_index: usize,
-        to_index: usize,
-    ) -> bool {
-        let Some(group) = self.groups.iter_mut().find(|group| group.id == group_id) else {
-            return false;
-        };
-
-        if from_index >= group.items.len() || from_index == to_index {
-            return false;
-        }
-
-        let item = group.items.remove(from_index);
-        let mut target = to_index;
-
-        if to_index > from_index {
-            target -= 1;
-        }
-
-        target = target.min(group.items.len());
-        group.items.insert(target, item);
-        true
     }
 }
 

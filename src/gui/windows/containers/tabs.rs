@@ -7,9 +7,7 @@ use crate::gui::utils::{
     clear_clipboard_files, clickable_icon, expand_environment_variables, truncate_item_text,
 };
 use crate::gui::windows::containers::enums::TabbarNavAction;
-use crate::gui::windows::containers::structs::{
-    DragState, TabInfo, TabState, TabbarAction, TabsAction,
-};
+use crate::gui::windows::containers::structs::{TabInfo, TabState, TabbarAction, TabsAction};
 use crate::gui::windows::windowsoverrides::handle_draw_windows_buttons;
 use eframe::egui;
 use egui::{FontFamily, FontId};
@@ -68,7 +66,6 @@ pub fn draw_tabs(
     palette: &ThemePalette,
     hwnd: Option<HWND>,
     scroll_to_id: Option<u64>,
-    drag_state: &mut DragState,
     drag_active: bool,
     drag_hover_target: Option<PathBuf>,
 ) -> TabsAction {
@@ -638,7 +635,6 @@ pub fn draw_tabbar(
     tab: &mut TabState,
     palette: &ThemePalette,
     is_favorited: bool,
-    drag_state: &mut DragState,
     drag_active: bool,
     drag_hover_target: Option<PathBuf>,
 ) -> TabbarAction {

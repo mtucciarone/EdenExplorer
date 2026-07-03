@@ -1,13 +1,13 @@
-use crate::core::drives::{get_drive_infos, is_raw_physical_drive_path};
 use crate::core::fs::FileItem;
-use crate::core::fs::{parallel_directory_scan, scan_dir_async};
 use crate::core::indexer::{
     load_app_settings, load_favorites, load_tags, load_theme_settings, save_app_settings,
 };
 use crate::gui::dragdrop::{DragDropBackend, DropTargets};
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
-use crate::gui::theme::{ThemeMode, apply_theme, get_default_palette, get_palette, set_palette};
+use crate::gui::theme::{
+    ThemeMode, apply_font_to_context, apply_theme, get_default_palette, get_palette, set_palette,
+};
 use crate::gui::utils::SortColumn;
 use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::explorer::draw_explorer;
@@ -231,8 +231,13 @@ impl Default for MainWindow {
             i18n: I18n::new(default_locale),
         };
 
-        // Initialize i18n with loaded language
-        app.i18n.set_locale(&loaded_settings.language);
+        let lang = if loaded_settings.language.is_empty() {
+            default_locale
+        } else {
+            loaded_settings.language.as_str()
+        };
+
+        app.i18n.set_locale(lang);
         app.settings_window.current_settings = loaded_settings;
 
         match load_theme_settings() {
@@ -241,7 +246,6 @@ impl Default for MainWindow {
                 set_palette(ThemeMode::Dark, dark);
             }
             None => {
-                // 🔥 FORCE DEFAULTS INTO MEMORY
                 let light = get_default_palette(ThemeMode::Light);
                 let dark = get_default_palette(ThemeMode::Dark);
 
@@ -275,18 +279,8 @@ impl Default for MainWindow {
 }
 
 impl MainWindow {
-    pub fn new(hwnd: Option<HWND>) -> Self {
+    pub fn new() -> Self {
         let mut app = Self::default();
-        if let Some(hwnd) = hwnd {
-            unsafe {
-                install_wndproc(hwnd);
-            }
-            app.dragdrop = Some(Box::new(
-                crate::gui::windows::dragdrop::WindowsDragDropBackend::new(Some(hwnd)),
-            ));
-        }
-
-        app.hwnd = hwnd;
         app
     }
 
@@ -295,15 +289,27 @@ impl MainWindow {
     }
 }
 
-impl Drop for MainWindow {
-    fn drop(&mut self) {
-        self.cleanup();
-    }
-}
-
 impl eframe::App for MainWindow {
-    fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let palette = get_palette(self.theme);
+
+        if self.hwnd.is_none() {
+            if let Some(hwnd) = crate::gui::windows::windowsoverrides::get_hwnd_from_frame(frame) {
+                self.hwnd = Some(hwnd);
+
+                unsafe {
+                    if let Err(e) = install_wndproc(hwnd) {
+                        eprintln!("Failed to install wndproc: {}", e);
+                    }
+                }
+
+                self.dragdrop = Some(Box::new(
+                    crate::gui::windows::dragdrop::WindowsDragDropBackend::new(Some(hwnd)),
+                ));
+            } else {
+                eprintln!("Failed to get HWND on first frame");
+            }
+        }
 
         if !self.window_override_set {
             if let Some(hwnd) = self.hwnd {
@@ -330,6 +336,7 @@ impl eframe::App for MainWindow {
 
         if self.theme_dirty {
             apply_theme(ctx, self.theme);
+            apply_font_to_context(ctx, &palette);
             self.theme_dirty = false;
         }
 

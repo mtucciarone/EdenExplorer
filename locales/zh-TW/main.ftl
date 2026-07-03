@@ -129,3 +129,5 @@ tag_group_color = 標籤顏色
 tag_create_group = 建立標籤群組
 tag_delete_group = 刪除標籤群組
 tag_delete_confirm = 您確定要刪除此標籤群組嗎？
+theme_font = 字體
+theme_mono_font = 等寬字體

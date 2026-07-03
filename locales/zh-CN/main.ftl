@@ -129,3 +129,5 @@ tag_group_color = 标签颜色
 tag_create_group = 创建标签组
 tag_delete_group = 删除标签组
 tag_delete_confirm = 您确定要删除此标签组吗？
+theme_font = 字体
+theme_mono_font = 等宽字体

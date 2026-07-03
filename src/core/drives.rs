@@ -68,13 +68,6 @@ pub struct RawDriveInfo {
     pub bus_type: Option<u32>, // Optional bus type (USB, NVMe, etc.)
 }
 
-pub fn list_portable_devices() -> Vec<String> {
-    list_portable_devices_with_ids()
-        .into_iter()
-        .map(|(name, _)| name)
-        .collect()
-}
-
 // Returns all removable physical device paths
 fn list_removable_devices() -> Vec<String> {
     let mut devices = Vec::new();
@@ -439,8 +432,6 @@ fn get_drive_infos_internal() -> Vec<DriveInfo> {
             }),
     );
 
-    // println!("Portable Devices: {:#?}", list_portable_devices());
-
     // Unmounted volumes (no drive letter), e.g. Linux/ext partitions on USB
     drives.extend(list_unmounted_volumes().into_iter().filter_map(|raw| {
         let fs_name = volume_filesystem_name(&raw.device_path).unwrap_or_default();
@@ -498,10 +489,6 @@ unsafe fn wcslen(mut ptr: *const u16) -> usize {
         }
         len
     }
-}
-
-pub fn get_drives() -> Vec<String> {
-    get_drive_infos().into_iter().map(|d| d.display).collect()
 }
 
 pub fn parse_drive_display(display: &str) -> (String, PathBuf) {

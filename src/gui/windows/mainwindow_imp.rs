@@ -6,7 +6,9 @@ use crate::core::indexer::{
 };
 use crate::gui::MainWindow;
 use crate::gui::i18n::I18n;
-use crate::gui::theme::{ThemeMode, ThemePalette, get_default_palette, set_palette};
+use crate::gui::theme::{
+    ThemeMode, ThemePalette, apply_font_to_context, get_default_palette, set_palette,
+};
 use crate::gui::utils::{
     SortColumn, get_clipboard_files, is_clipboard_cut, set_clipboard_files,
     shell_delete_to_recycle_bin, show_copy_move_dialog, sort_files,
@@ -27,6 +29,7 @@ use crate::gui::windows::windowsoverrides::mark_clipboard_dirty;
 use crossbeam_channel::Receiver;
 use crossbeam_channel::{Sender, unbounded};
 use eframe::egui;
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
@@ -292,12 +295,7 @@ impl MainWindow {
                     should_focus: true,
                     validation_error_show: false,
                 });
-                // Select the new folder
-                self.explorer_state.selected_paths.clear();
-                self.explorer_state
-                    .selected_paths
-                    .insert(path_for_selection.clone());
-                self.explorer_state.newly_created_path = Some(path_for_selection.clone());
+                self.explorer_state.pending_selection_paths = Some(vec![path_for_selection]);
             }
         } else {
             // Don't create the folder, just start rename with invalid name so user can fix it
@@ -340,12 +338,7 @@ impl MainWindow {
                     should_focus: true,
                     validation_error_show: false,
                 });
-                // Select the new file
-                self.explorer_state.selected_paths.clear();
-                self.explorer_state
-                    .selected_paths
-                    .insert(path_for_selection.clone());
-                self.explorer_state.newly_created_path = Some(path_for_selection.clone());
+                self.explorer_state.pending_selection_paths = Some(vec![path_for_selection]);
             }
         } else {
             // Don't create the file, just start rename with invalid name so user can fix it
@@ -513,8 +506,8 @@ impl MainWindow {
                             file_op.PerformOperations().ok();
                         }
 
-                        // Set the renamed file path for auto-selection and scrolling
-                        self.explorer_state.newly_created_path = Some(target.clone());
+                        // Queue the renamed file for auto-selection after refresh
+                        self.explorer_state.pending_selection_paths = Some(vec![target.clone()]);
 
                         if self.tags_state.remap_path_prefix(path.as_path(), &target) {
                             self.persist_tags();
@@ -571,6 +564,7 @@ impl MainWindow {
 
         let is_cut = is_clipboard_cut();
         let target_dir = self.current_nav().current.clone();
+        let before_entries = Self::directory_child_paths(&target_dir);
 
         unsafe {
             let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
@@ -603,8 +597,47 @@ impl MainWindow {
             self.persist_tags();
         }
 
+        let pasted_paths = Self::selection_paths_after_paste(&target_dir, &before_entries, &paths);
+        if !pasted_paths.is_empty() {
+            self.explorer_state.pending_selection_paths = Some(pasted_paths);
+        }
+
         self.load_path();
         Ok(())
+    }
+
+    fn directory_child_paths(dir: &Path) -> HashSet<PathBuf> {
+        std::fs::read_dir(dir)
+            .map(|entries| {
+                entries
+                    .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn selection_paths_after_paste(
+        target_dir: &Path,
+        before_entries: &HashSet<PathBuf>,
+        sources: &[PathBuf],
+    ) -> Vec<PathBuf> {
+        let mut pasted_paths: Vec<PathBuf> = Self::directory_child_paths(target_dir)
+            .difference(before_entries)
+            .cloned()
+            .collect();
+
+        if pasted_paths.is_empty() {
+            for source in sources {
+                if let Some(name) = source.file_name() {
+                    let candidate = target_dir.join(name);
+                    if candidate.exists() {
+                        pasted_paths.push(candidate);
+                    }
+                }
+            }
+        }
+
+        pasted_paths
     }
 
     pub fn delete_path(&self, path: &PathBuf) {
@@ -1703,6 +1736,7 @@ pub fn handle_draw_customizetheme_window(
                     ThemeMode::Dark => theme_customizer.dark_palette.clone(),
                     ThemeMode::Light => theme_customizer.light_palette.clone(),
                 };
+                apply_font_to_context(ctx, &updated);
                 set_palette(mode, updated);
                 save_theme_settings(
                     &theme_customizer.light_palette,
@@ -1718,6 +1752,9 @@ pub fn handle_draw_customizetheme_window(
                 match mode {
                     ThemeMode::Dark => theme_customizer.dark_palette = default.clone(),
                     ThemeMode::Light => theme_customizer.light_palette = default.clone(),
+                }
+                if mode == current_mode {
+                    apply_font_to_context(ctx, &default);
                 }
                 set_palette(mode, default);
                 save_theme_settings(
@@ -1760,6 +1797,9 @@ pub fn handle_draw_customizetheme_window(
                                 ThemeMode::Light => {
                                     theme_customizer.light_palette = imported.clone()
                                 }
+                            }
+                            if mode == current_mode {
+                                apply_font_to_context(ctx, &imported);
                             }
                             set_palette(mode, imported);
                             save_theme_settings(
