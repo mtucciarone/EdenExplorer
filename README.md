@@ -304,11 +304,11 @@
 - [x] Added English, Indonesian, Japanese, and multi-Chinese language support
 - [x] Add folder tags and custom folder colors
 - [x] Add toggle for display hidden explorer objects
+- [x] Support changing the application font based on the system-installed fonts
 
 ### 🚀 Upcoming Beta Features
-- [ ] Support multi-column sorting
 - [ ] Collapse/Hide sections in the sidebar
-- [ ] Support changing the application font based on the system-installed fonts
+- [ ] Support multi-column sorting
 - [ ] Add a tags column in the Explorer view
 - [ ] Support network devices
 - [ ] Enhanced theme customization, such as custom layouts, mix/match UI elements, styles, etc
