@@ -116,6 +116,7 @@ impl Default for MainWindow {
             sort_column,
             sort_ascending,
             language,
+            date_style,
         ) = load_app_settings();
         let loaded_settings = AppSettings {
             folder_scanning_enabled,
@@ -125,6 +126,7 @@ impl Default for MainWindow {
             start_path: Some(start_path.clone()), // important
             pinned_tabs: pinned_tabs.clone(),
             time_format_24h,
+            date_style,
             sort_column,
             sort_ascending,
             language,
@@ -383,6 +385,7 @@ impl eframe::App for MainWindow {
                         self.settings_window.current_settings.sort_column,
                         self.settings_window.current_settings.sort_ascending,
                         &self.settings_window.current_settings.language,
+                        self.settings_window.current_settings.date_style,
                     );
 
                     self.last_window_size = Some(current_size);

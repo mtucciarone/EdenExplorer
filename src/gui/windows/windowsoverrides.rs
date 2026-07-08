@@ -111,6 +111,7 @@ fn save_manual_window_size(hwnd: HWND) {
             sort_column,
             sort_ascending,
             _language,
+            date_style,
         ) = load_app_settings();
         let window_size_mode = WindowSizeMode::Custom { width, height };
 
@@ -126,6 +127,7 @@ fn save_manual_window_size(hwnd: HWND) {
             sort_column,
             sort_ascending,
             &_language,
+            date_style,
         );
     }
 }

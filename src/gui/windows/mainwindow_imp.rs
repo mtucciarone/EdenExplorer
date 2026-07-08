@@ -190,6 +190,7 @@ impl MainWindow {
             self.settings_window.current_settings.sort_column,
             self.settings_window.current_settings.sort_ascending,
             &self.settings_window.current_settings.language,
+            self.settings_window.current_settings.date_style,
         );
     }
 
@@ -239,6 +240,7 @@ impl MainWindow {
         scan_dir_async(
             self.current_nav().current.clone(),
             tx,
+            self.settings_window.current_settings.date_style,
             self.settings_window.current_settings.time_format_24h,
         );
         self.rx = Some(rx);
@@ -768,6 +770,7 @@ impl MainWindow {
                         self.settings_window.current_settings.sort_column,
                         self.settings_window.current_settings.sort_ascending,
                         &self.settings_window.current_settings.language,
+                        self.settings_window.current_settings.date_style,
                     );
                 }
                 SettingsAction::ResetToDefaults => {
@@ -945,6 +948,7 @@ impl MainWindow {
                         _sort_column,
                         _sort_ascending,
                         _language,
+                        _date_style,
                     ) = load_app_settings();
                     self.tabs[0].nav = Navigation::new(start_path);
                     self.active_tab = 0;
@@ -989,6 +993,7 @@ impl MainWindow {
                     self.settings_window.current_settings.sort_column,
                     self.settings_window.current_settings.sort_ascending,
                     &self.settings_window.current_settings.language,
+                    self.settings_window.current_settings.date_style,
                 );
 
                 self.mark_tab_infos_dirty();
@@ -1119,6 +1124,7 @@ impl MainWindow {
                     self.settings_window.current_settings.sort_column,
                     self.settings_window.current_settings.sort_ascending,
                     &self.settings_window.current_settings.language,
+                    self.settings_window.current_settings.date_style,
                 );
             }
 

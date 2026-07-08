@@ -47,6 +47,7 @@ pub struct AppSettings {
     pub window_size_mode: WindowSizeMode,
     pub pinned_tabs: Vec<PathBuf>,
     pub time_format_24h: bool,
+    pub date_style: crate::core::fs::DateStyle,
     pub sort_column: SortColumn,
     pub sort_ascending: bool,
     pub language: String,
