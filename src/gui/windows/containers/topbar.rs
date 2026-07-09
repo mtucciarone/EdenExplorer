@@ -83,7 +83,7 @@ fn draw_hamburger_menu(
         let icon_rect = ui.min_rect();
         let popup_pos = Pos2::new(icon_rect.min.x, icon_rect.max.y);
 
-        egui::Area::new(egui::Id::new("topbar_hamburger_menu_area"))
+        let area_response = egui::Area::new(egui::Id::new("topbar_hamburger_menu_area"))
             .fixed_pos(popup_pos)
             .show(ui.ctx(), |ui| {
                 egui::containers::Frame::popup(ui.style()).show(ui, |ui| {
@@ -109,7 +109,12 @@ fn draw_hamburger_menu(
                         ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
                     }
                 });
-            });
+            })
+            .response;
+
+        if area_response.clicked_elsewhere() {
+            ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
+        }
     }
 }
 

@@ -17,15 +17,20 @@ pub fn draw_about_window(
 
     let mut should_close = false;
 
-    // 🌑 Dark background overlay (modal effect)
-    egui::Area::new(egui::Id::new("settings_modal_bg"))
+    // 🌑 Dark background overlay (modal effect); clicking it dismisses the window
+    let modal_bg_response = egui::Area::new(egui::Id::new("about_modal_bg"))
         .order(egui::Order::Middle)
         .interactable(true)
         .show(ctx, |ui| {
             let rect = ctx.content_rect();
             ui.painter()
                 .rect_filled(rect, 0.0, palette.modal_background_effect_color);
-        });
+        })
+        .response;
+
+    if modal_bg_response.clicked() {
+        should_close = true;
+    }
 
     egui::Window::new(format!("{} {}", &i18n.tr("about"), regular::INFO))
         .collapsible(false)
