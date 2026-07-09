@@ -43,17 +43,23 @@ pub fn draw_theme_customizer(
     }
 
     // 🌑 Dark background overlay (modal effect); clicking it dismisses the window
-    let modal_bg_response = egui::Area::new(egui::Id::new("theme_modal_bg"))
+    let modal_bg_clicked = egui::Area::new(egui::Id::new("theme_modal_bg"))
         .order(egui::Order::Middle)
         .interactable(true)
         .show(ctx, |ui| {
             let rect = ctx.content_rect();
             ui.painter()
                 .rect_filled(rect, 0.0, palette.modal_background_effect_color);
+            ui.interact(
+                rect,
+                ui.id().with("theme_modal_bg_click"),
+                egui::Sense::click(),
+            )
+            .clicked()
         })
-        .response;
+        .inner;
 
-    if modal_bg_response.clicked() {
+    if modal_bg_clicked {
         customizer.open = false;
     }
 
