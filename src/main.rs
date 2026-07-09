@@ -16,13 +16,17 @@ fn main() -> eframe::Result<()> {
 
     let icon = load_icon();
     let window_size_mode = load_windows_size_mode_on_start();
-    let window_size = match window_size_mode {
-        WindowSizeMode::FullScreen => egui::Vec2::new(1920.0, 1080.0),
-        WindowSizeMode::Custom { width, height } => egui::Vec2::new(width, height),
-    };
 
     let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) } as f32;
     let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) } as f32;
+
+    let window_size = match window_size_mode {
+        WindowSizeMode::FullScreen => egui::Vec2::new(screen_w, screen_h),
+        WindowSizeMode::Custom { width, height } => {
+            egui::Vec2::new(width.min(screen_w), height.min(screen_h))
+        }
+    };
+
     let pos_x = ((screen_w - window_size.x) * 0.5).max(0.0);
     let pos_y = ((screen_h - window_size.y) * 0.5).max(0.0);
 
@@ -32,7 +36,8 @@ fn main() -> eframe::Result<()> {
             .with_position(egui::pos2(pos_x, pos_y))
             .with_icon(icon)
             .with_title_shown(false)
-            .with_decorations(false),
+            .with_decorations(false)
+            .with_clamp_size_to_monitor_size(true),
         ..Default::default()
     };
 

@@ -329,6 +329,103 @@ pub fn draw_settings_window(
                         info_icon(ui, &i18n.tr("tooltip_settings_timeformat"), palette);
                     });
                     ui.add_space(8.0);
+                    // Window Size Section
+                    let mut window_size_changed = false;
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new(i18n.tr("settings_windowsize")).color(palette.text_normal),
+                        );
+                        info_icon(ui, &i18n.tr("tooltip_settings_windowsize"), palette);
+                    });
+                    ui.horizontal(|ui| {
+                        let is_fullscreen = matches!(
+                            settings.current_settings.window_size_mode,
+                            WindowSizeMode::FullScreen
+                        );
+
+                        egui::ComboBox::from_id_salt("window_size_mode_selector")
+                            .selected_text(if is_fullscreen {
+                                i18n.tr("settings_windowsize_fullscreen")
+                            } else {
+                                i18n.tr("settings_windowsize_custom")
+                            })
+                            .show_ui(ui, |ui| {
+                                if ui
+                                    .selectable_label(
+                                        !is_fullscreen,
+                                        i18n.tr("settings_windowsize_custom"),
+                                    )
+                                    .clicked()
+                                    && is_fullscreen
+                                {
+                                    settings.current_settings.window_size_mode =
+                                        WindowSizeMode::Custom {
+                                            width: 1200.0,
+                                            height: 800.0,
+                                        };
+                                    window_size_changed = true;
+                                }
+
+                                if ui
+                                    .selectable_label(
+                                        is_fullscreen,
+                                        i18n.tr("settings_windowsize_fullscreen"),
+                                    )
+                                    .clicked()
+                                    && !is_fullscreen
+                                {
+                                    settings.current_settings.window_size_mode =
+                                        WindowSizeMode::FullScreen;
+                                    window_size_changed = true;
+                                }
+                            });
+
+                        if ui
+                            .button(regular::ARROW_COUNTER_CLOCKWISE)
+                            .on_hover_text(i18n.tr("settings_windowsize_reset_hover"))
+                            .clicked()
+                        {
+                            settings.current_settings.window_size_mode = WindowSizeMode::default();
+                            window_size_changed = true;
+                        }
+                    });
+
+                    if let WindowSizeMode::Custom { width, height } =
+                        &mut settings.current_settings.window_size_mode
+                    {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(i18n.tr("settings_windowsize_width"))
+                                    .color(palette.text_normal),
+                            );
+                            window_size_changed |= ui
+                                .add(egui::DragValue::new(width).range(800.0..=4000.0).speed(1.0))
+                                .changed();
+
+                            ui.label(
+                                RichText::new(i18n.tr("settings_windowsize_height"))
+                                    .color(palette.text_normal),
+                            );
+                            window_size_changed |= ui
+                                .add(egui::DragValue::new(height).range(600.0..=3000.0).speed(1.0))
+                                .changed();
+                        });
+                    }
+
+                    if window_size_changed {
+                        action = Some(SettingsAction::ApplySettings);
+
+                        let target_size = match &settings.current_settings.window_size_mode {
+                            WindowSizeMode::FullScreen => ctx.input(|i| i.viewport().monitor_size),
+                            WindowSizeMode::Custom { width, height } => {
+                                Some(egui::vec2(*width, *height))
+                            }
+                        };
+                        if let Some(size) = target_size {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+                        }
+                    }
+                    ui.add_space(8.0);
                     // Context Menu Section
                     ui.heading(i18n.tr("settings_contextmenu"));
                     ui.add_space(8.0);
