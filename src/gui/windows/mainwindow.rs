@@ -54,6 +54,7 @@ pub struct MainWindow {
     pub(crate) hwnd: Option<HWND>,
     pub(crate) last_window_size: Option<(f32, f32)>,
     pub(crate) display_file_explorer: bool,
+    pub(crate) sidebar_collapsed: bool,
 
     // File Explorer Variables (per-tab/per-view state lives on TabState/TabView)
     pub(crate) tabs: Vec<TabState>,
@@ -168,6 +169,7 @@ impl Default for MainWindow {
                 Some("dark") | _ => ThemeMode::Dark,
             },
             display_file_explorer: true,
+            sidebar_collapsed: false,
             theme_dirty: true,
             window_override_set: false,
             dragdrop: None,
@@ -424,13 +426,19 @@ impl eframe::App for MainWindow {
                     egui::Layout::left_to_right(egui::Align::Min),
                     |ui| {
                         // --- Sidebar column ---
+                        let collapsed_width = 44.0;
                         let sidebar_width_min = 140.0;
-                        let sidebar_width_max = 280.0;
-                        let sidebar_width = self
-                            .sidebar_state
-                            .sidebar_default_width
-                            .max(sidebar_width_min)
-                            .min(sidebar_width_max);
+                        let explorer_min_width = 200.0;
+                        let sidebar_width_max =
+                            (avail.x - explorer_min_width).max(sidebar_width_min);
+                        let sidebar_width = if self.sidebar_collapsed {
+                            collapsed_width
+                        } else {
+                            self.sidebar_state
+                                .sidebar_default_width
+                                .max(sidebar_width_min)
+                                .min(sidebar_width_max)
+                        };
 
                         let sidebar_frame = egui::Frame::NONE
                             .stroke(egui::Stroke::new(1.0, palette.tab_border_default));
@@ -446,59 +454,61 @@ impl eframe::App for MainWindow {
                                         &self.i18n,
                                         self.theme == ThemeMode::Dark,
                                         self.display_file_explorer,
+                                        self.sidebar_collapsed,
                                         &palette,
                                     ));
                                 });
-                                sidebar_frame.show(ui, |ui| {
-                                    sidebar_action = Some(draw_sidebar(
-                                        ui,
-                                        &self.i18n,
-                                        &icon_cache,
-                                        &mut self.sidebar_state,
-                                        &palette,
-                                    ));
-                                });
+                                if !self.sidebar_collapsed {
+                                    sidebar_frame.show(ui, |ui| {
+                                        sidebar_action = Some(draw_sidebar(
+                                            ui,
+                                            &self.i18n,
+                                            &icon_cache,
+                                            &mut self.sidebar_state,
+                                            &palette,
+                                        ));
+                                    });
+                                }
                             },
                         );
 
-                        // --- Separator handle (drawn on top, no extra allocation) ---
-                        let separator_width = 6.0;
-                        let separator_rect = egui::Rect::from_min_size(
-                            egui::pos2(
-                                self.sidebar_state.sidebar_default_width - separator_width / 2.0,
-                                0.0,
-                            ),
-                            egui::vec2(separator_width, ui.available_height()),
-                        );
-
-                        let separator_response =
-                            ui.allocate_rect(separator_rect, egui::Sense::click_and_drag());
-
-                        if separator_response.hovered() || separator_response.dragged() {
-                            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
-
-                            let handle_height = 25.0;
-                            let handle_width = 6.0;
-                            let center_y = ui.available_height() / 2.0;
-
-                            let handle_rect = egui::Rect::from_center_size(
-                                egui::pos2(self.sidebar_state.sidebar_default_width, center_y), // exactly on sidebar right edge
-                                egui::vec2(handle_width, handle_height),
+                        // --- Separator handle (drawn on top, no extra allocation), only when expanded ---
+                        if !self.sidebar_collapsed {
+                            let separator_width = 6.0;
+                            let separator_rect = egui::Rect::from_min_size(
+                                egui::pos2(sidebar_width - separator_width / 2.0, 0.0),
+                                egui::vec2(separator_width, ui.available_height()),
                             );
 
-                            ui.painter().rect_filled(
-                                handle_rect,
-                                handle_width / 2.0,
-                                palette.button_seperator_handle_fill,
-                            );
-                        }
+                            let separator_response =
+                                ui.allocate_rect(separator_rect, egui::Sense::click_and_drag());
 
-                        if separator_response.dragged() {
-                            self.sidebar_state.sidebar_default_width =
-                                (self.sidebar_state.sidebar_default_width
-                                    + separator_response.drag_delta().x)
-                                    .max(sidebar_width_min)
-                                    .min(sidebar_width_max);
+                            if separator_response.hovered() || separator_response.dragged() {
+                                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+
+                                let handle_height = 25.0;
+                                let handle_width = 6.0;
+                                let center_y = ui.available_height() / 2.0;
+
+                                let handle_rect = egui::Rect::from_center_size(
+                                    egui::pos2(sidebar_width, center_y), // exactly on sidebar right edge
+                                    egui::vec2(handle_width, handle_height),
+                                );
+
+                                ui.painter().rect_filled(
+                                    handle_rect,
+                                    handle_width / 2.0,
+                                    palette.button_seperator_handle_fill,
+                                );
+                            }
+
+                            if separator_response.dragged() {
+                                self.sidebar_state.sidebar_default_width =
+                                    (self.sidebar_state.sidebar_default_width
+                                        + separator_response.drag_delta().x)
+                                        .max(sidebar_width_min)
+                                        .min(sidebar_width_max);
+                            }
                         }
 
                         // --- Explorer column ---

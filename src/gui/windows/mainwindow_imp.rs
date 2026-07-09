@@ -1275,6 +1275,9 @@ impl MainWindow {
                 }
                 self.tags_state.drag_state = None;
             }
+            if action.toggle_sidebar {
+                self.sidebar_collapsed = !self.sidebar_collapsed;
+            }
         }
     }
 
