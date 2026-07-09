@@ -18,8 +18,8 @@ use crate::gui::windows::containers::enums::{
     ItemViewerAction, ItemViewerContextAction, TabbarNavAction,
 };
 use crate::gui::windows::containers::structs::{
-    FavoriteItem, ItemViewerFolderSizeState, RenameState, SidebarAction, TabState, TabbarAction,
-    TabsAction, TopbarAction,
+    FavoriteItem, ItemViewerFolderSizeState, RenameState, SidebarAction, SplitSide, TabState,
+    TabView, TabbarAction, TabsAction, TopbarAction,
 };
 use crate::gui::windows::customizetheme::draw_theme_customizer;
 use crate::gui::windows::enums::{SettingsAction, ThemeCustomizerAction};
@@ -103,26 +103,24 @@ impl MainWindow {
     }
 
     pub fn current_nav(&self) -> &Navigation {
-        &self.tabs[self.active_tab].nav
+        &self.active_tab().view(self.focused_split).nav
     }
 
     pub fn current_nav_mut(&mut self) -> &mut Navigation {
-        &mut self.tabs[self.active_tab].nav
+        let side = self.focused_split;
+        &mut self.active_tab_mut().view_mut(side).nav
     }
 
     pub fn open_new_tab(&mut self, path: PathBuf) {
         let nav = Navigation::new(path);
         let id = self.next_tab_id;
         self.next_tab_id += 1;
-        self.tabs.push(TabState {
-            id,
-            nav,
-            breadcrumb_path_editing: false,
-            breadcrumb_path_buffer: String::new(),
-            breadcrumb_just_started_editing: false,
-            breadcrumb_path_error: false,
-            breadcrumb_path_error_animation_time: 0.0,
-        });
+        let (sort_column, sort_ascending) = {
+            let view = self.active_tab().view(self.focused_split);
+            (view.sort_column, view.sort_ascending)
+        };
+        self.tabs
+            .push(TabState::new(id, nav, sort_column, sort_ascending));
         self.active_tab = self.tabs.len() - 1;
         self.mark_tab_infos_dirty();
     }
@@ -155,18 +153,27 @@ impl MainWindow {
     }
 
     pub fn toggle_sort(&mut self, col: SortColumn) {
-        if self.sort_column == col {
-            self.sort_ascending = !self.sort_ascending;
-        } else {
-            self.sort_column = col;
-            self.sort_ascending = true;
-        }
+        let side = self.focused_split;
+        let (sort_column, sort_ascending) = {
+            let view = self.active_tab_mut().view_mut(side);
+            if view.sort_column == col {
+                view.sort_ascending = !view.sort_ascending;
+            } else {
+                view.sort_column = col;
+                view.sort_ascending = true;
+            }
+            (view.sort_column, view.sort_ascending)
+        };
 
-        // Update settings window with new sorting values
-        self.settings_window.current_settings.sort_column = self.sort_column;
-        self.settings_window.current_settings.sort_ascending = self.sort_ascending;
+        // Update settings window with new sorting values (the default new tabs start with)
+        self.settings_window.current_settings.sort_column = sort_column;
+        self.settings_window.current_settings.sort_ascending = sort_ascending;
 
-        sort_files(&mut self.files, self.sort_column, self.sort_ascending);
+        sort_files(
+            &mut self.active_tab_mut().view_mut(side).files,
+            sort_column,
+            sort_ascending,
+        );
 
         // Automatically save settings when sorting changes
         save_app_settings(
@@ -194,75 +201,94 @@ impl MainWindow {
     }
 
     pub fn load_path(&mut self) {
-        self.files.clear();
-        self.rx = None;
-        self.size_req_tx = None;
-        self.size_rx = None;
+        self.load_view(self.focused_split);
+    }
+
+    pub(crate) fn load_view(&mut self, side: SplitSide) {
+        let (sort_column, sort_ascending, current_path, is_root) = {
+            let view = self.active_tab().view(side);
+            (
+                view.sort_column,
+                view.sort_ascending,
+                view.nav.current.clone(),
+                view.nav.is_root(),
+            )
+        };
+
+        {
+            let view = self.active_tab_mut().view_mut(side);
+            view.files.clear();
+            view.rx = None;
+            view.size_req_tx = None;
+            view.size_rx = None;
+            view.pending_size_queue.clear();
+            view.pending_size_set.clear();
+            view.is_loading = false;
+            view.explorer_state.selected_paths.clear();
+            view.explorer_state.selection_anchor = None;
+            view.explorer_state.selection_focus = None;
+            view.item_viewer_filter_state.dirty = true;
+            view.item_viewer_filter_state.cached_indices.clear();
+        }
         self.folder_sizes.clear();
         self.file_size_text_cache.clear();
         self.folder_size_text_cache.clear();
         self.drive_size_text_cache.clear();
-        self.pending_size_queue.clear();
-        self.pending_size_set.clear();
-        self.explorer_state.selected_paths.clear();
-        self.explorer_state.selection_anchor = None;
-        self.explorer_state.selection_focus = None;
-        self.item_viewer_filter_state.dirty = true;
-        self.item_viewer_filter_state.cached_indices.clear();
-        self.is_loading = false;
 
-        if is_raw_physical_drive_path(&self.current_nav().current) {
-            self.explorer_state.non_ntfs_popup_path = Some(self.current_nav().current.clone());
+        if is_raw_physical_drive_path(&current_path) {
+            self.active_tab_mut()
+                .view_mut(side)
+                .explorer_state
+                .non_ntfs_popup_path = Some(current_path.clone());
             return;
         }
 
-        if self.current_nav().is_root() {
+        if is_root {
+            let view = self.active_tab_mut().view_mut(side);
             for d in get_drive_infos() {
                 let label = d.display;
                 let path = d.path;
                 if let (Some(total), Some(free)) = (d.total_space, d.free_space) {
-                    self.files.push(FileItem::with_drive_info(
+                    view.files.push(FileItem::with_drive_info(
                         label, path, true, false, None, None, None, total, free,
                     ));
                 } else {
-                    self.files
+                    view.files
                         .push(FileItem::new(label, path, true, false, None, None, None));
                 }
             }
 
-            sort_files(&mut self.files, self.sort_column, self.sort_ascending);
+            sort_files(&mut view.files, sort_column, sort_ascending);
             return;
         }
 
         // Async directory listing
         let (tx, rx) = unbounded();
         scan_dir_async(
-            self.current_nav().current.clone(),
+            current_path,
             tx,
             self.settings_window.current_settings.time_format_24h,
         );
-        self.rx = Some(rx);
-        self.is_loading = true;
-
-        // Setup folder size calculation channels only if folder scanning is enabled
-        if self
+        let folder_scanning_enabled = self
             .settings_window
             .current_settings
-            .folder_scanning_enabled
-        {
+            .folder_scanning_enabled;
+        let shutdown = Arc::clone(&self.shutdown);
+        let view = self.active_tab_mut().view_mut(side);
+        view.rx = Some(rx);
+        view.is_loading = true;
+
+        // Setup folder size calculation channels only if folder scanning is enabled
+        if folder_scanning_enabled {
             let (size_req_tx, size_req_rx) = unbounded::<PathBuf>();
             let (size_done_tx, size_done_rx) = unbounded::<(PathBuf, u64, bool)>();
-            self.size_req_tx = Some(size_req_tx);
-            self.size_rx = Some(size_done_rx);
+            view.size_req_tx = Some(size_req_tx);
+            view.size_rx = Some(size_done_rx);
 
             // Spawn a thread pool to handle folder size requests in parallel
             let num_threads = num_cpus::get().max(2); // use all available cores
-            self.size_threads = calculate_folder_sizes_parallel(
-                size_req_rx,
-                size_done_tx,
-                Arc::clone(&self.shutdown),
-                num_threads,
-            );
+            view.size_threads =
+                calculate_folder_sizes_parallel(size_req_rx, size_done_tx, shutdown, num_threads);
         }
     }
 
@@ -295,7 +321,11 @@ impl MainWindow {
                     should_focus: true,
                     validation_error_show: false,
                 });
-                self.explorer_state.pending_selection_paths = Some(vec![path_for_selection]);
+                let side = self.focused_split;
+                self.active_tab_mut()
+                    .view_mut(side)
+                    .explorer_state
+                    .pending_selection_paths = Some(vec![path_for_selection]);
             }
         } else {
             // Don't create the folder, just start rename with invalid name so user can fix it
@@ -338,7 +368,11 @@ impl MainWindow {
                     should_focus: true,
                     validation_error_show: false,
                 });
-                self.explorer_state.pending_selection_paths = Some(vec![path_for_selection]);
+                let side = self.focused_split;
+                self.active_tab_mut()
+                    .view_mut(side)
+                    .explorer_state
+                    .pending_selection_paths = Some(vec![path_for_selection]);
             }
         } else {
             // Don't create the file, just start rename with invalid name so user can fix it
@@ -424,8 +458,10 @@ impl MainWindow {
                 let _ = set_clipboard_files(&paths, true);
                 mark_clipboard_dirty();
                 if let Some(first) = paths.first() {
-                    self.explorer_state.selected_paths.clear();
-                    self.explorer_state.selected_paths.insert(first.clone());
+                    let side = self.focused_split;
+                    let explorer_state = &mut self.active_tab_mut().view_mut(side).explorer_state;
+                    explorer_state.selected_paths.clear();
+                    explorer_state.selected_paths.insert(first.clone());
                 }
             }
             ItemViewerContextAction::Copy(paths) => {
@@ -507,7 +543,11 @@ impl MainWindow {
                         }
 
                         // Queue the renamed file for auto-selection after refresh
-                        self.explorer_state.pending_selection_paths = Some(vec![target.clone()]);
+                        let side = self.focused_split;
+                        self.active_tab_mut()
+                            .view_mut(side)
+                            .explorer_state
+                            .pending_selection_paths = Some(vec![target.clone()]);
 
                         if self.tags_state.remap_path_prefix(path.as_path(), &target) {
                             self.persist_tags();
@@ -599,7 +639,11 @@ impl MainWindow {
 
         let pasted_paths = Self::selection_paths_after_paste(&target_dir, &before_entries, &paths);
         if !pasted_paths.is_empty() {
-            self.explorer_state.pending_selection_paths = Some(pasted_paths);
+            let side = self.focused_split;
+            self.active_tab_mut()
+                .view_mut(side)
+                .explorer_state
+                .pending_selection_paths = Some(pasted_paths);
         }
 
         self.load_path();
@@ -719,22 +763,30 @@ impl MainWindow {
         // Signal all background threads to shutdown
         self.shutdown.store(true, Ordering::Relaxed);
 
-        // Close channels to wake up waiting threads
-        drop(self.size_req_tx.take());
-        drop(self.size_rx.take());
-        drop(self.rx.take());
+        for tab in &mut self.tabs {
+            let views: Vec<&mut TabView> = std::iter::once(&mut tab.primary_view)
+                .chain(tab.split_view.iter_mut())
+                .collect();
+            for view in views {
+                // Close channels to wake up waiting threads
+                drop(view.size_req_tx.take());
+                drop(view.size_rx.take());
+                drop(view.rx.take());
 
-        // Wait for all size calculation threads to finish
-        for handle in self.size_threads.drain(..) {
-            let _ = handle.join();
+                // Wait for all size calculation threads to finish
+                for handle in view.size_threads.drain(..) {
+                    let _ = handle.join();
+                }
+
+                // Clear caches and collections
+                view.files.clear();
+                view.pending_size_queue.clear();
+                view.pending_size_set.clear();
+                view.explorer_state.selected_paths.clear();
+            }
         }
 
-        // Clear caches and collections
         self.folder_sizes.clear();
-        self.files.clear();
-        self.explorer_state.selected_paths.clear();
-        self.pending_size_queue.clear();
-        self.pending_size_set.clear();
         self.file_type_cache.clear();
 
         // Drop icon cache
@@ -796,9 +848,13 @@ impl MainWindow {
                 TabbarNavAction::Back => {
                     // Store current path in navigation history before going back
                     if let Some(parent) = self.current_nav().get_parent() {
-                        self.explorer_state
+                        let current = self.current_nav().current.clone();
+                        let side = self.focused_split;
+                        self.active_tab_mut()
+                            .view_mut(side)
+                            .explorer_state
                             .navigation_history
-                            .insert(parent, self.current_nav().current.clone());
+                            .insert(parent, current);
                     }
                     self.current_nav_mut().go_back();
                 }
@@ -806,9 +862,13 @@ impl MainWindow {
                 TabbarNavAction::Up => {
                     // Store current path in navigation history before going up
                     if let Some(parent) = self.current_nav().get_parent() {
-                        self.explorer_state
+                        let current = self.current_nav().current.clone();
+                        let side = self.focused_split;
+                        self.active_tab_mut()
+                            .view_mut(side)
+                            .explorer_state
                             .navigation_history
-                            .insert(parent, self.current_nav().current.clone());
+                            .insert(parent, current);
                     }
                     self.current_nav_mut().go_up();
                 }
@@ -819,24 +879,28 @@ impl MainWindow {
             // Restore selection for Back and Up actions
             if matches!(action, TabbarNavAction::Back | TabbarNavAction::Up) {
                 let current_path = self.current_nav().current.clone();
-                if let Some(last_visited) =
-                    self.explorer_state.navigation_history.get(&current_path)
-                {
-                    self.explorer_state.navigation_selection = Some(last_visited.clone());
+                let side = self.focused_split;
+                let explorer_state = &mut self.active_tab_mut().view_mut(side).explorer_state;
+                if let Some(last_visited) = explorer_state.navigation_history.get(&current_path) {
+                    explorer_state.navigation_selection = Some(last_visited.clone());
                 } else {
-                    self.explorer_state.navigation_selection = None;
+                    explorer_state.navigation_selection = None;
                 }
-                self.explorer_state.selection_anchor = None;
-                self.explorer_state.selected_paths.clear();
-                self.explorer_state.selection_focus = None;
+                explorer_state.selection_anchor = None;
+                explorer_state.selected_paths.clear();
+                explorer_state.selection_focus = None;
             }
         } else {
             if let Some(path) = tabbar_action.as_ref().and_then(|t| t.nav_to.as_ref()) {
                 // Store current path in navigation history before navigating
                 if let Some(parent) = self.current_nav().get_parent() {
-                    self.explorer_state
+                    let current = self.current_nav().current.clone();
+                    let side = self.focused_split;
+                    self.active_tab_mut()
+                        .view_mut(side)
+                        .explorer_state
                         .navigation_history
-                        .insert(parent, self.current_nav().current.clone());
+                        .insert(parent, current);
                 }
 
                 self.current_nav_mut().go_to(path.clone());
@@ -898,23 +962,33 @@ impl MainWindow {
         if let Some(action) = tabs_action {
             if let Some(id) = action.activate {
                 self.active_tab = self.tabs.iter().position(|t| t.id == id).unwrap();
+                self.focused_split = SplitSide::Primary;
+                let has_split = {
+                    let tab = self.active_tab_mut();
+                    tab.primary_view.item_viewer_filter_state.dirty = true;
+                    if let Some(split) = tab.split_view.as_mut() {
+                        split.item_viewer_filter_state.dirty = true;
+                    }
+                    tab.split_view.is_some()
+                };
                 self.pending_tab_scroll_id = Some(id);
-                self.load_path();
+                self.load_view(SplitSide::Primary);
+                if has_split {
+                    self.load_view(SplitSide::Secondary);
+                }
             }
             if action.open_new {
                 let cloned_nav = self.current_nav().clone();
+                let (sort_column, sort_ascending) = {
+                    let view = self.active_tab().view(self.focused_split);
+                    (view.sort_column, view.sort_ascending)
+                };
                 let id = self.next_tab_id;
                 self.next_tab_id += 1;
-                self.tabs.push(TabState {
-                    id,
-                    nav: cloned_nav,
-                    breadcrumb_path_editing: false,
-                    breadcrumb_path_buffer: String::new(),
-                    breadcrumb_just_started_editing: false,
-                    breadcrumb_path_error: false,
-                    breadcrumb_path_error_animation_time: 0.0,
-                });
+                self.tabs
+                    .push(TabState::new(id, cloned_nav, sort_column, sort_ascending));
                 self.active_tab = self.tabs.len() - 1;
+                self.focused_split = SplitSide::Primary;
                 self.pending_tab_scroll_id = Some(id);
                 self.mark_tab_infos_dirty();
                 self.load_path();
@@ -926,6 +1000,7 @@ impl MainWindow {
                         if self.active_tab >= self.tabs.len() {
                             self.active_tab = self.tabs.len() - 1;
                         }
+                        self.focused_split = SplitSide::Primary;
                         if let Some(active_id) = self.tabs.get(self.active_tab).map(|t| t.id) {
                             self.pending_tab_scroll_id = Some(active_id);
                         }
@@ -946,8 +1021,10 @@ impl MainWindow {
                         _sort_ascending,
                         _language,
                     ) = load_app_settings();
-                    self.tabs[0].nav = Navigation::new(start_path);
+                    self.tabs[0].primary_view.nav = Navigation::new(start_path);
+                    self.tabs[0].split_view = None;
                     self.active_tab = 0;
+                    self.focused_split = SplitSide::Primary;
                     self.mark_tab_infos_dirty();
                     self.load_path();
                 }
@@ -1001,6 +1078,42 @@ impl MainWindow {
         }
     }
 
+    /// Toggles the active tab's split view: creates a second view (duplicating
+    /// the primary view's directory+sort, with its own selection/filter/listing)
+    /// if none exists, or clears it if one does.
+    pub(crate) fn toggle_split_for_active_tab(&mut self) {
+        let has_split = self.active_tab().split_view.is_some();
+        if has_split {
+            self.active_tab_mut().split_view = None;
+            if self.focused_split == SplitSide::Secondary {
+                self.focused_split = SplitSide::Primary;
+            }
+        } else {
+            let tab = self.active_tab_mut();
+            tab.split_view = Some(tab.primary_view.duplicate_as_new());
+            tab.split_ratio = 0.5;
+            self.focused_split = SplitSide::Secondary;
+            self.load_view(SplitSide::Secondary);
+        }
+    }
+
+    /// Opens `path` as the active tab's split view, creating the split if none
+    /// exists yet, or replacing the current split target if one does.
+    pub(crate) fn open_path_in_split(&mut self, path: PathBuf) {
+        let (sort_column, sort_ascending) = {
+            let view = self.active_tab().view(SplitSide::Primary);
+            (view.sort_column, view.sort_ascending)
+        };
+        let new_view = TabView::new(Navigation::new(path), sort_column, sort_ascending);
+        let tab = self.active_tab_mut();
+        tab.split_view = Some(new_view);
+        if tab.split_ratio <= 0.0 {
+            tab.split_ratio = 0.5;
+        }
+        self.focused_split = SplitSide::Secondary;
+        self.load_view(SplitSide::Secondary);
+    }
+
     fn move_selected_paths_to_dir(&mut self, sources: &[PathBuf], target_dir: PathBuf) {
         if sources.is_empty() {
             return;
@@ -1035,9 +1148,13 @@ impl MainWindow {
             file_op.PerformOperations().ok();
         }
 
-        self.explorer_state.selected_paths.clear();
-        self.explorer_state.selection_anchor = None;
-        self.explorer_state.selection_focus = None;
+        {
+            let side = self.focused_split;
+            let explorer_state = &mut self.active_tab_mut().view_mut(side).explorer_state;
+            explorer_state.selected_paths.clear();
+            explorer_state.selection_anchor = None;
+            explorer_state.selection_focus = None;
+        }
         self.load_path();
     }
 
@@ -1066,9 +1183,13 @@ impl MainWindow {
             if let Some(path) = action.nav_to {
                 // Store current path in navigation history before navigating
                 if let Some(parent) = self.current_nav().get_parent() {
-                    self.explorer_state
+                    let current = self.current_nav().current.clone();
+                    let side = self.focused_split;
+                    self.active_tab_mut()
+                        .view_mut(side)
+                        .explorer_state
                         .navigation_history
-                        .insert(parent, self.current_nav().current.clone());
+                        .insert(parent, current);
                 }
 
                 self.current_nav_mut().go_to(path);
@@ -1143,9 +1264,15 @@ impl MainWindow {
             }
             if action.toggle_file_explorer {
                 self.display_file_explorer = !self.display_file_explorer;
-                self.drag_state.active = false;
-                self.drag_state.start_pos = None;
-                self.drag_state.source_items.clear();
+                let tab = self.active_tab_mut();
+                tab.primary_view.drag_state.active = false;
+                tab.primary_view.drag_state.start_pos = None;
+                tab.primary_view.drag_state.source_items.clear();
+                if let Some(split) = tab.split_view.as_mut() {
+                    split.drag_state.active = false;
+                    split.drag_state.start_pos = None;
+                    split.drag_state.source_items.clear();
+                }
                 self.tags_state.drag_state = None;
             }
         }
@@ -1153,58 +1280,111 @@ impl MainWindow {
 
     pub fn handle_throttle_size_requests(&mut self, ctx: &egui::Context) {
         // Throttle size requests to keep UI responsive
-        if let Some(size_req_tx) = &self.size_req_tx {
-            let should_pause =
-                ctx.input(|i| i.pointer.any_down() || i.smooth_scroll_delta.y.abs() > 0.0);
-            if !should_pause {
-                for _ in 0..6 {
-                    if let Some(path) = self.pending_size_queue.pop_front() {
-                        let _ = size_req_tx.send(path);
-                    } else {
-                        break;
-                    }
+        let should_pause =
+            ctx.input(|i| i.pointer.any_down() || i.smooth_scroll_delta.y.abs() > 0.0);
+        if should_pause {
+            return;
+        }
+        self.handle_throttle_size_requests_for(SplitSide::Primary);
+        if self.active_tab().split_view.is_some() {
+            self.handle_throttle_size_requests_for(SplitSide::Secondary);
+        }
+    }
+
+    fn handle_throttle_size_requests_for(&mut self, side: SplitSide) {
+        let view = self.active_tab_mut().view_mut(side);
+        if view.size_req_tx.is_none() {
+            return;
+        }
+        for _ in 0..6 {
+            match view.pending_size_queue.pop_front() {
+                Some(path) => {
+                    let _ = view.size_req_tx.as_ref().unwrap().send(path);
                 }
+                None => break,
             }
         }
     }
 
     pub fn handle_directory_size_updates(&mut self, ctx: &egui::Context) {
-        // Folder size updates
-        if let Some(size_rx) = &self.size_rx {
-            let mut updated = false;
-
-            for _ in 0..128 {
-                match size_rx.try_recv() {
-                    Ok((path, size, done)) => {
-                        if done {
-                            self.pending_size_set.remove(&path);
-                        }
-                        self.folder_sizes.insert(
-                            path.clone(),
-                            ItemViewerFolderSizeState { bytes: size, done },
-                        );
-                        if let Some(item) = self.files.iter_mut().find(|f| f.path == path) {
-                            item.file_size = Some(size);
-                            updated = true;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-
-            if updated {
-                sort_files(&mut self.files, self.sort_column, self.sort_ascending);
-                ctx.request_repaint();
-            }
+        let mut any_updated = self.handle_directory_size_updates_for(SplitSide::Primary);
+        if self.active_tab().split_view.is_some() {
+            any_updated |= self.handle_directory_size_updates_for(SplitSide::Secondary);
+        }
+        if any_updated {
+            ctx.request_repaint();
         }
     }
 
-    pub fn handle_directory_batch_recieve(&mut self, ctx: &egui::Context) {
-        // Batch receive
-        if let Some(rx) = &self.rx {
-            let mut batch = Vec::with_capacity(128);
-            let mut disconnected = false;
+    fn handle_directory_size_updates_for(&mut self, side: SplitSide) -> bool {
+        if self.active_tab().view(side).size_rx.is_none() {
+            return false;
+        }
 
+        let mut updated = false;
+        for _ in 0..128 {
+            let received = self
+                .active_tab()
+                .view(side)
+                .size_rx
+                .as_ref()
+                .unwrap()
+                .try_recv();
+            match received {
+                Ok((path, size, done)) => {
+                    if done {
+                        self.active_tab_mut()
+                            .view_mut(side)
+                            .pending_size_set
+                            .remove(&path);
+                    }
+                    self.folder_sizes.insert(
+                        path.clone(),
+                        ItemViewerFolderSizeState { bytes: size, done },
+                    );
+                    let view = self.active_tab_mut().view_mut(side);
+                    if let Some(item) = view.files.iter_mut().find(|f| f.path == path) {
+                        item.file_size = Some(size);
+                        updated = true;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+
+        if updated {
+            let (sort_column, sort_ascending) = {
+                let view = self.active_tab().view(side);
+                (view.sort_column, view.sort_ascending)
+            };
+            let view = self.active_tab_mut().view_mut(side);
+            sort_files(&mut view.files, sort_column, sort_ascending);
+        }
+        updated
+    }
+
+    pub fn handle_directory_batch_recieve(&mut self, ctx: &egui::Context) {
+        let mut any_updated = self.handle_directory_batch_recieve_for(SplitSide::Primary);
+        if self.active_tab().split_view.is_some() {
+            any_updated |= self.handle_directory_batch_recieve_for(SplitSide::Secondary);
+        }
+        if any_updated {
+            ctx.request_repaint();
+        }
+    }
+
+    fn handle_directory_batch_recieve_for(&mut self, side: SplitSide) -> bool {
+        if self.active_tab().view(side).rx.is_none() {
+            return false;
+        }
+
+        let mut any_change = false;
+        let mut batch = Vec::with_capacity(128);
+        let mut disconnected = false;
+
+        {
+            let view = self.active_tab().view(side);
+            let rx = view.rx.as_ref().unwrap();
             for _ in 0..128 {
                 match rx.try_recv() {
                     Ok(item) => batch.push(item),
@@ -1215,40 +1395,47 @@ impl MainWindow {
                     }
                 }
             }
+        }
 
-            if !batch.is_empty() {
-                for item in batch.iter() {
-                    if item.is_dir {
-                        // Only set up folder size tracking if scanning is enabled
-                        if self
-                            .settings_window
-                            .current_settings
-                            .folder_scanning_enabled
-                        {
-                            self.folder_sizes.entry(item.path.clone()).or_insert(
-                                ItemViewerFolderSizeState {
-                                    bytes: 0,
-                                    done: false,
-                                },
-                            );
-                            if self.pending_size_set.insert(item.path.clone()) {
-                                self.pending_size_queue.push_back(item.path.clone());
-                            }
-                        }
+        if !batch.is_empty() {
+            let folder_scanning_enabled = self
+                .settings_window
+                .current_settings
+                .folder_scanning_enabled;
+            for item in batch.iter() {
+                if item.is_dir && folder_scanning_enabled {
+                    // Only set up folder size tracking if scanning is enabled
+                    self.folder_sizes.entry(item.path.clone()).or_insert(
+                        ItemViewerFolderSizeState {
+                            bytes: 0,
+                            done: false,
+                        },
+                    );
+                    let view = self.active_tab_mut().view_mut(side);
+                    if view.pending_size_set.insert(item.path.clone()) {
+                        view.pending_size_queue.push_back(item.path.clone());
                     }
                 }
-
-                self.files.extend(batch);
-                sort_files(&mut self.files, self.sort_column, self.sort_ascending);
-                ctx.request_repaint();
             }
 
-            if disconnected {
-                self.rx = None;
-                self.is_loading = false;
-                ctx.request_repaint();
-            }
+            let (sort_column, sort_ascending) = {
+                let view = self.active_tab().view(side);
+                (view.sort_column, view.sort_ascending)
+            };
+            let view = self.active_tab_mut().view_mut(side);
+            view.files.extend(batch);
+            sort_files(&mut view.files, sort_column, sort_ascending);
+            any_change = true;
         }
+
+        if disconnected {
+            let view = self.active_tab_mut().view_mut(side);
+            view.rx = None;
+            view.is_loading = false;
+            any_change = true;
+        }
+
+        any_change
     }
 }
 
@@ -1354,110 +1541,141 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
         match action {
             ItemViewerAction::Sort(col) => explorer.toggle_sort(col),
             ItemViewerAction::Select(path) => {
-                explorer.explorer_state.selected_paths.insert(path.clone());
+                let idx = {
+                    let view = explorer.active_tab().view(explorer.focused_split);
+                    view.item_viewer_filter_state
+                        .cached_indices
+                        .iter()
+                        .position(|&i| view.files[i].path == path)
+                        .or_else(|| view.files.iter().position(|f| f.path == path))
+                };
 
-                let idx = explorer
-                    .item_viewer_filter_state
-                    .cached_indices
-                    .iter()
-                    .position(|&i| explorer.files[i].path == path)
-                    .or_else(|| explorer.files.iter().position(|f| f.path == path));
-
+                let side = explorer.focused_split;
+                let view = explorer.active_tab_mut().view_mut(side);
+                view.explorer_state.selected_paths.insert(path.clone());
                 if let Some(idx) = idx {
-                    explorer.explorer_state.selection_anchor = Some(idx);
-                    explorer.explorer_state.selection_focus = Some(idx);
+                    view.explorer_state.selection_anchor = Some(idx);
+                    view.explorer_state.selection_focus = Some(idx);
                 }
             }
             ItemViewerAction::Deselect(path) => {
-                explorer.explorer_state.selected_paths.remove(&path);
+                let side = explorer.focused_split;
+                explorer
+                    .active_tab_mut()
+                    .view_mut(side)
+                    .explorer_state
+                    .selected_paths
+                    .remove(&path);
             }
             ItemViewerAction::SelectAll => {
-                explorer.explorer_state.selected_paths.clear();
-                for &idx in &explorer.item_viewer_filter_state.cached_indices {
-                    let file = &explorer.files[idx];
-                    explorer
-                        .explorer_state
-                        .selected_paths
-                        .insert(file.path.clone());
-                }
+                let selected: Vec<PathBuf> = {
+                    let view = explorer.active_tab().view(explorer.focused_split);
+                    view.item_viewer_filter_state
+                        .cached_indices
+                        .iter()
+                        .map(|&idx| view.files[idx].path.clone())
+                        .collect()
+                };
+                let side = explorer.focused_split;
+                let view = explorer.active_tab_mut().view_mut(side);
+                view.explorer_state.selected_paths.clear();
+                view.explorer_state.selected_paths.extend(selected);
             }
             ItemViewerAction::DeselectAll => {
-                explorer.explorer_state.selected_paths.clear();
+                let side = explorer.focused_split;
+                explorer
+                    .active_tab_mut()
+                    .view_mut(side)
+                    .explorer_state
+                    .selected_paths
+                    .clear();
             }
             ItemViewerAction::RangeSelect(paths) => {
-                // Clear current selection and add all range-selected files
-                explorer.explorer_state.selected_paths.clear();
-                for path in &paths {
-                    explorer.explorer_state.selected_paths.insert(path.clone());
-                }
-
                 // Set selection_focus to the edge of the range that is farthest from the anchor
-                if let Some(anchor_idx) = explorer.explorer_state.selection_anchor {
-                    if let (Some(first_path), Some(last_path)) = (paths.first(), paths.last()) {
-                        // Check if we're in a filtered view
-                        let is_filtered = (explorer.item_viewer_filter_state.active
-                            && !explorer.item_viewer_filter_state.query.is_empty())
-                            || explorer.item_viewer_filter_state.cached_indices.len()
-                                != explorer.files.len();
+                let new_focus = {
+                    let view = explorer.active_tab().view(explorer.focused_split);
+                    if let Some(anchor_idx) = view.explorer_state.selection_anchor {
+                        if let (Some(first_path), Some(last_path)) = (paths.first(), paths.last())
+                        {
+                            // Check if we're in a filtered view
+                            let is_filtered = (view.item_viewer_filter_state.active
+                                && !view.item_viewer_filter_state.query.is_empty())
+                                || view.item_viewer_filter_state.cached_indices.len()
+                                    != view.files.len();
 
-                        if is_filtered {
-                            // Use filtered indices
-                            let first_idx = explorer
-                                .item_viewer_filter_state
-                                .cached_indices
-                                .iter()
-                                .position(|&i| &explorer.files[i].path == first_path)
-                                .unwrap_or(anchor_idx);
-                            let last_idx = explorer
-                                .item_viewer_filter_state
-                                .cached_indices
-                                .iter()
-                                .position(|&i| &explorer.files[i].path == last_path)
-                                .unwrap_or(anchor_idx);
+                            let (first_idx, last_idx) = if is_filtered {
+                                // Use filtered indices
+                                (
+                                    view.item_viewer_filter_state
+                                        .cached_indices
+                                        .iter()
+                                        .position(|&i| &view.files[i].path == first_path)
+                                        .unwrap_or(anchor_idx),
+                                    view.item_viewer_filter_state
+                                        .cached_indices
+                                        .iter()
+                                        .position(|&i| &view.files[i].path == last_path)
+                                        .unwrap_or(anchor_idx),
+                                )
+                            } else {
+                                // Use original file indices (unfiltered view)
+                                (
+                                    view.files
+                                        .iter()
+                                        .position(|f| &f.path == first_path)
+                                        .unwrap_or(anchor_idx),
+                                    view.files
+                                        .iter()
+                                        .position(|f| &f.path == last_path)
+                                        .unwrap_or(anchor_idx),
+                                )
+                            };
 
                             // If moving down, focus the last item; if moving up, focus the first item
-                            explorer.explorer_state.selection_focus =
-                                Some(if anchor_idx <= first_idx {
-                                    last_idx // moved down
-                                } else {
-                                    first_idx // moved up
-                                });
+                            Some(if anchor_idx <= first_idx {
+                                last_idx // moved down
+                            } else {
+                                first_idx // moved up
+                            })
                         } else {
-                            // Use original file indices (unfiltered view)
-                            let first_idx = explorer
-                                .files
-                                .iter()
-                                .position(|f| &f.path == first_path)
-                                .unwrap_or(anchor_idx);
-                            let last_idx = explorer
-                                .files
-                                .iter()
-                                .position(|f| &f.path == last_path)
-                                .unwrap_or(anchor_idx);
-
-                            // If moving down, focus the last item; if moving up, focus the first item
-                            explorer.explorer_state.selection_focus =
-                                Some(if anchor_idx <= first_idx {
-                                    last_idx // moved down
-                                } else {
-                                    first_idx // moved up
-                                });
+                            None
                         }
+                    } else {
+                        None
                     }
+                };
+
+                // Clear current selection and add all range-selected files
+                let side = explorer.focused_split;
+                let view = explorer.active_tab_mut().view_mut(side);
+                view.explorer_state.selected_paths.clear();
+                for path in &paths {
+                    view.explorer_state.selected_paths.insert(path.clone());
+                }
+                if let Some(focus) = new_focus {
+                    view.explorer_state.selection_focus = Some(focus);
                 }
             }
             ItemViewerAction::Open(path) => {
-                explorer.explorer_state.selected_paths.clear();
-                explorer.explorer_state.selected_paths.insert(path.clone());
-                explorer.item_viewer_filter_state.dirty = true;
-                explorer.item_viewer_filter_state.cached_indices.clear();
+                {
+                    let side = explorer.focused_split;
+                    let view = explorer.active_tab_mut().view_mut(side);
+                    view.explorer_state.selected_paths.clear();
+                    view.explorer_state.selected_paths.insert(path.clone());
+                    view.item_viewer_filter_state.dirty = true;
+                    view.item_viewer_filter_state.cached_indices.clear();
+                }
 
                 // Store current path in navigation history before navigating
                 if let Some(parent) = explorer.current_nav().get_parent() {
+                    let current = explorer.current_nav().current.clone();
+                    let side = explorer.focused_split;
                     explorer
+                        .active_tab_mut()
+                        .view_mut(side)
                         .explorer_state
                         .navigation_history
-                        .insert(parent, explorer.current_nav().current.clone());
+                        .insert(parent, current);
                 }
 
                 explorer.current_nav_mut().go_to(path);
@@ -1492,6 +1710,9 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 explorer.open_new_tab(path);
                 explorer.load_path();
             }
+            ItemViewerAction::OpenInSplitView(path) => {
+                explorer.open_path_in_split(path);
+            }
             ItemViewerAction::Context(action) => {
                 explorer.handle_context_action(action);
             }
@@ -1508,28 +1729,31 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 });
             }
             ItemViewerAction::ReplaceSelection(path) => {
-                explorer.explorer_state.selected_paths.clear();
-                explorer.explorer_state.selected_paths.insert(path.clone());
+                let idx = {
+                    let view = explorer.active_tab().view(explorer.focused_split);
+                    // Check if we're in a filtered view
+                    let is_filtered = view.item_viewer_filter_state.active
+                        && !view.item_viewer_filter_state.query.is_empty();
 
-                // Check if we're in a filtered view
-                let is_filtered = explorer.item_viewer_filter_state.active
-                    && !explorer.item_viewer_filter_state.query.is_empty();
-
-                let idx = if is_filtered {
-                    // Use filtered indices
-                    explorer
-                        .item_viewer_filter_state
-                        .cached_indices
-                        .iter()
-                        .position(|&i| explorer.files[i].path == path)
-                } else {
-                    // Use original file indices (unfiltered view)
-                    explorer.files.iter().position(|f| f.path == path)
+                    if is_filtered {
+                        // Use filtered indices
+                        view.item_viewer_filter_state
+                            .cached_indices
+                            .iter()
+                            .position(|&i| view.files[i].path == path)
+                    } else {
+                        // Use original file indices (unfiltered view)
+                        view.files.iter().position(|f| f.path == path)
+                    }
                 };
 
+                let side = explorer.focused_split;
+                let view = explorer.active_tab_mut().view_mut(side);
+                view.explorer_state.selected_paths.clear();
+                view.explorer_state.selected_paths.insert(path.clone());
                 if let Some(idx) = idx {
-                    explorer.explorer_state.selection_anchor = Some(idx);
-                    explorer.explorer_state.selection_focus = Some(idx);
+                    view.explorer_state.selection_anchor = Some(idx);
+                    view.explorer_state.selection_focus = Some(idx);
                 }
             }
             ItemViewerAction::FilesDropped(dropped_files) => {
@@ -1554,10 +1778,14 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             ItemViewerAction::BackNavigation => {
                 // Store current path in navigation history before going back
                 if let Some(parent) = explorer.current_nav().get_parent() {
+                    let current = explorer.current_nav().current.clone();
+                    let side = explorer.focused_split;
                     explorer
+                        .active_tab_mut()
+                        .view_mut(side)
                         .explorer_state
                         .navigation_history
-                        .insert(parent, explorer.current_nav().current.clone());
+                        .insert(parent, current);
                 }
 
                 explorer.current_nav_mut().go_back();
@@ -1566,18 +1794,17 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
 
                 // Restore selection: select the folder we just came from
                 let current_path = explorer.current_nav().current.clone();
-                if let Some(last_visited) = explorer
-                    .explorer_state
-                    .navigation_history
-                    .get(&current_path)
-                {
-                    explorer.explorer_state.navigation_selection = Some(last_visited.clone());
+                let side = explorer.focused_split;
+                let view = explorer.active_tab_mut().view_mut(side);
+                let last_visited = view.explorer_state.navigation_history.get(&current_path).cloned();
+                if let Some(last_visited) = last_visited {
+                    view.explorer_state.navigation_selection = Some(last_visited);
                 } else {
-                    explorer.explorer_state.navigation_selection = None;
+                    view.explorer_state.navigation_selection = None;
                 }
-                explorer.explorer_state.selection_anchor = None;
-                explorer.explorer_state.selected_paths.clear();
-                explorer.explorer_state.selection_focus = None;
+                view.explorer_state.selection_anchor = None;
+                view.explorer_state.selected_paths.clear();
+                view.explorer_state.selection_focus = None;
             }
             ItemViewerAction::MoveItems {
                 sources,
@@ -1620,9 +1847,13 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     explorer.persist_tags();
                 }
 
-                explorer.explorer_state.selected_paths.clear();
-                explorer.explorer_state.selection_anchor = None;
-                explorer.explorer_state.selection_focus = None;
+                {
+                    let side = explorer.focused_split;
+                    let view = explorer.active_tab_mut().view_mut(side);
+                    view.explorer_state.selected_paths.clear();
+                    view.explorer_state.selection_anchor = None;
+                    view.explorer_state.selection_focus = None;
+                }
                 explorer.load_path();
             }
             ItemViewerAction::MoveFilesToBreadcrumbDirectory {
@@ -1666,9 +1897,13 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     explorer.persist_tags();
                 }
 
-                explorer.explorer_state.selected_paths.clear();
-                explorer.explorer_state.selection_anchor = None;
-                explorer.explorer_state.selection_focus = None;
+                {
+                    let side = explorer.focused_split;
+                    let view = explorer.active_tab_mut().view_mut(side);
+                    view.explorer_state.selected_paths.clear();
+                    view.explorer_state.selection_anchor = None;
+                    view.explorer_state.selection_focus = None;
+                }
                 explorer.load_path();
             }
             ItemViewerAction::MoveFilesToTabDirectory {
@@ -1712,9 +1947,13 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     explorer.persist_tags();
                 }
 
-                explorer.explorer_state.selected_paths.clear();
-                explorer.explorer_state.selection_anchor = None;
-                explorer.explorer_state.selection_focus = None;
+                {
+                    let side = explorer.focused_split;
+                    let view = explorer.active_tab_mut().view_mut(side);
+                    view.explorer_state.selected_paths.clear();
+                    view.explorer_state.selection_anchor = None;
+                    view.explorer_state.selection_focus = None;
+                }
                 explorer.load_path();
             }
         }

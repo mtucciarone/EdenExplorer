@@ -1,12 +1,15 @@
+use crate::core::fs::FileItem;
 use crate::core::indexer::TagsSnapshot;
 use crate::gui::utils::hsl_to_color32;
 use crate::gui::windows::containers::enums::{ItemViewerAction, TabbarNavAction};
 use crate::gui::windows::shell_context_menu::ShellContextMenu;
 use crate::gui::windows::structs::Navigation;
+use crossbeam_channel::{Receiver, Sender};
 use egui::Color32;
 use rand::Rng;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
 #[derive(Default)]
@@ -40,19 +43,114 @@ pub struct TabsAction {
     pub activate: Option<u64>,
     pub close: Option<u64>,
     pub open_new: bool,
+    pub toggle_split: bool,
     pub toggle_pin: Option<PathBuf>,
     pub move_files_to_tab_dir: Option<PathBuf>,
     pub move_files_to_tab_dir_rect: Option<egui::Rect>,
 }
 
-pub struct TabState {
-    pub id: u64,
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum SplitSide {
+    Primary,
+    Secondary,
+}
+
+/// One directory view: its own navigation, sort/selection/filter, listing, and
+/// async scan state. A tab always has a `primary_view`; if `split_view` is
+/// `Some`, the tab shows both side by side.
+pub struct TabView {
     pub nav: Navigation,
     pub breadcrumb_path_editing: bool,
     pub breadcrumb_path_buffer: String,
     pub breadcrumb_just_started_editing: bool,
     pub breadcrumb_path_error: bool,
     pub breadcrumb_path_error_animation_time: f64,
+    pub sort_column: crate::gui::utils::SortColumn,
+    pub sort_ascending: bool,
+    pub explorer_state: ExplorerState,
+    pub item_viewer_filter_state: FilterState,
+    pub files: Vec<FileItem>,
+    pub drag_state: DragState,
+    pub is_loading: bool,
+    pub rx: Option<Receiver<FileItem>>,
+    pub size_req_tx: Option<Sender<PathBuf>>,
+    pub size_rx: Option<Receiver<(PathBuf, u64, bool)>>,
+    pub pending_size_queue: VecDeque<PathBuf>,
+    pub pending_size_set: HashSet<PathBuf>,
+    pub size_threads: Vec<std::thread::JoinHandle<()>>,
+}
+
+impl TabView {
+    pub fn new(
+        nav: Navigation,
+        default_sort_column: crate::gui::utils::SortColumn,
+        default_sort_ascending: bool,
+    ) -> Self {
+        Self {
+            nav,
+            breadcrumb_path_editing: false,
+            breadcrumb_path_buffer: String::new(),
+            breadcrumb_just_started_editing: false,
+            breadcrumb_path_error: false,
+            breadcrumb_path_error_animation_time: 0.0,
+            sort_column: default_sort_column,
+            sort_ascending: default_sort_ascending,
+            explorer_state: ExplorerState::default(),
+            item_viewer_filter_state: FilterState::default(),
+            files: Vec::new(),
+            drag_state: DragState::default(),
+            is_loading: false,
+            rx: None,
+            size_req_tx: None,
+            size_rx: None,
+            pending_size_queue: VecDeque::new(),
+            pending_size_set: HashSet::new(),
+            size_threads: Vec::new(),
+        }
+    }
+
+    /// Used when opening a split: a fresh view pointed at the same directory
+    /// and sort as `self`, but with its own (empty) selection/filter/listing.
+    pub fn duplicate_as_new(&self) -> Self {
+        Self::new(self.nav.clone(), self.sort_column, self.sort_ascending)
+    }
+}
+
+pub struct TabState {
+    pub id: u64,
+    pub primary_view: TabView,
+    pub split_view: Option<TabView>,
+    pub split_ratio: f32,
+}
+
+impl TabState {
+    pub fn new(
+        id: u64,
+        nav: Navigation,
+        default_sort_column: crate::gui::utils::SortColumn,
+        default_sort_ascending: bool,
+    ) -> Self {
+        Self {
+            id,
+            primary_view: TabView::new(nav, default_sort_column, default_sort_ascending),
+            split_view: None,
+            split_ratio: 0.5,
+        }
+    }
+
+    pub fn view(&self, side: SplitSide) -> &TabView {
+        match side {
+            SplitSide::Primary => &self.primary_view,
+            SplitSide::Secondary => self.split_view.as_ref().unwrap_or(&self.primary_view),
+        }
+    }
+
+    pub fn view_mut(&mut self, side: SplitSide) -> &mut TabView {
+        match side {
+            SplitSide::Primary => &mut self.primary_view,
+            SplitSide::Secondary => self.split_view.as_mut().unwrap_or(&mut self.primary_view),
+        }
+    }
 }
 
 #[derive(Default)]

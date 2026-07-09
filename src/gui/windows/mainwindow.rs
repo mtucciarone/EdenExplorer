@@ -1,4 +1,3 @@
-use crate::core::fs::FileItem;
 use crate::core::indexer::{
     load_app_settings, load_favorites, load_tags, load_theme_settings, save_app_settings,
 };
@@ -8,14 +7,14 @@ use crate::gui::icons::IconCache;
 use crate::gui::theme::{
     ThemeMode, apply_font_to_context, apply_theme, get_default_palette, get_palette, set_palette,
 };
-use crate::gui::utils::SortColumn;
 use crate::gui::windows::containers::enums::ItemViewerAction;
-use crate::gui::windows::containers::explorer::draw_explorer;
+use crate::gui::windows::containers::explorer::{draw_tab_content, update_tab_infos_cache};
 use crate::gui::windows::containers::sidebar::draw_sidebar;
 use crate::gui::windows::containers::structs::{
-    DragState, ExplorerState, FavoriteItem, FilterState, ItemViewerFolderSizeState, RenameState,
-    SidebarAction, TabInfo, TabState, TagsState,
+    FavoriteItem, ItemViewerFolderSizeState, RenameState, SidebarAction, SplitSide, TabInfo,
+    TabState, TabbarAction, TabsAction, TagsState,
 };
+use crate::gui::windows::containers::tabs::draw_tabs;
 use crate::gui::windows::containers::tags::{
     draw_delete_confirmation_popup, draw_tag_picker_popup, draw_tags,
 };
@@ -29,11 +28,9 @@ use crate::gui::windows::structs::{
 use crate::gui::windows::windowsoverrides::{
     apply_window_override, consume_clipboard_dirty, install_wndproc,
 };
-use crossbeam_channel::Receiver;
-use crossbeam_channel::Sender;
 use eframe::egui;
 use std::collections::HashMap;
-use std::collections::{HashSet, VecDeque};
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -54,47 +51,35 @@ pub struct MainWindow {
     pub(crate) external_drag_to_internal_hover: bool,
     pub(crate) dropped_files_pending_ui_refresh: bool,
     pub(crate) shutdown: Arc<AtomicBool>,
-    pub(crate) size_threads: Vec<std::thread::JoinHandle<()>>,
     pub(crate) hwnd: Option<HWND>,
     pub(crate) last_window_size: Option<(f32, f32)>,
     pub(crate) display_file_explorer: bool,
 
-    // File Explorer Variables
+    // File Explorer Variables (per-tab/per-view state lives on TabState/TabView)
     pub(crate) tabs: Vec<TabState>,
     pub(crate) active_tab: usize,
+    pub(crate) tab_infos_cache: Vec<TabInfo>,
+    pub(crate) tab_infos_dirty: bool,
+    pub(crate) pending_tab_scroll_id: Option<u64>,
+    pub(crate) focused_split: SplitSide,
     pub(crate) next_tab_id: u64,
-    pub(crate) files: Vec<FileItem>,
     pub(crate) folder_sizes: HashMap<PathBuf, ItemViewerFolderSizeState>,
     pub(crate) rename_state: Option<RenameState>,
-    pub(crate) sort_column: SortColumn,
-    pub(crate) drag_state: DragState,
     pub(crate) dragdrop: Option<Box<dyn DragDropBackend>>,
-    pub(crate) sort_ascending: bool,
     pub(crate) file_type_cache: HashMap<String, String>,
-    pub(crate) explorer_state: ExplorerState,
     pub(crate) tags_state: TagsState,
-    pub(crate) item_viewer_filter_state: FilterState,
     pub(crate) clipboard_paths: Vec<PathBuf>,
     pub(crate) clipboard_set: HashSet<PathBuf>,
     pub(crate) clipboard_is_cut: bool,
     pub(crate) clipboard_has_files: bool,
-    pub(crate) tab_infos_cache: Vec<TabInfo>,
-    pub(crate) tab_infos_dirty: bool,
     pub(crate) file_size_text_cache: HashMap<PathBuf, (u64, String)>,
     pub(crate) folder_size_text_cache: HashMap<PathBuf, (u64, bool, String)>,
     pub(crate) drive_size_text_cache: HashMap<PathBuf, (u64, u64, String)>,
-    pub(crate) is_loading: bool,
-    pub(crate) pending_tab_scroll_id: Option<u64>,
 
     // Sidebar Variables
     pub(crate) sidebar_state: SidebarState,
 
     // Misc. Variables
-    pub(crate) rx: Option<Receiver<FileItem>>,
-    pub(crate) size_req_tx: Option<Sender<PathBuf>>,
-    pub(crate) size_rx: Option<Receiver<(PathBuf, u64, bool)>>,
-    pub(crate) pending_size_queue: VecDeque<PathBuf>,
-    pub(crate) pending_size_set: HashSet<PathBuf>,
     pub(crate) icon_cache: Option<IconCache>,
 
     // i18n
@@ -146,27 +131,21 @@ impl Default for MainWindow {
         let mut next_tab_id = 1;
 
         if pinned_tabs.is_empty() {
-            tabs.push(TabState {
-                id: next_tab_id,
-                nav: Navigation::new(start_path),
-                breadcrumb_path_editing: false,
-                breadcrumb_path_buffer: String::new(),
-                breadcrumb_just_started_editing: false,
-                breadcrumb_path_error: false,
-                breadcrumb_path_error_animation_time: 0.0,
-            });
+            tabs.push(TabState::new(
+                next_tab_id,
+                Navigation::new(start_path),
+                loaded_settings.sort_column,
+                loaded_settings.sort_ascending,
+            ));
             next_tab_id += 1;
         } else {
             for path in &pinned_tabs {
-                tabs.push(TabState {
-                    id: next_tab_id,
-                    nav: Navigation::new(path.clone()),
-                    breadcrumb_path_editing: false,
-                    breadcrumb_path_buffer: String::new(),
-                    breadcrumb_just_started_editing: false,
-                    breadcrumb_path_error: false,
-                    breadcrumb_path_error_animation_time: 0.0,
-                });
+                tabs.push(TabState::new(
+                    next_tab_id,
+                    Navigation::new(path.clone()),
+                    loaded_settings.sort_column,
+                    loaded_settings.sort_ascending,
+                ));
                 next_tab_id += 1;
             }
         }
@@ -174,18 +153,16 @@ impl Default for MainWindow {
         let mut app = Self {
             tabs,
             active_tab: 0,
+            tab_infos_cache: Vec::new(),
+            tab_infos_dirty: true,
+            pending_tab_scroll_id: None,
+            focused_split: SplitSide::Primary,
             next_tab_id,
-            files: vec![],
-            rx: None,
-            size_req_tx: None,
-            size_rx: None,
             folder_sizes: HashMap::new(),
 
             sidebar_state: SidebarState::default(),
 
             rename_state: None,
-            pending_size_queue: VecDeque::new(),
-            pending_size_set: HashSet::new(),
             theme: match saved_theme.as_deref() {
                 Some("light") => ThemeMode::Light,
                 Some("dark") | _ => ThemeMode::Dark,
@@ -193,14 +170,10 @@ impl Default for MainWindow {
             display_file_explorer: true,
             theme_dirty: true,
             window_override_set: false,
-            drag_state: DragState::default(),
             dragdrop: None,
-            sort_column: loaded_settings.sort_column,
-            sort_ascending: loaded_settings.sort_ascending,
             icon_cache: None,
 
             file_type_cache: HashMap::new(),
-            explorer_state: Default::default(),
             tags_state: load_tags()
                 .map(TagsState::from_snapshot)
                 .unwrap_or_default(),
@@ -211,22 +184,16 @@ impl Default for MainWindow {
             external_drag_to_internal_hover: false, // Whether external drag is hovering over the item viewer
             dropped_files_pending_ui_refresh: false,
             shutdown: Arc::new(AtomicBool::new(false)),
-            size_threads: Vec::new(),
 
             hwnd: None,
             last_window_size: None,
-            item_viewer_filter_state: FilterState::default(),
             clipboard_paths: Vec::new(),
             clipboard_set: HashSet::new(),
             clipboard_is_cut: false,
             clipboard_has_files: false,
-            tab_infos_cache: Vec::new(),
-            tab_infos_dirty: true,
             file_size_text_cache: HashMap::new(),
             folder_size_text_cache: HashMap::new(),
             drive_size_text_cache: HashMap::new(),
-            is_loading: false,
-            pending_tab_scroll_id: None,
 
             i18n: I18n::new(default_locale),
         };
@@ -287,6 +254,14 @@ impl MainWindow {
     pub fn mark_tab_infos_dirty(&mut self) {
         self.tab_infos_dirty = true;
     }
+
+    pub fn active_tab(&self) -> &TabState {
+        &self.tabs[self.active_tab]
+    }
+
+    pub fn active_tab_mut(&mut self) -> &mut TabState {
+        &mut self.tabs[self.active_tab]
+    }
 }
 
 impl eframe::App for MainWindow {
@@ -329,7 +304,15 @@ impl eframe::App for MainWindow {
             .map(|backend| backend.is_inbound_drag_active())
             .unwrap_or(false);
         let drag_hover_target = dragdrop.and_then(|backend| backend.hovered_drop_target());
-        let drag_active = self.drag_state.active || native_drag_active;
+        let drag_active = {
+            let tab = self.active_tab();
+            tab.primary_view.drag_state.active
+                || tab
+                    .split_view
+                    .as_ref()
+                    .map(|v| v.drag_state.active)
+                    .unwrap_or(false)
+        } || native_drag_active;
         if let Some(backend) = dragdrop {
             backend.set_scale_factor(ctx.pixels_per_point());
         }
@@ -415,8 +398,13 @@ impl eframe::App for MainWindow {
         // Main layout: sidebar + tabs column
         let mut topbar_action = None;
         let mut sidebar_action: Option<SidebarAction> = None;
-        let mut tabs_action = None;
+        let mut tabs_action: Option<TabsAction> = None;
         let mut tabbar_action = None;
+        let mut secondary_tabbar_action: Option<TabbarAction> = None;
+        let mut secondary_pending_action: Option<ItemViewerAction> = None;
+        let mut primary_focus_click = false;
+        let mut secondary_focus_click = false;
+        let mut trigger_toggle_split = false;
         let mut tags_changed = false;
 
         let offset = egui::vec2(8.0, 8.0);
@@ -515,52 +503,368 @@ impl eframe::App for MainWindow {
 
                         // --- Explorer column ---
                         if self.display_file_explorer {
-                            let (next_tabs_action, next_tabbar_action, next_pending_action) =
-                                draw_explorer(
-                                    ui,
-                                    &self.i18n,
-                                    &icon_cache,
-                                    &palette,
-                                    self.hwnd,
-                                    &mut self.tabs,
-                                    self.active_tab,
-                                    &mut self.tab_infos_cache,
-                                    &mut self.tab_infos_dirty,
-                                    &mut self.pending_tab_scroll_id,
-                                    &self.sidebar_state,
-                                    &self.files,
-                                    &self.folder_sizes,
-                                    self.clipboard_has_files,
-                                    &self.clipboard_set,
-                                    self.clipboard_is_cut,
-                                    self.sort_column,
-                                    self.sort_ascending,
-                                    self.settings_window
-                                        .current_settings
-                                        .show_hidden_files_folders,
-                                    &mut self.rename_state,
-                                    &mut self.file_type_cache,
-                                    &mut self.file_size_text_cache,
-                                    &mut self.folder_size_text_cache,
-                                    &mut self.drive_size_text_cache,
-                                    &mut self.external_drag_to_internal_hover,
-                                    &mut self.drag_state,
-                                    drag_active,
-                                    native_inbound_drag_active,
-                                    drag_hover_target.clone(),
-                                    dragdrop,
-                                    &mut self.item_viewer_filter_state,
-                                    self.is_loading,
-                                    &mut self.explorer_state,
-                                    &mut self.tags_state,
-                                    &mut self.theme_customizer,
-                                    &mut self.settings_window,
-                                    &mut drop_targets,
-                                );
+                            update_tab_infos_cache(
+                                &self.tabs,
+                                &mut self.tab_infos_cache,
+                                &mut self.tab_infos_dirty,
+                                &self.settings_window,
+                            );
 
-                            tabs_action = Some(next_tabs_action);
-                            tabbar_action = next_tabbar_action;
-                            pending_action = next_pending_action;
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(ui.available_width(), ui.available_height()),
+                                egui::Layout::top_down(egui::Align::Min),
+                                |ui| {
+                                    let active_id = self.tabs[self.active_tab].id;
+                                    let has_split = self.tabs[self.active_tab].split_view.is_some();
+
+                                    egui::Frame::NONE.show(ui, |ui| {
+                                        ui.add_space(8.0);
+                                        let scroll_to_id = self.pending_tab_scroll_id;
+                                        tabs_action = Some(draw_tabs(
+                                            ui,
+                                            &self.i18n,
+                                            &self.tab_infos_cache,
+                                            active_id,
+                                            &palette,
+                                            self.hwnd,
+                                            scroll_to_id,
+                                            drag_active,
+                                            drag_hover_target.clone(),
+                                            has_split,
+                                        ));
+                                        if scroll_to_id.is_some() {
+                                            self.pending_tab_scroll_id = None;
+                                        }
+                                    });
+
+                                    let container = egui::Frame::NONE
+                                        .stroke(egui::Stroke::NONE)
+                                        .fill(egui::Color32::TRANSPARENT)
+                                        .inner_margin(egui::Margin::symmetric(10, 8));
+
+                                    container.show(ui, |ui| {
+                                        if has_split {
+                                            let explorer_avail_width = ui.available_width();
+                                            let explorer_avail_height = ui.available_height();
+                                            let split_ratio =
+                                                self.tabs[self.active_tab].split_ratio;
+                                            let primary_width = (explorer_avail_width
+                                                * split_ratio)
+                                                .clamp(
+                                                    explorer_avail_width * 0.2,
+                                                    explorer_avail_width * 0.8,
+                                                );
+                                            let primary_focused =
+                                                self.focused_split == SplitSide::Primary;
+                                            let secondary_focused = !primary_focused;
+
+                                            ui.horizontal_top(|ui| {
+                                                // --- Primary view ---
+                                                ui.push_id("pane_0", |ui| {
+                                                    ui.allocate_ui_with_layout(
+                                                        egui::vec2(
+                                                            primary_width,
+                                                            explorer_avail_height,
+                                                        ),
+                                                        egui::Layout::top_down(egui::Align::Min),
+                                                        |ui| {
+                                                            if primary_focused {
+                                                                let accent_rect = ui
+                                                                    .available_rect_before_wrap();
+                                                                ui.painter().hline(
+                                                                    accent_rect.x_range(),
+                                                                    accent_rect.top(),
+                                                                    egui::Stroke::new(
+                                                                        2.0,
+                                                                        palette.tab_border_active,
+                                                                    ),
+                                                                );
+                                                            }
+                                                            ui.add_space(2.0);
+
+                                                            let catch_rect = ui
+                                                                .available_rect_before_wrap();
+                                                            if ui
+                                                                .interact(
+                                                                    catch_rect,
+                                                                    ui.id().with(
+                                                                        "pane_focus_catch_primary",
+                                                                    ),
+                                                                    egui::Sense::click(),
+                                                                )
+                                                                .clicked()
+                                                            {
+                                                                primary_focus_click = true;
+                                                            }
+
+                                                            let tab_id =
+                                                                self.tabs[self.active_tab].id;
+                                                            let is_favorited = self
+                                                                .sidebar_state
+                                                                .favorites
+                                                                .iter()
+                                                                .any(|fav| {
+                                                                    fav.path
+                                                                        == self.tabs
+                                                                            [self.active_tab]
+                                                                            .primary_view
+                                                                            .nav
+                                                                            .current
+                                                                });
+                                                            let (a, b) = draw_tab_content(
+                                                                ui,
+                                                                &self.i18n,
+                                                                &icon_cache,
+                                                                &palette,
+                                                                self.hwnd,
+                                                                &mut self.tabs[self.active_tab]
+                                                                    .primary_view,
+                                                                tab_id,
+                                                                is_favorited,
+                                                                &self.folder_sizes,
+                                                                self.clipboard_has_files,
+                                                                &self.clipboard_set,
+                                                                self.clipboard_is_cut,
+                                                                self.settings_window
+                                                                    .current_settings
+                                                                    .show_hidden_files_folders,
+                                                                &mut self.rename_state,
+                                                                &mut self.file_type_cache,
+                                                                &mut self.file_size_text_cache,
+                                                                &mut self.folder_size_text_cache,
+                                                                &mut self.drive_size_text_cache,
+                                                                &mut self
+                                                                    .external_drag_to_internal_hover,
+                                                                drag_active,
+                                                                native_inbound_drag_active,
+                                                                drag_hover_target.clone(),
+                                                                dragdrop,
+                                                                &mut self.tags_state,
+                                                                &mut self.theme_customizer,
+                                                                &mut self.settings_window,
+                                                                &mut drop_targets,
+                                                                primary_focused,
+                                                            );
+                                                            tabbar_action = a;
+                                                            pending_action = b;
+                                                        },
+                                                    );
+                                                });
+
+                                                // --- Divider ---
+                                                let divider_width = 6.0;
+                                                let divider_left =
+                                                    ui.available_rect_before_wrap().left();
+                                                let divider_rect = egui::Rect::from_min_size(
+                                                    egui::pos2(
+                                                        divider_left - divider_width / 2.0,
+                                                        ui.min_rect().top(),
+                                                    ),
+                                                    egui::vec2(
+                                                        divider_width,
+                                                        explorer_avail_height,
+                                                    ),
+                                                );
+                                                let divider_response = ui.allocate_rect(
+                                                    divider_rect,
+                                                    egui::Sense::click_and_drag(),
+                                                );
+
+                                                if divider_response.hovered()
+                                                    || divider_response.dragged()
+                                                {
+                                                    ui.ctx().set_cursor_icon(
+                                                        egui::CursorIcon::ResizeHorizontal,
+                                                    );
+                                                    let handle_height = 25.0;
+                                                    let handle_width = 6.0;
+                                                    let center_y = divider_rect.center().y;
+                                                    let handle_rect = egui::Rect::from_center_size(
+                                                        egui::pos2(
+                                                            divider_rect.center().x,
+                                                            center_y,
+                                                        ),
+                                                        egui::vec2(handle_width, handle_height),
+                                                    );
+                                                    ui.painter().rect_filled(
+                                                        handle_rect,
+                                                        handle_width / 2.0,
+                                                        palette.button_seperator_handle_fill,
+                                                    );
+                                                }
+
+                                                if divider_response.dragged() {
+                                                    self.tabs[self.active_tab].split_ratio =
+                                                        ((split_ratio * explorer_avail_width
+                                                            + divider_response.drag_delta().x)
+                                                            / explorer_avail_width)
+                                                            .clamp(0.2, 0.8);
+                                                }
+
+                                                // --- Secondary view ---
+                                                ui.push_id("pane_1", |ui| {
+                                                    ui.allocate_ui_with_layout(
+                                                        egui::vec2(
+                                                            ui.available_width(),
+                                                            explorer_avail_height,
+                                                        ),
+                                                        egui::Layout::top_down(egui::Align::Min),
+                                                        |ui| {
+                                                            if secondary_focused {
+                                                                let accent_rect = ui
+                                                                    .available_rect_before_wrap();
+                                                                ui.painter().hline(
+                                                                    accent_rect.x_range(),
+                                                                    accent_rect.top(),
+                                                                    egui::Stroke::new(
+                                                                        2.0,
+                                                                        palette.tab_border_active,
+                                                                    ),
+                                                                );
+                                                            }
+                                                            ui.add_space(2.0);
+
+                                                            let catch_rect = ui
+                                                                .available_rect_before_wrap();
+                                                            if ui
+                                                                .interact(
+                                                                    catch_rect,
+                                                                    ui.id().with(
+                                                                        "pane_focus_catch_secondary",
+                                                                    ),
+                                                                    egui::Sense::click(),
+                                                                )
+                                                                .clicked()
+                                                            {
+                                                                secondary_focus_click = true;
+                                                            }
+
+                                                            let tab_id =
+                                                                self.tabs[self.active_tab].id;
+                                                            let is_favorited = self.tabs
+                                                                [self.active_tab]
+                                                                .split_view
+                                                                .as_ref()
+                                                                .map(|v| {
+                                                                    self.sidebar_state
+                                                                        .favorites
+                                                                        .iter()
+                                                                        .any(|fav| {
+                                                                            fav.path == v.nav.current
+                                                                        })
+                                                                })
+                                                                .unwrap_or(false);
+                                                            let (a, b) = draw_tab_content(
+                                                                ui,
+                                                                &self.i18n,
+                                                                &icon_cache,
+                                                                &palette,
+                                                                self.hwnd,
+                                                                self.tabs[self.active_tab]
+                                                                    .split_view
+                                                                    .as_mut()
+                                                                    .unwrap(),
+                                                                tab_id,
+                                                                is_favorited,
+                                                                &self.folder_sizes,
+                                                                self.clipboard_has_files,
+                                                                &self.clipboard_set,
+                                                                self.clipboard_is_cut,
+                                                                self.settings_window
+                                                                    .current_settings
+                                                                    .show_hidden_files_folders,
+                                                                &mut self.rename_state,
+                                                                &mut self.file_type_cache,
+                                                                &mut self.file_size_text_cache,
+                                                                &mut self.folder_size_text_cache,
+                                                                &mut self.drive_size_text_cache,
+                                                                &mut self
+                                                                    .external_drag_to_internal_hover,
+                                                                drag_active,
+                                                                native_inbound_drag_active,
+                                                                drag_hover_target.clone(),
+                                                                dragdrop,
+                                                                &mut self.tags_state,
+                                                                &mut self.theme_customizer,
+                                                                &mut self.settings_window,
+                                                                &mut drop_targets,
+                                                                secondary_focused,
+                                                            );
+                                                            secondary_tabbar_action = a;
+                                                            secondary_pending_action = b;
+                                                        },
+                                                    );
+                                                });
+                                            });
+
+                                            if primary_focus_click
+                                                || tabbar_action.is_some()
+                                                || pending_action.is_some()
+                                            {
+                                                self.focused_split = SplitSide::Primary;
+                                            }
+                                            if secondary_focus_click
+                                                || secondary_tabbar_action.is_some()
+                                                || secondary_pending_action.is_some()
+                                            {
+                                                self.focused_split = SplitSide::Secondary;
+                                            }
+                                        } else {
+                                            let tab_id = self.tabs[self.active_tab].id;
+                                            let is_favorited =
+                                                self.sidebar_state.favorites.iter().any(|fav| {
+                                                    fav.path
+                                                        == self.tabs[self.active_tab]
+                                                            .primary_view
+                                                            .nav
+                                                            .current
+                                                });
+                                            let (a, b) = draw_tab_content(
+                                                ui,
+                                                &self.i18n,
+                                                &icon_cache,
+                                                &palette,
+                                                self.hwnd,
+                                                &mut self.tabs[self.active_tab].primary_view,
+                                                tab_id,
+                                                is_favorited,
+                                                &self.folder_sizes,
+                                                self.clipboard_has_files,
+                                                &self.clipboard_set,
+                                                self.clipboard_is_cut,
+                                                self.settings_window
+                                                    .current_settings
+                                                    .show_hidden_files_folders,
+                                                &mut self.rename_state,
+                                                &mut self.file_type_cache,
+                                                &mut self.file_size_text_cache,
+                                                &mut self.folder_size_text_cache,
+                                                &mut self.drive_size_text_cache,
+                                                &mut self.external_drag_to_internal_hover,
+                                                drag_active,
+                                                native_inbound_drag_active,
+                                                drag_hover_target.clone(),
+                                                dragdrop,
+                                                &mut self.tags_state,
+                                                &mut self.theme_customizer,
+                                                &mut self.settings_window,
+                                                &mut drop_targets,
+                                                true,
+                                            );
+                                            tabbar_action = a;
+                                            pending_action = b;
+                                        }
+                                    });
+                                },
+                            );
+
+                            if tabs_action
+                                .as_ref()
+                                .map(|a| a.toggle_split)
+                                .unwrap_or(false)
+                            {
+                                trigger_toggle_split = true;
+                            }
                         } else if draw_tags(
                             ui,
                             &self.i18n,
@@ -589,6 +893,10 @@ impl eframe::App for MainWindow {
             });
         });
 
+        if trigger_toggle_split {
+            self.toggle_split_for_active_tab();
+        }
+
         if let Some(backend) = self.dragdrop.as_ref() {
             backend.update_drop_targets(drop_targets);
         }
@@ -606,7 +914,8 @@ impl eframe::App for MainWindow {
             }
         }
 
-        if pending_action.is_none() && self.drag_state.active && !native_drag_active {
+        let primary_drag_active = self.tabs[self.active_tab].primary_view.drag_state.active;
+        if pending_action.is_none() && primary_drag_active && !native_drag_active {
             let pointer_inside = if let Some(hwnd) = self.hwnd {
                 unsafe {
                     let mut screen_pt = POINT::default();
@@ -640,26 +949,53 @@ impl eframe::App for MainWindow {
 
             if !pointer_inside {
                 if let Some(backend) = self.dragdrop.as_ref() {
-                    if backend.begin_file_drag(&self.drag_state.source_items) {
-                        self.drag_state.active = false;
-                        self.drag_state.start_pos = None;
-                        self.drag_state.source_items.clear();
+                    if backend.begin_file_drag(
+                        &self.tabs[self.active_tab].primary_view.drag_state.source_items,
+                    ) {
+                        let view = &mut self.tabs[self.active_tab].primary_view;
+                        view.drag_state.active = false;
+                        view.drag_state.start_pos = None;
+                        view.drag_state.source_items.clear();
                         self.load_path();
                     }
                 }
             }
         }
 
-        let drag_sources = if self.drag_state.source_items.is_empty() {
-            None
-        } else {
-            Some(self.drag_state.source_items.clone())
-        };
-        let tabs_move_target = tabs_action
+        let primary_drag_sources =
+            if self.tabs[self.active_tab].primary_view.drag_state.source_items.is_empty() {
+                None
+            } else {
+                Some(
+                    self.tabs[self.active_tab]
+                        .primary_view
+                        .drag_state
+                        .source_items
+                        .clone(),
+                )
+            };
+        let secondary_drag_sources = self.tabs[self.active_tab]
+            .split_view
             .as_ref()
-            .and_then(|a| a.move_files_to_tab_dir.as_ref())
-            .is_some();
-        let tabbar_move_target = tabbar_action
+            .and_then(|v| {
+                if v.drag_state.source_items.is_empty() {
+                    None
+                } else {
+                    Some(v.drag_state.source_items.clone())
+                }
+            });
+        let tabs_drag_sources = primary_drag_sources
+            .clone()
+            .or_else(|| secondary_drag_sources.clone());
+        let primary_move_target = tabbar_action
+            .as_ref()
+            .and_then(|a| a.move_files_to_breadcrumb_dir.as_ref())
+            .is_some()
+            || tabs_action
+                .as_ref()
+                .and_then(|a| a.move_files_to_tab_dir.as_ref())
+                .is_some();
+        let secondary_move_target = secondary_tabbar_action
             .as_ref()
             .and_then(|a| a.move_files_to_breadcrumb_dir.as_ref())
             .is_some();
@@ -669,13 +1005,34 @@ impl eframe::App for MainWindow {
         self.handle_throttle_size_requests(ctx);
         self.handle_topbar_action(topbar_action);
         self.handle_sidebar_action(sidebar_action);
-        self.handle_tabs_action(tabs_action, drag_sources.as_deref());
-        self.handle_tabbar_action(tabbar_action, drag_sources.as_deref());
 
-        if tabs_move_target || tabbar_move_target {
-            self.drag_state.active = false;
-            self.drag_state.start_pos = None;
-            self.drag_state.source_items.clear();
+        self.handle_tabs_action(tabs_action, tabs_drag_sources.as_deref());
+
+        // Route each view's breadcrumb actions with focus pinned to that view for the
+        // duration of the call, since the shared handlers resolve via self.focused_split.
+        let restore_focus = self.focused_split;
+        if tabbar_action.is_some() {
+            self.focused_split = SplitSide::Primary;
+            self.handle_tabbar_action(tabbar_action, primary_drag_sources.as_deref());
+        }
+        if secondary_tabbar_action.is_some() {
+            self.focused_split = SplitSide::Secondary;
+            self.handle_tabbar_action(secondary_tabbar_action, secondary_drag_sources.as_deref());
+        }
+        self.focused_split = restore_focus;
+
+        if primary_move_target {
+            let view = &mut self.tabs[self.active_tab].primary_view;
+            view.drag_state.active = false;
+            view.drag_state.start_pos = None;
+            view.drag_state.source_items.clear();
+        }
+        if secondary_move_target {
+            if let Some(split) = self.tabs[self.active_tab].split_view.as_mut() {
+                split.drag_state.active = false;
+                split.drag_state.start_pos = None;
+                split.drag_state.source_items.clear();
+            }
         }
 
         if pending_action.is_none() {
@@ -699,7 +1056,16 @@ impl eframe::App for MainWindow {
             }
         }
 
-        handle_pending_actions(pending_action, self);
+        let restore_focus = self.focused_split;
+        if pending_action.is_some() {
+            self.focused_split = SplitSide::Primary;
+            handle_pending_actions(pending_action, self);
+        }
+        if secondary_pending_action.is_some() {
+            self.focused_split = SplitSide::Secondary;
+            handle_pending_actions(secondary_pending_action, self);
+        }
+        self.focused_split = restore_focus;
         if draw_tag_picker_popup(ctx, &self.i18n, &palette, &mut self.tags_state) {
             tags_changed = true;
         }

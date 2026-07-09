@@ -7,7 +7,7 @@ use crate::gui::utils::{
     clear_clipboard_files, clickable_icon, expand_environment_variables, truncate_item_text,
 };
 use crate::gui::windows::containers::enums::TabbarNavAction;
-use crate::gui::windows::containers::structs::{TabInfo, TabState, TabbarAction, TabsAction};
+use crate::gui::windows::containers::structs::{TabInfo, TabView, TabbarAction, TabsAction};
 use crate::gui::windows::windowsoverrides::handle_draw_windows_buttons;
 use eframe::egui;
 use egui::{FontFamily, FontId};
@@ -68,6 +68,7 @@ pub fn draw_tabs(
     scroll_to_id: Option<u64>,
     drag_active: bool,
     drag_hover_target: Option<PathBuf>,
+    has_split: bool,
 ) -> TabsAction {
     let mut action: TabsAction = TabsAction::default();
     let pointer_pos = ui.input(|i| i.pointer.interact_pos().or_else(|| i.pointer.hover_pos()));
@@ -75,7 +76,7 @@ pub fn draw_tabs(
         ui.input(|i| i.pointer.any_released() && i.pointer.interact_pos().is_some());
     let hovered_target_ref = drag_hover_target.as_ref();
     let mut tab_drop_target: Option<PathBuf> = None;
-    let controls_width = 64.0;
+    let controls_width = 90.0;
     let full_width = ui.available_width();
     let tabs_width = (full_width - controls_width).max(0.0);
 
@@ -189,6 +190,22 @@ pub fn draw_tabs(
                 egui::Layout::right_to_left(egui::Align::Center),
                 |ui| {
                     handle_draw_windows_buttons(ui, hwnd, palette);
+                    let (icon, tooltip_key) = if has_split {
+                        (regular::ARROWS_MERGE, "tooltip_close_split")
+                    } else {
+                        (regular::COLUMNS_PLUS_RIGHT, "tooltip_open_split")
+                    };
+                    if clickable_icon(ui, icon, palette.primary)
+                        .on_hover_text(
+                            egui::RichText::new(i18n.tr(tooltip_key))
+                                .size(palette.tooltip_text_size)
+                                .color(palette.tooltip_text_color),
+                        )
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .clicked()
+                    {
+                        action.toggle_split = true;
+                    }
                 },
             );
         },
@@ -632,7 +649,8 @@ pub fn draw_tabbar(
     ui: &mut egui::Ui,
     i18n: &I18n,
     icon_cache: &IconCache,
-    tab: &mut TabState,
+    tab: &mut TabView,
+    tab_id: u64,
     palette: &ThemePalette,
     is_favorited: bool,
     drag_active: bool,
@@ -686,7 +704,7 @@ pub fn draw_tabbar(
 
         // 👇 SWITCH BETWEEN MODES
         if tab.breadcrumb_path_editing {
-            let text_edit_id = ui.id().with("breadcrumbs_path_edit");
+            let text_edit_id = ui.id().with(("breadcrumbs_path_edit", tab_id));
 
             // --- 🔥 Shake animation ---
             let mut offset_x = 0.0;
