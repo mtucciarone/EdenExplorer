@@ -10,7 +10,7 @@
   </a>
 </p>
 <p align="center">
-  <img src="https://img.shields.io/badge/Public%20Alpha-Now%20Available-2ecc71?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Public%20Beta-Now%20Available-2ecc71?style=for-the-badge" />
 </p>
 
 <p align="center">
@@ -305,9 +305,10 @@
 - [x] Add folder tags and custom folder colors
 - [x] Add toggle for display hidden explorer objects
 - [x] Support changing the application font based on the system-installed fonts
+- [x] Collapsible sidebar
+- [x] Split-pane view in the Explorer
 
 ### 🚀 Upcoming Beta Features
-- [ ] Collapse/Hide sections in the sidebar
 - [ ] Support multi-column sorting
 - [ ] Add a tags column in the Explorer view
 - [ ] Support network devices
