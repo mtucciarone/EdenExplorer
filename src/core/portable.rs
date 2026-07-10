@@ -137,7 +137,12 @@ pub fn build_breadcrumb_segments(path: &PathBuf) -> Option<Vec<(String, PathBuf)
     Some(segments)
 }
 
-pub fn scan_portable_async(path: PathBuf, tx: Sender<FileItem>, date_style: DateStyle, time_format_24h: bool) {
+pub fn scan_portable_async(
+    path: PathBuf,
+    tx: Sender<FileItem>,
+    date_style: DateStyle,
+    time_format_24h: bool,
+) {
     std::thread::spawn(move || {
         let mut should_uninit = false;
         unsafe {

@@ -60,7 +60,10 @@ pub fn draw_tab_content(
     view: &mut TabView,
     tab_id: u64,
     is_favorited: bool,
-    folder_sizes: &HashMap<PathBuf, crate::gui::windows::containers::structs::ItemViewerFolderSizeState>,
+    folder_sizes: &HashMap<
+        PathBuf,
+        crate::gui::windows::containers::structs::ItemViewerFolderSizeState,
+    >,
     clipboard_has_files: bool,
     clipboard_set: &HashSet<PathBuf>,
     clipboard_is_cut: bool,

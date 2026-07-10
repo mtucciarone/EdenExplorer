@@ -328,7 +328,9 @@ pub fn draw_settings_window(
                     ui.add_space(8.0);
                     // Date Style Section
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(i18n.tr("settings_datestyle")).color(palette.text_normal));
+                        ui.label(
+                            RichText::new(i18n.tr("settings_datestyle")).color(palette.text_normal),
+                        );
 
                         let mut selected_style = settings.current_settings.date_style;
 
@@ -386,7 +388,8 @@ pub fn draw_settings_window(
                     let mut window_size_changed = false;
                     ui.horizontal(|ui| {
                         ui.label(
-                            RichText::new(i18n.tr("settings_windowsize")).color(palette.text_normal),
+                            RichText::new(i18n.tr("settings_windowsize"))
+                                .color(palette.text_normal),
                         );
                         info_icon(ui, &i18n.tr("tooltip_settings_windowsize"), palette);
                     });
@@ -460,7 +463,11 @@ pub fn draw_settings_window(
                                     .color(palette.text_normal),
                             );
                             window_size_changed |= ui
-                                .add(egui::DragValue::new(height).range(600.0..=3000.0).speed(1.0))
+                                .add(
+                                    egui::DragValue::new(height)
+                                        .range(600.0..=3000.0)
+                                        .speed(1.0),
+                                )
                                 .changed();
                         });
                     }

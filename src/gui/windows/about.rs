@@ -25,8 +25,12 @@ pub fn draw_about_window(
             let rect = ctx.content_rect();
             ui.painter()
                 .rect_filled(rect, 0.0, palette.modal_background_effect_color);
-            ui.interact(rect, ui.id().with("about_modal_bg_click"), egui::Sense::click())
-                .clicked()
+            ui.interact(
+                rect,
+                ui.id().with("about_modal_bg_click"),
+                egui::Sense::click(),
+            )
+            .clicked()
         })
         .inner;
 

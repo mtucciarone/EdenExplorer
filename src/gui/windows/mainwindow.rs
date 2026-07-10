@@ -963,7 +963,10 @@ impl eframe::App for MainWindow {
             if !pointer_inside {
                 if let Some(backend) = self.dragdrop.as_ref() {
                     if backend.begin_file_drag(
-                        &self.tabs[self.active_tab].primary_view.drag_state.source_items,
+                        &self.tabs[self.active_tab]
+                            .primary_view
+                            .drag_state
+                            .source_items,
                     ) {
                         let view = &mut self.tabs[self.active_tab].primary_view;
                         view.drag_state.active = false;
@@ -975,18 +978,22 @@ impl eframe::App for MainWindow {
             }
         }
 
-        let primary_drag_sources =
-            if self.tabs[self.active_tab].primary_view.drag_state.source_items.is_empty() {
-                None
-            } else {
-                Some(
-                    self.tabs[self.active_tab]
-                        .primary_view
-                        .drag_state
-                        .source_items
-                        .clone(),
-                )
-            };
+        let primary_drag_sources = if self.tabs[self.active_tab]
+            .primary_view
+            .drag_state
+            .source_items
+            .is_empty()
+        {
+            None
+        } else {
+            Some(
+                self.tabs[self.active_tab]
+                    .primary_view
+                    .drag_state
+                    .source_items
+                    .clone(),
+            )
+        };
         let secondary_drag_sources = self.tabs[self.active_tab]
             .split_view
             .as_ref()

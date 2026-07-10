@@ -33,7 +33,11 @@ impl Default for DateStyle {
     }
 }
 
-pub fn filetime_to_string(filetime: i64, date_style: DateStyle, time_format_24h: bool) -> Option<String> {
+pub fn filetime_to_string(
+    filetime: i64,
+    date_style: DateStyle,
+    time_format_24h: bool,
+) -> Option<String> {
     if filetime == 0 {
         return None;
     }
@@ -52,9 +56,17 @@ pub fn filetime_to_string(filetime: i64, date_style: DateStyle, time_format_24h:
         DateStyle::UsShort => "%-m/%-d/%Y",
         DateStyle::Long => "%B %-d, %Y",
     };
-    let time_fmt = if time_format_24h { "%H:%M" } else { "%-I:%M %p" };
+    let time_fmt = if time_format_24h {
+        "%H:%M"
+    } else {
+        "%-I:%M %p"
+    };
 
-    Some(dt_local.format(&format!("{date_fmt} {time_fmt}")).to_string())
+    Some(
+        dt_local
+            .format(&format!("{date_fmt} {time_fmt}"))
+            .to_string(),
+    )
 }
 
 /// Convert PathBuf -> UTF-16
@@ -194,7 +206,12 @@ pub fn calculate_folder_size_fast(path: PathBuf) -> u64 {
 }
 
 /// 🚀 Async directory scan
-pub fn scan_dir_async(path: PathBuf, tx: Sender<FileItem>, date_style: DateStyle, time_format_24h: bool) {
+pub fn scan_dir_async(
+    path: PathBuf,
+    tx: Sender<FileItem>,
+    date_style: DateStyle,
+    time_format_24h: bool,
+) {
     thread::spawn(move || {
         if path.to_string_lossy() == MY_PC_PATH {
             return;
@@ -268,10 +285,16 @@ pub fn scan_dir_async(path: PathBuf, tx: Sender<FileItem>, date_style: DateStyle
                         Some(*entry.EndOfFile.QuadPart() as u64)
                     };
 
-                    let modified_time =
-                        filetime_to_string(*entry.LastWriteTime.QuadPart(), date_style, time_format_24h);
-                    let created_time =
-                        filetime_to_string(*entry.CreationTime.QuadPart(), date_style, time_format_24h);
+                    let modified_time = filetime_to_string(
+                        *entry.LastWriteTime.QuadPart(),
+                        date_style,
+                        time_format_24h,
+                    );
+                    let created_time = filetime_to_string(
+                        *entry.CreationTime.QuadPart(),
+                        date_style,
+                        time_format_24h,
+                    );
 
                     let item = FileItem::new(
                         name,

@@ -1604,8 +1604,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 let new_focus = {
                     let view = explorer.active_tab().view(explorer.focused_split);
                     if let Some(anchor_idx) = view.explorer_state.selection_anchor {
-                        if let (Some(first_path), Some(last_path)) = (paths.first(), paths.last())
-                        {
+                        if let (Some(first_path), Some(last_path)) = (paths.first(), paths.last()) {
                             // Check if we're in a filtered view
                             let is_filtered = (view.item_viewer_filter_state.active
                                 && !view.item_viewer_filter_state.query.is_empty())
@@ -1805,7 +1804,11 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 let current_path = explorer.current_nav().current.clone();
                 let side = explorer.focused_split;
                 let view = explorer.active_tab_mut().view_mut(side);
-                let last_visited = view.explorer_state.navigation_history.get(&current_path).cloned();
+                let last_visited = view
+                    .explorer_state
+                    .navigation_history
+                    .get(&current_path)
+                    .cloned();
                 if let Some(last_visited) = last_visited {
                     view.explorer_state.navigation_selection = Some(last_visited);
                 } else {
