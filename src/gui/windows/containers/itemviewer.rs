@@ -98,6 +98,8 @@ pub fn draw_item_viewer(
     theme_customizer_window: &mut ThemeCustomizer,
     settings_window: &mut SettingsWindow,
     hwnd: Option<HWND>,
+    is_focused: bool,
+    active_tab_id: u64,
 ) -> Option<ItemViewerAction> {
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let mut hovered_drop_target: Option<PathBuf> = None;
@@ -175,7 +177,7 @@ pub fn draw_item_viewer(
         draw_object_drag_ghost(ui, palette, label, false);
     }
 
-    if !modal_input_blocked {
+    if !modal_input_blocked && is_focused {
         if let Some(global_action) = handle_global_actions(
             ui,
             files,
@@ -229,7 +231,7 @@ pub fn draw_item_viewer(
             })
             .animate_scrolling(true)
             .resizable(true)
-            .id_salt("item_viewer_table");
+            .id_salt(("item_viewer_table", active_tab_id));
 
         // If we have a pending selection from a refresh, scroll to it and select it
         if let Some(pending_paths) = explorer_state.pending_selection_paths.clone() {
@@ -822,6 +824,19 @@ fn handle_context_menu_actions(
     {
         if let Some(path) = context_paths.first() {
             *action = Some(ItemViewerAction::OpenInNewTab(path.clone()));
+            ui.close();
+        }
+    }
+
+    if ui
+        .add_enabled(
+            enable_open_in_tab,
+            egui::Button::new(i18n.tr("inputs_opensplit")),
+        )
+        .clicked()
+    {
+        if let Some(path) = context_paths.first() {
+            *action = Some(ItemViewerAction::OpenInSplitView(path.clone()));
             ui.close();
         }
     }

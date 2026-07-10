@@ -17,6 +17,7 @@ pub enum ItemViewerAction {
     Open(PathBuf),
     OpenWithDefault(Vec<PathBuf>),
     OpenInNewTab(PathBuf),
+    OpenInSplitView(PathBuf),
     Context(ItemViewerContextAction),
     StartEdit(PathBuf),
     FilesDropped(Vec<PathBuf>),

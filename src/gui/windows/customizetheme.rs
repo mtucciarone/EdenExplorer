@@ -42,15 +42,26 @@ pub fn draw_theme_customizer(
         return None;
     }
 
-    // 🌑 Dark background overlay (modal effect)
-    egui::Area::new(egui::Id::new("theme_modal_bg"))
+    // 🌑 Dark background overlay (modal effect); clicking it dismisses the window
+    let modal_bg_clicked = egui::Area::new(egui::Id::new("theme_modal_bg"))
         .order(egui::Order::Middle)
         .interactable(true)
         .show(ctx, |ui| {
             let rect = ctx.content_rect();
             ui.painter()
                 .rect_filled(rect, 0.0, palette.modal_background_effect_color);
-        });
+            ui.interact(
+                rect,
+                ui.id().with("theme_modal_bg_click"),
+                egui::Sense::click(),
+            )
+            .clicked()
+        })
+        .inner;
+
+    if modal_bg_clicked {
+        customizer.open = false;
+    }
 
     egui::Window::new(&i18n.tr("theme_title"))
         .collapsible(false)
