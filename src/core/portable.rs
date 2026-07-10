@@ -1,4 +1,4 @@
-use crate::core::fs::FileItem;
+use crate::core::fs::{DateStyle, FileItem};
 use crossbeam_channel::Sender;
 use std::collections::HashMap;
 use std::ffi::OsStr;
@@ -137,7 +137,7 @@ pub fn build_breadcrumb_segments(path: &PathBuf) -> Option<Vec<(String, PathBuf)
     Some(segments)
 }
 
-pub fn scan_portable_async(path: PathBuf, tx: Sender<FileItem>, time_format_24h: bool) {
+pub fn scan_portable_async(path: PathBuf, tx: Sender<FileItem>, date_style: DateStyle, time_format_24h: bool) {
     std::thread::spawn(move || {
         let mut should_uninit = false;
         unsafe {

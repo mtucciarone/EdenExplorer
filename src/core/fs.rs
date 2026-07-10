@@ -2,6 +2,7 @@ use crate::core::portable;
 use chrono::{DateTime, Local, TimeZone, Utc};
 use crossbeam_channel::Sender;
 use ntapi::ntioapi::{FILE_DIRECTORY_INFORMATION, IO_STATUS_BLOCK, NtQueryDirectoryFile};
+use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
@@ -19,7 +20,20 @@ use windows::core::PCWSTR;
 const STATUS_NO_MORE_FILES: i32 = 0x80000006u32 as i32;
 pub const MY_PC_PATH: &str = "::MY_PC::";
 
-pub fn filetime_to_string(filetime: i64, time_format_24h: bool) -> Option<String> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DateStyle {
+    Iso,
+    UsShort,
+    Long,
+}
+
+impl Default for DateStyle {
+    fn default() -> Self {
+        DateStyle::UsShort
+    }
+}
+
+pub fn filetime_to_string(filetime: i64, date_style: DateStyle, time_format_24h: bool) -> Option<String> {
     if filetime == 0 {
         return None;
     }
@@ -33,13 +47,14 @@ pub fn filetime_to_string(filetime: i64, time_format_24h: bool) -> Option<String
     let dt_utc = Utc.timestamp_opt(unix_time, 0).single()?;
     let dt_local: DateTime<Local> = dt_utc.into();
 
-    let format_string = if time_format_24h {
-        "%Y-%m-%d %H:%M"
-    } else {
-        "%Y-%m-%d %I:%M %p"
+    let date_fmt = match date_style {
+        DateStyle::Iso => "%Y-%m-%d",
+        DateStyle::UsShort => "%-m/%-d/%Y",
+        DateStyle::Long => "%B %-d, %Y",
     };
+    let time_fmt = if time_format_24h { "%H:%M" } else { "%-I:%M %p" };
 
-    Some(dt_local.format(format_string).to_string())
+    Some(dt_local.format(&format!("{date_fmt} {time_fmt}")).to_string())
 }
 
 /// Convert PathBuf -> UTF-16
@@ -179,14 +194,14 @@ pub fn calculate_folder_size_fast(path: PathBuf) -> u64 {
 }
 
 /// 🚀 Async directory scan
-pub fn scan_dir_async(path: PathBuf, tx: Sender<FileItem>, time_format_24h: bool) {
+pub fn scan_dir_async(path: PathBuf, tx: Sender<FileItem>, date_style: DateStyle, time_format_24h: bool) {
     thread::spawn(move || {
         if path.to_string_lossy() == MY_PC_PATH {
             return;
         }
 
         if portable::is_portable_path(&path) {
-            portable::scan_portable_async(path, tx, time_format_24h);
+            portable::scan_portable_async(path, tx, date_style, time_format_24h);
             return;
         }
 
@@ -254,9 +269,9 @@ pub fn scan_dir_async(path: PathBuf, tx: Sender<FileItem>, time_format_24h: bool
                     };
 
                     let modified_time =
-                        filetime_to_string(*entry.LastWriteTime.QuadPart(), time_format_24h);
+                        filetime_to_string(*entry.LastWriteTime.QuadPart(), date_style, time_format_24h);
                     let created_time =
-                        filetime_to_string(*entry.CreationTime.QuadPart(), time_format_24h);
+                        filetime_to_string(*entry.CreationTime.QuadPart(), date_style, time_format_24h);
 
                     let item = FileItem::new(
                         name,

@@ -1,4 +1,7 @@
-use crate::core::{fs::MY_PC_PATH, indexer::WindowSizeMode};
+use crate::core::{
+    fs::{DateStyle, MY_PC_PATH},
+    indexer::WindowSizeMode,
+};
 use crate::gui::i18n::I18n;
 use crate::gui::theme::{ThemePalette, apply_checkbox_colors};
 use crate::gui::utils::SortColumn;
@@ -18,7 +21,8 @@ impl Default for AppSettings {
             start_path: Some(PathBuf::from(MY_PC_PATH)),
             window_size_mode: WindowSizeMode::default(),
             pinned_tabs: Vec::new(),
-            time_format_24h: true,
+            time_format_24h: false,
+            date_style: DateStyle::default(),
             sort_column: SortColumn::Name,
             sort_ascending: true,
             language: "en-US".to_string(),
@@ -75,15 +79,26 @@ pub fn draw_settings_window(
 
     let mut should_close = false;
 
-    // 🌑 Dark background overlay (modal effect)
-    egui::Area::new(egui::Id::new("settings_modal_bg"))
+    // 🌑 Dark background overlay (modal effect); clicking it dismisses the window
+    let modal_bg_clicked = egui::Area::new(egui::Id::new("settings_modal_bg"))
         .order(egui::Order::Middle)
         .interactable(true)
         .show(ctx, |ui| {
             let rect = ctx.content_rect();
             ui.painter()
                 .rect_filled(rect, 0.0, palette.modal_background_effect_color);
-        });
+            ui.interact(
+                rect,
+                ui.id().with("settings_modal_bg_click"),
+                egui::Sense::click(),
+            )
+            .clicked()
+        })
+        .inner;
+
+    if modal_bg_clicked {
+        should_close = true;
+    }
 
     egui::Window::new(format!("EdenExplorer - {}", i18n.tr("settings")))
         .collapsible(false)
@@ -309,6 +324,44 @@ pub fn draw_settings_window(
                                 }
                             }
                         });
+                    });
+                    ui.add_space(8.0);
+                    // Date Style Section
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(i18n.tr("settings_datestyle")).color(palette.text_normal));
+
+                        let mut selected_style = settings.current_settings.date_style;
+
+                        egui::ComboBox::from_id_salt("date_style_selector")
+                            .selected_text(match selected_style {
+                                DateStyle::Iso => i18n.tr("settings_datestyle_iso_label"),
+                                DateStyle::UsShort => i18n.tr("settings_datestyle_us_short_label"),
+                                DateStyle::Long => i18n.tr("settings_datestyle_long_label"),
+                            })
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(
+                                    &mut selected_style,
+                                    DateStyle::Iso,
+                                    i18n.tr("settings_datestyle_iso"),
+                                );
+                                ui.selectable_value(
+                                    &mut selected_style,
+                                    DateStyle::UsShort,
+                                    i18n.tr("settings_datestyle_us_short"),
+                                );
+                                ui.selectable_value(
+                                    &mut selected_style,
+                                    DateStyle::Long,
+                                    i18n.tr("settings_datestyle_long"),
+                                );
+                            });
+
+                        if selected_style != settings.current_settings.date_style {
+                            settings.current_settings.date_style = selected_style;
+                            action = Some(SettingsAction::ApplySettings);
+                        }
+
+                        info_icon(ui, &i18n.tr("tooltip_settings_datestyle"), palette);
                     });
                     ui.add_space(8.0);
                     // Time Format Section

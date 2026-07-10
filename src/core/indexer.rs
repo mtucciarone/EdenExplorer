@@ -1,4 +1,4 @@
-use crate::core::fs::MY_PC_PATH;
+use crate::core::fs::{DateStyle, MY_PC_PATH};
 use crate::gui::theme::{THEME_VERSION, ThemePalette, get_default_palette};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -40,6 +40,8 @@ struct AppSettingsSnapshot {
     pinned_tabs: Vec<PathBuf>,
     #[serde(default)]
     time_format_24h: bool,
+    #[serde(default = "default_date_style")]
+    date_style: DateStyle,
     #[serde(default = "default_sort_column")]
     sort_column: crate::gui::utils::SortColumn,
     #[serde(default)]
@@ -78,6 +80,7 @@ impl From<LegacyAppSettingsSnapshot> for AppSettingsSnapshot {
             theme: legacy.theme,
             pinned_tabs: legacy.pinned_tabs,
             time_format_24h: legacy.time_format_24h,
+            date_style: default_date_style(),
             sort_column: legacy.sort_column,
             sort_ascending: legacy.sort_ascending,
             language: default_language(),
@@ -165,6 +168,10 @@ fn default_sort_column() -> crate::gui::utils::SortColumn {
 
 fn default_language() -> String {
     "en-US".to_string()
+}
+
+fn default_date_style() -> DateStyle {
+    DateStyle::UsShort
 }
 
 fn default_show_hidden_files_folders() -> bool {
@@ -277,6 +284,7 @@ pub fn load_app_settings() -> (
     crate::gui::utils::SortColumn,
     bool,
     String,
+    DateStyle,
 ) {
     let default_path = PathBuf::from(MY_PC_PATH);
 
@@ -307,6 +315,7 @@ pub fn load_app_settings() -> (
         snapshot.sort_column,
         snapshot.sort_ascending,
         snapshot.language,
+        snapshot.date_style,
     )
 }
 
@@ -324,6 +333,7 @@ fn default_app_settings(
     crate::gui::utils::SortColumn,
     bool,
     String,
+    DateStyle,
 ) {
     (
         true,
@@ -333,10 +343,11 @@ fn default_app_settings(
         default_path,
         None,
         Vec::new(),
-        true,
+        false,
         crate::gui::utils::SortColumn::Name,
         true,
         default_language(),
+        DateStyle::default(),
     )
 }
 
@@ -352,6 +363,7 @@ pub fn save_app_settings(
     sort_column: crate::gui::utils::SortColumn,
     sort_ascending: bool,
     language: &str,
+    date_style: DateStyle,
 ) {
     let path = match settings_cache_path() {
         Some(path) => path,
@@ -367,6 +379,7 @@ pub fn save_app_settings(
         theme: theme.map(|s| s.to_string()),
         pinned_tabs: pinned_tabs.to_vec(),
         time_format_24h,
+        date_style,
         sort_column,
         sort_ascending,
         language: language.to_string(),

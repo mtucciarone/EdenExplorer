@@ -197,6 +197,7 @@ impl MainWindow {
             self.settings_window.current_settings.sort_column,
             self.settings_window.current_settings.sort_ascending,
             &self.settings_window.current_settings.language,
+            self.settings_window.current_settings.date_style,
         );
     }
 
@@ -267,6 +268,7 @@ impl MainWindow {
         scan_dir_async(
             current_path,
             tx,
+            self.settings_window.current_settings.date_style,
             self.settings_window.current_settings.time_format_24h,
         );
         let folder_scanning_enabled = self
@@ -820,6 +822,7 @@ impl MainWindow {
                         self.settings_window.current_settings.sort_column,
                         self.settings_window.current_settings.sort_ascending,
                         &self.settings_window.current_settings.language,
+                        self.settings_window.current_settings.date_style,
                     );
                 }
                 SettingsAction::ResetToDefaults => {
@@ -1020,6 +1023,7 @@ impl MainWindow {
                         _sort_column,
                         _sort_ascending,
                         _language,
+                        _date_style,
                     ) = load_app_settings();
                     self.tabs[0].primary_view.nav = Navigation::new(start_path);
                     self.tabs[0].split_view = None;
@@ -1066,6 +1070,7 @@ impl MainWindow {
                     self.settings_window.current_settings.sort_column,
                     self.settings_window.current_settings.sort_ascending,
                     &self.settings_window.current_settings.language,
+                    self.settings_window.current_settings.date_style,
                 );
 
                 self.mark_tab_infos_dirty();
@@ -1240,6 +1245,7 @@ impl MainWindow {
                     self.settings_window.current_settings.sort_column,
                     self.settings_window.current_settings.sort_ascending,
                     &self.settings_window.current_settings.language,
+                    self.settings_window.current_settings.date_style,
                 );
             }
 
@@ -1274,6 +1280,9 @@ impl MainWindow {
                     split.drag_state.source_items.clear();
                 }
                 self.tags_state.drag_state = None;
+            }
+            if action.toggle_sidebar {
+                self.sidebar_collapsed = !self.sidebar_collapsed;
             }
         }
     }

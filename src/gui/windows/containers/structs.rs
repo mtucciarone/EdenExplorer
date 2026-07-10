@@ -203,6 +203,7 @@ pub struct TopbarAction {
     pub about: bool,
     pub exit: bool,
     pub toggle_file_explorer: bool,
+    pub toggle_sidebar: bool,
 }
 
 #[derive(Default)]
