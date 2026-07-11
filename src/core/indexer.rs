@@ -31,6 +31,8 @@ struct AppSettingsSnapshot {
     folder_scanning_enabled: bool,
     #[serde(default = "default_show_hidden_files_folders")]
     show_hidden_files_folders: bool,
+    #[serde(default = "default_show_item_viewer_icons")]
+    show_item_viewer_icons: bool,
     #[serde(default)]
     windows_context_menu_enabled: bool,
     window_size_mode: WindowSizeMode,
@@ -74,6 +76,7 @@ impl From<LegacyAppSettingsSnapshot> for AppSettingsSnapshot {
         Self {
             folder_scanning_enabled: legacy.folder_scanning_enabled,
             show_hidden_files_folders: true,
+            show_item_viewer_icons: true,
             windows_context_menu_enabled: legacy.windows_context_menu_enabled,
             window_size_mode: legacy.window_size_mode.into(),
             start_path: legacy.start_path,
@@ -178,6 +181,10 @@ fn default_show_hidden_files_folders() -> bool {
     true
 }
 
+fn default_show_item_viewer_icons() -> bool {
+    true
+}
+
 fn default_tags_version() -> u32 {
     1
 }
@@ -276,6 +283,7 @@ pub fn load_app_settings() -> (
     bool,
     bool,
     bool,
+    bool,
     WindowSizeMode,
     PathBuf,
     Option<String>,
@@ -306,6 +314,7 @@ pub fn load_app_settings() -> (
     (
         snapshot.folder_scanning_enabled,
         snapshot.show_hidden_files_folders,
+        snapshot.show_item_viewer_icons,
         snapshot.windows_context_menu_enabled,
         snapshot.window_size_mode,
         snapshot.start_path.unwrap_or(default_path),
@@ -325,6 +334,7 @@ fn default_app_settings(
     bool,
     bool,
     bool,
+    bool,
     WindowSizeMode,
     PathBuf,
     Option<String>,
@@ -336,6 +346,7 @@ fn default_app_settings(
     DateStyle,
 ) {
     (
+        true,
         true,
         true,
         false,
@@ -354,6 +365,7 @@ fn default_app_settings(
 pub fn save_app_settings(
     folder_scanning_enabled: bool,
     show_hidden_files_folders: bool,
+    show_item_viewer_icons: bool,
     windows_context_menu_enabled: bool,
     window_size_mode: &WindowSizeMode,
     start_path: &Option<PathBuf>,
@@ -373,6 +385,7 @@ pub fn save_app_settings(
     let snapshot = AppSettingsSnapshot {
         folder_scanning_enabled,
         show_hidden_files_folders,
+        show_item_viewer_icons,
         windows_context_menu_enabled,
         window_size_mode: window_size_mode.clone(),
         start_path: start_path.clone(),

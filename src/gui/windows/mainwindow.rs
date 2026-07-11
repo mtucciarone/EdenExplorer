@@ -93,6 +93,7 @@ impl Default for MainWindow {
         let (
             folder_scanning_enabled,
             show_hidden_files_folders,
+            show_item_viewer_icons,
             windows_context_menu_enabled,
             window_size_mode,
             start_path,
@@ -107,6 +108,7 @@ impl Default for MainWindow {
         let loaded_settings = AppSettings {
             folder_scanning_enabled,
             show_hidden_files_folders,
+            show_item_viewer_icons,
             windows_context_menu_enabled,
             window_size_mode: window_size_mode.clone(),
             start_path: Some(start_path.clone()), // important
@@ -356,6 +358,7 @@ impl eframe::App for MainWindow {
                         self.settings_window
                             .current_settings
                             .show_hidden_files_folders,
+                        self.settings_window.current_settings.show_item_viewer_icons,
                         self.settings_window
                             .current_settings
                             .windows_context_menu_enabled,
@@ -429,7 +432,7 @@ impl eframe::App for MainWindow {
                     egui::Layout::left_to_right(egui::Align::Min),
                     |ui| {
                         // --- Sidebar column ---
-                        let collapsed_width = 44.0;
+                        let collapsed_width = 38.0;
                         let sidebar_width_min = 140.0;
                         let explorer_min_width = 200.0;
                         let sidebar_width_max =
@@ -553,7 +556,7 @@ impl eframe::App for MainWindow {
                                     let container = egui::Frame::NONE
                                         .stroke(egui::Stroke::NONE)
                                         .fill(egui::Color32::TRANSPARENT)
-                                        .inner_margin(egui::Margin::symmetric(10, 8));
+                                        .inner_margin(egui::Margin::symmetric(10, 0));
 
                                     container.show(ui, |ui| {
                                         if has_split {
@@ -641,6 +644,9 @@ impl eframe::App for MainWindow {
                                                                 self.settings_window
                                                                     .current_settings
                                                                     .show_hidden_files_folders,
+                                                                self.settings_window
+                                                                    .current_settings
+                                                                    .show_item_viewer_icons,
                                                                 &mut self.rename_state,
                                                                 &mut self.file_type_cache,
                                                                 &mut self.file_size_text_cache,
@@ -786,6 +792,9 @@ impl eframe::App for MainWindow {
                                                                 self.settings_window
                                                                     .current_settings
                                                                     .show_hidden_files_folders,
+                                                                self.settings_window
+                                                                    .current_settings
+                                                                    .show_item_viewer_icons,
                                                                 &mut self.rename_state,
                                                                 &mut self.file_type_cache,
                                                                 &mut self.file_size_text_cache,
@@ -848,6 +857,9 @@ impl eframe::App for MainWindow {
                                                 self.settings_window
                                                     .current_settings
                                                     .show_hidden_files_folders,
+                                                self.settings_window
+                                                    .current_settings
+                                                    .show_item_viewer_icons,
                                                 &mut self.rename_state,
                                                 &mut self.file_type_cache,
                                                 &mut self.file_size_text_cache,

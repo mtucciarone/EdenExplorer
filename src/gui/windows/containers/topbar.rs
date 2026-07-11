@@ -18,9 +18,7 @@ pub fn draw_topbar(
     if sidebar_collapsed {
         // Collapsed: icons stack in a narrow vertical rail, centered.
         ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-            ui.add_space(12.0);
             draw_hamburger_menu(ui, i18n, palette, &mut action);
-            ui.add_space(8.0);
             draw_mode_icons(
                 ui,
                 i18n,
