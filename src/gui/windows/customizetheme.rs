@@ -233,7 +233,7 @@ pub fn draw_theme_customizer(
                                 ui.end_row();
 
                                 ui.label(
-                                    egui::RichText::new(&i18n.tr("theme_explorer_iconsize"))
+                                    egui::RichText::new(&i18n.tr("theme_explorer_rowheight"))
                                         .font(font_id.clone())
                                         .size(palette.text_size)
                                         .color(label_color),
@@ -245,10 +245,10 @@ pub fn draw_theme_customizer(
                                             .add_sized(
                                                 egui::vec2(90.0, 0.0),
                                                 egui::DragValue::new(
-                                                    &mut editing_palette.explorer_icon_size,
+                                                    &mut editing_palette.row_height,
                                                 )
                                                 .range(8.0..=32.0)
-                                                .speed(0.2),
+                                                .speed(0.5),
                                             )
                                             .changed();
                                     },

@@ -17,6 +17,7 @@ impl Default for AppSettings {
         Self {
             folder_scanning_enabled: true,
             show_hidden_files_folders: true,
+            show_item_viewer_icons: true,
             windows_context_menu_enabled: false,
             start_path: Some(PathBuf::from(MY_PC_PATH)),
             window_size_mode: WindowSizeMode::default(),
@@ -268,6 +269,24 @@ pub fn draw_settings_window(
                             &i18n.tr("tooltip_settings_show_hidden_files_folders"),
                             palette,
                         );
+                    });
+                    ui.add_space(8.0);
+                    // Show/Hide Item Viewer File Icons
+                    ui.horizontal(|ui| {
+                        ui.scope(|ui| {
+                            apply_checkbox_colors(ui, palette, false);
+                            if ui
+                                .checkbox(
+                                    &mut settings.current_settings.show_item_viewer_icons,
+                                    RichText::new(&i18n.tr("settings_show_item_viewer_file_icons"))
+                                        .color(palette.text_normal),
+                                )
+                                .changed()
+                            {
+                                // Auto-save when setting changes
+                                action = Some(SettingsAction::ApplySettings);
+                            }
+                        });
                     });
                     ui.add_space(8.0);
                     // Starting Path

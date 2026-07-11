@@ -102,6 +102,7 @@ fn save_manual_window_size(hwnd: HWND) {
         let (
             folder_scanning_enabled,
             show_hidden_files_folders,
+            show_item_viewer_icons,
             windows_context_menu_enabled,
             _window_size_mode,
             start_path,
@@ -118,6 +119,7 @@ fn save_manual_window_size(hwnd: HWND) {
         save_app_settings(
             folder_scanning_enabled,
             show_hidden_files_folders,
+            show_item_viewer_icons,
             windows_context_menu_enabled,
             &window_size_mode,
             &Some(start_path),

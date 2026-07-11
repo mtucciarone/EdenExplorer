@@ -183,6 +183,7 @@ impl MainWindow {
             self.settings_window
                 .current_settings
                 .show_hidden_files_folders,
+            self.settings_window.current_settings.show_item_viewer_icons,
             self.settings_window
                 .current_settings
                 .windows_context_menu_enabled,
@@ -808,6 +809,7 @@ impl MainWindow {
                         self.settings_window
                             .current_settings
                             .show_hidden_files_folders,
+                        self.settings_window.current_settings.show_item_viewer_icons,
                         self.settings_window
                             .current_settings
                             .windows_context_menu_enabled,
@@ -1014,6 +1016,7 @@ impl MainWindow {
                     let (
                         _folder_scanning_enabled,
                         _show_hidden_files_folders,
+                        _show_item_viewer_icons,
                         _windows_context_menu_enabled,
                         _window_size_mode,
                         start_path,
@@ -1056,6 +1059,7 @@ impl MainWindow {
                     self.settings_window
                         .current_settings
                         .show_hidden_files_folders,
+                    self.settings_window.current_settings.show_item_viewer_icons,
                     self.settings_window
                         .current_settings
                         .windows_context_menu_enabled,
@@ -1231,6 +1235,7 @@ impl MainWindow {
                     self.settings_window
                         .current_settings
                         .show_hidden_files_folders,
+                    self.settings_window.current_settings.show_item_viewer_icons,
                     self.settings_window
                         .current_settings
                         .windows_context_menu_enabled,

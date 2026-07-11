@@ -75,6 +75,7 @@ pub fn draw_item_viewer(
     sort_column: SortColumn,
     sort_ascending: bool,
     show_hidden_files_folders: bool,
+    show_item_viewer_icons: bool,
     icon_cache: &IconCache,
     rename_state: &mut Option<RenameState>,
     palette: &ThemePalette,
@@ -106,7 +107,7 @@ pub fn draw_item_viewer(
     let mut hovered_drop_target_rect: Option<egui::Rect> = None;
     draw_external_to_internal_drag_overlay(ui, i18n, *external_drag_to_internal_hover);
 
-    let layout = compute_layout(ui, is_drive_view);
+    let layout = compute_layout(ui, is_drive_view, palette);
     let modal_input_blocked =
         tags_state.picker.is_some() || theme_customizer_window.open || settings_window.open;
 
@@ -294,7 +295,7 @@ pub fn draw_item_viewer(
         }
 
         if !layout.is_drive_view {
-            table = table.column(Column::exact(20.0));
+            table = table.column(Column::exact(16.0));
         }
 
         table = table
@@ -373,17 +374,14 @@ pub fn draw_item_viewer(
                     if !layout.is_drive_view {
                         row.col(|ui| {
                             let mut checked = is_selected;
-                            ui.scope(|ui| {
-                                apply_checkbox_colors(ui, palette, checked);
-                                if ui.checkbox(&mut checked, "").clicked() {
-                                    if checked {
-                                        action = Some(ItemViewerAction::Select(file.path.clone()));
-                                    } else {
-                                        action =
-                                            Some(ItemViewerAction::Deselect(file.path.clone()));
-                                    }
+
+                            if draw_checkbox(ui, palette, &mut checked, &file.path).clicked() {
+                                if checked {
+                                    action = Some(ItemViewerAction::Select(file.path.clone()));
+                                } else {
+                                    action = Some(ItemViewerAction::Deselect(file.path.clone()));
                                 }
-                            });
+                            }
                         });
                     }
 
@@ -399,6 +397,7 @@ pub fn draw_item_viewer(
                             palette,
                             &font_id,
                             rename_state,
+                            show_item_viewer_icons,
                         ) {
                             action = Some(a);
                         }
@@ -408,6 +407,7 @@ pub fn draw_item_viewer(
                         handle_draw_col_type(
                             ui,
                             file,
+                            &layout,
                             is_selected,
                             is_cut,
                             palette,
@@ -420,6 +420,7 @@ pub fn draw_item_viewer(
                         handle_draw_col_size(
                             ui,
                             file,
+                            &layout,
                             folder_sizes,
                             is_selected,
                             is_cut,
@@ -448,6 +449,7 @@ pub fn draw_item_viewer(
                             handle_draw_col_created(
                                 ui,
                                 file,
+                                &layout,
                                 is_selected,
                                 is_cut,
                                 palette,
@@ -716,10 +718,8 @@ fn draw_external_to_internal_drag_overlay(
     }
 }
 
-fn compute_layout(ui: &egui::Ui, is_drive_view: bool) -> ItemViewerLayout {
-    let text_height = 14.0;
-    let row_padding = 6.0;
-    let row_height = text_height + row_padding;
+fn compute_layout(ui: &egui::Ui, is_drive_view: bool, palette: &ThemePalette) -> ItemViewerLayout {
+    let row_height = palette.row_height;
 
     let header_padding = 0.0;
     let header_height = row_height + header_padding;
@@ -1019,7 +1019,11 @@ fn handle_draw_col_name(
     palette: &ThemePalette,
     font_id: &egui::FontId,
     rename_state: &mut Option<RenameState>,
+    show_item_viewer_icons: bool,
 ) -> Option<ItemViewerAction> {
+    const TEXT_LEFT_PADDING: f32 = 2.0;
+    const ICON_HORIZONTAL_PADDING: f32 = 2.0;
+
     let available_width = ui.available_width();
 
     let (rect, _) = ui.allocate_exact_size(
@@ -1027,27 +1031,35 @@ fn handle_draw_col_name(
         egui::Sense::hover(),
     );
 
-    // --- ICON ---
-    let icon_size = egui::vec2(palette.explorer_icon_size, palette.explorer_icon_size);
-    let icon_padding = 4.0;
+    // Reserve a fixed area for the icon.
+    let icon_size = egui::vec2(layout.row_height, layout.row_height);
+    let icon_area_width = icon_size.x + ICON_HORIZONTAL_PADDING * 2.0;
 
-    let text_offset_x = if let Some(icon) = icon_cache.get(&file.path, file.is_dir) {
-        let icon_pos = egui::pos2(rect.min.x + 4.0, rect.center().y - icon_size.y / 2.0);
+    let text_offset_x = if show_item_viewer_icons {
+        if let Some(icon) = icon_cache.get(&file.path, file.is_dir) {
+            let icon_area =
+                egui::Rect::from_min_size(rect.min, egui::vec2(icon_area_width, layout.row_height));
 
-        ui.painter().image(
-            (&icon).into(),
-            egui::Rect::from_min_size(icon_pos, icon_size),
-            egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1.0, 1.0)),
-            if is_cut {
-                palette.icon_colored_hover.linear_multiply(0.5)
-            } else {
-                palette.icon_colored_hover
-            },
-        );
+            let icon_pos = egui::pos2(
+                icon_area.center().x - icon_size.x * 0.5,
+                icon_area.center().y - icon_size.y * 0.5,
+            );
 
-        8.0 + icon_size.x + icon_padding
+            ui.painter().image(
+                (&icon).into(),
+                egui::Rect::from_min_size(icon_pos, icon_size),
+                egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1.0, 1.0)),
+                if is_cut {
+                    palette.icon_colored_hover.linear_multiply(0.5)
+                } else {
+                    palette.icon_colored_hover
+                },
+            );
+        }
+
+        icon_area_width
     } else {
-        8.0 + palette.explorer_icon_size + icon_padding
+        TEXT_LEFT_PADDING
     };
 
     let text_rect =
@@ -1074,10 +1086,8 @@ fn handle_draw_col_name(
 
     let (display_name, _) = truncate_item_text(ui, &file.name, text_width, font_id, color);
 
-    let text_pos = egui::pos2(rect.min.x + text_offset_x, rect.center().y);
-
     ui.painter().text(
-        text_pos,
+        egui::pos2(rect.min.x + text_offset_x, rect.center().y),
         egui::Align2::LEFT_CENTER,
         display_name,
         font_id.clone(),
@@ -1090,6 +1100,7 @@ fn handle_draw_col_name(
 fn handle_draw_col_type(
     ui: &mut egui::Ui,
     file: &FileItem,
+    layout: &ItemViewerLayout,
     is_selected: bool,
     is_cut: bool,
     palette: &ThemePalette,
@@ -1106,26 +1117,13 @@ fn handle_draw_col_type(
         get_file_type_name("", file_type_cache)
     };
 
-    let mut rich_text = egui::RichText::new(type_text)
-        .size(palette.text_size)
-        .color(color);
-
-    if is_cut {
-        rich_text = rich_text.italics();
-    }
-
-    let resp = ui.add(
-        egui::Label::new(rich_text.font(font_id.clone()))
-            .truncate() // 🔥 THIS fixes multi-line + resizing
-            .sense(egui::Sense::hover()),
-    );
-
-    resp.on_hover_cursor(egui::CursorIcon::Default);
+    draw_table_text(ui, layout, type_text, font_id, color);
 }
 
 fn handle_draw_col_size(
     ui: &mut egui::Ui,
     file: &FileItem,
+    layout: &ItemViewerLayout,
     folder_sizes: &HashMap<PathBuf, ItemViewerFolderSizeState>,
     is_selected: bool,
     is_cut: bool,
@@ -1137,7 +1135,6 @@ fn handle_draw_col_size(
 ) {
     let text_color = get_text_color(is_selected, is_cut, palette);
 
-    // --- DRIVE VIEW (free / total) ---
     if let (Some(total), Some(free)) = (file.total_space, file.free_space) {
         let key = &file.path;
         let text = if let Some((cached_total, cached_free, cached_text)) =
@@ -1163,20 +1160,11 @@ fn handle_draw_col_size(
             text
         };
 
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new(display_text)
-                    .size(palette.text_size)
-                    .color(text_color)
-                    .font(font_id.clone()),
-            )
-            .truncate(),
-        );
+        draw_table_text(ui, layout, display_text, font_id, text_color);
 
         return;
     }
 
-    // --- FOLDER SIZE ---
     if file.is_dir {
         if let Some(state) = folder_sizes.get(&file.path) {
             let cached = folder_size_text_cache.get(&file.path);
@@ -1200,20 +1188,14 @@ fn handle_draw_col_size(
                 }
             };
 
-            ui.label(
-                egui::RichText::new(text)
-                    .size(palette.text_size)
-                    .color(text_color)
-                    .font(font_id.clone()),
-            );
+            draw_table_text(ui, layout, text, font_id, text_color);
         } else {
-            draw_placeholder(ui, palette, font_id, text_color);
+            draw_table_text(ui, layout, "—", font_id, text_color);
         }
 
         return;
     }
 
-    // --- FILE SIZE ---
     if let Some(size) = file.file_size {
         let cached = file_size_text_cache.get(&file.path);
         let text = match cached {
@@ -1227,15 +1209,9 @@ fn handle_draw_col_size(
                     .unwrap_or("")
             }
         };
-        ui.label(
-            egui::RichText::new(text)
-                .size(palette.text_size)
-                .color(text_color)
-                .font(font_id.clone()),
-        )
-        .on_hover_cursor(egui::CursorIcon::Default);
+        draw_table_text(ui, layout, text, font_id, text_color);
     } else {
-        draw_placeholder(ui, palette, font_id, text_color);
+        draw_table_text(ui, layout, "—", font_id, text_color);
     }
 }
 
@@ -1255,9 +1231,10 @@ fn handle_draw_col_modified(
             ui.add_space(vertical_padding);
             drive_usage_bar(ui, total, free, bar_height, palette);
         } else {
-            draw_placeholder(
+            draw_table_text(
                 ui,
-                palette,
+                layout,
+                "—",
                 font_id,
                 get_text_color(is_selected, is_cut, palette),
             );
@@ -1266,18 +1243,9 @@ fn handle_draw_col_modified(
         let color = get_text_color(is_selected, is_cut, palette);
 
         if let Some(m) = &file.modified_time {
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new(m)
-                        .size(palette.text_size)
-                        .color(color)
-                        .font(font_id.clone()),
-                )
-                .truncate()
-                .sense(egui::Sense::hover()),
-            );
+            draw_table_text(ui, layout, m, font_id, color);
         } else {
-            draw_placeholder(ui, palette, font_id, color);
+            draw_table_text(ui, layout, "—", font_id, color);
         }
     }
 }
@@ -1285,6 +1253,7 @@ fn handle_draw_col_modified(
 fn handle_draw_col_created(
     ui: &mut egui::Ui,
     file: &FileItem,
+    layout: &ItemViewerLayout,
     is_selected: bool,
     is_cut: bool,
     palette: &ThemePalette,
@@ -1292,33 +1261,13 @@ fn handle_draw_col_created(
 ) {
     let color = get_text_color(is_selected, is_cut, palette);
 
-    let text = file.created_time.as_deref().unwrap_or("—");
-
-    ui.add(
-        egui::Label::new(
-            egui::RichText::new(text)
-                .size(palette.text_size)
-                .color(color)
-                .font(font_id.clone()),
-        )
-        .truncate()
-        .sense(egui::Sense::hover()),
+    draw_table_text(
+        ui,
+        layout,
+        file.created_time.as_deref().unwrap_or("—"),
+        font_id,
+        color,
     );
-}
-
-fn draw_placeholder(
-    ui: &mut egui::Ui,
-    palette: &ThemePalette,
-    font_id: &egui::FontId,
-    color: egui::Color32,
-) {
-    ui.label(
-        egui::RichText::new("—")
-            .size(palette.text_size)
-            .color(color)
-            .font(font_id.clone()),
-    )
-    .on_hover_cursor(egui::CursorIcon::Default);
 }
 
 fn get_text_color(is_selected: bool, is_cut: bool, palette: &ThemePalette) -> egui::Color32 {
@@ -1734,7 +1683,15 @@ fn draw_item_viewer_header(
 
             ui.scope(|ui| {
                 apply_checkbox_colors(ui, palette, all_selected);
-                if ui.checkbox(&mut all_selected, "").clicked() {
+                // if ui.checkbox(&mut all_selected, "").clicked() {
+                //     if all_selected {
+                //         action = Some(ItemViewerAction::SelectAll);
+                //     } else {
+                //         action = Some(ItemViewerAction::DeselectAll);
+                //     }
+                // }
+
+                if draw_checkbox(ui, palette, &mut all_selected, "select_all").clicked() {
                     if all_selected {
                         action = Some(ItemViewerAction::SelectAll);
                     } else {
@@ -2122,4 +2079,85 @@ fn handle_row_click(
             Some(ItemViewerAction::ReplaceSelection(file.path.clone()))
         }
     }
+}
+
+fn draw_table_text(
+    ui: &mut egui::Ui,
+    layout: &ItemViewerLayout,
+    text: &str,
+    font_id: &egui::FontId,
+    color: egui::Color32,
+) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), layout.row_height),
+        egui::Sense::hover(),
+    );
+
+    let (display_text, _) = truncate_item_text(ui, text, rect.width(), font_id, color);
+
+    ui.painter().text(
+        egui::pos2(rect.left(), rect.center().y),
+        egui::Align2::LEFT_CENTER,
+        display_text,
+        font_id.clone(),
+        color,
+    );
+
+    response.on_hover_cursor(egui::CursorIcon::Default)
+}
+
+pub fn draw_checkbox(
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+    checked: &mut bool,
+    id: impl std::hash::Hash,
+) -> egui::Response {
+    let size = ui.available_rect_before_wrap().height().min(12.0);
+
+    // The entire table cell
+    let cell = ui.available_rect_before_wrap();
+
+    // Center the checkbox inside the cell
+    let rect = egui::Rect::from_center_size(cell.center(), egui::vec2(size, size));
+
+    let response = ui.interact(rect, ui.id().with(id), egui::Sense::click());
+
+    if response.clicked() {
+        *checked = !*checked;
+    }
+
+    let bg = if *checked {
+        palette.checkbox_bg_active
+    } else if response.hovered() {
+        palette.checkbox_bg_hover
+    } else {
+        palette.checkbox_bg_default
+    };
+
+    let border = if response.hovered() {
+        palette.checkbox_bg_hover
+    } else {
+        bg
+    };
+
+    ui.painter().rect(
+        rect,
+        egui::CornerRadius::same(5),
+        bg,
+        egui::Stroke::new(1.0, border),
+        egui::StrokeKind::Middle,
+    );
+
+    if *checked {
+        let p1 = egui::pos2(rect.left() + 3.0, rect.center().y);
+        let p2 = egui::pos2(rect.left() + 6.0, rect.bottom() - 3.0);
+        let p3 = egui::pos2(rect.right() - 3.0, rect.top() + 3.0);
+
+        let stroke = egui::Stroke::new(2.0, palette.checkbox_checkmark_color);
+
+        ui.painter().line_segment([p1, p2], stroke);
+        ui.painter().line_segment([p2, p3], stroke);
+    }
+
+    response
 }

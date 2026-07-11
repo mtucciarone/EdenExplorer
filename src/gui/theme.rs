@@ -4,10 +4,10 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::{LazyLock, RwLock};
 
-pub const THEME_VERSION: u32 = 2;
+pub const THEME_VERSION: u32 = 4;
 
-fn default_explorer_icon_size() -> f32 {
-    18.0
+fn default_itemviewer_row_height() -> f32 {
+    10.0
 }
 
 fn default_sidebar_icon_size() -> f32 {
@@ -23,7 +23,7 @@ fn default_context_menu_text_size() -> f32 {
 }
 
 fn default_font_name() -> String {
-    "Ubuntu-Light".to_string()
+    "Segoe UI".to_string()
 }
 
 fn default_mono_font_name() -> String {
@@ -49,8 +49,6 @@ pub struct ThemePalette {
     pub tooltip_text_size: f32,
     #[serde(default = "default_context_menu_text_size")]
     pub context_menu_text_size: f32,
-    #[serde(default = "default_explorer_icon_size")]
-    pub explorer_icon_size: f32,
     #[serde(default = "default_sidebar_icon_size")]
     pub sidebar_icon_size: f32,
     #[serde(default = "default_tab_icon_size")]
@@ -84,6 +82,8 @@ pub struct ThemePalette {
     // 🎯 Rows / list items
     pub row_selected_bg: Color32,
     pub row_bg: Color32,
+    #[serde(default = "default_itemviewer_row_height")]
+    pub row_height: f32,
 
     // 🎯 Handles / borders
     pub resize_handle: Color32,
@@ -138,7 +138,6 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         text_size: 12.0,
         tooltip_text_size: 13.0,
         context_menu_text_size: 11.0,
-        explorer_icon_size: 18.0,
         sidebar_icon_size: 20.0,
         tab_icon_size: 12.0,
         font_name: default_font_name(),
@@ -168,6 +167,7 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         // 🎯 Rows / list items
         row_selected_bg: Color32::from_rgb(70, 78, 86),
         row_bg: Color32::from_rgb(40, 45, 50),
+        row_height: default_itemviewer_row_height(),
 
         // 🎯 Handles / borders
         resize_handle: Color32::from_rgb(160, 170, 180),
@@ -228,7 +228,6 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         text_size: 12.0,
         tooltip_text_size: 13.0,
         context_menu_text_size: 11.0,
-        explorer_icon_size: 18.0,
         sidebar_icon_size: 20.0,
         tab_icon_size: 12.0,
         font_name: default_font_name(),
@@ -258,6 +257,7 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         // 🎯 Rows / list items
         row_selected_bg: Color32::from_rgb(70, 78, 86),
         row_bg: Color32::from_rgb(240, 245, 250),
+        row_height: default_itemviewer_row_height(),
 
         // 🎯 Handles / borders
         resize_handle: Color32::from_rgb(160, 170, 180),
