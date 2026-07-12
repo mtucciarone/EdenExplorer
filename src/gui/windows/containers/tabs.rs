@@ -45,6 +45,7 @@ pub fn draw_tabs(
                         .auto_shrink([false, true])
                         .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
                         .show(ui, |ui| {
+                            ui.add_space(-2.0);
                             ui.horizontal(|ui| {
                                 for tab in tabs {
                                     let tab_width = 140.0;
@@ -251,7 +252,17 @@ fn handle_draw_tab_new_allocated(
     let painter = ui.painter();
 
     // --- Paint background ---
-    painter.rect_filled(rect, corner, tab_fill);
+    let rect = egui::Rect::from_min_max(rect.min.round(), rect.max.round());
+    let bg_rect = rect.expand(5.0);
+
+    let rounding = egui::CornerRadius {
+        nw: corner.nw,
+        ne: corner.ne,
+        sw: 0,
+        se: 0,
+    };
+
+    painter.rect_filled(rect, rounding, tab_fill);
 
     painter.text(
         icon_rect.left_center(),
@@ -276,14 +287,7 @@ fn handle_draw_tab_new_allocated(
         egui::Stroke::new(1.0, palette.tab_border_default)
     };
 
-    let rounding = egui::CornerRadius {
-        nw: corner.nw,
-        ne: corner.ne,
-        sw: 0,
-        se: 0,
-    };
-
-    painter.rect_stroke(rect, rounding, stroke, egui::StrokeKind::Outside);
+    painter.rect_stroke(rect, rounding, stroke, egui::StrokeKind::Inside);
 
     if is_active {
         painter.line_segment(
