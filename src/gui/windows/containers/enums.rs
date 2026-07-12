@@ -1,7 +1,7 @@
 use crate::gui::utils::SortColumn;
 use std::path::PathBuf;
 
-pub enum TabbarNavAction {
+pub enum ItemViewerNavAction {
     Back,
     Forward,
     Up,

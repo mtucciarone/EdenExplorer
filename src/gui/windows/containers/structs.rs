@@ -1,7 +1,7 @@
 use crate::core::fs::FileItem;
 use crate::core::indexer::TagsSnapshot;
 use crate::gui::utils::hsl_to_color32;
-use crate::gui::windows::containers::enums::{ItemViewerAction, TabbarNavAction};
+use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerNavAction};
 use crate::gui::windows::shell_context_menu::ShellContextMenu;
 use crate::gui::windows::structs::Navigation;
 use crossbeam_channel::{Receiver, Sender};
@@ -120,7 +120,6 @@ pub struct TabState {
     pub id: u64,
     pub primary_view: TabView,
     pub split_view: Option<TabView>,
-    pub split_ratio: f32,
 }
 
 impl TabState {
@@ -134,7 +133,6 @@ impl TabState {
             id,
             primary_view: TabView::new(nav, default_sort_column, default_sort_ascending),
             split_view: None,
-            split_ratio: 0.5,
         }
     }
 
@@ -154,8 +152,8 @@ impl TabState {
 }
 
 #[derive(Default)]
-pub struct TabbarAction {
-    pub nav: Option<TabbarNavAction>,
+pub struct ItemViewerNavBarAction {
+    pub nav: Option<ItemViewerNavAction>,
     pub create_folder: bool,
     pub create_file: bool,
     pub add_favorite: bool,
@@ -171,6 +169,22 @@ pub struct TabbarAction {
 pub struct ItemViewerFolderSizeState {
     pub bytes: u64,
     pub done: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct Breadcrumb {
+    pub label: String,
+    pub path: PathBuf,
+}
+
+#[derive(Clone, Debug)]
+pub struct RenderedBreadcrumb {
+    pub label: String,
+    pub full_label: String,
+    pub path: PathBuf,
+    pub truncated: bool,
+    pub is_ellipsis: bool,
+    pub width: f32,
 }
 
 pub struct RenameState {
@@ -208,9 +222,9 @@ pub struct TopbarAction {
 
 #[derive(Default)]
 pub struct ItemViewerLayout {
-    pub row_height: f32,
+    pub row_height: f32, // total row height
+    pub icon_size: f32,
     pub header_height: f32,
-    pub header_gap: f32,
     pub is_drive_view: bool,
 }
 

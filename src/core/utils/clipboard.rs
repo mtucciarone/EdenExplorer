@@ -191,15 +191,6 @@ pub fn is_clipboard_cut() -> bool {
     is_cut
 }
 
-pub fn clipboard_has_files() -> bool {
-    if unsafe { OpenClipboard(None).is_err() } {
-        return false;
-    }
-    let has = unsafe { GetClipboardData(CF_HDROP.0 as u32) }.is_ok();
-    let _ = unsafe { CloseClipboard() };
-    has
-}
-
 pub fn copy_text_to_clipboard(text: &str) -> bool {
     if unsafe { OpenClipboard(None).is_err() } {
         return false;
