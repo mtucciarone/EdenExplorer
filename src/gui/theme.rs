@@ -7,7 +7,7 @@ use std::sync::{LazyLock, RwLock};
 pub const THEME_VERSION: u32 = 4;
 
 fn default_itemviewer_row_height() -> f32 {
-    10.0
+    16.0
 }
 
 fn default_sidebar_icon_size() -> f32 {

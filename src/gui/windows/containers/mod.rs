@@ -1,6 +1,8 @@
 pub mod enums;
 pub mod explorer;
 pub mod itemviewer;
+pub mod itemviewer_helper;
+pub mod itemviewer_navbar;
 pub mod sidebar;
 pub mod structs;
 pub mod tabs;

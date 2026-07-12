@@ -1,6 +1,7 @@
 use crate::core::indexer::{
     load_app_settings, load_favorites, load_tags, load_theme_settings, save_app_settings,
 };
+use crate::core::utils::tabs::update_tab_infos_cache;
 use crate::gui::dragdrop::{DragDropBackend, DropTargets};
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
@@ -8,11 +9,11 @@ use crate::gui::theme::{
     ThemeMode, apply_font_to_context, apply_theme, get_default_palette, get_palette, set_palette,
 };
 use crate::gui::windows::containers::enums::ItemViewerAction;
-use crate::gui::windows::containers::explorer::{draw_tab_content, update_tab_infos_cache};
+use crate::gui::windows::containers::explorer::draw_tab_content;
 use crate::gui::windows::containers::sidebar::draw_sidebar;
 use crate::gui::windows::containers::structs::{
-    FavoriteItem, ItemViewerFolderSizeState, RenameState, SidebarAction, SplitSide, TabInfo,
-    TabState, TabbarAction, TabsAction, TagsState,
+    FavoriteItem, ItemViewerFolderSizeState, ItemViewerNavBarAction, RenameState, SidebarAction,
+    SplitSide, TabInfo, TabState, TabsAction, TagsState,
 };
 use crate::gui::windows::containers::tabs::draw_tabs;
 use crate::gui::windows::containers::tags::{
@@ -253,7 +254,7 @@ impl Default for MainWindow {
 
 impl MainWindow {
     pub fn new() -> Self {
-        let mut app = Self::default();
+        let app = Self::default();
         app
     }
 
@@ -408,7 +409,7 @@ impl eframe::App for MainWindow {
         let mut sidebar_action: Option<SidebarAction> = None;
         let mut tabs_action: Option<TabsAction> = None;
         let mut tabbar_action = None;
-        let mut secondary_tabbar_action: Option<TabbarAction> = None;
+        let mut secondary_tabbar_action: Option<ItemViewerNavBarAction> = None;
         let mut secondary_pending_action: Option<ItemViewerAction> = None;
         let mut primary_focus_click = false;
         let mut secondary_focus_click = false;
@@ -560,33 +561,43 @@ impl eframe::App for MainWindow {
 
                                     container.show(ui, |ui| {
                                         if has_split {
-                                            let explorer_avail_width = ui.available_width();
-                                            let explorer_avail_height = ui.available_height();
-                                            let split_ratio =
-                                                self.tabs[self.active_tab].split_ratio;
-                                            let primary_width = (explorer_avail_width
-                                                * split_ratio)
-                                                .clamp(
-                                                    explorer_avail_width * 0.2,
-                                                    explorer_avail_width * 0.8,
-                                                );
                                             let primary_focused =
                                                 self.focused_split == SplitSide::Primary;
                                             let secondary_focused = !primary_focused;
+                                            let split_rect = ui.available_rect_before_wrap();
+                                            let (split_rect, _) = ui.allocate_exact_size(
+                                                split_rect.size(),
+                                                egui::Sense::hover(),
+                                            );
+                                            let split_width = split_rect.width();
+                                            let split_height = split_rect.height();
+                                            const SPLIT_GAP: f32 = 8.0;
+                                            let primary_width = ((split_width - SPLIT_GAP) * 0.5).floor();
+                                            let secondary_width =
+                                                (split_width - primary_width - SPLIT_GAP).max(0.0);
+                                            let primary_rect = egui::Rect::from_min_size(
+                                                split_rect.min,
+                                                egui::vec2(primary_width, split_height),
+                                            );
 
-                                            ui.horizontal_top(|ui| {
-                                                // --- Primary view ---
+                                            let secondary_rect = egui::Rect::from_min_size(
+                                                egui::pos2(
+                                                    primary_rect.right() + SPLIT_GAP,
+                                                    split_rect.top(),
+                                                ),
+                                                egui::vec2(secondary_width, split_height),
+                                            );
+
+                                            ui.allocate_ui_at_rect(primary_rect, |ui| {
+                                                ui.set_clip_rect(primary_rect);
                                                 ui.push_id("pane_0", |ui| {
                                                     ui.allocate_ui_with_layout(
-                                                        egui::vec2(
-                                                            primary_width,
-                                                            explorer_avail_height,
-                                                        ),
+                                                        ui.available_size(),
                                                         egui::Layout::top_down(egui::Align::Min),
                                                         |ui| {
                                                             if primary_focused {
-                                                                let accent_rect = ui
-                                                                    .available_rect_before_wrap();
+                                                                let accent_rect =
+                                                                    ui.available_rect_before_wrap();
                                                                 ui.painter().hline(
                                                                     accent_rect.x_range(),
                                                                     accent_rect.top(),
@@ -598,8 +609,8 @@ impl eframe::App for MainWindow {
                                                             }
                                                             ui.add_space(2.0);
 
-                                                            let catch_rect = ui
-                                                                .available_rect_before_wrap();
+                                                            let catch_rect =
+                                                                ui.available_rect_before_wrap();
                                                             if ui
                                                                 .interact(
                                                                     catch_rect,
@@ -613,8 +624,7 @@ impl eframe::App for MainWindow {
                                                                 primary_focus_click = true;
                                                             }
 
-                                                            let tab_id =
-                                                                self.tabs[self.active_tab].id;
+                                                            let tab_id = self.tabs[self.active_tab].id;
                                                             let is_favorited = self
                                                                 .sidebar_state
                                                                 .favorites
@@ -652,12 +662,10 @@ impl eframe::App for MainWindow {
                                                                 &mut self.file_size_text_cache,
                                                                 &mut self.folder_size_text_cache,
                                                                 &mut self.drive_size_text_cache,
-                                                                &mut self
-                                                                    .external_drag_to_internal_hover,
+                                                                &mut self.external_drag_to_internal_hover,
                                                                 drag_active,
                                                                 native_inbound_drag_active,
                                                                 drag_hover_target.clone(),
-                                                                dragdrop,
                                                                 &mut self.tags_state,
                                                                 &mut self.theme_customizer,
                                                                 &mut self.settings_window,
@@ -669,69 +677,18 @@ impl eframe::App for MainWindow {
                                                         },
                                                     );
                                                 });
+                                            });
 
-                                                // --- Divider ---
-                                                let divider_width = 6.0;
-                                                let divider_left =
-                                                    ui.available_rect_before_wrap().left();
-                                                let divider_rect = egui::Rect::from_min_size(
-                                                    egui::pos2(
-                                                        divider_left - divider_width / 2.0,
-                                                        ui.min_rect().top(),
-                                                    ),
-                                                    egui::vec2(
-                                                        divider_width,
-                                                        explorer_avail_height,
-                                                    ),
-                                                );
-                                                let divider_response = ui.allocate_rect(
-                                                    divider_rect,
-                                                    egui::Sense::click_and_drag(),
-                                                );
-
-                                                if divider_response.hovered()
-                                                    || divider_response.dragged()
-                                                {
-                                                    ui.ctx().set_cursor_icon(
-                                                        egui::CursorIcon::ResizeHorizontal,
-                                                    );
-                                                    let handle_height = 25.0;
-                                                    let handle_width = 6.0;
-                                                    let center_y = divider_rect.center().y;
-                                                    let handle_rect = egui::Rect::from_center_size(
-                                                        egui::pos2(
-                                                            divider_rect.center().x,
-                                                            center_y,
-                                                        ),
-                                                        egui::vec2(handle_width, handle_height),
-                                                    );
-                                                    ui.painter().rect_filled(
-                                                        handle_rect,
-                                                        handle_width / 2.0,
-                                                        palette.button_seperator_handle_fill,
-                                                    );
-                                                }
-
-                                                if divider_response.dragged() {
-                                                    self.tabs[self.active_tab].split_ratio =
-                                                        ((split_ratio * explorer_avail_width
-                                                            + divider_response.drag_delta().x)
-                                                            / explorer_avail_width)
-                                                            .clamp(0.2, 0.8);
-                                                }
-
-                                                // --- Secondary view ---
+                                            ui.allocate_ui_at_rect(secondary_rect, |ui| {
+                                                ui.set_clip_rect(secondary_rect);
                                                 ui.push_id("pane_1", |ui| {
                                                     ui.allocate_ui_with_layout(
-                                                        egui::vec2(
-                                                            ui.available_width(),
-                                                            explorer_avail_height,
-                                                        ),
+                                                        ui.available_size(),
                                                         egui::Layout::top_down(egui::Align::Min),
                                                         |ui| {
                                                             if secondary_focused {
-                                                                let accent_rect = ui
-                                                                    .available_rect_before_wrap();
+                                                                let accent_rect =
+                                                                    ui.available_rect_before_wrap();
                                                                 ui.painter().hline(
                                                                     accent_rect.x_range(),
                                                                     accent_rect.top(),
@@ -743,8 +700,8 @@ impl eframe::App for MainWindow {
                                                             }
                                                             ui.add_space(2.0);
 
-                                                            let catch_rect = ui
-                                                                .available_rect_before_wrap();
+                                                            let catch_rect =
+                                                                ui.available_rect_before_wrap();
                                                             if ui
                                                                 .interact(
                                                                     catch_rect,
@@ -758,8 +715,7 @@ impl eframe::App for MainWindow {
                                                                 secondary_focus_click = true;
                                                             }
 
-                                                            let tab_id =
-                                                                self.tabs[self.active_tab].id;
+                                                            let tab_id = self.tabs[self.active_tab].id;
                                                             let is_favorited = self.tabs
                                                                 [self.active_tab]
                                                                 .split_view
@@ -769,7 +725,8 @@ impl eframe::App for MainWindow {
                                                                         .favorites
                                                                         .iter()
                                                                         .any(|fav| {
-                                                                            fav.path == v.nav.current
+                                                                            fav.path
+                                                                                == v.nav.current
                                                                         })
                                                                 })
                                                                 .unwrap_or(false);
@@ -800,12 +757,10 @@ impl eframe::App for MainWindow {
                                                                 &mut self.file_size_text_cache,
                                                                 &mut self.folder_size_text_cache,
                                                                 &mut self.drive_size_text_cache,
-                                                                &mut self
-                                                                    .external_drag_to_internal_hover,
+                                                                &mut self.external_drag_to_internal_hover,
                                                                 drag_active,
                                                                 native_inbound_drag_active,
                                                                 drag_hover_target.clone(),
-                                                                dragdrop,
                                                                 &mut self.tags_state,
                                                                 &mut self.theme_customizer,
                                                                 &mut self.settings_window,
@@ -869,7 +824,6 @@ impl eframe::App for MainWindow {
                                                 drag_active,
                                                 native_inbound_drag_active,
                                                 drag_hover_target.clone(),
-                                                dragdrop,
                                                 &mut self.tags_state,
                                                 &mut self.theme_customizer,
                                                 &mut self.settings_window,

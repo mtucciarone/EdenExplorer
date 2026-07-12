@@ -97,3 +97,41 @@ pub fn copy_dir_recursive(src: &Path, dest: &Path) -> std::io::Result<()> {
 
     Ok(())
 }
+
+/// Checks if a filename contains valid characters for real-time validation
+/// Used during typing to immediately filter invalid characters
+pub fn filename_has_valid_characters_realtime(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+
+    // Check maximum length
+    if name.len() > 255 {
+        return false;
+    }
+
+    // Windows reserved characters that cannot be used in filenames
+    let invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+
+    // Check for invalid characters
+    for ch in name.chars() {
+        if invalid_chars.contains(&ch) {
+            return false;
+        }
+    }
+
+    // Windows reserved names (case-insensitive)
+    let reserved_names = [
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+
+    let name_upper = name.to_uppercase();
+    for reserved in &reserved_names {
+        if name_upper == *reserved {
+            return false;
+        }
+    }
+
+    true
+}

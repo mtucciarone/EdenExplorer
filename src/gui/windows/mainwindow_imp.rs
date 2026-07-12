@@ -15,11 +15,11 @@ use crate::gui::utils::{
 };
 use crate::gui::windows::about::draw_about_window;
 use crate::gui::windows::containers::enums::{
-    ItemViewerAction, ItemViewerContextAction, TabbarNavAction,
+    ItemViewerAction, ItemViewerContextAction, ItemViewerNavAction,
 };
 use crate::gui::windows::containers::structs::{
-    FavoriteItem, ItemViewerFolderSizeState, RenameState, SidebarAction, SplitSide, TabState,
-    TabView, TabbarAction, TabsAction, TopbarAction,
+    FavoriteItem, ItemViewerFolderSizeState, ItemViewerNavBarAction, RenameState, SidebarAction,
+    SplitSide, TabState, TabView, TabsAction, TopbarAction,
 };
 use crate::gui::windows::customizetheme::draw_theme_customizer;
 use crate::gui::windows::enums::{SettingsAction, ThemeCustomizerAction};
@@ -845,12 +845,12 @@ impl MainWindow {
 
     pub fn handle_tabbar_action(
         &mut self,
-        tabbar_action: Option<TabbarAction>,
+        tabbar_action: Option<ItemViewerNavBarAction>,
         drag_sources: Option<&[PathBuf]>,
     ) {
         if let Some(action) = tabbar_action.as_ref().and_then(|t| t.nav.as_ref()) {
             match action {
-                TabbarNavAction::Back => {
+                ItemViewerNavAction::Back => {
                     // Store current path in navigation history before going back
                     if let Some(parent) = self.current_nav().get_parent() {
                         let current = self.current_nav().current.clone();
@@ -863,8 +863,8 @@ impl MainWindow {
                     }
                     self.current_nav_mut().go_back();
                 }
-                TabbarNavAction::Forward => self.current_nav_mut().go_forward(),
-                TabbarNavAction::Up => {
+                ItemViewerNavAction::Forward => self.current_nav_mut().go_forward(),
+                ItemViewerNavAction::Up => {
                     // Store current path in navigation history before going up
                     if let Some(parent) = self.current_nav().get_parent() {
                         let current = self.current_nav().current.clone();
@@ -882,7 +882,7 @@ impl MainWindow {
             self.load_path();
 
             // Restore selection for Back and Up actions
-            if matches!(action, TabbarNavAction::Back | TabbarNavAction::Up) {
+            if matches!(action, ItemViewerNavAction::Back | ItemViewerNavAction::Up) {
                 let current_path = self.current_nav().current.clone();
                 let side = self.focused_split;
                 let explorer_state = &mut self.active_tab_mut().view_mut(side).explorer_state;
@@ -1100,7 +1100,6 @@ impl MainWindow {
         } else {
             let tab = self.active_tab_mut();
             tab.split_view = Some(tab.primary_view.duplicate_as_new());
-            tab.split_ratio = 0.5;
             self.focused_split = SplitSide::Secondary;
             self.load_view(SplitSide::Secondary);
         }
@@ -1116,9 +1115,6 @@ impl MainWindow {
         let new_view = TabView::new(Navigation::new(path), sort_column, sort_ascending);
         let tab = self.active_tab_mut();
         tab.split_view = Some(new_view);
-        if tab.split_ratio <= 0.0 {
-            tab.split_ratio = 0.5;
-        }
         self.focused_split = SplitSide::Secondary;
         self.load_view(SplitSide::Secondary);
     }
@@ -1485,6 +1481,7 @@ pub fn create_data_object(paths: &[PathBuf]) -> Option<IDataObject> {
         }
 
         let mut child_pidls: Vec<*const ITEMIDLIST> = Vec::new();
+        let mut full_pidls: Vec<*mut ITEMIDLIST> = Vec::new();
 
         for child in children {
             let full = parent.join(child);
@@ -1495,13 +1492,16 @@ pub fn create_data_object(paths: &[PathBuf]) -> Option<IDataObject> {
                 // 🔥 Convert to relative PIDL
                 let rel = ILFindLastID(full_pidl);
                 child_pidls.push(rel);
-                CoTaskMemFree(Some(full_pidl as _));
+                full_pidls.push(full_pidl);
             }
         }
 
         let result: Result<IDataObject> =
             SHCreateDataObject(Some(parent_pidl), Some(&child_pidls), None);
 
+        for full_pidl in full_pidls {
+            CoTaskMemFree(Some(full_pidl as _));
+        }
         CoTaskMemFree(Some(parent_pidl as _));
 
         result.ok()

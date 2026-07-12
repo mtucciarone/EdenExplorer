@@ -187,32 +187,58 @@ pub fn draw_object_drag_ghost(
     }
 }
 
-pub fn styled_button(ui: &mut Ui, label: impl Into<String>, palette: &ThemePalette) -> Response {
-    let label = label.into();
-    let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
+pub fn draw_checkbox(
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+    checked: &mut bool,
+    id: impl std::hash::Hash,
+) -> egui::Response {
+    let size = ui.available_rect_before_wrap().height().min(12.0);
 
-    let desired_height = ui.spacing().interact_size.y;
-    let desired_width = ui.available_width();
-    let size = vec2(desired_width, desired_height);
+    // The entire table cell
+    let cell = ui.available_rect_before_wrap();
 
-    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    // Center the checkbox inside the cell
+    let rect = egui::Rect::from_center_size(cell.center(), egui::vec2(size, size));
+
+    let response = ui.interact(rect, ui.id().with(id), egui::Sense::click());
+
+    if response.clicked() {
+        *checked = !*checked;
+    }
+
+    let bg = if *checked {
+        palette.checkbox_bg_active
+    } else if response.hovered() {
+        palette.checkbox_bg_hover
+    } else {
+        palette.checkbox_bg_default
+    };
+
+    let border = if response.hovered() {
+        palette.checkbox_bg_hover
+    } else {
+        bg
+    };
 
     ui.painter().rect(
         rect,
-        CornerRadius::same(palette.medium_radius),
-        palette.button_background,
-        Stroke::new(1.0, palette.tab_border_default),
-        StrokeKind::Inside,
+        egui::CornerRadius::same(5),
+        bg,
+        egui::Stroke::new(1.0, border),
+        egui::StrokeKind::Middle,
     );
 
-    ui.centered_and_justified(|ui| {
-        let text_label = Label::new(
-            RichText::new(label)
-                .color(palette.button_stroke)
-                .font(font_id),
-        );
-        ui.add(text_label);
-    });
+    if *checked {
+        let p1 = egui::pos2(rect.left() + 3.0, rect.center().y);
+        let p2 = egui::pos2(rect.left() + 6.0, rect.bottom() - 3.0);
+        let p3 = egui::pos2(rect.right() - 3.0, rect.top() + 3.0);
+
+        let stroke = egui::Stroke::new(2.0, palette.checkbox_checkmark_color);
+
+        ui.painter().line_segment([p1, p2], stroke);
+        ui.painter().line_segment([p2, p3], stroke);
+    }
 
     response
 }
