@@ -320,8 +320,6 @@
 
 ## Star History
 
-## Star History
-
 <a href="https://www.star-history.com/?repos=mtucciarone%2FEdenExplorer">
  <picture>
    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=mtucciarone/EdenExplorer&type=date&theme=dark&legend=top-left&sealed_token=Vc9gAQ1EyNnsDshDmlm_VHBAb2pSnvtzPSk4Ip2omG5jagl9CGXy2C8L95S9d_GkLvTh49MUH8vx6A9y7hEGpgJ4x0tv0ZgDqqVAqJs9nxm3Ys_3F1PHK1jpm4v1UHK5yrZ4AJjo99PRtk7JQZV_08P0z5gCxq5EiNnz-YWNQRqeY4nGJyDwhqH5mCqT" />
