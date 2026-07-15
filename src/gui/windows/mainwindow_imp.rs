@@ -252,11 +252,12 @@ impl MainWindow {
                 let path = d.path;
                 if let (Some(total), Some(free)) = (d.total_space, d.free_space) {
                     view.files.push(FileItem::with_drive_info(
-                        label, path, true, false, None, None, None, total, free,
+                        label, path, true, false, None, None, None, None, None, total, free,
                     ));
                 } else {
-                    view.files
-                        .push(FileItem::new(label, path, true, false, None, None, None));
+                    view.files.push(FileItem::new(
+                        label, path, true, false, None, None, None, None, None,
+                    ));
                 }
             }
 
