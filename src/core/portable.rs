@@ -414,7 +414,17 @@ fn enumerate_portable_children(
         cache_object_info(device_id, &path_object_id, &name, parent_override);
 
         // Portable devices don't provide reliable time information, so use None
-        let item = FileItem::new(name, virtual_path, is_dir, is_hidden, file_size, None, None);
+        let item = FileItem::new(
+            name,
+            virtual_path,
+            is_dir,
+            is_hidden,
+            file_size,
+            None,
+            None,
+            None,
+            None,
+        );
         pending.push(item.clone());
 
         if is_root {

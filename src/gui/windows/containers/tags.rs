@@ -269,6 +269,8 @@ pub fn draw_tags(
                                                 file_size: None,
                                                 modified_time: None,
                                                 created_time: None,
+                                                modified_time_raw: None,
+                                                created_time_raw: None,
                                                 total_space: None,
                                                 free_space: None,
                                             };
@@ -289,6 +291,8 @@ pub fn draw_tags(
                                                     file_size: None,
                                                     modified_time: None,
                                                     created_time: None,
+                                                    modified_time_raw: None,
+                                                    created_time_raw: None,
                                                     total_space: None,
                                                     free_space: None,
                                                 };

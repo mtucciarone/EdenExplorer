@@ -285,16 +285,24 @@ pub fn scan_dir_async(
                         Some(*entry.EndOfFile.QuadPart() as u64)
                     };
 
-                    let modified_time = filetime_to_string(
-                        *entry.LastWriteTime.QuadPart(),
-                        date_style,
-                        time_format_24h,
-                    );
-                    let created_time = filetime_to_string(
-                        *entry.CreationTime.QuadPart(),
-                        date_style,
-                        time_format_24h,
-                    );
+                    let modified_time_filetime = *entry.LastWriteTime.QuadPart();
+                    let created_time_filetime = *entry.CreationTime.QuadPart();
+
+                    let modified_time =
+                        filetime_to_string(modified_time_filetime, date_style, time_format_24h);
+                    let created_time =
+                        filetime_to_string(created_time_filetime, date_style, time_format_24h);
+
+                    let modified_time_raw = if modified_time_filetime == 0 {
+                        None
+                    } else {
+                        Some(modified_time_filetime)
+                    };
+                    let created_time_raw = if created_time_filetime == 0 {
+                        None
+                    } else {
+                        Some(created_time_filetime)
+                    };
 
                     let item = FileItem::new(
                         name,
@@ -304,6 +312,8 @@ pub fn scan_dir_async(
                         file_size,
                         modified_time,
                         created_time,
+                        modified_time_raw,
+                        created_time_raw,
                     );
 
                     let _ = tx.send(item);
@@ -410,6 +420,8 @@ pub struct FileItem {
     pub file_size: Option<u64>,
     pub modified_time: Option<String>,
     pub created_time: Option<String>,
+    pub modified_time_raw: Option<i64>,
+    pub created_time_raw: Option<i64>,
 
     // Optional drive info (only populated for drive roots)
     pub total_space: Option<u64>,
@@ -425,6 +437,8 @@ impl FileItem {
         file_size: Option<u64>,
         modified_time: Option<String>,
         created_time: Option<String>,
+        modified_time_raw: Option<i64>,
+        created_time_raw: Option<i64>,
     ) -> Self {
         Self {
             name,
@@ -434,6 +448,8 @@ impl FileItem {
             file_size,
             modified_time,
             created_time,
+            modified_time_raw,
+            created_time_raw,
             total_space: None,
             free_space: None,
         }
@@ -447,6 +463,8 @@ impl FileItem {
         file_size: Option<u64>,
         modified_time: Option<String>,
         created_time: Option<String>,
+        modified_time_raw: Option<i64>,
+        created_time_raw: Option<i64>,
         total: u64,
         free: u64,
     ) -> Self {
@@ -458,6 +476,8 @@ impl FileItem {
             file_size,
             modified_time,
             created_time,
+            modified_time_raw,
+            created_time_raw,
             total_space: Some(total),
             free_space: Some(free),
         }
