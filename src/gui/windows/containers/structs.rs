@@ -19,7 +19,6 @@ pub struct ExplorerState {
     pub selection_focus: Option<usize>,
     pub pending_selection_paths: Option<Vec<PathBuf>>, // select after refresh
     pub non_ntfs_popup_path: Option<PathBuf>,
-    pub windows_context_menu_expanded: bool,
     pub windows_context_menu_cache: Option<WindowsContextMenuCache>,
     pub navigation_history: HashMap<PathBuf, PathBuf>, // parent_dir -> last_visited_child
     pub navigation_selection: Option<PathBuf>,         // path to select after navigation loads

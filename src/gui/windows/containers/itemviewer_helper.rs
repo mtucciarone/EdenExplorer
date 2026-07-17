@@ -72,6 +72,43 @@ pub fn compute_layout(
     }
 }
 
+fn apply_context_menu_typography(ui: &mut egui::Ui, palette: &ThemePalette) {
+    let mut style = (*ui.ctx().style()).clone();
+    style.text_styles = [
+        (
+            egui::TextStyle::Body,
+            FontId::proportional(palette.context_menu_text_size),
+        ),
+        (
+            egui::TextStyle::Button,
+            FontId::proportional(palette.context_menu_text_size),
+        ),
+        (
+            egui::TextStyle::Small,
+            FontId::proportional(palette.context_menu_text_size),
+        ),
+        (
+            egui::TextStyle::Heading,
+            FontId::proportional(palette.context_menu_text_size + 2.0),
+        ),
+    ]
+    .into();
+    style.spacing.button_padding = egui::vec2(4.0, 2.0);
+    style.spacing.item_spacing = egui::vec2(6.0, 2.0);
+    style.spacing.menu_margin = egui::Margin::same(4);
+    style.spacing.interact_size = egui::vec2(
+        style.spacing.interact_size.x,
+        palette.context_menu_text_size + 6.0,
+    );
+    style.visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
+    style.visuals.widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+    style.visuals.widgets.hovered.bg_fill = palette.primary;
+    style.visuals.widgets.hovered.weak_bg_fill = palette.primary;
+    style.visuals.widgets.active.bg_fill = palette.primary;
+    style.visuals.widgets.active.weak_bg_fill = palette.primary;
+    ui.set_style(style);
+}
+
 pub fn handle_context_menu_actions(
     ui: &mut egui::Ui,
     i18n: &I18n,
@@ -88,40 +125,7 @@ pub fn handle_context_menu_actions(
     hwnd: Option<HWND>,
 ) {
     // Apply context-menu-specific typography
-    let mut style = (*ui.ctx().style()).clone();
-    style.text_styles = [
-        (
-            egui::TextStyle::Body,
-            FontId::proportional(_palette.context_menu_text_size),
-        ),
-        (
-            egui::TextStyle::Button,
-            FontId::proportional(_palette.context_menu_text_size),
-        ),
-        (
-            egui::TextStyle::Small,
-            FontId::proportional(_palette.context_menu_text_size),
-        ),
-        (
-            egui::TextStyle::Heading,
-            FontId::proportional(_palette.context_menu_text_size + 2.0),
-        ),
-    ]
-    .into();
-    style.spacing.button_padding = egui::vec2(4.0, 2.0);
-    style.spacing.item_spacing = egui::vec2(6.0, 2.0);
-    style.spacing.menu_margin = egui::Margin::same(4);
-    style.spacing.interact_size = egui::vec2(
-        style.spacing.interact_size.x,
-        _palette.context_menu_text_size + 6.0,
-    );
-    style.visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
-    style.visuals.widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
-    style.visuals.widgets.hovered.bg_fill = _palette.primary;
-    style.visuals.widgets.hovered.weak_bg_fill = _palette.primary;
-    style.visuals.widgets.active.bg_fill = _palette.primary;
-    style.visuals.widgets.active.weak_bg_fill = _palette.primary;
-    ui.set_style(style);
+    apply_context_menu_typography(ui, _palette);
 
     // Match Explorer behavior: right-click selects if not already selected
     if !is_selected {
@@ -269,23 +273,15 @@ pub fn handle_context_menu_actions(
         .windows_context_menu_enabled
     {
         ui.separator();
-
-        let toggle_label = if explorer_state.windows_context_menu_expanded {
+        let selected_paths = context_paths.clone();
+        let toggle_label = if explorer_state.windows_context_menu_cache.is_some() {
             i18n.tr("contextmenu_hide_windows_menu_items")
         } else {
             i18n.tr("contextmenu_show_windows_menu_items")
         };
 
-        if ui.button(toggle_label).clicked() {
-            explorer_state.windows_context_menu_expanded =
-                !explorer_state.windows_context_menu_expanded;
-            if !explorer_state.windows_context_menu_expanded {
-                explorer_state.windows_context_menu_cache = None;
-            }
-        }
-
-        if explorer_state.windows_context_menu_expanded {
-            let selected_paths = context_paths.clone();
+        ui.menu_button(toggle_label, |ui| {
+            apply_context_menu_typography(ui, _palette);
 
             if let Some(hwnd) = hwnd {
                 let cache_miss = explorer_state
@@ -340,7 +336,7 @@ pub fn handle_context_menu_actions(
             } else {
                 ui.label(i18n.tr("contextmenu_windows_menu_available_missing"));
             }
-        }
+        });
     }
 }
 
