@@ -2,14 +2,15 @@ use crate::core::drives::{
     DriveInfo, consume_drive_list_dirty, get_drive_infos, is_raw_physical_drive_path,
 };
 use crate::core::fs::MY_PC_PATH;
+use crate::core::utils::text::apply_context_menu_typography;
 use crate::gui::i18n::I18n;
-// use crate::core::networkdevices::NetworkDevicesState;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{draw_object_drag_ghost, drive_usage_color, truncate_item_text};
 use crate::gui::windows::containers::structs::SidebarAction;
 use crate::gui::windows::structs::SidebarState;
 use eframe::egui;
+use egui::containers::{Popup, PopupCloseBehavior};
 use egui::{FontFamily, FontId, ScrollArea};
 use egui_phosphor::regular;
 use std::path::PathBuf;
@@ -320,12 +321,15 @@ pub fn draw_sidebar(
                         action.open_new_tab = Some(PathBuf::from(MY_PC_PATH));
                     }
 
-                    resp.context_menu(|ui| {
-                        if ui.button(&i18n.tr("inputs_newtab")).clicked() {
-                            action.open_new_tab = Some(PathBuf::from(MY_PC_PATH));
-                            ui.close();
-                        }
-                    });
+                    Popup::context_menu(&resp)
+                        .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                        .show(|ui| {
+                            apply_context_menu_typography(ui, palette);
+                            if ui.button(&i18n.tr("inputs_newtab")).clicked() {
+                                action.open_new_tab = Some(PathBuf::from(MY_PC_PATH));
+                                ui.close();
+                            }
+                        });
 
                     if let Some(home) = dirs::home_dir() {
                         let resp = draw_sidebar_item(
@@ -345,12 +349,15 @@ pub fn draw_sidebar(
                         if resp.middle_clicked() {
                             action.open_new_tab = Some(home.clone());
                         }
-                        resp.context_menu(|ui| {
-                            if ui.button(&i18n.tr("inputs_newtab")).clicked() {
-                                action.open_new_tab = Some(home.clone());
-                                ui.close();
-                            }
-                        });
+                        Popup::context_menu(&resp)
+                            .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                            .show(|ui| {
+                                apply_context_menu_typography(ui, palette);
+                                if ui.button(&i18n.tr("inputs_newtab")).clicked() {
+                                    action.open_new_tab = Some(home.clone());
+                                    ui.close();
+                                }
+                            });
                     }
 
                     ui.add_space(6.0);
@@ -444,16 +451,19 @@ pub fn draw_sidebar(
                             action.open_new_tab = Some(favorite.path.clone());
                         }
 
-                        resp.context_menu(|ui| {
-                            if ui.button(&i18n.tr("inputs_newtab")).clicked() {
-                                action.open_new_tab = Some(favorite.path.clone());
-                                ui.close();
-                            }
-                            if ui.button(&i18n.tr("remove_favorite")).clicked() {
-                                action.remove_favorite = Some(favorite.path.clone());
-                                ui.close();
-                            }
-                        });
+                        Popup::context_menu(&resp)
+                            .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                            .show(|ui| {
+                                apply_context_menu_typography(ui, palette);
+                                if ui.button(&i18n.tr("inputs_newtab")).clicked() {
+                                    action.open_new_tab = Some(favorite.path.clone());
+                                    ui.close();
+                                }
+                                if ui.button(&i18n.tr("remove_favorite")).clicked() {
+                                    action.remove_favorite = Some(favorite.path.clone());
+                                    ui.close();
+                                }
+                            });
 
                         if let Some(drop) = drop_index {
                             if drop == i {

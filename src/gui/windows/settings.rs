@@ -1,7 +1,7 @@
 use crate::core::{
     fs::{DateStyle, MY_PC_PATH},
     indexer::WindowSizeMode,
-    utils::widgets::draw_checkbox,
+    utils::widgets::{draw_checkbox, draw_dropdown},
 };
 use crate::gui::i18n::I18n;
 use crate::gui::theme::ThemePalette;
@@ -35,7 +35,6 @@ impl Default for AppSettings {
     }
 }
 
-// Helper function for info icon with hover text (non-clickable)
 fn info_icon(ui: &mut egui::Ui, hover_text: &str, palette: &ThemePalette) -> egui::Response {
     let resp = ui.add(egui::Label::new(regular::QUESTION).sense(egui::Sense::hover()));
 
@@ -70,17 +69,25 @@ fn info_icon(ui: &mut egui::Ui, hover_text: &str, palette: &ThemePalette) -> egu
     resp
 }
 
-fn right_aligned_cell<R>(
+fn setting_label(
     ui: &mut egui::Ui,
-    add_contents: impl FnOnce(&mut egui::Ui) -> R,
-) -> egui::InnerResponse<R> {
-    let row_height = ui.spacing().interact_size.y;
-    let size = egui::vec2(ui.available_width(), row_height);
+    text: impl Into<egui::WidgetText>,
+    info: Option<(&str, &ThemePalette)>,
+) {
+    let h = ui.spacing().interact_size.y;
+
     ui.allocate_ui_with_layout(
-        size,
-        egui::Layout::right_to_left(egui::Align::Center),
-        add_contents,
-    )
+        egui::vec2(ui.available_width(), h),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.label(text);
+
+            if let Some((hover_text, palette)) = info {
+                ui.add_space(4.0);
+                info_icon(ui, hover_text, palette);
+            }
+        },
+    );
 }
 
 fn setting_checkbox(
@@ -109,6 +116,58 @@ fn setting_checkbox(
         if label_resp.clicked() {
             *checked = !*checked;
             changed = true;
+        }
+    });
+
+    changed
+}
+
+const SETTINGS_LABEL_WIDTH: f32 = 150.0;
+pub fn setting_row<L, R>(ui: &mut egui::Ui, left: L, right: R)
+where
+    L: FnOnce(&mut egui::Ui),
+    R: FnOnce(&mut egui::Ui),
+{
+    let row_height = ui.spacing().interact_size.y;
+
+    ui.horizontal(|ui| {
+        // Fixed-width label column
+        ui.allocate_ui_with_layout(
+            egui::vec2(SETTINGS_LABEL_WIDTH, row_height),
+            egui::Layout::left_to_right(egui::Align::Center),
+            left,
+        );
+
+        // Flexible spacer
+        ui.add_space(ui.available_width());
+
+        // Right-aligned controls
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), right);
+    });
+}
+
+pub fn combo_box_string(
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+    id: impl std::hash::Hash,
+    width: f32,
+    value: &mut String,
+    options: &[(&str, String)],
+) -> bool {
+    let mut changed = false;
+
+    let selected_text = options
+        .iter()
+        .find(|(key, _)| *key == value)
+        .map(|(_, label)| label.as_str())
+        .unwrap_or("");
+
+    draw_dropdown(ui, palette, id, width, selected_text, |ui| {
+        for (key, label) in options {
+            if ui.selectable_label(value == key, label).clicked() {
+                *value = (*key).to_string();
+                changed = true;
+            }
         }
     });
 
@@ -195,97 +254,47 @@ pub fn draw_settings_window(
                         }
                     });
 
-                    egui::Grid::new("settings_language_row")
-                        .num_columns(2)
-                        .min_col_width(120.0)
-                        .spacing([12.0, 8.0])
-                        .show(ui, |ui| {
-                            ui.label(RichText::new(i18n.tr("language")).color(palette.text_normal));
+                    let language_label =
+                        RichText::new(i18n.tr("language")).color(palette.text_normal);
 
-                            right_aligned_cell(ui, |ui| {
-                                let mut selected_locale =
-                                    settings.current_settings.language.clone();
+                    let english = i18n.tr("english");
+                    let japanese = i18n.tr("japanese");
+                    let indonesian = i18n.tr("indonesian");
+                    let chinese_simple = i18n.tr("chinese_simple");
+                    let chinese_traditional = i18n.tr("chinese_traditional");
+                    let chinese_hk = i18n.tr("chinese_traditional_hk");
 
-                                egui::ComboBox::from_id_salt("language_selector")
-                                    .width(SETTINGS_COMBO_WIDTH)
-                                    .selected_text(match selected_locale.as_str() {
-                                        "ja-JP" => i18n.tr("japanese"),
-                                        "id-ID" => i18n.tr("indonesian"),
-                                        "zh-CN" => i18n.tr("chinese_simple"),
-                                        "zh-TW" => i18n.tr("chinese_traditional"),
-                                        "zh-HK" => i18n.tr("chinese_traditional_hk"),
-                                        _ => i18n.tr("english"),
-                                    })
-                                    .show_ui(ui, |ui| {
-                                        if ui
-                                            .selectable_label(
-                                                selected_locale == "en-US",
-                                                i18n.tr("english"),
-                                            )
-                                            .clicked()
-                                        {
-                                            selected_locale = "en-US".to_string();
-                                        }
+                    setting_row(
+                        ui,
+                        |ui| {
+                            setting_label(ui, language_label.clone(), None);
+                        },
+                        |ui| {
+                            let mut selected_locale = settings.current_settings.language.clone();
 
-                                        if ui
-                                            .selectable_label(
-                                                selected_locale == "ja-JP",
-                                                i18n.tr("japanese"),
-                                            )
-                                            .clicked()
-                                        {
-                                            selected_locale = "ja-JP".to_string();
-                                        }
+                            if combo_box_string(
+                                ui,
+                                palette,
+                                "language_selector",
+                                SETTINGS_COMBO_WIDTH,
+                                &mut selected_locale,
+                                &[
+                                    ("en-US", english.clone()),
+                                    ("ja-JP", japanese.clone()),
+                                    ("id-ID", indonesian.clone()),
+                                    ("zh-CN", chinese_simple.clone()),
+                                    ("zh-TW", chinese_traditional.clone()),
+                                    ("zh-HK", chinese_hk.clone()),
+                                ],
+                            ) {
+                                i18n.set_locale(&selected_locale);
+                                settings.current_settings.language = selected_locale;
+                                action = Some(SettingsAction::ApplySettings);
+                            }
+                        },
+                    );
 
-                                        if ui
-                                            .selectable_label(
-                                                selected_locale == "id-ID",
-                                                i18n.tr("indonesian"),
-                                            )
-                                            .clicked()
-                                        {
-                                            selected_locale = "id-ID".to_string();
-                                        }
-
-                                        if ui
-                                            .selectable_label(
-                                                selected_locale == "zh-CN",
-                                                i18n.tr("chinese_simple"),
-                                            )
-                                            .clicked()
-                                        {
-                                            selected_locale = "zh-CN".to_string();
-                                        }
-
-                                        if ui
-                                            .selectable_label(
-                                                selected_locale == "zh-TW",
-                                                i18n.tr("chinese_traditional"),
-                                            )
-                                            .clicked()
-                                        {
-                                            selected_locale = "zh-TW".to_string();
-                                        }
-
-                                        if ui
-                                            .selectable_label(
-                                                selected_locale == "zh-HK",
-                                                i18n.tr("chinese_traditional_hk"),
-                                            )
-                                            .clicked()
-                                        {
-                                            selected_locale = "zh-HK".to_string();
-                                        }
-                                    });
-
-                                if selected_locale != settings.current_settings.language {
-                                    i18n.set_locale(&selected_locale);
-                                    settings.current_settings.language = selected_locale;
-                                    action = Some(SettingsAction::ApplySettings);
-                                }
-                            });
-                            ui.end_row();
-                        });
+                    ui.add_space(8.0);
 
                     // Folder Scanning
                     ui.horizontal(|ui| {
@@ -353,39 +362,17 @@ pub fn draw_settings_window(
                     });
                     ui.add_space(8.0);
                     // Starting Path
-                    ui.label(&i18n.tr("settings_startpath"));
-                    ui.horizontal(|ui| {
-                        let path_text = settings
-                            .current_settings
-                            .start_path
-                            .as_ref()
-                            .map(|p| {
-                                if p.as_os_str() == MY_PC_PATH {
-                                    return i18n.tr("settings_startpath_default");
-                                }
-
-                                let s = p.to_string_lossy();
-
-                                if s.len() > 40 {
-                                    format!("...{}", &s[s.len() - 40..])
-                                } else {
-                                    s.to_string()
-                                }
-                            })
-                            .unwrap_or_else(|| i18n.tr("settings_startpath_default"));
-
-                        ui.add_sized([200.0, 18.0], egui::Label::new(path_text))
-                            .on_hover_text(
-                                settings
-                                    .current_settings
-                                    .start_path
-                                    .as_ref()
-                                    .map(|p| p.to_string_lossy().to_string())
-                                    .unwrap_or_default(),
+                    setting_row(
+                        ui,
+                        |ui| {
+                            setting_label(
+                                ui,
+                                RichText::new(i18n.tr("settings_startpath"))
+                                    .color(palette.text_normal),
+                                None,
                             );
-
-                        // ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        right_aligned_cell(ui, |ui| {
+                        },
+                        |ui| {
                             if ui
                                 .button(regular::ARROW_COUNTER_CLOCKWISE)
                                 .on_hover_text(i18n.tr("settings_startpath_reset_hover"))
@@ -406,59 +393,100 @@ pub fn draw_settings_window(
                                     action = Some(SettingsAction::ApplySettings);
                                 }
                             }
-                        });
-                    });
+                        },
+                    );
+
+                    let path_text = settings
+                        .current_settings
+                        .start_path
+                        .as_ref()
+                        .map(|p| {
+                            if p.as_os_str() == MY_PC_PATH {
+                                return i18n.tr("settings_startpath_default");
+                            }
+
+                            let s = p.to_string_lossy();
+
+                            if s.len() > 40 {
+                                format!("...{}", &s[s.len() - 40..])
+                            } else {
+                                s.to_string()
+                            }
+                        })
+                        .unwrap_or_else(|| i18n.tr("settings_startpath_default"));
+
+                    ui.allocate_ui_with_layout(
+                        egui::vec2(ui.available_width(), ui.spacing().interact_size.y),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            ui.add_sized(
+                                [ui.available_width(), ui.spacing().interact_size.y],
+                                egui::Label::new(path_text),
+                            )
+                            .on_hover_text(
+                                settings
+                                    .current_settings
+                                    .start_path
+                                    .as_ref()
+                                    .map(|p| p.to_string_lossy().to_string())
+                                    .unwrap_or_default(),
+                            );
+                        },
+                    );
+
                     ui.add_space(8.0);
                     // Date Style Section
-                    egui::Grid::new("settings_datestyle_row")
-                        .num_columns(2)
-                        .min_col_width(120.0)
-                        .spacing([12.0, 8.0])
-                        .show(ui, |ui| {
-                            ui.with_layout(egui::Layout::left_to_right(egui::Align::LEFT), |ui| {
-                                ui.label(
-                                    RichText::new(i18n.tr("settings_datestyle"))
-                                        .color(palette.text_normal),
-                                );
-                                info_icon(ui, &i18n.tr("tooltip_settings_datestyle"), palette);
-                            });
-                            right_aligned_cell(ui, |ui| {
-                                let mut selected_style = settings.current_settings.date_style;
+                    setting_row(
+                        ui,
+                        |ui| {
+                            setting_label(
+                                ui,
+                                RichText::new(i18n.tr("settings_datestyle"))
+                                    .color(palette.text_normal),
+                                Some((&i18n.tr("tooltip_settings_datestyle"), palette)),
+                            );
+                        },
+                        |ui| {
+                            let mut selected_style = settings.current_settings.date_style;
 
-                                egui::ComboBox::from_id_salt("date_style_selector")
-                                    .width(SETTINGS_COMBO_WIDTH)
-                                    .selected_text(match selected_style {
-                                        DateStyle::Iso => i18n.tr("settings_datestyle_iso_label"),
-                                        DateStyle::UsShort => {
-                                            i18n.tr("settings_datestyle_us_short_label")
-                                        }
-                                        DateStyle::Long => i18n.tr("settings_datestyle_long_label"),
-                                    })
-                                    .show_ui(ui, |ui| {
-                                        ui.selectable_value(
-                                            &mut selected_style,
-                                            DateStyle::Iso,
-                                            i18n.tr("settings_datestyle_iso"),
-                                        );
-                                        ui.selectable_value(
-                                            &mut selected_style,
-                                            DateStyle::UsShort,
-                                            i18n.tr("settings_datestyle_us_short"),
-                                        );
-                                        ui.selectable_value(
-                                            &mut selected_style,
-                                            DateStyle::Long,
-                                            i18n.tr("settings_datestyle_long"),
-                                        );
-                                    });
+                            draw_dropdown(
+                                ui,
+                                palette,
+                                "date_style_selector",
+                                SETTINGS_COMBO_WIDTH,
+                                match selected_style {
+                                    DateStyle::Iso => i18n.tr("settings_datestyle_iso_label"),
+                                    DateStyle::UsShort => {
+                                        i18n.tr("settings_datestyle_us_short_label")
+                                    }
+                                    DateStyle::Long => i18n.tr("settings_datestyle_long_label"),
+                                },
+                                |ui| {
+                                    ui.selectable_value(
+                                        &mut selected_style,
+                                        DateStyle::Iso,
+                                        i18n.tr("settings_datestyle_iso"),
+                                    );
+                                    ui.selectable_value(
+                                        &mut selected_style,
+                                        DateStyle::UsShort,
+                                        i18n.tr("settings_datestyle_us_short"),
+                                    );
+                                    ui.selectable_value(
+                                        &mut selected_style,
+                                        DateStyle::Long,
+                                        i18n.tr("settings_datestyle_long"),
+                                    );
+                                },
+                            );
 
-                                if selected_style != settings.current_settings.date_style {
-                                    settings.current_settings.date_style = selected_style;
-                                    action = Some(SettingsAction::ApplySettings);
-                                }
-                            });
-                            ui.end_row();
-                        });
+                            if selected_style != settings.current_settings.date_style {
+                                settings.current_settings.date_style = selected_style;
+                                action = Some(SettingsAction::ApplySettings);
+                            }
+                        },
+                    );
+
                     ui.add_space(8.0);
                     // Time Format Section
                     ui.horizontal(|ui| {
@@ -477,125 +505,129 @@ pub fn draw_settings_window(
                     ui.add_space(8.0);
                     // Window Size Section
                     let mut window_size_changed = false;
-                    egui::Grid::new("settings_windowsize_row")
-                        .num_columns(2)
-                        .min_col_width(120.0)
-                        .spacing([12.0, 8.0])
-                        .show(ui, |ui| {
-                            ui.label(
+
+                    setting_row(
+                        ui,
+                        |ui| {
+                            setting_label(
+                                ui,
                                 RichText::new(i18n.tr("settings_windowsize"))
                                     .color(palette.text_normal),
+                                None,
                             );
-                            right_aligned_cell(ui, |ui| {
-                                // ui.with_layout(egui::Layout::right_to_left(egui::Align::RIGHT), |ui| {
-                                let is_fullscreen = matches!(
-                                    settings.current_settings.window_size_mode,
-                                    WindowSizeMode::FullScreen
-                                );
+                        },
+                        |ui| {
+                            let is_fullscreen = matches!(
+                                settings.current_settings.window_size_mode,
+                                WindowSizeMode::FullScreen
+                            );
 
-                                if ui
-                                    .button(regular::ARROW_COUNTER_CLOCKWISE)
-                                    .on_hover_text(i18n.tr("settings_windowsize_reset_hover"))
-                                    .clicked()
-                                {
-                                    settings.current_settings.window_size_mode =
-                                        WindowSizeMode::default();
-                                    window_size_changed = true;
-                                }
+                            draw_dropdown(
+                                ui,
+                                palette,
+                                "window_size_mode_selector",
+                                SETTINGS_COMBO_WIDTH,
+                                if is_fullscreen {
+                                    i18n.tr("settings_windowsize_fullscreen")
+                                } else {
+                                    i18n.tr("settings_windowsize_custom")
+                                },
+                                |ui| {
+                                    if ui
+                                        .selectable_label(
+                                            !is_fullscreen,
+                                            i18n.tr("settings_windowsize_custom"),
+                                        )
+                                        .clicked()
+                                        && is_fullscreen
+                                    {
+                                        settings.current_settings.window_size_mode =
+                                            WindowSizeMode::Custom {
+                                                width: 1200.0,
+                                                height: 800.0,
+                                            };
+                                        window_size_changed = true;
+                                    }
 
-                                // ui.add_space(6.0);
+                                    if ui
+                                        .selectable_label(
+                                            is_fullscreen,
+                                            i18n.tr("settings_windowsize_fullscreen"),
+                                        )
+                                        .clicked()
+                                        && !is_fullscreen
+                                    {
+                                        settings.current_settings.window_size_mode =
+                                            WindowSizeMode::FullScreen;
+                                        window_size_changed = true;
+                                    }
+                                },
+                            );
 
-                                egui::ComboBox::from_id_salt("window_size_mode_selector")
-                                    .width(SETTINGS_COMBO_WIDTH)
-                                    .selected_text(if is_fullscreen {
-                                        i18n.tr("settings_windowsize_fullscreen")
-                                    } else {
-                                        i18n.tr("settings_windowsize_custom")
-                                    })
-                                    .show_ui(ui, |ui| {
-                                        if ui
-                                            .selectable_label(
-                                                !is_fullscreen,
-                                                i18n.tr("settings_windowsize_custom"),
-                                            )
-                                            .clicked()
-                                            && is_fullscreen
-                                        {
-                                            settings.current_settings.window_size_mode =
-                                                WindowSizeMode::Custom {
-                                                    width: 1200.0,
-                                                    height: 800.0,
-                                                };
-                                            window_size_changed = true;
-                                        }
-
-                                        if ui
-                                            .selectable_label(
-                                                is_fullscreen,
-                                                i18n.tr("settings_windowsize_fullscreen"),
-                                            )
-                                            .clicked()
-                                            && !is_fullscreen
-                                        {
-                                            settings.current_settings.window_size_mode =
-                                                WindowSizeMode::FullScreen;
-                                            window_size_changed = true;
-                                        }
-                                    });
-                                // });
-                            });
-                            ui.end_row();
-
-                            if let WindowSizeMode::Custom { width, height } =
-                                &mut settings.current_settings.window_size_mode
+                            if ui
+                                .button(regular::ARROW_COUNTER_CLOCKWISE)
+                                .on_hover_text(i18n.tr("settings_windowsize_reset_hover"))
+                                .clicked()
                             {
-                                ui.label(
+                                settings.current_settings.window_size_mode =
+                                    WindowSizeMode::default();
+                                window_size_changed = true;
+                            }
+                        },
+                    );
+
+                    if let WindowSizeMode::Custom { width, height } =
+                        &mut settings.current_settings.window_size_mode
+                    {
+                        setting_row(
+                            ui,
+                            |ui| {
+                                setting_label(
+                                    ui,
                                     RichText::new(i18n.tr("settings_windowsize_width"))
                                         .color(palette.text_normal),
+                                    None,
                                 );
-                                right_aligned_cell(ui, |ui| {
-                                    window_size_changed |= ui
-                                        .add_sized(
-                                            [SETTINGS_VALUE_WIDTH, ui.spacing().interact_size.y],
-                                            egui::DragValue::new(width)
-                                                .range(800.0..=4000.0)
-                                                .speed(1.0),
-                                        )
-                                        .changed();
-                                });
-                                ui.end_row();
+                            },
+                            |ui| {
+                                window_size_changed |= ui
+                                    .add_sized(
+                                        [SETTINGS_VALUE_WIDTH, ui.spacing().interact_size.y],
+                                        egui::DragValue::new(width)
+                                            .range(800.0..=4000.0)
+                                            .speed(1.0),
+                                    )
+                                    .changed();
+                            },
+                        );
 
-                                ui.label(
+                        setting_row(
+                            ui,
+                            |ui| {
+                                setting_label(
+                                    ui,
                                     RichText::new(i18n.tr("settings_windowsize_height"))
                                         .color(palette.text_normal),
+                                    None,
                                 );
-                                right_aligned_cell(ui, |ui| {
-                                    window_size_changed |= ui
-                                        .add_sized(
-                                            [SETTINGS_VALUE_WIDTH, ui.spacing().interact_size.y],
-                                            egui::DragValue::new(height)
-                                                .range(600.0..=3000.0)
-                                                .speed(1.0),
-                                        )
-                                        .changed();
-                                });
-                                ui.end_row();
-                            }
-                        });
-
-                    if window_size_changed {
-                        action = Some(SettingsAction::ApplySettings);
-
-                        let target_size = match &settings.current_settings.window_size_mode {
-                            WindowSizeMode::FullScreen => ctx.input(|i| i.viewport().monitor_size),
-                            WindowSizeMode::Custom { width, height } => {
-                                Some(egui::vec2(*width, *height))
-                            }
-                        };
-                        if let Some(size) = target_size {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
-                        }
+                            },
+                            |ui| {
+                                window_size_changed |= ui
+                                    .add_sized(
+                                        [SETTINGS_VALUE_WIDTH, ui.spacing().interact_size.y],
+                                        egui::DragValue::new(height)
+                                            .range(600.0..=3000.0)
+                                            .speed(1.0),
+                                    )
+                                    .changed();
+                            },
+                        );
                     }
+
+if window_size_changed {
+    action = Some(SettingsAction::ApplySettings);
+}
+
                     ui.add_space(8.0);
                     // Favorites Reset
                     ui.horizontal(|ui| {
@@ -664,22 +696,18 @@ pub fn draw_settings_window(
             }
             ui.separator();
             // Footer
-            egui::Grid::new("settings_footer")
-                .num_columns(2)
-                .min_row_height(ui.spacing().interact_size.y)
-                .spacing([12.0, 0.0])
-                .show(ui, |ui| {
-                    ui.label(i18n.tr("settings_changes_auto_saved"));
-                    right_aligned_cell(ui, |ui| {
-                        if ui
-                            .button(format!("{} {}", regular::X, i18n.tr("close")))
-                            .clicked()
-                        {
-                            should_close = true;
-                        }
-                    });
-                    ui.end_row();
+            ui.horizontal(|ui| {
+                ui.label(i18n.tr("settings_changes_auto_saved"));
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .button(format!("{} {}", regular::X, i18n.tr("close")))
+                        .clicked()
+                    {
+                        should_close = true;
+                    }
                 });
+            });
         });
     // Update the open state based on should_close
     if should_close {

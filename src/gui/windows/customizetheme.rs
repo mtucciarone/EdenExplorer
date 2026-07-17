@@ -5,6 +5,7 @@ use crate::gui::theme::{
     regenerate_base_derived_colors,
 };
 use crate::gui::utils::rgba_color_edit_button;
+use crate::gui::utils::widgets::draw_dropdown;
 use crate::gui::windows::enums::ThemeCustomizerAction;
 use crate::gui::windows::structs::ThemeCustomizer;
 use eframe::egui;
@@ -319,6 +320,7 @@ pub fn draw_theme_customizer(
                                     |ui| {
                                         if let Some(new_font) = font_selector(
                                             ui,
+                                            palette,
                                             "theme_font_selector",
                                             &editing_palette.font_name,
                                         ) {
@@ -341,6 +343,7 @@ pub fn draw_theme_customizer(
                                     |ui| {
                                         if let Some(new_font) = font_selector(
                                             ui,
+                                            palette,
                                             "theme_mono_font_selector",
                                             &editing_palette.mono_font_name,
                                         ) {
@@ -471,17 +474,25 @@ fn color_picker(
     rgba_color_edit_button(ui, color).changed()
 }
 
-fn font_selector(ui: &mut egui::Ui, label: &str, current_font: &str) -> Option<String> {
+fn font_selector(
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+    label: &str,
+    current_font: &str,
+) -> Option<String> {
     let fonts = get_font_list();
 
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         let mut selected_text = current_font.to_string();
         let mut changed = false;
 
-        egui::ComboBox::from_id_source(egui::Id::new(label))
-            .width(200.0)
-            .selected_text(&selected_text)
-            .show_ui(ui, |ui| {
+        draw_dropdown(
+            ui,
+            palette,
+            egui::Id::new(label),
+            200.0,
+            selected_text.clone(),
+            |ui| {
                 egui::ScrollArea::vertical()
                     .max_height(200.0)
                     .show(ui, |ui| {
@@ -498,7 +509,8 @@ fn font_selector(ui: &mut egui::Ui, label: &str, current_font: &str) -> Option<S
                             }
                         }
                     });
-            });
+            },
+        );
 
         if changed { Some(selected_text) } else { None }
     })
