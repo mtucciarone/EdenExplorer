@@ -242,3 +242,40 @@ pub fn draw_checkbox(
 
     response
 }
+
+pub fn draw_dropdown(
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+    id: impl std::hash::Hash,
+    width: f32,
+    selected_text: impl Into<egui::WidgetText>,
+    add_contents: impl FnOnce(&mut egui::Ui),
+) {
+    ui.scope(|ui| {
+        // Closed combo styling...
+        let visuals = ui.visuals_mut();
+
+        visuals.widgets.hovered.bg_fill = palette.primary_hover;
+        visuals.widgets.active.bg_fill = palette.primary_active;
+
+        egui::ComboBox::from_id_salt(id)
+            .width(width)
+            .selected_text(selected_text)
+            .show_ui(ui, |ui| {
+                // Popup styling
+                ui.style_mut().text_styles.insert(
+                    egui::TextStyle::Body,
+                    egui::FontId::proportional(palette.text_size),
+                );
+
+                ui.style_mut().text_styles.insert(
+                    egui::TextStyle::Button,
+                    egui::FontId::proportional(palette.text_size),
+                );
+
+                ui.style_mut().visuals.selection.stroke.color = palette.text_header_section;
+
+                add_contents(ui);
+            });
+    });
+}

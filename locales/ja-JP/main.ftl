@@ -62,7 +62,6 @@ settings_windowsize_width = 幅
 settings_windowsize_height = 高さ
 settings_windowsize_reset_hover = デフォルトに戻す
 tooltip_settings_windowsize = EdenExplorerの起動時のウィンドウサイズを設定します。フルスクリーンはモニターの解像度に合わせます。
-settings_contextmenu = コンテキストメニュー
 settings_contextmenu_enable = Windowsコンテキストメニュー項目を有効化
 tooltip_settings_contextmenu = 右クリックメニューにShell操作を含むWindowsセクションを追加します。
 settings_favorites_reset = サイドバーのお気に入りをリセット

@@ -79,14 +79,6 @@ fn save_manual_window_size(hwnd: HWND) {
             ..Default::default()
         };
 
-        if GetWindowPlacement(hwnd, &mut placement).is_ok() {
-            if placement.showCmd == SW_SHOWMAXIMIZED.0 as u32
-                || placement.showCmd == SW_SHOWMINIMIZED.0 as u32
-            {
-                return;
-            }
-        }
-
         let mut rect = RECT::default();
         if GetClientRect(hwnd, &mut rect).is_err() {
             return;
@@ -424,5 +416,53 @@ pub fn get_hwnd_from_frame(frame: &eframe::Frame) -> Option<HWND> {
             }
         }
         _ => None,
+    }
+}
+
+fn resize_and_center_window(hwnd: HWND, width: i32, height: i32) {
+    unsafe {
+        let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+
+        if monitor.is_invalid() {
+            return;
+        }
+
+        let mut monitor_info = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+
+        if !GetMonitorInfoW(monitor, &mut monitor_info).as_bool() {
+            return;
+        }
+
+        let work = monitor_info.rcWork;
+
+        let x = work.left + ((work.right - work.left) - width) / 2;
+        let y = work.top + ((work.bottom - work.top) - height) / 2;
+
+        let _ = ShowWindow(hwnd, SW_RESTORE);
+
+        let _ = SetWindowPos(
+            hwnd,
+            None,
+            x,
+            y,
+            width,
+            height,
+            SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
+}
+
+pub fn set_window_mode(hwnd: HWND, mode: &WindowSizeMode) {
+    match mode {
+        WindowSizeMode::FullScreen => unsafe {
+            let _ = ShowWindow(hwnd, SW_MAXIMIZE);
+        },
+
+        WindowSizeMode::Custom { width, height } => {
+            resize_and_center_window(hwnd, width.round() as i32, height.round() as i32);
+        }
     }
 }

@@ -22,7 +22,6 @@ const RIGHT_MARGIN: f32 = 8.0;
 const COLUMN_SPACING: f32 = 20.0;
 const FILES_COLUMN_WIDTH: f32 = 56.0;
 const FOLDERS_COLUMN_WIDTH: f32 = 56.0;
-const SELECTED_COLUMN_WIDTH: f32 = 170.0;
 const STATUS_ICON_GAP: f32 = 4.0;
 
 /// Draws one view's breadcrumb + item viewer + status bar (the content of
@@ -218,8 +217,6 @@ pub fn draw_tab_content(
                             &font_id,
                             text_color,
                         );
-
-                        // right -= SELECTED_COLUMN_WIDTH + COLUMN_SPACING;
                     }
                 }
             });

@@ -1,3 +1,4 @@
+use crate::core::indexer::WindowSizeMode;
 use crate::core::indexer::{
     load_app_settings, load_favorites, load_tags, load_theme_settings, save_app_settings,
 };
@@ -341,15 +342,16 @@ impl eframe::App for MainWindow {
 
                 if size_changed {
                     // Update the window size mode in settings
-                    let is_fullscreen = ctx.input(|i| i.viewport().fullscreen.unwrap_or(false));
-                    self.settings_window.current_settings.window_size_mode = if is_fullscreen {
-                        crate::core::indexer::WindowSizeMode::FullScreen
-                    } else {
-                        crate::core::indexer::WindowSizeMode::Custom {
-                            width: current_size.0,
-                            height: current_size.1,
+                    match &mut self.settings_window.current_settings.window_size_mode {
+                        WindowSizeMode::Custom { width, height } => {
+                            *width = current_size.0;
+                            *height = current_size.1;
                         }
-                    };
+                        WindowSizeMode::FullScreen => {
+                            // Keep the mode as FullScreen.
+                            // Don't overwrite it just because the window was resized.
+                        }
+                    }
 
                     // Save the updated settings
                     save_app_settings(

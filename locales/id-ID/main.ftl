@@ -62,7 +62,6 @@ settings_windowsize_width = Lebar
 settings_windowsize_height = Tinggi
 settings_windowsize_reset_hover = Atur ulang ke default
 tooltip_settings_windowsize = Mengatur ukuran jendela saat EdenExplorer dibuka. Layar Penuh menyesuaikan resolusi monitor Anda.
-settings_contextmenu = Menu Konteks
 settings_contextmenu_enable = Aktifkan item menu konteks Windows
 tooltip_settings_contextmenu = Menambahkan bagian Windows ke menu klik kanan dengan aksi shell.
 settings_favorites_reset = Reset Favorit Sidebar

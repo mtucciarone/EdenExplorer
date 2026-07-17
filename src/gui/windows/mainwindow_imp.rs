@@ -827,9 +827,22 @@ impl MainWindow {
                         &self.settings_window.current_settings.language,
                         self.settings_window.current_settings.date_style,
                     );
+
+                    if let Some(hwnd) = self.hwnd {
+                        crate::gui::windows::windowsoverrides::set_window_mode(
+                            hwnd,
+                            &self.settings_window.current_settings.window_size_mode,
+                        );
+                    }
                 }
                 SettingsAction::ResetToDefaults => {
                     self.settings_window.current_settings = Default::default();
+                    if let Some(hwnd) = self.hwnd {
+                        crate::gui::windows::windowsoverrides::set_window_mode(
+                            hwnd,
+                            &self.settings_window.current_settings.window_size_mode,
+                        );
+                    }
                 }
                 SettingsAction::ResetFavourites => {
                     self.sidebar_state.favorites = self.default_favorites();
