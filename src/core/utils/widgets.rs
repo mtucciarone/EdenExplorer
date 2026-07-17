@@ -273,6 +273,8 @@ pub fn draw_dropdown(
                     egui::FontId::proportional(palette.text_size),
                 );
 
+                ui.style_mut().visuals.selection.stroke.color = palette.text_header_section;
+
                 add_contents(ui);
             });
     });

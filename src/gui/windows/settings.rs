@@ -624,9 +624,9 @@ pub fn draw_settings_window(
                         );
                     }
 
-if window_size_changed {
-    action = Some(SettingsAction::ApplySettings);
-}
+                    if window_size_changed {
+                        action = Some(SettingsAction::ApplySettings);
+                    }
 
                     ui.add_space(8.0);
                     // Favorites Reset
