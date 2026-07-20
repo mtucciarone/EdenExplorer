@@ -309,6 +309,7 @@
 - [x] Split-pane view in the Explorer
 
 ### 🚀 Upcoming Beta Features
+- [ ] New Explorer view that displays pictures in medium/large format
 - [ ] Support multi-column sorting
 - [ ] Add a tags column in the Explorer view
 - [ ] Support network devices
@@ -316,7 +317,6 @@
 
 ## 🐛 Known Bugs
 - Hitting "Shift" after already shift-selecting files drops the entire file selection
-- Dragging EdenExplorer across multiple monitors causes strange visual glitches
 
 ## Star History
 
