@@ -97,12 +97,7 @@
       <th><b>EdenExplorer</b></th>
       <th>FilePilot</th>
       <th>Windows Explorer</th>
-      <th>Files App</th>
-      <th>Directory Opus</th>
-      <th>Total Commander</th>
-      <th>XYplorer</th>
-      <th>Explorer++</th>
-      <th>Double Commander</th>
+      <th>Files.Community</th>
     </tr>
   </thead>
   <tbody>
@@ -112,34 +107,19 @@
       <td>❌ Paid</td>
       <td>❌ Your Data</td>
       <td>✅ Free</td>
-      <td>❌ Paid</td>
-      <td>❌ Paid</td>
-      <td>❌ Paid</td>
-      <td>✅ Free</td>
-      <td>✅ Free</td>
     </tr>
     <tr>
       <td><b>Performance</b></td>
       <td><b>⚡ Fast</b></td>
       <td>⚡ Fast</td>
       <td>🐢 Slow</td>
-      <td>⚡ Fast</td>
-      <td>⚡ Fast</td>
-      <td>⚡ Fast</td>
-      <td>⚡ Fast</td>
-      <td>⚡ Fast</td>
-      <td>⚡ Fast</td>
+      <td>🐢 Slow</td>
     </tr>
     <tr>
       <td><b>Open Source</b></td>
       <td><b>✅ Yes</b></td>
       <td>❌ No</td>
       <td>❌ No</td>
-      <td>✅ Yes</td>
-      <td>❌ No</td>
-      <td>❌ No</td>
-      <td>❌ No</td>
-      <td>✅ Yes</td>
       <td>✅ Yes</td>
     </tr>
     <tr>
@@ -148,23 +128,13 @@
       <td>✅ Yes</td>
       <td>❌ No</td>
       <td>❌ No</td>
-      <td>✅ Yes</td>
-      <td>✅ Yes</td>
-      <td>❌ No</td>
-      <td>❌ No</td>
-      <td>❌ No</td>
     </tr>
     <tr>
       <td><b>Resource Usage</b></td>
       <td><b>🪶 Low</b></td>
       <td>🪶 Low</td>
       <td>🧱 Heavy</td>
-      <td>🪶 Low</td>
-      <td>🧱 Heavy</td>
-      <td>🪶 Low</td>
-      <td>🪶 Low</td>
-      <td>🪶 Low</td>
-      <td>🪶 Low</td>
+      <td>🧱 Medium</td>
     </tr>
     <tr>
       <td><b>Core Technology</b></td>
@@ -172,11 +142,6 @@
       <td>🦀 Rust</td>
       <td>⚙️ C++*</td>
       <td>💙 C# / WinUI</td>
-      <td>⚙️ C++</td>
-      <td>⚙️ Delphi (Object Pascal)</td>
-      <td>⚙️ C++*</td>
-      <td>⚙️ C++</td>
-      <td>⚙️ Free Pascal (Lazarus)</td>
     </tr>
   </tbody>
 </table>
