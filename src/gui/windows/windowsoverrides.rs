@@ -370,20 +370,7 @@ pub fn handle_draw_windows_buttons(ui: &mut egui::Ui, hwnd: Option<HWND>, palett
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .clicked()
         {
-            unsafe {
-                let mut placement = WINDOWPLACEMENT {
-                    length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
-                    ..Default::default()
-                };
-
-                if GetWindowPlacement(hwnd, &mut placement).is_ok() {
-                    if placement.showCmd == SW_SHOWMAXIMIZED.0 as u32 {
-                        let _ = ShowWindow(hwnd, SW_RESTORE);
-                    } else {
-                        let _ = ShowWindow(hwnd, SW_MAXIMIZE);
-                    }
-                }
-            }
+            toggle_window_fullscreen(hwnd);
         }
 
         if clickable_icon(ui, regular::MINUS, palette.primary)
@@ -397,6 +384,23 @@ pub fn handle_draw_windows_buttons(ui: &mut egui::Ui, hwnd: Option<HWND>, palett
         {
             unsafe {
                 let _ = ShowWindow(hwnd, SW_MINIMIZE);
+            }
+        }
+    }
+}
+
+pub fn toggle_window_fullscreen(hwnd: HWND) {
+    unsafe {
+        let mut placement = WINDOWPLACEMENT {
+            length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+            ..Default::default()
+        };
+
+        if GetWindowPlacement(hwnd, &mut placement).is_ok() {
+            if placement.showCmd == SW_SHOWMAXIMIZED.0 as u32 {
+                let _ = ShowWindow(hwnd, SW_RESTORE);
+            } else {
+                let _ = ShowWindow(hwnd, SW_MAXIMIZE);
             }
         }
     }

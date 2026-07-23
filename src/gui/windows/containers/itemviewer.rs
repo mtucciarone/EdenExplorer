@@ -171,9 +171,12 @@ pub fn draw_item_viewer(
 
     if !visible_items_empty {
         let modifiers = ui.ctx().input(|i| i.modifiers);
-        let arrow_nav = ui
-            .ctx()
-            .input(|i| i.key_pressed(egui::Key::ArrowDown) || i.key_pressed(egui::Key::ArrowUp));
+        let arrow_nav = ui.ctx().input(|i| {
+            i.key_pressed(egui::Key::ArrowDown)
+                || i.key_pressed(egui::Key::ArrowUp)
+                || i.key_pressed(egui::Key::Home)
+                || i.key_pressed(egui::Key::End)
+        });
         let current_width = ui.available_width();
         let available_height = ui.available_height();
 
@@ -320,6 +323,7 @@ pub fn draw_item_viewer(
                     let is_non_ntfs_drive =
                         layout.is_drive_view && is_raw_physical_drive_path(&file.path);
                     let is_selected = explorer_state.selected_paths.contains(&file.path);
+                    let tag_color = tags_state.tag_color_for_path(&file.path);
                     row.set_selected(is_selected);
                     let is_cut = is_cut_mode && clipboard_set.contains(&file.path);
 
@@ -411,6 +415,19 @@ pub fn draw_item_viewer(
                     }
 
                     let row_resp = row.response();
+
+                    if let Some(tag_color) = tag_color {
+                        let tag_rect = egui::Rect::from_min_size(
+                            row_resp.rect.min,
+                            egui::vec2(row_resp.rect.width(), layout.row_height),
+                        )
+                        .shrink2(egui::vec2(0.0, 1.0));
+                        let painter = row_resp.ctx.layer_painter(egui::LayerId::new(
+                            egui::Order::Background,
+                            egui::Id::new(("tag_row_bg", active_tab_id, &file.path)),
+                        ));
+                        painter.rect_filled(tag_rect, egui::CornerRadius::same(palette.medium_radius), tag_color.linear_multiply(0.18));
+                    }
 
                     if drag_hover_active {
                         if let Some(target) = hovered_target_ref {

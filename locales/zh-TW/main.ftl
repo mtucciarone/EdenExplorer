@@ -14,6 +14,7 @@ tooltip_newfolder = 建立新資料夾
 tooltip_newfile = 建立新檔案
 tooltip_favorites_add = 將目前目錄加入我的最愛
 tooltip_favorites_remove = 從我的最愛移除目前目錄
+tooltip_open_terminal = 在目前目錄中開啟終端機
 tooltip_nav_up = 前往上層目錄
 tooltip_nav_back = 返回上一個目錄
 tooltip_nav_forward = 前往下一個目錄

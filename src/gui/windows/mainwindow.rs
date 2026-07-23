@@ -464,6 +464,7 @@ impl eframe::App for MainWindow {
                                         self.theme == ThemeMode::Dark,
                                         self.display_file_explorer,
                                         self.sidebar_collapsed,
+                                        self.hwnd,
                                         &palette,
                                     ));
                                 });
@@ -1067,6 +1068,7 @@ impl eframe::App for MainWindow {
         );
         self.handle_draw_settings_window(ctx, &palette);
         self.handle_draw_about_window(ctx, &palette);
+        self.handle_global_shortcuts(ctx);
 
         if tags_changed {
             self.persist_tags();

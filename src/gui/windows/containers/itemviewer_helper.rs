@@ -12,7 +12,9 @@ use crate::gui::utils::{
     SortColumn, clear_clipboard_files, drive_usage_bar, format_size, get_file_type_name,
     truncate_item_text,
 };
-use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
+use crate::gui::windows::containers::enums::{
+    ItemViewerAction, ItemViewerContextAction, ItemViewerNavAction,
+};
 use crate::gui::windows::containers::itemviewer::draw_item_viewer;
 use crate::gui::windows::containers::structs::{
     DragState, ExplorerState, FilterState, ItemViewerFolderSizeState, ItemViewerLayout,
@@ -795,6 +797,17 @@ pub fn handle_global_actions(
         drag_state.start_pos = None;
     }
 
+    let mut set_nav_action = |nav: ItemViewerNavAction| {
+        if let Some(existing) = tabbar_action.as_mut() {
+            existing.nav = Some(nav);
+        } else {
+            *tabbar_action = Some(ItemViewerNavBarAction {
+                nav: Some(nav),
+                ..Default::default()
+            });
+        }
+    };
+
     if filter_state.active {
         let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
@@ -871,10 +884,24 @@ pub fn handle_global_actions(
         }
     });
     ui.input(|i| {
-        if i.key_pressed(egui::Key::Backspace) {
-            action = Some(ItemViewerAction::BackNavigation);
+        let alt = i.modifiers.alt;
+
+        if i.pointer.button_pressed(egui::PointerButton::Extra1)
+            || (alt && i.key_pressed(egui::Key::ArrowLeft))
+            || i.key_pressed(egui::Key::Backspace)
+        {
+            set_nav_action(ItemViewerNavAction::Back);
         }
-        if i.key_pressed(egui::Key::Enter) {
+        if i.pointer.button_pressed(egui::PointerButton::Extra2)
+            || (alt && i.key_pressed(egui::Key::ArrowRight))
+        {
+            set_nav_action(ItemViewerNavAction::Forward);
+        }
+        if alt && i.key_pressed(egui::Key::ArrowUp) {
+            set_nav_action(ItemViewerNavAction::Up);
+        }
+
+        if !alt && i.key_pressed(egui::Key::Enter) {
             let selected_paths: Vec<PathBuf> = explorer_state
                 .selected_paths
                 .iter()
@@ -933,7 +960,7 @@ pub fn handle_global_actions(
     let mut start_filter = String::new();
 
     ui.input(|i| {
-        if i.modifiers.command || i.modifiers.ctrl {
+        if i.modifiers.command || i.modifiers.ctrl || i.modifiers.alt {
             return;
         }
         for event in &i.events {
@@ -1178,7 +1205,16 @@ pub fn handle_keyboard_navigation(
         }
     };
 
+    let first_selectable = || (0..filtered_indices.len()).find(|&i| is_selectable(i));
+    let last_selectable = || {
+        (0..filtered_indices.len())
+            .rev()
+            .find(|&i| is_selectable(i))
+    };
+
     let mut action: Option<ItemViewerAction> = None;
+    let home_pressed = ctx.input(|i| i.key_pressed(egui::Key::Home));
+    let end_pressed = ctx.input(|i| i.key_pressed(egui::Key::End));
 
     let current_index = explorer_state
         .selected_paths
@@ -1193,8 +1229,28 @@ pub fn handle_keyboard_navigation(
     let current_idx = match current_index {
         Some(idx) => idx,
         None => {
+            if home_pressed {
+                let first_idx = first_selectable()?;
+                let first = files[filtered_indices[first_idx]].path.clone();
+
+                explorer_state.selection_anchor = Some(first_idx);
+                explorer_state.selection_focus = Some(first_idx);
+
+                return Some(ItemViewerAction::ReplaceSelection(first));
+            }
+
+            if end_pressed {
+                let last_idx = last_selectable()?;
+                let last = files[filtered_indices[last_idx]].path.clone();
+
+                explorer_state.selection_anchor = Some(last_idx);
+                explorer_state.selection_focus = Some(last_idx);
+
+                return Some(ItemViewerAction::ReplaceSelection(last));
+            }
+
             if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
-                let first_idx = (0..filtered_indices.len()).find(|&i| is_selectable(i))?;
+                let first_idx = first_selectable()?;
                 let first = files[filtered_indices[first_idx]].path.clone();
 
                 explorer_state.selection_anchor = Some(first_idx);
@@ -1204,9 +1260,7 @@ pub fn handle_keyboard_navigation(
             }
 
             if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
-                let last_idx = (0..filtered_indices.len())
-                    .rev()
-                    .find(|&i| is_selectable(i))?;
+                let last_idx = last_selectable()?;
                 let last = files[filtered_indices[last_idx]].path.clone();
 
                 explorer_state.selection_anchor = Some(last_idx);
@@ -1249,6 +1303,18 @@ pub fn handle_keyboard_navigation(
             }
         }
 
+        if home_pressed {
+            if let Some(first) = first_selectable() {
+                new_focus = first;
+            }
+        }
+
+        if end_pressed {
+            if let Some(last) = last_selectable() {
+                new_focus = last;
+            }
+        }
+
         explorer_state.selection_anchor = Some(anchor);
         explorer_state.selection_focus = Some(new_focus);
 
@@ -1283,6 +1349,14 @@ pub fn handle_keyboard_navigation(
             if let Some(prev) = next_selectable(current_idx, -1) {
                 new_idx = prev;
             }
+        }
+
+        if home_pressed && let Some(first) = first_selectable() {
+            new_idx = first;
+        }
+
+        if end_pressed && let Some(last) = last_selectable() {
+            new_idx = last;
         }
 
         if new_idx != current_idx {

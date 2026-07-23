@@ -26,6 +26,7 @@ use crate::gui::windows::enums::{SettingsAction, ThemeCustomizerAction};
 use crate::gui::windows::settings::draw_settings_window;
 use crate::gui::windows::structs::{Navigation, ThemeCustomizer};
 use crate::gui::windows::windowsoverrides::mark_clipboard_dirty;
+use crate::gui::windows::windowsoverrides::toggle_window_fullscreen;
 use crossbeam_channel::Receiver;
 use crossbeam_channel::{Sender, unbounded};
 use eframe::egui;
@@ -1299,6 +1300,202 @@ impl MainWindow {
             if action.toggle_sidebar {
                 self.sidebar_collapsed = !self.sidebar_collapsed;
             }
+        }
+    }
+
+    fn global_shortcuts_disabled(&self, ctx: &egui::Context) -> bool {
+        let topbar_menu_open = ctx.memory(|mem| {
+            mem.data
+                .get_temp::<bool>(egui::Id::new("topbar_hamburger_menu"))
+                .unwrap_or(false)
+        });
+
+        let active_tab = self.active_tab();
+        self.theme_customizer.open
+            || self.settings_window.open
+            || self.about_window.open
+            || self.tags_state.picker.is_some()
+            || self.tags_state.delete_confirmation.is_some()
+            || self
+                .rename_state
+                .as_ref()
+                .map(|state| state.validation_error_show)
+                .unwrap_or(false)
+            || self.sidebar_state.non_ntfs_popup_path.is_some()
+            || active_tab
+                .primary_view
+                .explorer_state
+                .non_ntfs_popup_path
+                .is_some()
+            || active_tab
+                .split_view
+                .as_ref()
+                .map(|view| view.explorer_state.non_ntfs_popup_path.is_some())
+                .unwrap_or(false)
+            || topbar_menu_open
+            || !self.display_file_explorer
+    }
+
+    fn enter_address_bar_edit_mode(&mut self) {
+        let current_path = self.current_nav().current.clone();
+        let side = self.focused_split;
+        let view = self.active_tab_mut().view_mut(side);
+
+        view.breadcrumb_path_editing = true;
+        view.breadcrumb_path_buffer = current_path.to_string_lossy().to_string();
+        view.breadcrumb_just_started_editing = false;
+        view.breadcrumb_select_all_on_focus = true;
+        view.breadcrumb_path_error = false;
+        view.breadcrumb_path_error_animation_time = 0.0;
+    }
+
+    fn selected_path_for_rename(&self) -> Option<PathBuf> {
+        let view = self.active_tab().view(self.focused_split);
+
+        if let Some(focus_idx) = view.explorer_state.selection_focus
+            && focus_idx < view.item_viewer_filter_state.cached_indices.len()
+        {
+            let file_idx = view.item_viewer_filter_state.cached_indices[focus_idx];
+            let focused_path = view.files.get(file_idx)?.path.clone();
+            if view.explorer_state.selected_paths.contains(&focused_path) {
+                return Some(focused_path);
+            }
+        }
+
+        let mut selected_paths: Vec<PathBuf> =
+            view.explorer_state.selected_paths.iter().cloned().collect();
+        selected_paths.sort();
+        selected_paths.into_iter().next()
+    }
+
+    fn selected_paths_for_properties(&self) -> Option<Vec<PathBuf>> {
+        let view = self.active_tab().view(self.focused_split);
+        if view.explorer_state.selected_paths.is_empty() {
+            return None;
+        }
+
+        let mut paths: Vec<PathBuf> = view.explorer_state.selected_paths.iter().cloned().collect();
+        paths.sort();
+        paths.dedup();
+        Some(paths)
+    }
+
+    pub fn handle_global_shortcuts(&mut self, ctx: &egui::Context) {
+        if self.global_shortcuts_disabled(ctx) {
+            return;
+        }
+
+        let shortcuts = ctx.input(|input| {
+            let ctrl = input.modifiers.ctrl;
+            let alt = input.modifiers.alt;
+            let shift = input.modifiers.shift;
+
+            (
+                ctrl && shift && input.key_pressed(egui::Key::Tab),
+                ctrl && input.key_pressed(egui::Key::Tab),
+                ctrl && input.key_pressed(egui::Key::T),
+                ctrl && input.key_pressed(egui::Key::W),
+                ctrl && shift && input.key_pressed(egui::Key::N),
+                ctrl && input.key_pressed(egui::Key::R),
+                input.key_pressed(egui::Key::F5),
+                input.key_pressed(egui::Key::F1),
+                alt && input.key_pressed(egui::Key::D),
+                input.key_pressed(egui::Key::F2),
+                alt && input.key_pressed(egui::Key::Enter),
+            )
+        });
+
+        if shortcuts.0 {
+            self.activate_tab_relative(-1);
+            return;
+        }
+
+        if shortcuts.1 {
+            self.activate_tab_relative(1);
+            return;
+        }
+
+        if shortcuts.2 {
+            let action = TabsAction {
+                open_new: true,
+                ..Default::default()
+            };
+            self.handle_tabs_action(Some(action), None);
+            return;
+        }
+
+        if shortcuts.3 {
+            let action = TabsAction {
+                close: Some(self.active_tab().id),
+                ..Default::default()
+            };
+            self.handle_tabs_action(Some(action), None);
+            return;
+        }
+
+        if shortcuts.4 {
+            self.create_new_folder();
+            return;
+        }
+
+        if shortcuts.5 || shortcuts.6 {
+            self.load_path();
+            return;
+        }
+
+        if shortcuts.7 {
+            self.toggle_fullscreen();
+        }
+
+        if shortcuts.8 {
+            self.enter_address_bar_edit_mode();
+            return;
+        }
+
+        if shortcuts.9 {
+            if self.rename_state.is_none()
+                && !self
+                    .active_tab()
+                    .view(self.focused_split)
+                    .breadcrumb_path_editing
+                && let Some(path) = self.selected_path_for_rename()
+            {
+                let action = ItemViewerAction::StartEdit(path);
+                handle_pending_actions(Some(action), self);
+            }
+            return;
+        }
+
+        if shortcuts.10 {
+            if !self
+                .active_tab()
+                .view(self.focused_split)
+                .breadcrumb_path_editing
+                && let Some(paths) = self.selected_paths_for_properties()
+            {
+                self.open_properties_multi(&paths);
+            }
+        }
+    }
+
+    fn activate_tab_relative(&mut self, delta: isize) {
+        if self.tabs.is_empty() {
+            return;
+        }
+
+        let len = self.tabs.len() as isize;
+        let next = (self.active_tab as isize + delta).rem_euclid(len) as usize;
+        let id = self.tabs[next].id;
+        let action = TabsAction {
+            activate: Some(id),
+            ..Default::default()
+        };
+        self.handle_tabs_action(Some(action), None);
+    }
+
+    fn toggle_fullscreen(&mut self) {
+        if let Some(hwnd) = self.hwnd {
+            toggle_window_fullscreen(hwnd);
         }
     }
 
