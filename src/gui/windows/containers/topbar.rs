@@ -1,9 +1,11 @@
 use crate::gui::i18n::I18n;
 use crate::gui::utils::{clickable_active_icon, clickable_icon};
 use crate::gui::windows::containers::structs::TopbarAction;
+use crate::gui::windows::windowsoverrides::toggle_window_fullscreen;
 use eframe::egui;
 use egui::Pos2;
 use egui_phosphor::regular;
+use windows::Win32::Foundation::HWND;
 
 pub fn draw_topbar(
     ui: &mut egui::Ui,
@@ -11,6 +13,7 @@ pub fn draw_topbar(
     is_dark: bool,
     is_file_explorer: bool,
     sidebar_collapsed: bool,
+    hwnd: Option<HWND>,
     palette: &crate::gui::theme::ThemePalette,
 ) -> TopbarAction {
     let mut action = TopbarAction::default();
@@ -25,10 +28,11 @@ pub fn draw_topbar(
                 is_dark,
                 is_file_explorer,
                 sidebar_collapsed,
+                hwnd,
                 palette,
                 &mut action,
             );
-            draw_drag_region(ui);
+            draw_drag_region(ui, hwnd);
         });
     } else {
         // Expanded: original horizontal topbar row.
@@ -43,12 +47,13 @@ pub fn draw_topbar(
                     is_dark,
                     is_file_explorer,
                     sidebar_collapsed,
+                    hwnd,
                     palette,
                     &mut action,
                 );
             });
 
-            draw_drag_region(ui);
+            draw_drag_region(ui, hwnd);
         });
     }
 
@@ -122,6 +127,7 @@ fn draw_mode_icons(
     is_dark: bool,
     is_file_explorer: bool,
     sidebar_collapsed: bool,
+    _hwnd: Option<HWND>,
     palette: &crate::gui::theme::ThemePalette,
     action: &mut TopbarAction,
 ) {
@@ -206,11 +212,16 @@ fn draw_mode_icons(
     }
 }
 
-fn draw_drag_region(ui: &mut egui::Ui) {
+fn draw_drag_region(ui: &mut egui::Ui, hwnd: Option<HWND>) {
     // Remaining empty space: lets the user drag the window from the topbar.
     let drag_rect = ui.available_rect_before_wrap();
     if drag_rect.width() > 0.0 && drag_rect.height() > 0.0 {
         let resp = ui.allocate_rect(drag_rect, egui::Sense::click_and_drag());
+        if resp.double_clicked() {
+            if let Some(hwnd) = hwnd {
+                toggle_window_fullscreen(hwnd);
+            }
+        }
         if resp.drag_started() || resp.dragged() {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
         }

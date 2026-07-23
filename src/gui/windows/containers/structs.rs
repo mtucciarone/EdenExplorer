@@ -62,6 +62,7 @@ pub struct TabView {
     pub breadcrumb_path_editing: bool,
     pub breadcrumb_path_buffer: String,
     pub breadcrumb_just_started_editing: bool,
+    pub breadcrumb_select_all_on_focus: bool,
     pub breadcrumb_path_error: bool,
     pub breadcrumb_path_error_animation_time: f64,
     pub sort_column: crate::gui::utils::SortColumn,
@@ -90,6 +91,7 @@ impl TabView {
             breadcrumb_path_editing: false,
             breadcrumb_path_buffer: String::new(),
             breadcrumb_just_started_editing: false,
+            breadcrumb_select_all_on_focus: false,
             breadcrumb_path_error: false,
             breadcrumb_path_error_animation_time: 0.0,
             sort_column: default_sort_column,
@@ -384,6 +386,13 @@ impl TagsState {
         self.groups
             .iter()
             .any(|group| group.items.iter().any(|item| item == path))
+    }
+
+    pub fn tag_color_for_path(&self, path: &Path) -> Option<egui::Color32> {
+        self.groups
+            .iter()
+            .find(|group| group.items.iter().any(|item| item == path))
+            .map(|group| group.color)
     }
 
     pub fn add_paths_to_group(&mut self, group_id: u64, paths: &[PathBuf]) -> bool {

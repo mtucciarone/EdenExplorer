@@ -2,7 +2,9 @@ use crate::gui::i18n::I18n;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{clickable_icon, truncate_item_text};
 use crate::gui::windows::containers::structs::{TabInfo, TabsAction};
-use crate::gui::windows::windowsoverrides::handle_draw_windows_buttons;
+use crate::gui::windows::windowsoverrides::{
+    handle_draw_windows_buttons, toggle_window_fullscreen,
+};
 use eframe::egui;
 use egui::{FontFamily, FontId};
 use egui_phosphor::{fill, regular};
@@ -122,6 +124,11 @@ pub fn draw_tabs(
                         );
                         if drag_rect.width() > 4.0 {
                             let resp = ui.allocate_rect(drag_rect, egui::Sense::click_and_drag());
+                            if resp.double_clicked() {
+                                if let Some(hwnd) = hwnd {
+                                    toggle_window_fullscreen(hwnd);
+                                }
+                            }
                             if resp.drag_started() || resp.dragged() {
                                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
                             }

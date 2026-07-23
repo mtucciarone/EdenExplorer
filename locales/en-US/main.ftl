@@ -14,6 +14,7 @@ tooltip_newfolder = Create new folder
 tooltip_newfile = Create new file
 tooltip_favorites_add = Add current directory to favorites
 tooltip_favorites_remove = Remove current directory from favorites
+tooltip_open_terminal = Open terminal in current directory
 tooltip_nav_up = Navigate to parent directory
 tooltip_nav_back = Navigate to previous directory
 tooltip_nav_forward = Navigate to next directory

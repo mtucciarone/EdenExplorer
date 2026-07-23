@@ -14,6 +14,7 @@ tooltip_newfolder = 创建新文件夹
 tooltip_newfile = 创建新文件
 tooltip_favorites_add = 将当前目录添加到收藏夹
 tooltip_favorites_remove = 从收藏夹中移除当前目录
+tooltip_open_terminal = 在当前目录中打开终端
 tooltip_nav_up = 导航到上级目录
 tooltip_nav_back = 返回上一个目录
 tooltip_nav_forward = 前往下一个目录

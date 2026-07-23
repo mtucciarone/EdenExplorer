@@ -14,6 +14,7 @@ tooltip_newfolder = 新しいフォルダーを作成
 tooltip_newfile = 新しいファイルを作成
 tooltip_favorites_add = 現在のディレクトリをお気に入りに追加
 tooltip_favorites_remove = 現在のディレクトリをお気に入りから削除
+tooltip_open_terminal = 現在のディレクトリでターミナルを開く
 tooltip_nav_up = 親ディレクトリへ移動
 tooltip_nav_back = 前のディレクトリへ戻る
 tooltip_nav_forward = 次のディレクトリへ進む

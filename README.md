@@ -272,6 +272,7 @@
 - [x] Support changing the application font based on the system-installed fonts
 - [x] Collapsible sidebar
 - [x] Split-pane view in the Explorer
+- [x] Explorer view displays objects that have tags applied to them based on the tag color 
 
 ### 🚀 Upcoming Beta Features
 - [ ] New Explorer view that displays pictures in medium/large format
@@ -292,6 +293,26 @@
    <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=mtucciarone/EdenExplorer&type=date&legend=top-left&sealed_token=Vc9gAQ1EyNnsDshDmlm_VHBAb2pSnvtzPSk4Ip2omG5jagl9CGXy2C8L95S9d_GkLvTh49MUH8vx6A9y7hEGpgJ4x0tv0ZgDqqVAqJs9nxm3Ys_3F1PHK1jpm4v1UHK5yrZ4AJjo99PRtk7JQZV_08P0z5gCxq5EiNnz-YWNQRqeY4nGJyDwhqH5mCqT" />
  </picture>
 </a>
+
+## Keyboard Shortcuts
+F1 - Toggle fullscreen
+Ctrl+Shift+C - Copy selected path
+Ctrl+W - Close current Tab
+Ctrl+T - New Tab
+Ctrl+Tab - Next Tab
+Ctrl+Shift+Tab - Previous Tab
+Ctrl+Shift+N - Create new folder in current directory
+Ctrl+R (F5) - Refresh current directory
+Alt+D - select the address bar / current directory path
+F2 - rename current selected file (if any is selected inside the explorer)
+Alt-Enter - open current properties of current selected file  (if any is selected inside the explorer)
+Home/End - scroll to the top or bottom of the current explorer directory and select the first/last object
+Alt + Left Arrow - goes back to the previous folder
+Alt + Right Arrow - goes forward
+Alt + Up Arrow - moves up one folder level
+Backspace - also navigates back
+Back/Forward mouse buttons (Mouse Button 4 and Mouse Button 5)
+Enter - If a file is selected, runs the default program
 
 ## License
 This project is FOSS, released under the MIT License.

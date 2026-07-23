@@ -14,6 +14,7 @@ tooltip_newfolder = Buat folder baru
 tooltip_newfile = Buat file baru
 tooltip_favorites_add = Tambahkan direktori saat ini ke favorit
 tooltip_favorites_remove = Hapus direktori saat ini dari favorit
+tooltip_open_terminal = Buka terminal di direktori saat ini
 tooltip_nav_up = Navigasi ke direktori induk
 tooltip_nav_back = Kembali ke direktori sebelumnya
 tooltip_nav_forward = Maju ke direktori berikutnya

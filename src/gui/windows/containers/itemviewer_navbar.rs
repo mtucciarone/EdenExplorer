@@ -11,10 +11,12 @@ use crate::gui::windows::containers::structs::{
     Breadcrumb, ItemViewerNavBarAction, RenderedBreadcrumb, TabView,
 };
 use eframe::egui;
+use egui::text::{CCursor, CCursorRange};
 use egui::{FontFamily, FontId};
 use egui_extras::Size;
 use egui_phosphor::{fill, regular};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 pub fn draw_itemviewer_navigation_bar(
     ui: &mut egui::Ui,
@@ -49,6 +51,7 @@ pub fn draw_itemviewer_navigation_bar(
             i18n,
             palette,
             is_favorited,
+            &tab.nav.current,
             tab.nav.is_root(),
             can_go_back,
             can_go_forward,
@@ -62,6 +65,18 @@ pub fn draw_itemviewer_navigation_bar(
 
         if tab.breadcrumb_path_editing {
             let text_edit_id = ui.id().with(("breadcrumbs_path_edit", tab_id));
+
+            if tab.breadcrumb_select_all_on_focus {
+                let mut state =
+                    egui::widgets::text_edit::TextEditState::load(ui.ctx(), text_edit_id)
+                        .unwrap_or_default();
+                let cursor_end = CCursor::new(tab.breadcrumb_path_buffer.chars().count());
+                state
+                    .cursor
+                    .set_char_range(Some(CCursorRange::two(CCursor::new(0), cursor_end)));
+                state.store(ui.ctx(), text_edit_id);
+            }
+
             let mut offset_x = 0.0;
             if tab.breadcrumb_path_error {
                 let t = (ui.input(|i| i.time) - tab.breadcrumb_path_error_animation_time) as f32;
@@ -118,6 +133,10 @@ pub fn draw_itemviewer_navigation_bar(
             if !tab.breadcrumb_just_started_editing || tab.breadcrumb_path_error {
                 resp.request_focus();
                 tab.breadcrumb_just_started_editing = true;
+            }
+
+            if resp.has_focus() {
+                tab.breadcrumb_select_all_on_focus = false;
             }
 
             action.is_breadcrumb_path_edit_active = resp.has_focus();
@@ -307,6 +326,7 @@ fn draw_navigation_bar_buttons(
     i18n: &I18n,
     palette: &ThemePalette,
     is_favorited: bool,
+    current_dir: &Path,
     is_root: bool,
     can_go_back: bool,
     can_go_forward: bool,
@@ -448,7 +468,47 @@ fn draw_navigation_bar_buttons(
         }
     }
 
+    ui.add_space(4.0);
+
+    if clickable_icon(ui, regular::TERMINAL, palette.primary)
+        .on_hover_text(
+            egui::RichText::new(i18n.tr("tooltip_open_terminal"))
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+    {
+        open_default_terminal(current_dir);
+    }
+
     action
+}
+
+fn open_default_terminal(current_dir: &Path) {
+    let start_dir = if current_dir.to_string_lossy() == MY_PC_PATH || !current_dir.exists() {
+        dirs::home_dir().unwrap_or_else(|| current_dir.to_path_buf())
+    } else {
+        current_dir.to_path_buf()
+    };
+
+    let launched = Command::new("wt.exe")
+        .arg("-d")
+        .arg(&start_dir)
+        .spawn()
+        .is_ok()
+        || Command::new("powershell.exe")
+            .current_dir(&start_dir)
+            .spawn()
+            .is_ok()
+        || Command::new("cmd.exe")
+            .current_dir(&start_dir)
+            .spawn()
+            .is_ok();
+
+    if !launched {
+        eprintln!("Failed to open terminal");
+    }
 }
 
 fn measure_breadcrumb_width(ui: &egui::Ui, font_id: &egui::FontId, text: &str) -> f32 {
