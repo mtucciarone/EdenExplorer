@@ -6,10 +6,8 @@
 
 <p align="center">
   <a href="https://thetalabs.ca/eden-explorer/">
-    <img src="https://img.shields.io/badge/🚀%20LIVE%20NOW!-Official%20Website%20Launched!-2ecc71?style=for-the-badge&link=https://thetalabs.ca/eden-explorer/" alt="Official Website Launched">
+    <img src="https://img.shields.io/badge/🚀%20LIVE%20NOW!-Official%20Website-2ecc71?style=for-the-badge&link=https://thetalabs.ca/eden-explorer/" alt="Official Website Launched">
   </a>
-</p>
-<p align="center">
   <img src="https://img.shields.io/badge/Public%20Beta-Now%20Available-2ecc71?style=for-the-badge" />
 </p>
 
@@ -295,24 +293,22 @@
 </a>
 
 ## Keyboard Shortcuts
-F1 - Toggle fullscreen
-Ctrl+Shift+C - Copy selected path
-Ctrl+W - Close current Tab
-Ctrl+T - New Tab
-Ctrl+Tab - Next Tab
-Ctrl+Shift+Tab - Previous Tab
-Ctrl+Shift+N - Create new folder in current directory
-Ctrl+R (F5) - Refresh current directory
-Alt+D - select the address bar / current directory path
-F2 - rename current selected file (if any is selected inside the explorer)
-Alt-Enter - open current properties of current selected file  (if any is selected inside the explorer)
-Home/End - scroll to the top or bottom of the current explorer directory and select the first/last object
-Alt + Left Arrow - goes back to the previous folder
-Alt + Right Arrow - goes forward
-Alt + Up Arrow - moves up one folder level
-Backspace - also navigates back
-Back/Forward mouse buttons (Mouse Button 4 and Mouse Button 5)
-Enter - If a file is selected, runs the default program
+- F1 - Toggle fullscreen
+- Ctrl+Shift+C - Copy selected path
+- Ctrl+W - Close current Tab
+- Ctrl+T - New Tab
+- Ctrl+Tab - Next Tab
+- Ctrl+Shift+Tab - Previous Tab
+- Ctrl+Shift+N - Create new folder in current directory
+- Ctrl+R (F5) - Refresh current directory
+- Alt+D - Select the address bar / current directory path
+- F2 - Rename current selected file (if any is selected inside the explorer)
+- Alt-Enter - Open current properties of current selected file  (if any is selected inside the explorer)
+- Home/End - Scroll to the top or bottom of the current explorer directory and select the first/last object
+- Alt + Left Arrow (Backspace) - Navigate backwards
+- Alt + Right Arrow (Mouse Button 4) - Navigate forwards
+- Alt + Up Arrow (Mouse Button 5) - Navigate upwards
+- Enter - If a file is selected, runs the default program
 
 ## License
 This project is FOSS, released under the MIT License.
