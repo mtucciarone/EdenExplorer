@@ -13,8 +13,8 @@ use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::explorer::draw_tab_content;
 use crate::gui::windows::containers::sidebar::draw_sidebar;
 use crate::gui::windows::containers::structs::{
-    FavoriteItem, ItemViewerFolderSizeState, ItemViewerNavBarAction, RenameState, SidebarAction,
-    SplitSide, TabInfo, TabState, TabsAction, TagsState,
+    FavoriteItem, ItemViewerColumnState, ItemViewerFolderSizeState, ItemViewerNavBarAction,
+    RenameState, SidebarAction, SplitSide, TabInfo, TabState, TabsAction, TagsState,
 };
 use crate::gui::windows::containers::tabs::draw_tabs;
 use crate::gui::windows::containers::tags::{
@@ -106,6 +106,8 @@ impl Default for MainWindow {
             sort_ascending,
             language,
             date_style,
+            item_viewer_file_column_order,
+            item_viewer_drive_column_order,
         ) = load_app_settings();
         let loaded_settings = AppSettings {
             folder_scanning_enabled,
@@ -120,6 +122,8 @@ impl Default for MainWindow {
             sort_column,
             sort_ascending,
             language,
+            item_viewer_file_column_order,
+            item_viewer_drive_column_order,
         };
 
         let system_locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
@@ -144,6 +148,10 @@ impl Default for MainWindow {
                 loaded_settings.sort_column,
                 loaded_settings.sort_ascending,
             ));
+            tabs.last_mut().unwrap().primary_view.column_state = ItemViewerColumnState::from_orders(
+                loaded_settings.item_viewer_file_column_order.clone(),
+                loaded_settings.item_viewer_drive_column_order.clone(),
+            );
             next_tab_id += 1;
         } else {
             for path in &pinned_tabs {
@@ -153,6 +161,11 @@ impl Default for MainWindow {
                     loaded_settings.sort_column,
                     loaded_settings.sort_ascending,
                 ));
+                tabs.last_mut().unwrap().primary_view.column_state =
+                    ItemViewerColumnState::from_orders(
+                        loaded_settings.item_viewer_file_column_order.clone(),
+                        loaded_settings.item_viewer_drive_column_order.clone(),
+                    );
                 next_tab_id += 1;
             }
         }
@@ -377,6 +390,14 @@ impl eframe::App for MainWindow {
                         self.settings_window.current_settings.sort_ascending,
                         &self.settings_window.current_settings.language,
                         self.settings_window.current_settings.date_style,
+                        &self
+                            .settings_window
+                            .current_settings
+                            .item_viewer_file_column_order,
+                        &self
+                            .settings_window
+                            .current_settings
+                            .item_viewer_drive_column_order,
                     );
 
                     self.last_window_size = Some(current_size);

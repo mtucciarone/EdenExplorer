@@ -15,11 +15,12 @@ use crate::gui::utils::{
 };
 use crate::gui::windows::about::draw_about_window;
 use crate::gui::windows::containers::enums::{
-    ItemViewerAction, ItemViewerContextAction, ItemViewerNavAction,
+    ItemViewerAction, ItemViewerContextAction, ItemViewerHeaderColumn, ItemViewerNavAction,
 };
 use crate::gui::windows::containers::structs::{
-    FavoriteItem, ItemViewerFolderSizeState, ItemViewerNavBarAction, RenameState, SidebarAction,
-    SplitSide, TabState, TabView, TabsAction, TopbarAction,
+    FavoriteItem, ItemViewerColumnFitRequest, ItemViewerColumnState, ItemViewerFolderSizeState,
+    ItemViewerNavBarAction, RenameState, SidebarAction, SplitSide, TabState, TabView, TabsAction,
+    TopbarAction,
 };
 use crate::gui::windows::customizetheme::draw_theme_customizer;
 use crate::gui::windows::enums::{SettingsAction, ThemeCustomizerAction};
@@ -122,6 +123,17 @@ impl MainWindow {
         };
         self.tabs
             .push(TabState::new(id, nav, sort_column, sort_ascending));
+        let column_state = ItemViewerColumnState::from_orders(
+            self.settings_window
+                .current_settings
+                .item_viewer_file_column_order
+                .clone(),
+            self.settings_window
+                .current_settings
+                .item_viewer_drive_column_order
+                .clone(),
+        );
+        self.tabs.last_mut().unwrap().primary_view.column_state = column_state;
         self.active_tab = self.tabs.len() - 1;
         self.mark_tab_infos_dirty();
     }
@@ -177,6 +189,10 @@ impl MainWindow {
         );
 
         // Automatically save settings when sorting changes
+        self.save_app_settings_to_disk();
+    }
+
+    fn save_app_settings_to_disk(&self) {
         save_app_settings(
             self.settings_window
                 .current_settings
@@ -200,7 +216,55 @@ impl MainWindow {
             self.settings_window.current_settings.sort_ascending,
             &self.settings_window.current_settings.language,
             self.settings_window.current_settings.date_style,
+            &self
+                .settings_window
+                .current_settings
+                .item_viewer_file_column_order,
+            &self
+                .settings_window
+                .current_settings
+                .item_viewer_drive_column_order,
         );
+    }
+
+    fn apply_item_viewer_column_order(
+        &mut self,
+        is_drive_view: bool,
+        order: &[ItemViewerHeaderColumn],
+    ) {
+        let target_order = if is_drive_view {
+            &mut self
+                .settings_window
+                .current_settings
+                .item_viewer_drive_column_order
+        } else {
+            &mut self
+                .settings_window
+                .current_settings
+                .item_viewer_file_column_order
+        };
+        *target_order = order.to_vec();
+
+        for tab in &mut self.tabs {
+            {
+                let view = &mut tab.primary_view;
+                let current_order = view.column_state.order_mut(is_drive_view);
+                current_order.clear();
+                current_order.extend_from_slice(order);
+                view.column_state.layout_generation =
+                    view.column_state.layout_generation.wrapping_add(1);
+            }
+
+            if let Some(view) = tab.split_view.as_mut() {
+                let current_order = view.column_state.order_mut(is_drive_view);
+                current_order.clear();
+                current_order.extend_from_slice(order);
+                view.column_state.layout_generation =
+                    view.column_state.layout_generation.wrapping_add(1);
+            }
+        }
+
+        self.save_app_settings_to_disk();
     }
 
     pub fn load_path(&mut self) {
@@ -804,30 +868,7 @@ impl MainWindow {
         {
             match action {
                 SettingsAction::ApplySettings => {
-                    save_app_settings(
-                        self.settings_window
-                            .current_settings
-                            .folder_scanning_enabled,
-                        self.settings_window
-                            .current_settings
-                            .show_hidden_files_folders,
-                        self.settings_window.current_settings.show_item_viewer_icons,
-                        self.settings_window
-                            .current_settings
-                            .windows_context_menu_enabled,
-                        &self.settings_window.current_settings.window_size_mode,
-                        &self.settings_window.current_settings.start_path,
-                        Some(match self.theme {
-                            crate::gui::theme::ThemeMode::Dark => "dark",
-                            crate::gui::theme::ThemeMode::Light => "light",
-                        }),
-                        &self.settings_window.current_settings.pinned_tabs,
-                        self.settings_window.current_settings.time_format_24h,
-                        self.settings_window.current_settings.sort_column,
-                        self.settings_window.current_settings.sort_ascending,
-                        &self.settings_window.current_settings.language,
-                        self.settings_window.current_settings.date_style,
-                    );
+                    self.save_app_settings_to_disk();
 
                     if let Some(hwnd) = self.hwnd {
                         crate::gui::windows::windowsoverrides::set_window_mode(
@@ -1042,6 +1083,8 @@ impl MainWindow {
                         _sort_ascending,
                         _language,
                         _date_style,
+                        _item_viewer_file_column_order,
+                        _item_viewer_drive_column_order,
                     ) = load_app_settings();
                     self.tabs[0].primary_view.nav = Navigation::new(start_path);
                     self.tabs[0].split_view = None;
@@ -1067,30 +1110,7 @@ impl MainWindow {
                     self.settings_window.current_settings.pinned_tabs.push(path);
                 }
 
-                save_app_settings(
-                    self.settings_window
-                        .current_settings
-                        .folder_scanning_enabled,
-                    self.settings_window
-                        .current_settings
-                        .show_hidden_files_folders,
-                    self.settings_window.current_settings.show_item_viewer_icons,
-                    self.settings_window
-                        .current_settings
-                        .windows_context_menu_enabled,
-                    &self.settings_window.current_settings.window_size_mode,
-                    &self.settings_window.current_settings.start_path,
-                    Some(match self.theme {
-                        ThemeMode::Dark => "dark",
-                        ThemeMode::Light => "light",
-                    }),
-                    &self.settings_window.current_settings.pinned_tabs,
-                    self.settings_window.current_settings.time_format_24h,
-                    self.settings_window.current_settings.sort_column,
-                    self.settings_window.current_settings.sort_ascending,
-                    &self.settings_window.current_settings.language,
-                    self.settings_window.current_settings.date_style,
-                );
+                self.save_app_settings_to_disk();
 
                 self.mark_tab_infos_dirty();
             }
@@ -1123,11 +1143,11 @@ impl MainWindow {
     /// Opens `path` as the active tab's split view, creating the split if none
     /// exists yet, or replacing the current split target if one does.
     pub(crate) fn open_path_in_split(&mut self, path: PathBuf) {
-        let (sort_column, sort_ascending) = {
-            let view = self.active_tab().view(SplitSide::Primary);
-            (view.sort_column, view.sort_ascending)
-        };
-        let new_view = TabView::new(Navigation::new(path), sort_column, sort_ascending);
+        let mut new_view = self
+            .active_tab()
+            .view(SplitSide::Primary)
+            .duplicate_as_new();
+        new_view.nav = Navigation::new(path);
         let tab = self.active_tab_mut();
         tab.split_view = Some(new_view);
         self.focused_split = SplitSide::Secondary;
@@ -1239,30 +1259,7 @@ impl MainWindow {
                 self.theme_dirty = true;
 
                 // Save the theme setting
-                save_app_settings(
-                    self.settings_window
-                        .current_settings
-                        .folder_scanning_enabled,
-                    self.settings_window
-                        .current_settings
-                        .show_hidden_files_folders,
-                    self.settings_window.current_settings.show_item_viewer_icons,
-                    self.settings_window
-                        .current_settings
-                        .windows_context_menu_enabled,
-                    &self.settings_window.current_settings.window_size_mode,
-                    &self.settings_window.current_settings.start_path,
-                    Some(match self.theme {
-                        ThemeMode::Dark => "dark",
-                        ThemeMode::Light => "light",
-                    }),
-                    &self.settings_window.current_settings.pinned_tabs,
-                    self.settings_window.current_settings.time_format_24h,
-                    self.settings_window.current_settings.sort_column,
-                    self.settings_window.current_settings.sort_ascending,
-                    &self.settings_window.current_settings.language,
-                    self.settings_window.current_settings.date_style,
-                );
+                self.save_app_settings_to_disk();
             }
 
             if action.customize_theme {
@@ -1763,8 +1760,114 @@ pub fn calculate_folder_sizes_parallel(
 
 pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer: &mut MainWindow) {
     if let Some(action) = pending_action {
+        let side = explorer.focused_split;
+        let is_drive_view = explorer.current_nav().is_root();
         match action {
             ItemViewerAction::Sort(col) => explorer.toggle_sort(col),
+            ItemViewerAction::ToggleColumnVisibility(column) => {
+                let view = explorer.active_tab_mut().view_mut(side);
+                let column_state = &mut view.column_state;
+
+                match column {
+                    ItemViewerHeaderColumn::Name => {}
+                    ItemViewerHeaderColumn::Type => {
+                        column_state.show_type = !column_state.show_type;
+                        column_state.layout_generation =
+                            column_state.layout_generation.wrapping_add(1);
+                    }
+                    ItemViewerHeaderColumn::Size => {
+                        column_state.show_size = !column_state.show_size;
+                        column_state.layout_generation =
+                            column_state.layout_generation.wrapping_add(1);
+                    }
+                    ItemViewerHeaderColumn::Modified => {
+                        column_state.show_modified = !column_state.show_modified;
+                        column_state.layout_generation =
+                            column_state.layout_generation.wrapping_add(1);
+                    }
+                    ItemViewerHeaderColumn::Created => {
+                        column_state.show_created = !column_state.show_created;
+                        column_state.layout_generation =
+                            column_state.layout_generation.wrapping_add(1);
+                    }
+                    ItemViewerHeaderColumn::Usage => {}
+                }
+            }
+            ItemViewerAction::FitColumn(column) => {
+                let view = explorer.active_tab_mut().view_mut(side);
+                view.column_state.pending_fit_request =
+                    Some(ItemViewerColumnFitRequest::Column(column));
+                view.column_state.layout_generation =
+                    view.column_state.layout_generation.wrapping_add(1);
+            }
+            ItemViewerAction::FitAllColumns => {
+                let view = explorer.active_tab_mut().view_mut(side);
+                view.column_state.pending_fit_request = Some(ItemViewerColumnFitRequest::All);
+                view.column_state.layout_generation =
+                    view.column_state.layout_generation.wrapping_add(1);
+            }
+            ItemViewerAction::MoveColumnLeft(column) => {
+                let moved = {
+                    let view = explorer.active_tab_mut().view_mut(side);
+                    view.column_state.move_column(is_drive_view, column, -1)
+                };
+                if moved {
+                    let order = explorer
+                        .active_tab()
+                        .view(side)
+                        .column_state
+                        .order(is_drive_view)
+                        .to_vec();
+                    explorer.apply_item_viewer_column_order(is_drive_view, &order);
+                }
+            }
+            ItemViewerAction::MoveColumnRight(column) => {
+                let moved = {
+                    let view = explorer.active_tab_mut().view_mut(side);
+                    view.column_state.move_column(is_drive_view, column, 1)
+                };
+                if moved {
+                    let order = explorer
+                        .active_tab()
+                        .view(side)
+                        .column_state
+                        .order(is_drive_view)
+                        .to_vec();
+                    explorer.apply_item_viewer_column_order(is_drive_view, &order);
+                }
+            }
+            ItemViewerAction::MoveColumnToStart(column) => {
+                let moved = {
+                    let view = explorer.active_tab_mut().view_mut(side);
+                    view.column_state
+                        .move_column_to_edge(is_drive_view, column, true)
+                };
+                if moved {
+                    let order = explorer
+                        .active_tab()
+                        .view(side)
+                        .column_state
+                        .order(is_drive_view)
+                        .to_vec();
+                    explorer.apply_item_viewer_column_order(is_drive_view, &order);
+                }
+            }
+            ItemViewerAction::MoveColumnToEnd(column) => {
+                let moved = {
+                    let view = explorer.active_tab_mut().view_mut(side);
+                    view.column_state
+                        .move_column_to_edge(is_drive_view, column, false)
+                };
+                if moved {
+                    let order = explorer
+                        .active_tab()
+                        .view(side)
+                        .column_state
+                        .order(is_drive_view)
+                        .to_vec();
+                    explorer.apply_item_viewer_column_order(is_drive_view, &order);
+                }
+            }
             ItemViewerAction::Select(path) => {
                 let idx = {
                     let view = explorer.active_tab().view(explorer.focused_split);
