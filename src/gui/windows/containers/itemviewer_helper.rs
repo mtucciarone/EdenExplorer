@@ -1082,6 +1082,8 @@ fn draw_header_cell(
     };
 
     header.col(|ui| {
+        let cell_id = ui.id().with(("itemviewer_header_cell", column));
+        let cell_resp = ui.interact(ui.max_rect(), cell_id, egui::Sense::click());
         let is_sortable = column_action.is_some();
         let (sort_label, arrow) = match column_action {
             Some(SortColumn::Name) if sort_column == SortColumn::Name => (
@@ -1127,25 +1129,20 @@ fn draw_header_cell(
             _ => (label.clone(), ""),
         };
 
-        let resp = ui.add(
+        ui.add(
             egui::Label::new(
                 egui::RichText::new(format!("{sort_label} {arrow}").trim_end())
                     .font(font_id.clone())
                     .size(palette.text_size)
                     .color(palette.text_header_section),
             )
-            .selectable(false)
-            .sense(if is_sortable {
-                egui::Sense::click()
-            } else {
-                egui::Sense::hover()
-            }),
+            .selectable(false),
         );
 
-        if resp.hovered() {
+        if cell_resp.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
         }
-        if resp.clicked()
+        if cell_resp.clicked()
             && let Some(col) = column_action
         {
             *action = Some(ItemViewerAction::Sort(col));
@@ -1154,7 +1151,7 @@ fn draw_header_cell(
         let order = column_state.order(is_drive_view);
         let order_index = order.iter().position(|c| *c == column);
 
-        Popup::context_menu(&resp)
+        Popup::context_menu(&cell_resp)
             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| {
                 apply_context_menu_typography(ui, palette);
