@@ -15,11 +15,11 @@ use crate::gui::utils::{
 };
 use crate::gui::windows::about::draw_about_window;
 use crate::gui::windows::containers::enums::{
-    ItemViewerAction, ItemViewerContextAction, ItemViewerNavAction,
+    ItemViewerAction, ItemViewerContextAction, ItemViewerHeaderColumn, ItemViewerNavAction,
 };
 use crate::gui::windows::containers::structs::{
-    FavoriteItem, ItemViewerFolderSizeState, ItemViewerNavBarAction, RenameState, SidebarAction,
-    SplitSide, TabState, TabView, TabsAction, TopbarAction,
+    FavoriteItem, ItemViewerColumnFitRequest, ItemViewerFolderSizeState, ItemViewerNavBarAction,
+    RenameState, SidebarAction, SplitSide, TabState, TabView, TabsAction, TopbarAction,
 };
 use crate::gui::windows::customizetheme::draw_theme_customizer;
 use crate::gui::windows::enums::{SettingsAction, ThemeCustomizerAction};
@@ -1123,11 +1123,11 @@ impl MainWindow {
     /// Opens `path` as the active tab's split view, creating the split if none
     /// exists yet, or replacing the current split target if one does.
     pub(crate) fn open_path_in_split(&mut self, path: PathBuf) {
-        let (sort_column, sort_ascending) = {
-            let view = self.active_tab().view(SplitSide::Primary);
-            (view.sort_column, view.sort_ascending)
-        };
-        let new_view = TabView::new(Navigation::new(path), sort_column, sort_ascending);
+        let mut new_view = self
+            .active_tab()
+            .view(SplitSide::Primary)
+            .duplicate_as_new();
+        new_view.nav = Navigation::new(path);
         let tab = self.active_tab_mut();
         tab.split_view = Some(new_view);
         self.focused_split = SplitSide::Secondary;
@@ -1765,6 +1765,51 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
     if let Some(action) = pending_action {
         match action {
             ItemViewerAction::Sort(col) => explorer.toggle_sort(col),
+            ItemViewerAction::ToggleColumnVisibility(column) => {
+                let side = explorer.focused_split;
+                let view = explorer.active_tab_mut().view_mut(side);
+                let column_state = &mut view.column_state;
+
+                match column {
+                    ItemViewerHeaderColumn::Name => {}
+                    ItemViewerHeaderColumn::Type => {
+                        column_state.show_type = !column_state.show_type;
+                        column_state.layout_generation =
+                            column_state.layout_generation.wrapping_add(1);
+                    }
+                    ItemViewerHeaderColumn::Size => {
+                        column_state.show_size = !column_state.show_size;
+                        column_state.layout_generation =
+                            column_state.layout_generation.wrapping_add(1);
+                    }
+                    ItemViewerHeaderColumn::Modified => {
+                        column_state.show_modified = !column_state.show_modified;
+                        column_state.layout_generation =
+                            column_state.layout_generation.wrapping_add(1);
+                    }
+                    ItemViewerHeaderColumn::Created => {
+                        column_state.show_created = !column_state.show_created;
+                        column_state.layout_generation =
+                            column_state.layout_generation.wrapping_add(1);
+                    }
+                    ItemViewerHeaderColumn::Usage => {}
+                }
+            }
+            ItemViewerAction::FitColumn(column) => {
+                let side = explorer.focused_split;
+                let view = explorer.active_tab_mut().view_mut(side);
+                view.column_state.pending_fit_request =
+                    Some(ItemViewerColumnFitRequest::Column(column));
+                view.column_state.layout_generation =
+                    view.column_state.layout_generation.wrapping_add(1);
+            }
+            ItemViewerAction::FitAllColumns => {
+                let side = explorer.focused_split;
+                let view = explorer.active_tab_mut().view_mut(side);
+                view.column_state.pending_fit_request = Some(ItemViewerColumnFitRequest::All);
+                view.column_state.layout_generation =
+                    view.column_state.layout_generation.wrapping_add(1);
+            }
             ItemViewerAction::Select(path) => {
                 let idx = {
                     let view = explorer.active_tab().view(explorer.focused_split);

@@ -1,7 +1,9 @@
 use crate::core::fs::FileItem;
 use crate::core::indexer::TagsSnapshot;
 use crate::gui::utils::hsl_to_color32;
-use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerNavAction};
+use crate::gui::windows::containers::enums::{
+    ItemViewerAction, ItemViewerHeaderColumn, ItemViewerNavAction,
+};
 use crate::gui::windows::shell_context_menu::ShellContextMenu;
 use crate::gui::windows::structs::Navigation;
 use crossbeam_channel::{Receiver, Sender};
@@ -69,6 +71,7 @@ pub struct TabView {
     pub sort_ascending: bool,
     pub explorer_state: ExplorerState,
     pub item_viewer_filter_state: FilterState,
+    pub column_state: ItemViewerColumnState,
     pub files: Vec<FileItem>,
     pub drag_state: DragState,
     pub is_loading: bool,
@@ -98,6 +101,7 @@ impl TabView {
             sort_ascending: default_sort_ascending,
             explorer_state: ExplorerState::default(),
             item_viewer_filter_state: FilterState::default(),
+            column_state: ItemViewerColumnState::default(),
             files: Vec::new(),
             drag_state: DragState::default(),
             is_loading: false,
@@ -113,7 +117,38 @@ impl TabView {
     /// Used when opening a split: a fresh view pointed at the same directory
     /// and sort as `self`, but with its own (empty) selection/filter/listing.
     pub fn duplicate_as_new(&self) -> Self {
-        Self::new(self.nav.clone(), self.sort_column, self.sort_ascending)
+        let mut view = Self::new(self.nav.clone(), self.sort_column, self.sort_ascending);
+        view.column_state = self.column_state.clone();
+        view
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ItemViewerColumnFitRequest {
+    Column(ItemViewerHeaderColumn),
+    All,
+}
+
+#[derive(Clone, Debug)]
+pub struct ItemViewerColumnState {
+    pub show_type: bool,
+    pub show_size: bool,
+    pub show_modified: bool,
+    pub show_created: bool,
+    pub layout_generation: u64,
+    pub pending_fit_request: Option<ItemViewerColumnFitRequest>,
+}
+
+impl Default for ItemViewerColumnState {
+    fn default() -> Self {
+        Self {
+            show_type: true,
+            show_size: true,
+            show_modified: true,
+            show_created: true,
+            layout_generation: 0,
+            pending_fit_request: None,
+        }
     }
 }
 

@@ -13,18 +13,18 @@ use crate::gui::utils::{
     truncate_item_text,
 };
 use crate::gui::windows::containers::enums::{
-    ItemViewerAction, ItemViewerContextAction, ItemViewerNavAction,
+    ItemViewerAction, ItemViewerContextAction, ItemViewerHeaderColumn, ItemViewerNavAction,
 };
 use crate::gui::windows::containers::itemviewer::draw_item_viewer;
 use crate::gui::windows::containers::structs::{
-    DragState, ExplorerState, FilterState, ItemViewerFolderSizeState, ItemViewerLayout,
-    ItemViewerNavBarAction, RenameState, TagsState,
+    DragState, ExplorerState, FilterState, ItemViewerColumnState, ItemViewerFolderSizeState,
+    ItemViewerLayout, ItemViewerNavBarAction, RenameState, TagsState,
 };
 use crate::gui::windows::shell_context_menu::ShellContextMenu;
 use crate::gui::windows::structs::{SettingsWindow, ThemeCustomizer};
 use eframe::egui;
 use egui::ScrollArea;
-use egui::containers::Popup;
+use egui::containers::{Popup, PopupCloseBehavior};
 use egui::{FontFamily, FontId};
 use egui_extras::Size;
 use egui_phosphor::{fill, regular};
@@ -986,15 +986,21 @@ pub fn draw_item_viewer_header(
     i18n: &I18n,
     header: &mut egui_extras::TableRow<'_, '_>,
     is_drive_view: bool,
+    show_type: bool,
+    show_size: bool,
+    show_modified: bool,
+    show_created: bool,
     filtered_indices: &[usize],
     files: &[FileItem],
     sort_column: SortColumn,
     sort_ascending: bool,
     palette: &crate::gui::theme::ThemePalette,
     explorer_state: &mut ExplorerState,
+    column_state: &ItemViewerColumnState,
 ) -> Option<ItemViewerAction> {
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let mut action: Option<ItemViewerAction> = None;
+
     if !is_drive_view {
         header.col(|ui| {
             let mut all_selected = !filtered_indices.is_empty()
@@ -1005,171 +1011,294 @@ pub fn draw_item_viewer_header(
             ui.scope(|ui| {
                 apply_checkbox_colors(ui, palette, all_selected);
                 if draw_checkbox(ui, palette, &mut all_selected, "select_all").clicked() {
-                    if all_selected {
-                        action = Some(ItemViewerAction::SelectAll);
+                    action = Some(if all_selected {
+                        ItemViewerAction::SelectAll
                     } else {
-                        action = Some(ItemViewerAction::DeselectAll);
-                    }
+                        ItemViewerAction::DeselectAll
+                    });
                 }
             });
         });
     }
 
-    header.col(|ui| {
-        let (label, arrow) = match sort_column {
-            SortColumn::Name => (
-                i18n.tr("explorer_cols_name"),
-                if sort_ascending {
-                    regular::CARET_UP
-                } else {
-                    regular::CARET_DOWN
-                },
-            ),
-            _ => (i18n.tr("explorer_cols_name"), ""),
-        };
-        let resp = ui.add(
-            egui::Label::new(
-                egui::RichText::new(format!("{label} {arrow}").trim_end())
-                    .font(font_id.clone())
-                    .size(palette.text_size)
-                    .color(palette.text_header_section),
-            )
-            .selectable(false)
-            .sense(egui::Sense::click()),
-        );
-        if resp.clicked() {
-            action = Some(ItemViewerAction::Sort(SortColumn::Name));
-        }
-    });
+    draw_header_cell(
+        header,
+        i18n,
+        palette,
+        &font_id,
+        sort_column,
+        sort_ascending,
+        ItemViewerHeaderColumn::Name,
+        i18n.tr("explorer_cols_name"),
+        &mut action,
+        column_state,
+        is_drive_view,
+    );
 
-    header.col(|ui| {
-        let (label, arrow) = match sort_column {
-            SortColumn::Type => (
-                i18n.tr("explorer_cols_type"),
-                if sort_ascending {
-                    regular::CARET_UP
-                } else {
-                    regular::CARET_DOWN
-                },
-            ),
-            _ => (i18n.tr("explorer_cols_type"), ""),
-        };
-        let resp = ui.add(
-            egui::Label::new(
-                egui::RichText::new(format!("{label} {arrow}").trim_end())
-                    .font(font_id.clone())
-                    .size(palette.text_size)
-                    .color(palette.text_header_section),
-            )
-            .selectable(false)
-            .sense(egui::Sense::click()),
+    if show_type {
+        draw_header_cell(
+            header,
+            i18n,
+            palette,
+            &font_id,
+            sort_column,
+            sort_ascending,
+            ItemViewerHeaderColumn::Type,
+            i18n.tr("explorer_cols_type"),
+            &mut action,
+            column_state,
+            is_drive_view,
         );
-        if resp.clicked() {
-            action = Some(ItemViewerAction::Sort(SortColumn::Type));
-        }
-    });
+    }
 
-    header.col(|ui| {
-        let (label, arrow) = match sort_column {
-            SortColumn::Size => (
-                i18n.tr("explorer_cols_size"),
-                if sort_ascending {
-                    regular::CARET_UP
-                } else {
-                    regular::CARET_DOWN
-                },
-            ),
-            _ => (i18n.tr("explorer_cols_size"), ""),
-        };
-        let resp = ui.add(
-            egui::Label::new(
-                egui::RichText::new(format!("{label} {arrow}").trim_end())
-                    .font(font_id.clone())
-                    .size(palette.text_size)
-                    .color(palette.text_header_section),
-            )
-            .selectable(false)
-            .sense(egui::Sense::click()),
+    if show_size {
+        draw_header_cell(
+            header,
+            i18n,
+            palette,
+            &font_id,
+            sort_column,
+            sort_ascending,
+            ItemViewerHeaderColumn::Size,
+            i18n.tr("explorer_cols_size"),
+            &mut action,
+            column_state,
+            is_drive_view,
         );
-        if resp.hovered() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
-        }
-        if resp.clicked() {
-            action = Some(ItemViewerAction::Sort(SortColumn::Size));
-        }
-    });
+    }
 
     if is_drive_view {
-        header.col(|ui| {
-            ui.add(
-                egui::Label::new(
-                    egui::RichText::new(format!("{}", i18n.tr("explorer_cols_usage")).trim_end())
-                        .font(font_id.clone())
-                        .size(palette.text_size)
-                        .color(palette.text_header_section),
-                )
-                .selectable(false)
-                .sense(egui::Sense::click()),
-            );
-        });
+        draw_header_cell(
+            header,
+            i18n,
+            palette,
+            &font_id,
+            sort_column,
+            sort_ascending,
+            ItemViewerHeaderColumn::Usage,
+            i18n.tr("explorer_cols_usage"),
+            &mut action,
+            column_state,
+            is_drive_view,
+        );
     } else {
-        header.col(|ui| {
-            let (label, arrow) = match sort_column {
-                SortColumn::Modified => (
-                    i18n.tr("explorer_cols_modified"),
-                    if sort_ascending {
-                        regular::CARET_UP
-                    } else {
-                        regular::CARET_DOWN
-                    },
-                ),
-                _ => (i18n.tr("explorer_cols_modified"), ""),
-            };
-            let resp = ui.add(
-                egui::Label::new(
-                    egui::RichText::new(format!("{label} {arrow}").trim_end())
-                        .font(font_id.clone())
-                        .size(palette.text_size)
-                        .color(palette.text_header_section),
-                )
-                .selectable(false)
-                .sense(egui::Sense::click()),
+        if show_modified {
+            draw_header_cell(
+                header,
+                i18n,
+                palette,
+                &font_id,
+                sort_column,
+                sort_ascending,
+                ItemViewerHeaderColumn::Modified,
+                i18n.tr("explorer_cols_modified"),
+                &mut action,
+                column_state,
+                is_drive_view,
             );
-            if resp.clicked() {
-                action = Some(ItemViewerAction::Sort(SortColumn::Modified));
-            }
-        });
+        }
 
-        header.col(|ui| {
-            let (label, arrow) = match sort_column {
-                SortColumn::Created => (
-                    i18n.tr("explorer_cols_created"),
-                    if sort_ascending {
-                        regular::CARET_UP
-                    } else {
-                        regular::CARET_DOWN
-                    },
-                ),
-                _ => (i18n.tr("explorer_cols_created"), ""),
-            };
-            let resp = ui.add(
-                egui::Label::new(
-                    egui::RichText::new(format!("{label} {arrow}").trim_end())
-                        .font(font_id.clone())
-                        .size(palette.text_size)
-                        .color(palette.text_header_section),
-                )
-                .selectable(false)
-                .sense(egui::Sense::click()),
+        if show_created {
+            draw_header_cell(
+                header,
+                i18n,
+                palette,
+                &font_id,
+                sort_column,
+                sort_ascending,
+                ItemViewerHeaderColumn::Created,
+                i18n.tr("explorer_cols_created"),
+                &mut action,
+                column_state,
+                is_drive_view,
             );
-
-            if resp.clicked() {
-                action = Some(ItemViewerAction::Sort(SortColumn::Created));
-            }
-        });
+        }
     }
 
     action
+}
+
+fn draw_header_cell(
+    header: &mut egui_extras::TableRow<'_, '_>,
+    i18n: &I18n,
+    palette: &crate::gui::theme::ThemePalette,
+    font_id: &FontId,
+    sort_column: SortColumn,
+    sort_ascending: bool,
+    column: ItemViewerHeaderColumn,
+    label: String,
+    action: &mut Option<ItemViewerAction>,
+    column_state: &ItemViewerColumnState,
+    is_drive_view: bool,
+) {
+    let column_action = match column {
+        ItemViewerHeaderColumn::Name => Some(SortColumn::Name),
+        ItemViewerHeaderColumn::Type => Some(SortColumn::Type),
+        ItemViewerHeaderColumn::Size => Some(SortColumn::Size),
+        ItemViewerHeaderColumn::Modified if !is_drive_view => Some(SortColumn::Modified),
+        ItemViewerHeaderColumn::Created if !is_drive_view => Some(SortColumn::Created),
+        _ => None,
+    };
+
+    header.col(|ui| {
+        let is_sortable = column_action.is_some();
+        let (sort_label, arrow) = match column_action {
+            Some(SortColumn::Name) if sort_column == SortColumn::Name => (
+                label.clone(),
+                if sort_ascending {
+                    regular::CARET_UP
+                } else {
+                    regular::CARET_DOWN
+                },
+            ),
+            Some(SortColumn::Type) if sort_column == SortColumn::Type => (
+                label.clone(),
+                if sort_ascending {
+                    regular::CARET_UP
+                } else {
+                    regular::CARET_DOWN
+                },
+            ),
+            Some(SortColumn::Size) if sort_column == SortColumn::Size => (
+                label.clone(),
+                if sort_ascending {
+                    regular::CARET_UP
+                } else {
+                    regular::CARET_DOWN
+                },
+            ),
+            Some(SortColumn::Modified) if sort_column == SortColumn::Modified => (
+                label.clone(),
+                if sort_ascending {
+                    regular::CARET_UP
+                } else {
+                    regular::CARET_DOWN
+                },
+            ),
+            Some(SortColumn::Created) if sort_column == SortColumn::Created => (
+                label.clone(),
+                if sort_ascending {
+                    regular::CARET_UP
+                } else {
+                    regular::CARET_DOWN
+                },
+            ),
+            _ => (label.clone(), ""),
+        };
+
+        let resp = ui.add(
+            egui::Label::new(
+                egui::RichText::new(format!("{sort_label} {arrow}").trim_end())
+                    .font(font_id.clone())
+                    .size(palette.text_size)
+                    .color(palette.text_header_section),
+            )
+            .selectable(false)
+            .sense(if is_sortable {
+                egui::Sense::click()
+            } else {
+                egui::Sense::hover()
+            }),
+        );
+
+        if resp.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
+        }
+        if resp.clicked()
+            && let Some(col) = column_action
+        {
+            *action = Some(ItemViewerAction::Sort(col));
+        }
+
+        Popup::context_menu(&resp)
+            .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| {
+                apply_context_menu_typography(ui, palette);
+                draw_header_context_menu(ui, i18n, column, column_state, action, is_drive_view);
+            });
+    });
+}
+
+fn draw_header_context_menu(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    clicked_column: ItemViewerHeaderColumn,
+    column_state: &ItemViewerColumnState,
+    action: &mut Option<ItemViewerAction>,
+    is_drive_view: bool,
+) {
+    if ui
+        .button(i18n.tr("itemviewer_size_column_to_fit"))
+        .clicked()
+    {
+        *action = Some(ItemViewerAction::FitColumn(clicked_column));
+        ui.close();
+    }
+
+    if ui
+        .button(i18n.tr("itemviewer_size_all_columns_to_fit"))
+        .clicked()
+    {
+        *action = Some(ItemViewerAction::FitAllColumns);
+        ui.close();
+    }
+
+    ui.separator();
+
+    let mut name_checked = true;
+    ui.add_enabled(
+        false,
+        egui::Checkbox::new(&mut name_checked, i18n.tr("explorer_cols_name")),
+    );
+
+    if draw_visibility_checkbox(ui, i18n.tr("explorer_cols_type"), column_state.show_type) {
+        *action = Some(ItemViewerAction::ToggleColumnVisibility(
+            ItemViewerHeaderColumn::Type,
+        ));
+        ui.close();
+    }
+
+    if draw_visibility_checkbox(ui, i18n.tr("explorer_cols_size"), column_state.show_size) {
+        *action = Some(ItemViewerAction::ToggleColumnVisibility(
+            ItemViewerHeaderColumn::Size,
+        ));
+        ui.close();
+    }
+
+    if is_drive_view {
+        let mut usage_checked = true;
+        ui.add_enabled(
+            false,
+            egui::Checkbox::new(&mut usage_checked, i18n.tr("explorer_cols_usage")),
+        );
+    } else {
+        if draw_visibility_checkbox(
+            ui,
+            i18n.tr("explorer_cols_modified"),
+            column_state.show_modified,
+        ) {
+            *action = Some(ItemViewerAction::ToggleColumnVisibility(
+                ItemViewerHeaderColumn::Modified,
+            ));
+            ui.close();
+        }
+
+        if draw_visibility_checkbox(
+            ui,
+            i18n.tr("explorer_cols_created"),
+            column_state.show_created,
+        ) {
+            *action = Some(ItemViewerAction::ToggleColumnVisibility(
+                ItemViewerHeaderColumn::Created,
+            ));
+            ui.close();
+        }
+    }
+}
+
+fn draw_visibility_checkbox(ui: &mut egui::Ui, label: String, checked: bool) -> bool {
+    let mut value = checked;
+    ui.checkbox(&mut value, label).clicked() && value != checked
 }
 
 pub fn handle_keyboard_navigation(

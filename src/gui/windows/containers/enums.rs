@@ -7,8 +7,21 @@ pub enum ItemViewerNavAction {
     Up,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ItemViewerHeaderColumn {
+    Name,
+    Type,
+    Size,
+    Modified,
+    Created,
+    Usage,
+}
+
 pub enum ItemViewerAction {
     Sort(SortColumn),
+    ToggleColumnVisibility(ItemViewerHeaderColumn),
+    FitColumn(ItemViewerHeaderColumn),
+    FitAllColumns,
     Select(PathBuf),
     Deselect(PathBuf),
     SelectAll,

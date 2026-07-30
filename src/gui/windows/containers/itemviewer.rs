@@ -4,12 +4,14 @@ use crate::core::utils::widgets::draw_checkbox;
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
-use crate::gui::utils::{SortColumn, draw_object_drag_ghost, fuzzy_match};
-use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
+use crate::gui::utils::{draw_object_drag_ghost, format_size, fuzzy_match, get_file_type_name};
+use crate::gui::windows::containers::enums::{
+    ItemViewerAction, ItemViewerContextAction, ItemViewerHeaderColumn,
+};
 use crate::gui::windows::containers::itemviewer_helper::*;
 use crate::gui::windows::containers::structs::{
-    DragState, ExplorerState, FilterState, ItemViewerFolderSizeState, ItemViewerNavBarAction,
-    RenameState, TagsState,
+    ItemViewerColumnFitRequest, ItemViewerFolderSizeState, ItemViewerNavBarAction, RenameState,
+    TabView, TagsState,
 };
 use crate::gui::windows::structs::{SettingsWindow, ThemeCustomizer};
 use eframe::egui;
@@ -24,14 +26,12 @@ use windows::Win32::Foundation::HWND;
 pub fn draw_item_viewer(
     ui: &mut egui::Ui,
     i18n: &I18n,
-    files: &Vec<FileItem>,
+    view: &mut TabView,
     folder_sizes: &HashMap<PathBuf, ItemViewerFolderSizeState>,
     paste_enabled: bool,
     clipboard_set: &HashSet<PathBuf>,
     is_cut_mode: bool,
     is_drive_view: bool,
-    sort_column: SortColumn,
-    sort_ascending: bool,
     show_hidden_files_folders: bool,
     show_item_viewer_icons: bool,
     icon_cache: &IconCache,
@@ -43,16 +43,11 @@ pub fn draw_item_viewer(
     drive_size_text_cache: &mut HashMap<PathBuf, (u64, u64, String)>,
     external_drag_to_internal_hover: &mut bool,
     tabbar_action: &mut Option<ItemViewerNavBarAction>,
-    drag_state: &mut DragState,
     drag_active: bool,
     native_drag_active: bool,
     drag_hover_target: Option<PathBuf>,
-    current_dir: PathBuf,
-    filter_state: &mut FilterState,
     hovered_drop_target_out: &mut Option<PathBuf>,
     hovered_drop_target_rect_out: &mut Option<egui::Rect>,
-    is_loading: bool,
-    explorer_state: &mut ExplorerState,
     tags_state: &mut TagsState,
     theme_customizer_window: &mut ThemeCustomizer,
     settings_window: &mut SettingsWindow,
@@ -60,6 +55,15 @@ pub fn draw_item_viewer(
     is_focused: bool,
     active_tab_id: u64,
 ) -> Option<ItemViewerAction> {
+    let files = &view.files;
+    let sort_column = view.sort_column;
+    let sort_ascending = view.sort_ascending;
+    let column_state = &mut view.column_state;
+    let filter_state = &mut view.item_viewer_filter_state;
+    let drag_state = &mut view.drag_state;
+    let explorer_state = &mut view.explorer_state;
+    let current_dir = view.nav.current.clone();
+    let is_loading = view.is_loading;
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let mut hovered_drop_target: Option<PathBuf> = None;
     let mut hovered_drop_target_rect: Option<egui::Rect> = None;
@@ -177,8 +181,138 @@ pub fn draw_item_viewer(
                 || i.key_pressed(egui::Key::Home)
                 || i.key_pressed(egui::Key::End)
         });
-        let current_width = ui.available_width();
+        let fit_request = column_state.pending_fit_request.take();
+        let layout_generation = column_state.layout_generation;
+        let show_type = column_state.show_type;
+        let show_size = column_state.show_size;
+        let show_modified = column_state.show_modified;
+        let show_created = column_state.show_created;
+        let current_width = ui.available_width().max(1.0);
         let available_height = ui.available_height();
+        let fit_widths = fit_request.map(|_| {
+            compute_item_viewer_column_widths(
+                ui,
+                i18n,
+                files,
+                &filter_state.cached_indices,
+                folder_sizes,
+                is_drive_view,
+                show_item_viewer_icons,
+                palette,
+                &font_id,
+                file_type_cache,
+                file_size_text_cache,
+                folder_size_text_cache,
+                drive_size_text_cache,
+            )
+        });
+        let fit_widths = fit_widths.as_ref();
+        let default_name_width = (current_width * 0.35).max(200.0);
+        let default_type_width = (current_width * 0.1).max(60.0);
+        let default_size_width = if is_drive_view {
+            (current_width * 0.14).max(120.0)
+        } else {
+            (current_width * 0.1).max(75.0)
+        };
+        let default_modified_width = (current_width * 0.2).max(120.0);
+        let default_created_width = (current_width * 0.2).max(120.0);
+        let default_usage_width = (current_width * 0.2).max(150.0);
+        let name_width = if matches!(
+            fit_request,
+            Some(ItemViewerColumnFitRequest::All)
+                | Some(ItemViewerColumnFitRequest::Column(
+                    ItemViewerHeaderColumn::Name
+                ))
+        ) {
+            fit_widths.map(|w| w.name).unwrap_or(default_name_width)
+        } else {
+            default_name_width
+        };
+        let type_width = if show_type {
+            if matches!(
+                fit_request,
+                Some(ItemViewerColumnFitRequest::All)
+                    | Some(ItemViewerColumnFitRequest::Column(
+                        ItemViewerHeaderColumn::Type
+                    ))
+            ) {
+                fit_widths
+                    .map(|w| w.type_width)
+                    .unwrap_or(default_type_width)
+            } else {
+                default_type_width
+            }
+        } else {
+            0.0
+        };
+        let size_width = if show_size {
+            if matches!(
+                fit_request,
+                Some(ItemViewerColumnFitRequest::All)
+                    | Some(ItemViewerColumnFitRequest::Column(
+                        ItemViewerHeaderColumn::Size
+                    ))
+            ) {
+                fit_widths
+                    .map(|w| w.size_width)
+                    .unwrap_or(default_size_width)
+            } else {
+                default_size_width
+            }
+        } else {
+            0.0
+        };
+        let usage_width = if is_drive_view {
+            if matches!(
+                fit_request,
+                Some(ItemViewerColumnFitRequest::All)
+                    | Some(ItemViewerColumnFitRequest::Column(
+                        ItemViewerHeaderColumn::Usage
+                    ))
+            ) {
+                fit_widths
+                    .map(|w| w.usage_width)
+                    .unwrap_or(default_usage_width)
+            } else {
+                default_usage_width
+            }
+        } else {
+            0.0
+        };
+        let modified_width = if !is_drive_view && show_modified {
+            if matches!(
+                fit_request,
+                Some(ItemViewerColumnFitRequest::All)
+                    | Some(ItemViewerColumnFitRequest::Column(
+                        ItemViewerHeaderColumn::Modified
+                    ))
+            ) {
+                fit_widths
+                    .map(|w| w.modified_width)
+                    .unwrap_or(default_modified_width)
+            } else {
+                default_modified_width
+            }
+        } else {
+            0.0
+        };
+        let created_width = if !is_drive_view && show_created {
+            if matches!(
+                fit_request,
+                Some(ItemViewerColumnFitRequest::All)
+                    | Some(ItemViewerColumnFitRequest::Column(
+                        ItemViewerHeaderColumn::Created
+                    ))
+            ) {
+                fit_widths
+                    .map(|w| w.created_width)
+                    .unwrap_or(default_created_width)
+            } else {
+                default_created_width
+            }
+        } else {
+            0.0
+        };
 
         let mut table = TableBuilder::new(ui)
             .vscroll(true)
@@ -192,7 +326,7 @@ pub fn draw_item_viewer(
             })
             .animate_scrolling(true)
             .resizable(true)
-            .id_salt(("item_viewer_table", active_tab_id));
+            .id_salt(("item_viewer_table", active_tab_id, layout_generation));
 
         // If we have a pending selection from a refresh, scroll to it and select it
         if let Some(pending_paths) = explorer_state.pending_selection_paths.clone() {
@@ -258,44 +392,38 @@ pub fn draw_item_viewer(
             table = table.column(Column::exact(16.0));
         }
 
-        table = table
-            .column(
-                Column::initial(current_width * 0.35)
-                    .at_least(200.0)
-                    .resizable(true),
-            ) // Name
-            .column(
-                Column::initial(current_width * 0.1)
-                    .at_least(60.0)
-                    .resizable(true),
-            ); // Type
+        table = table.column(Column::remainder().at_least(name_width).resizable(true));
 
-        if layout.is_drive_view {
+        if show_type {
+            table = table.column(Column::initial(type_width).at_least(60.0).resizable(true));
+        }
+
+        if show_size {
             table = table.column(
-                Column::initial(current_width * 0.14)
-                    .at_least(120.0)
+                Column::initial(size_width)
+                    .at_least(if is_drive_view { 120.0 } else { 75.0 })
                     .resizable(true),
-            ); // Size
-        } else {
-            table = table.column(
-                Column::initial(current_width * 0.1)
-                    .at_least(75.0)
-                    .resizable(true),
-            ); // Size
+            );
         }
 
         if layout.is_drive_view {
-            table = table.column(Column::remainder().at_least(150.0).resizable(true));
-        // Usage
+            table = table.column(Column::initial(usage_width).at_least(150.0).resizable(true));
         } else {
-            table = table
-                .column(
-                    Column::initial(current_width * 0.2)
+            if show_modified {
+                table = table.column(
+                    Column::initial(modified_width)
                         .at_least(120.0)
                         .resizable(true),
-                ) // Modified
-                .column(Column::remainder().at_least(120.0).resizable(true));
-            // Created
+                );
+            }
+
+            if show_created {
+                table = table.column(
+                    Column::initial(created_width)
+                        .at_least(120.0)
+                        .resizable(true),
+                );
+            }
         }
 
         table
@@ -304,12 +432,17 @@ pub fn draw_item_viewer(
                     i18n,
                     &mut header,
                     layout.is_drive_view,
+                    show_type,
+                    show_size,
+                    show_modified,
+                    show_created,
                     &filter_state.cached_indices,
                     files,
                     sort_column,
                     sort_ascending,
                     &palette,
                     explorer_state,
+                    &*column_state,
                 ) {
                     action = Some(a);
                 }
@@ -359,50 +492,42 @@ pub fn draw_item_viewer(
                         }
                     });
 
-                    row.col(|ui| {
-                        handle_draw_col_type(
-                            ui,
-                            file,
-                            &layout,
-                            is_selected,
-                            is_cut,
-                            palette,
-                            &font_id,
-                            file_type_cache,
-                        );
-                    });
-
-                    row.col(|ui| {
-                        handle_draw_col_size(
-                            ui,
-                            file,
-                            &layout,
-                            folder_sizes,
-                            is_selected,
-                            is_cut,
-                            palette,
-                            &font_id,
-                            file_size_text_cache,
-                            folder_size_text_cache,
-                            drive_size_text_cache,
-                        );
-                    });
-
-                    row.col(|ui| {
-                        handle_draw_col_modified(
-                            ui,
-                            file,
-                            &layout,
-                            is_selected,
-                            is_cut,
-                            palette,
-                            &font_id,
-                        );
-                    });
-
-                    if !layout.is_drive_view {
+                    if show_type {
                         row.col(|ui| {
-                            handle_draw_col_created(
+                            handle_draw_col_type(
+                                ui,
+                                file,
+                                &layout,
+                                is_selected,
+                                is_cut,
+                                palette,
+                                &font_id,
+                                file_type_cache,
+                            );
+                        });
+                    }
+
+                    if show_size {
+                        row.col(|ui| {
+                            handle_draw_col_size(
+                                ui,
+                                file,
+                                &layout,
+                                folder_sizes,
+                                is_selected,
+                                is_cut,
+                                palette,
+                                &font_id,
+                                file_size_text_cache,
+                                folder_size_text_cache,
+                                drive_size_text_cache,
+                            );
+                        });
+                    }
+
+                    if layout.is_drive_view {
+                        row.col(|ui| {
+                            handle_draw_col_modified(
                                 ui,
                                 file,
                                 &layout,
@@ -412,6 +537,34 @@ pub fn draw_item_viewer(
                                 &font_id,
                             );
                         });
+                    } else {
+                        if show_modified {
+                            row.col(|ui| {
+                                handle_draw_col_modified(
+                                    ui,
+                                    file,
+                                    &layout,
+                                    is_selected,
+                                    is_cut,
+                                    palette,
+                                    &font_id,
+                                );
+                            });
+                        }
+
+                        if show_created {
+                            row.col(|ui| {
+                                handle_draw_col_created(
+                                    ui,
+                                    file,
+                                    &layout,
+                                    is_selected,
+                                    is_cut,
+                                    palette,
+                                    &font_id,
+                                );
+                            });
+                        }
                     }
 
                     let row_resp = row.response();
@@ -426,7 +579,11 @@ pub fn draw_item_viewer(
                             egui::Order::Background,
                             egui::Id::new(("tag_row_bg", active_tab_id, &file.path)),
                         ));
-                        painter.rect_filled(tag_rect, egui::CornerRadius::same(palette.medium_radius), tag_color.linear_multiply(0.18));
+                        painter.rect_filled(
+                            tag_rect,
+                            egui::CornerRadius::same(palette.medium_radius),
+                            tag_color.linear_multiply(0.18),
+                        );
                     }
 
                     if drag_hover_active {
@@ -662,4 +819,215 @@ pub fn draw_item_viewer(
     } else {
         return action;
     }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct ItemViewerColumnWidths {
+    name: f32,
+    type_width: f32,
+    size_width: f32,
+    modified_width: f32,
+    created_width: f32,
+    usage_width: f32,
+}
+
+fn compute_item_viewer_column_widths(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    files: &[FileItem],
+    filtered_indices: &[usize],
+    folder_sizes: &HashMap<PathBuf, ItemViewerFolderSizeState>,
+    is_drive_view: bool,
+    show_item_viewer_icons: bool,
+    palette: &ThemePalette,
+    font_id: &FontId,
+    file_type_cache: &mut HashMap<String, String>,
+    file_size_text_cache: &mut HashMap<PathBuf, (u64, String)>,
+    folder_size_text_cache: &mut HashMap<PathBuf, (u64, bool, String)>,
+    drive_size_text_cache: &mut HashMap<PathBuf, (u64, u64, String)>,
+) -> ItemViewerColumnWidths {
+    let mut widths = ItemViewerColumnWidths {
+        name: measure_text_width(
+            ui,
+            &i18n.tr("explorer_cols_name"),
+            font_id,
+            palette.text_header_section,
+        ),
+        type_width: measure_text_width(
+            ui,
+            &i18n.tr("explorer_cols_type"),
+            font_id,
+            palette.text_header_section,
+        ),
+        size_width: measure_text_width(
+            ui,
+            &i18n.tr("explorer_cols_size"),
+            font_id,
+            palette.text_header_section,
+        ),
+        modified_width: measure_text_width(
+            ui,
+            &i18n.tr("explorer_cols_modified"),
+            font_id,
+            palette.text_header_section,
+        ),
+        created_width: measure_text_width(
+            ui,
+            &i18n.tr("explorer_cols_created"),
+            font_id,
+            palette.text_header_section,
+        ),
+        usage_width: measure_text_width(
+            ui,
+            &i18n.tr("explorer_cols_usage"),
+            font_id,
+            palette.text_header_section,
+        ),
+    };
+
+    let icon_padding = if show_item_viewer_icons {
+        palette.row_height + 6.0
+    } else {
+        0.0
+    };
+
+    for &idx in filtered_indices {
+        let file = &files[idx];
+
+        widths.name = widths
+            .name
+            .max(measure_text_width(ui, &file.name, font_id, palette.text_normal) + icon_padding);
+
+        let type_text = if file.is_dir {
+            "Folder".to_string()
+        } else if let Some(ext) = file.path.extension().and_then(|ext| ext.to_str()) {
+            get_file_type_name(ext, file_type_cache).to_string()
+        } else {
+            get_file_type_name("", file_type_cache).to_string()
+        };
+        widths.type_width = widths.type_width.max(measure_text_width(
+            ui,
+            &type_text,
+            font_id,
+            palette.text_normal,
+        ));
+
+        let size_text = resolve_size_text(
+            file,
+            folder_sizes,
+            file_size_text_cache,
+            folder_size_text_cache,
+            drive_size_text_cache,
+        );
+        widths.size_width = widths.size_width.max(measure_text_width(
+            ui,
+            &size_text,
+            font_id,
+            palette.text_normal,
+        ));
+
+        if is_drive_view {
+            widths.usage_width = widths.usage_width.max(
+                measure_text_width(
+                    ui,
+                    &i18n.tr("explorer_cols_usage"),
+                    font_id,
+                    palette.text_normal,
+                ) + 60.0,
+            );
+        } else {
+            widths.modified_width = widths.modified_width.max(measure_text_width(
+                ui,
+                file.modified_time.as_deref().unwrap_or("—"),
+                font_id,
+                palette.text_normal,
+            ));
+            widths.created_width = widths.created_width.max(measure_text_width(
+                ui,
+                file.created_time.as_deref().unwrap_or("—"),
+                font_id,
+                palette.text_normal,
+            ));
+        }
+    }
+
+    widths.name = widths.name.max(220.0);
+    widths.type_width = widths.type_width.max(60.0);
+    widths.size_width = widths.size_width.max(75.0);
+    widths.modified_width = widths.modified_width.max(120.0);
+    widths.created_width = widths.created_width.max(120.0);
+    widths.usage_width = widths.usage_width.max(150.0);
+
+    widths
+}
+
+fn resolve_size_text(
+    file: &FileItem,
+    folder_sizes: &HashMap<PathBuf, ItemViewerFolderSizeState>,
+    file_size_text_cache: &mut HashMap<PathBuf, (u64, String)>,
+    folder_size_text_cache: &mut HashMap<PathBuf, (u64, bool, String)>,
+    drive_size_text_cache: &mut HashMap<PathBuf, (u64, u64, String)>,
+) -> String {
+    if let (Some(total), Some(free)) = (file.total_space, file.free_space) {
+        let key = &file.path;
+        if let Some((cached_total, cached_free, cached_text)) = drive_size_text_cache.get(key) {
+            if *cached_total == total && *cached_free == free {
+                return cached_text.clone();
+            }
+        }
+
+        let formatted = format!("{} / {}", format_size(free), format_size(total));
+        drive_size_text_cache.insert(file.path.clone(), (total, free, formatted.clone()));
+        return formatted;
+    }
+
+    if file.is_dir {
+        if let Some(state) = folder_sizes.get(&file.path) {
+            if let Some((bytes, done, value)) = folder_size_text_cache.get(&file.path) {
+                if *bytes == state.bytes && *done == state.done {
+                    return value.clone();
+                }
+            }
+
+            let label = format_size(state.bytes);
+            let value = if state.done {
+                label
+            } else {
+                format!("⏳ {}", label)
+            };
+            folder_size_text_cache
+                .insert(file.path.clone(), (state.bytes, state.done, value.clone()));
+            return value;
+        }
+
+        return "—".to_string();
+    }
+
+    if let Some(size) = file.file_size {
+        if let Some((cached_size, value)) = file_size_text_cache.get(&file.path) {
+            if *cached_size == size {
+                return value.clone();
+            }
+        }
+
+        let value = format_size(size);
+        file_size_text_cache.insert(file.path.clone(), (size, value.clone()));
+        return value;
+    }
+
+    "—".to_string()
+}
+
+fn measure_text_width(
+    ui: &mut egui::Ui,
+    text: &str,
+    font_id: &FontId,
+    color: egui::Color32,
+) -> f32 {
+    ui.fonts_mut(|fonts| {
+        fonts
+            .layout_no_wrap(text.to_owned(), font_id.clone(), color)
+            .size()
+            .x
+    })
 }
