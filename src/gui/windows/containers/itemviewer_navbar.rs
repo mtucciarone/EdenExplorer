@@ -485,7 +485,7 @@ fn draw_navigation_bar_buttons(
     action
 }
 
-fn open_default_terminal(current_dir: &Path) {
+pub(crate) fn open_default_terminal(current_dir: &Path) {
     let start_dir = if current_dir.to_string_lossy() == MY_PC_PATH || !current_dir.exists() {
         dirs::home_dir().unwrap_or_else(|| current_dir.to_path_buf())
     } else {

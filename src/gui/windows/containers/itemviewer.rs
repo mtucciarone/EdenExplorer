@@ -1,5 +1,6 @@
 use crate::core::drives::is_raw_physical_drive_path;
 use crate::core::fs::FileItem;
+use crate::core::utils::text::apply_context_menu_typography;
 use crate::core::utils::widgets::draw_checkbox;
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
@@ -736,10 +737,31 @@ pub fn draw_item_viewer(
                 action = Some(ItemViewerAction::DeselectAll);
             }
 
-            Popup::context_menu(&bg_response)
-                .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
-                .show(|ui| {
-                    if !any_row_hovered {
+            if !layout.is_drive_view {
+                Popup::context_menu(&bg_response)
+                    .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                    .show(|ui| {
+                        apply_context_menu_typography(ui, palette);
+                        // if !any_row_hovered {
+                        if ui.button("New Folder").clicked() {
+                            action = Some(ItemViewerAction::CreateFolder);
+                            ui.close();
+                        }
+                        if ui.button("New File").clicked() {
+                            action = Some(ItemViewerAction::CreateFile);
+                            ui.close();
+                        }
+                        if ui.button("Refresh").clicked() {
+                            action = Some(ItemViewerAction::RefreshCurrentDirectory);
+                            ui.close();
+                        }
+                        if ui.button("Open Terminal").clicked() {
+                            action = Some(ItemViewerAction::OpenTerminal);
+                            ui.close();
+                        }
+
+                        ui.separator();
+
                         if ui
                             .add_enabled(paste_enabled, egui::Button::new("Paste"))
                             .clicked()
@@ -748,8 +770,15 @@ pub fn draw_item_viewer(
                                 Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
                             ui.close();
                         }
-                    }
-                });
+                        if ui.button("Properties").clicked() {
+                            action = Some(ItemViewerAction::Context(
+                                ItemViewerContextAction::Properties(vec![current_dir.clone()]),
+                            ));
+                            ui.close();
+                        }
+                        // }
+                    });
+            }
         }
 
         if let Some(_path) = explorer_state.non_ntfs_popup_path.clone() {

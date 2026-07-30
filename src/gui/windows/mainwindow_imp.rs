@@ -10,13 +10,14 @@ use crate::gui::theme::{
     ThemeMode, ThemePalette, apply_font_to_context, get_default_palette, set_palette,
 };
 use crate::gui::utils::{
-    SortColumn, get_clipboard_files, is_clipboard_cut, set_clipboard_files,
+    SortColumn, clear_clipboard_files, get_clipboard_files, is_clipboard_cut, set_clipboard_files,
     shell_delete_to_recycle_bin, show_copy_move_dialog, sort_files,
 };
 use crate::gui::windows::about::draw_about_window;
 use crate::gui::windows::containers::enums::{
     ItemViewerAction, ItemViewerContextAction, ItemViewerHeaderColumn, ItemViewerNavAction,
 };
+use crate::gui::windows::containers::itemviewer_navbar::open_default_terminal;
 use crate::gui::windows::containers::structs::{
     FavoriteItem, ItemViewerColumnFitRequest, ItemViewerColumnState, ItemViewerFolderSizeState,
     ItemViewerNavBarAction, RenameState, SidebarAction, SplitSide, TabState, TabView, TabsAction,
@@ -1805,6 +1806,16 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 view.column_state.pending_fit_request = Some(ItemViewerColumnFitRequest::All);
                 view.column_state.layout_generation =
                     view.column_state.layout_generation.wrapping_add(1);
+            }
+            ItemViewerAction::CreateFolder => explorer.create_new_folder(),
+            ItemViewerAction::CreateFile => explorer.create_new_file(),
+            ItemViewerAction::RefreshCurrentDirectory => {
+                clear_clipboard_files();
+                explorer.load_path();
+            }
+            ItemViewerAction::OpenTerminal => {
+                let current_dir = explorer.current_nav().current.clone();
+                open_default_terminal(&current_dir);
             }
             ItemViewerAction::MoveColumnLeft(column) => {
                 let moved = {
