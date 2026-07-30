@@ -3,6 +3,7 @@ use crate::core::indexer::WindowSizeMode;
 use crate::core::networkdevices::NetworkDevicesState;
 use crate::gui::theme::{ThemeMode, ThemePalette};
 use crate::gui::utils::SortColumn;
+use crate::gui::windows::containers::enums::ItemViewerHeaderColumn;
 use crate::gui::windows::containers::structs::FavoriteItem;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -52,6 +53,8 @@ pub struct AppSettings {
     pub sort_column: SortColumn,
     pub sort_ascending: bool,
     pub language: String,
+    pub item_viewer_file_column_order: Vec<ItemViewerHeaderColumn>,
+    pub item_viewer_drive_column_order: Vec<ItemViewerHeaderColumn>,
 }
 
 #[derive(Default)]

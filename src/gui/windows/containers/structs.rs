@@ -135,6 +135,8 @@ pub struct ItemViewerColumnState {
     pub show_size: bool,
     pub show_modified: bool,
     pub show_created: bool,
+    pub file_column_order: Vec<ItemViewerHeaderColumn>,
+    pub drive_column_order: Vec<ItemViewerHeaderColumn>,
     pub layout_generation: u64,
     pub pending_fit_request: Option<ItemViewerColumnFitRequest>,
 }
@@ -146,10 +148,180 @@ impl Default for ItemViewerColumnState {
             show_size: true,
             show_modified: true,
             show_created: true,
+            file_column_order: default_file_column_order(),
+            drive_column_order: default_drive_column_order(),
             layout_generation: 0,
             pending_fit_request: None,
         }
     }
+}
+
+impl ItemViewerColumnState {
+    pub fn from_orders(
+        file_column_order: Vec<ItemViewerHeaderColumn>,
+        drive_column_order: Vec<ItemViewerHeaderColumn>,
+    ) -> Self {
+        let mut state = Self::default();
+        state.file_column_order =
+            sanitize_column_order(file_column_order, &default_file_column_order());
+        state.drive_column_order =
+            sanitize_column_order(drive_column_order, &default_drive_column_order());
+        state
+    }
+
+    pub fn order_mut(&mut self, is_drive_view: bool) -> &mut Vec<ItemViewerHeaderColumn> {
+        if is_drive_view {
+            &mut self.drive_column_order
+        } else {
+            &mut self.file_column_order
+        }
+    }
+
+    pub fn order(&self, is_drive_view: bool) -> &[ItemViewerHeaderColumn] {
+        if is_drive_view {
+            &self.drive_column_order
+        } else {
+            &self.file_column_order
+        }
+    }
+
+    pub fn move_column(
+        &mut self,
+        is_drive_view: bool,
+        column: ItemViewerHeaderColumn,
+        offset: isize,
+    ) -> bool {
+        if column == ItemViewerHeaderColumn::Name || offset == 0 {
+            return false;
+        }
+
+        let order = self.order_mut(is_drive_view);
+        let Some(index) = order.iter().position(|c| *c == column) else {
+            return false;
+        };
+
+        let len = order.len() as isize;
+        let mut new_index = index as isize + offset;
+        if new_index < 0 {
+            new_index = 0;
+        } else if new_index >= len {
+            new_index = len - 1;
+        }
+
+        if new_index as usize == index {
+            return false;
+        }
+
+        let item = order.remove(index);
+        order.insert(new_index as usize, item);
+        true
+    }
+
+    pub fn move_column_to_edge(
+        &mut self,
+        is_drive_view: bool,
+        column: ItemViewerHeaderColumn,
+        to_start: bool,
+    ) -> bool {
+        if column == ItemViewerHeaderColumn::Name {
+            return false;
+        }
+
+        let order = self.order_mut(is_drive_view);
+        let Some(index) = order.iter().position(|c| *c == column) else {
+            return false;
+        };
+
+        let edge_index = if to_start {
+            0
+        } else {
+            order.len().saturating_sub(1)
+        };
+        if index == edge_index {
+            return false;
+        }
+
+        let item = order.remove(index);
+        order.insert(edge_index, item);
+        true
+    }
+
+    pub fn visible_order(
+        &self,
+        is_drive_view: bool,
+        show_type: bool,
+        show_size: bool,
+        show_modified: bool,
+        show_created: bool,
+    ) -> Vec<ItemViewerHeaderColumn> {
+        let allowed = if is_drive_view {
+            vec![
+                ItemViewerHeaderColumn::Type,
+                ItemViewerHeaderColumn::Size,
+                ItemViewerHeaderColumn::Usage,
+            ]
+        } else {
+            vec![
+                ItemViewerHeaderColumn::Type,
+                ItemViewerHeaderColumn::Size,
+                ItemViewerHeaderColumn::Modified,
+                ItemViewerHeaderColumn::Created,
+            ]
+        };
+
+        let mut visible = Vec::new();
+        for column in self.order(is_drive_view) {
+            if !allowed.contains(column) {
+                continue;
+            }
+            let shown = match column {
+                ItemViewerHeaderColumn::Type => show_type,
+                ItemViewerHeaderColumn::Size => show_size,
+                ItemViewerHeaderColumn::Modified => show_modified,
+                ItemViewerHeaderColumn::Created => show_created,
+                ItemViewerHeaderColumn::Usage => true,
+                ItemViewerHeaderColumn::Name => true,
+            };
+            if shown {
+                visible.push(*column);
+            }
+        }
+
+        visible
+    }
+}
+
+fn default_file_column_order() -> Vec<ItemViewerHeaderColumn> {
+    vec![
+        ItemViewerHeaderColumn::Type,
+        ItemViewerHeaderColumn::Size,
+        ItemViewerHeaderColumn::Modified,
+        ItemViewerHeaderColumn::Created,
+    ]
+}
+
+fn default_drive_column_order() -> Vec<ItemViewerHeaderColumn> {
+    vec![
+        ItemViewerHeaderColumn::Type,
+        ItemViewerHeaderColumn::Size,
+        ItemViewerHeaderColumn::Usage,
+    ]
+}
+
+fn sanitize_column_order(
+    order: Vec<ItemViewerHeaderColumn>,
+    default_order: &[ItemViewerHeaderColumn],
+) -> Vec<ItemViewerHeaderColumn> {
+    let mut sanitized = Vec::with_capacity(default_order.len());
+    for column in order {
+        if default_order.contains(&column) && !sanitized.contains(&column) {
+            sanitized.push(column);
+        }
+    }
+    if sanitized.len() != default_order.len() {
+        return default_order.to_vec();
+    }
+    sanitized
 }
 
 pub struct TabState {

@@ -986,10 +986,7 @@ pub fn draw_item_viewer_header(
     i18n: &I18n,
     header: &mut egui_extras::TableRow<'_, '_>,
     is_drive_view: bool,
-    show_type: bool,
-    show_size: bool,
-    show_modified: bool,
-    show_created: bool,
+    ordered_columns: &[ItemViewerHeaderColumn],
     filtered_indices: &[usize],
     files: &[FileItem],
     sort_column: SortColumn,
@@ -1035,7 +1032,15 @@ pub fn draw_item_viewer_header(
         is_drive_view,
     );
 
-    if show_type {
+    for &column in ordered_columns {
+        let label = match column {
+            ItemViewerHeaderColumn::Type => i18n.tr("explorer_cols_type"),
+            ItemViewerHeaderColumn::Size => i18n.tr("explorer_cols_size"),
+            ItemViewerHeaderColumn::Modified => i18n.tr("explorer_cols_modified"),
+            ItemViewerHeaderColumn::Created => i18n.tr("explorer_cols_created"),
+            ItemViewerHeaderColumn::Usage => i18n.tr("explorer_cols_usage"),
+            ItemViewerHeaderColumn::Name => i18n.tr("explorer_cols_name"),
+        };
         draw_header_cell(
             header,
             i18n,
@@ -1043,76 +1048,12 @@ pub fn draw_item_viewer_header(
             &font_id,
             sort_column,
             sort_ascending,
-            ItemViewerHeaderColumn::Type,
-            i18n.tr("explorer_cols_type"),
+            column,
+            label,
             &mut action,
             column_state,
             is_drive_view,
         );
-    }
-
-    if show_size {
-        draw_header_cell(
-            header,
-            i18n,
-            palette,
-            &font_id,
-            sort_column,
-            sort_ascending,
-            ItemViewerHeaderColumn::Size,
-            i18n.tr("explorer_cols_size"),
-            &mut action,
-            column_state,
-            is_drive_view,
-        );
-    }
-
-    if is_drive_view {
-        draw_header_cell(
-            header,
-            i18n,
-            palette,
-            &font_id,
-            sort_column,
-            sort_ascending,
-            ItemViewerHeaderColumn::Usage,
-            i18n.tr("explorer_cols_usage"),
-            &mut action,
-            column_state,
-            is_drive_view,
-        );
-    } else {
-        if show_modified {
-            draw_header_cell(
-                header,
-                i18n,
-                palette,
-                &font_id,
-                sort_column,
-                sort_ascending,
-                ItemViewerHeaderColumn::Modified,
-                i18n.tr("explorer_cols_modified"),
-                &mut action,
-                column_state,
-                is_drive_view,
-            );
-        }
-
-        if show_created {
-            draw_header_cell(
-                header,
-                i18n,
-                palette,
-                &font_id,
-                sort_column,
-                sort_ascending,
-                ItemViewerHeaderColumn::Created,
-                i18n.tr("explorer_cols_created"),
-                &mut action,
-                column_state,
-                is_drive_view,
-            );
-        }
     }
 
     action
@@ -1210,11 +1151,23 @@ fn draw_header_cell(
             *action = Some(ItemViewerAction::Sort(col));
         }
 
+        let order = column_state.order(is_drive_view);
+        let order_index = order.iter().position(|c| *c == column);
+
         Popup::context_menu(&resp)
             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| {
                 apply_context_menu_typography(ui, palette);
-                draw_header_context_menu(ui, i18n, column, column_state, action, is_drive_view);
+                draw_header_context_menu(
+                    ui,
+                    i18n,
+                    column,
+                    column_state,
+                    action,
+                    is_drive_view,
+                    order_index,
+                    order.len(),
+                );
             });
     });
 }
@@ -1226,6 +1179,8 @@ fn draw_header_context_menu(
     column_state: &ItemViewerColumnState,
     action: &mut Option<ItemViewerAction>,
     is_drive_view: bool,
+    order_index: Option<usize>,
+    order_len: usize,
 ) {
     if ui
         .button(i18n.tr("itemviewer_size_column_to_fit"))
@@ -1244,6 +1199,42 @@ fn draw_header_context_menu(
     }
 
     ui.separator();
+
+    if clicked_column != ItemViewerHeaderColumn::Name {
+        let can_move_left = order_index.is_some_and(|idx| idx > 0);
+        let can_move_right = order_index.is_some_and(|idx| idx + 1 < order_len);
+
+        if ui
+            .add_enabled(can_move_left, egui::Button::new("Move left"))
+            .clicked()
+        {
+            *action = Some(ItemViewerAction::MoveColumnLeft(clicked_column));
+            ui.close();
+        }
+        if ui
+            .add_enabled(can_move_right, egui::Button::new("Move right"))
+            .clicked()
+        {
+            *action = Some(ItemViewerAction::MoveColumnRight(clicked_column));
+            ui.close();
+        }
+        if ui
+            .add_enabled(can_move_left, egui::Button::new("Move to start"))
+            .clicked()
+        {
+            *action = Some(ItemViewerAction::MoveColumnToStart(clicked_column));
+            ui.close();
+        }
+        if ui
+            .add_enabled(can_move_right, egui::Button::new("Move to end"))
+            .clicked()
+        {
+            *action = Some(ItemViewerAction::MoveColumnToEnd(clicked_column));
+            ui.close();
+        }
+
+        ui.separator();
+    }
 
     let mut name_checked = true;
     ui.add_enabled(

@@ -187,6 +187,13 @@ pub fn draw_item_viewer(
         let show_size = column_state.show_size;
         let show_modified = column_state.show_modified;
         let show_created = column_state.show_created;
+        let ordered_columns = column_state.visible_order(
+            is_drive_view,
+            show_type,
+            show_size,
+            show_modified,
+            show_created,
+        );
         let current_width = ui.available_width().max(1.0);
         let available_height = ui.available_height();
         let fit_widths = fit_request.map(|_| {
@@ -394,36 +401,19 @@ pub fn draw_item_viewer(
 
         table = table.column(Column::remainder().at_least(name_width).resizable(true));
 
-        if show_type {
-            table = table.column(Column::initial(type_width).at_least(60.0).resizable(true));
-        }
+        for column in &ordered_columns {
+            let (width, min_width) = match column {
+                ItemViewerHeaderColumn::Type => (type_width, 60.0),
+                ItemViewerHeaderColumn::Size => {
+                    (size_width, if is_drive_view { 120.0 } else { 75.0 })
+                }
+                ItemViewerHeaderColumn::Modified => (modified_width, 120.0),
+                ItemViewerHeaderColumn::Created => (created_width, 120.0),
+                ItemViewerHeaderColumn::Usage => (usage_width, 150.0),
+                ItemViewerHeaderColumn::Name => continue,
+            };
 
-        if show_size {
-            table = table.column(
-                Column::initial(size_width)
-                    .at_least(if is_drive_view { 120.0 } else { 75.0 })
-                    .resizable(true),
-            );
-        }
-
-        if layout.is_drive_view {
-            table = table.column(Column::initial(usage_width).at_least(150.0).resizable(true));
-        } else {
-            if show_modified {
-                table = table.column(
-                    Column::initial(modified_width)
-                        .at_least(120.0)
-                        .resizable(true),
-                );
-            }
-
-            if show_created {
-                table = table.column(
-                    Column::initial(created_width)
-                        .at_least(120.0)
-                        .resizable(true),
-                );
-            }
+            table = table.column(Column::initial(width).at_least(min_width).resizable(true));
         }
 
         table
@@ -432,10 +422,7 @@ pub fn draw_item_viewer(
                     i18n,
                     &mut header,
                     layout.is_drive_view,
-                    show_type,
-                    show_size,
-                    show_modified,
-                    show_created,
+                    &ordered_columns,
                     &filter_state.cached_indices,
                     files,
                     sort_column,
@@ -492,9 +479,9 @@ pub fn draw_item_viewer(
                         }
                     });
 
-                    if show_type {
-                        row.col(|ui| {
-                            handle_draw_col_type(
+                    for column in &ordered_columns {
+                        row.col(|ui| match column {
+                            ItemViewerHeaderColumn::Type => handle_draw_col_type(
                                 ui,
                                 file,
                                 &layout,
@@ -503,13 +490,8 @@ pub fn draw_item_viewer(
                                 palette,
                                 &font_id,
                                 file_type_cache,
-                            );
-                        });
-                    }
-
-                    if show_size {
-                        row.col(|ui| {
-                            handle_draw_col_size(
+                            ),
+                            ItemViewerHeaderColumn::Size => handle_draw_col_size(
                                 ui,
                                 file,
                                 &layout,
@@ -521,13 +503,8 @@ pub fn draw_item_viewer(
                                 file_size_text_cache,
                                 folder_size_text_cache,
                                 drive_size_text_cache,
-                            );
-                        });
-                    }
-
-                    if layout.is_drive_view {
-                        row.col(|ui| {
-                            handle_draw_col_modified(
+                            ),
+                            ItemViewerHeaderColumn::Modified => handle_draw_col_modified(
                                 ui,
                                 file,
                                 &layout,
@@ -535,36 +512,27 @@ pub fn draw_item_viewer(
                                 is_cut,
                                 palette,
                                 &font_id,
-                            );
+                            ),
+                            ItemViewerHeaderColumn::Created => handle_draw_col_created(
+                                ui,
+                                file,
+                                &layout,
+                                is_selected,
+                                is_cut,
+                                palette,
+                                &font_id,
+                            ),
+                            ItemViewerHeaderColumn::Usage => handle_draw_col_modified(
+                                ui,
+                                file,
+                                &layout,
+                                is_selected,
+                                is_cut,
+                                palette,
+                                &font_id,
+                            ),
+                            ItemViewerHeaderColumn::Name => {}
                         });
-                    } else {
-                        if show_modified {
-                            row.col(|ui| {
-                                handle_draw_col_modified(
-                                    ui,
-                                    file,
-                                    &layout,
-                                    is_selected,
-                                    is_cut,
-                                    palette,
-                                    &font_id,
-                                );
-                            });
-                        }
-
-                        if show_created {
-                            row.col(|ui| {
-                                handle_draw_col_created(
-                                    ui,
-                                    file,
-                                    &layout,
-                                    is_selected,
-                                    is_cut,
-                                    palette,
-                                    &font_id,
-                                );
-                            });
-                        }
                     }
 
                     let row_resp = row.response();

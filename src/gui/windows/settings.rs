@@ -6,6 +6,7 @@ use crate::core::{
 use crate::gui::i18n::I18n;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::SortColumn;
+use crate::gui::windows::containers::enums::ItemViewerHeaderColumn;
 use crate::gui::windows::enums::SettingsAction;
 use crate::gui::windows::structs::{AppSettings, SettingsWindow};
 use eframe::egui;
@@ -31,6 +32,17 @@ impl Default for AppSettings {
             sort_column: SortColumn::Name,
             sort_ascending: true,
             language: "en-US".to_string(),
+            item_viewer_file_column_order: vec![
+                ItemViewerHeaderColumn::Type,
+                ItemViewerHeaderColumn::Size,
+                ItemViewerHeaderColumn::Modified,
+                ItemViewerHeaderColumn::Created,
+            ],
+            item_viewer_drive_column_order: vec![
+                ItemViewerHeaderColumn::Type,
+                ItemViewerHeaderColumn::Size,
+                ItemViewerHeaderColumn::Usage,
+            ],
         }
     }
 }

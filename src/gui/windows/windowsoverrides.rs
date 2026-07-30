@@ -105,6 +105,8 @@ fn save_manual_window_size(hwnd: HWND) {
             sort_ascending,
             _language,
             date_style,
+            item_viewer_file_column_order,
+            item_viewer_drive_column_order,
         ) = load_app_settings();
         let window_size_mode = WindowSizeMode::Custom { width, height };
 
@@ -122,6 +124,8 @@ fn save_manual_window_size(hwnd: HWND) {
             sort_ascending,
             &_language,
             date_style,
+            &item_viewer_file_column_order,
+            &item_viewer_drive_column_order,
         );
     }
 }

@@ -1,4 +1,5 @@
 use crate::gui::utils::SortColumn;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 pub enum ItemViewerNavAction {
@@ -7,7 +8,7 @@ pub enum ItemViewerNavAction {
     Up,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ItemViewerHeaderColumn {
     Name,
     Type,
@@ -22,6 +23,10 @@ pub enum ItemViewerAction {
     ToggleColumnVisibility(ItemViewerHeaderColumn),
     FitColumn(ItemViewerHeaderColumn),
     FitAllColumns,
+    MoveColumnLeft(ItemViewerHeaderColumn),
+    MoveColumnRight(ItemViewerHeaderColumn),
+    MoveColumnToStart(ItemViewerHeaderColumn),
+    MoveColumnToEnd(ItemViewerHeaderColumn),
     Select(PathBuf),
     Deselect(PathBuf),
     SelectAll,
