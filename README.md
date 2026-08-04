@@ -271,16 +271,14 @@
 - [x] Collapsible sidebar
 - [x] Split-pane view in the Explorer
 - [x] Explorer view displays objects that have tags applied to them based on the tag color 
+- [x] Added native Recycle Bin support
 
-### 🚀 Upcoming Beta Features
+### 🚀 Upcoming Alpha Features
 - [ ] New Explorer view that displays pictures in medium/large format
-- [ ] Support multi-column sorting
-- [ ] Add a tags column in the Explorer view
-- [ ] Support network devices
+- [ ] Support multi-column sorting (smart grouping)
+- [ ] Add multi-tagging of objects
 - [ ] Enhanced theme customization, such as custom layouts, mix/match UI elements, styles, etc
-
-## 🐛 Known Bugs
-- Hitting "Shift" after already shift-selecting files drops the entire file selection
+- [ ] Support network devices
 
 ## Star History
 

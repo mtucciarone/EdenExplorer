@@ -1,6 +1,6 @@
 use crate::core::drives::{get_drive_infos, is_raw_physical_drive_path};
-use crate::core::fs::FileItem;
-use crate::core::fs::{parallel_directory_scan, scan_dir_async};
+use crate::core::fs::{FileItem, get_shell_item_metadata};
+use crate::core::fs::{MY_RECYCLE_BIN_PATH, parallel_directory_scan, scan_dir_async};
 use crate::core::indexer::{
     load_app_settings, save_app_settings, save_favorites, save_tags, save_theme_settings,
 };
@@ -20,7 +20,7 @@ use crate::gui::windows::containers::enums::{
 use crate::gui::windows::containers::itemviewer_navbar::open_default_terminal;
 use crate::gui::windows::containers::structs::{
     FavoriteItem, ItemViewerColumnFitRequest, ItemViewerColumnState, ItemViewerFolderSizeState,
-    ItemViewerNavBarAction, RenameState, SidebarAction, SplitSide, TabState, TabView, TabsAction,
+    ItemViewerNavBarAction, RenameState, SidebarAction, SplitSide, TabState, TabsAction,
     TopbarAction,
 };
 use crate::gui::windows::customizetheme::draw_theme_customizer;
@@ -39,12 +39,21 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use windows::Win32::Foundation::{LPARAM, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::UI::Shell::Common::ITEMIDLIST;
-use windows::Win32::UI::Shell::ShellExecuteW;
-use windows::Win32::UI::Shell::{SEE_MASK_INVOKEIDLIST, SHELLEXECUTEINFOW, ShellExecuteExW};
+use windows::Win32::UI::Shell::{
+    IShellItem, SEE_MASK_INVOKEIDLIST, SHELLEXECUTEINFOW, ShellExecuteExW, ShellExecuteW,
+};
 use windows::Win32::UI::WindowsAndMessaging::*;
+use windows::core::{Error, HRESULT};
+
 use windows::{Win32::System::Com::*, Win32::UI::Shell::*, core::*};
+
+impl Drop for MainWindow {
+    fn drop(&mut self) {
+        self.cleanup_resources();
+    }
+}
 
 impl MainWindow {
     /// Comprehensive validation for submitted filenames
@@ -132,6 +141,10 @@ impl MainWindow {
             self.settings_window
                 .current_settings
                 .item_viewer_drive_column_order
+                .clone(),
+            self.settings_window
+                .current_settings
+                .recycle_bin_column_order
                 .clone(),
         );
         self.tabs.last_mut().unwrap().primary_view.column_state = column_state;
@@ -225,12 +238,17 @@ impl MainWindow {
                 .settings_window
                 .current_settings
                 .item_viewer_drive_column_order,
+            &self
+                .settings_window
+                .current_settings
+                .recycle_bin_column_order,
         );
     }
 
     fn apply_item_viewer_column_order(
         &mut self,
         is_drive_view: bool,
+        is_recycle_bin_view: bool,
         order: &[ItemViewerHeaderColumn],
     ) {
         let target_order = if is_drive_view {
@@ -238,6 +256,11 @@ impl MainWindow {
                 .settings_window
                 .current_settings
                 .item_viewer_drive_column_order
+        } else if is_recycle_bin_view {
+            &mut self
+                .settings_window
+                .current_settings
+                .recycle_bin_column_order
         } else {
             &mut self
                 .settings_window
@@ -249,7 +272,9 @@ impl MainWindow {
         for tab in &mut self.tabs {
             {
                 let view = &mut tab.primary_view;
-                let current_order = view.column_state.order_mut(is_drive_view);
+                let current_order = view
+                    .column_state
+                    .order_mut(is_drive_view, is_recycle_bin_view);
                 current_order.clear();
                 current_order.extend_from_slice(order);
                 view.column_state.layout_generation =
@@ -257,7 +282,9 @@ impl MainWindow {
             }
 
             if let Some(view) = tab.split_view.as_mut() {
-                let current_order = view.column_state.order_mut(is_drive_view);
+                let current_order = view
+                    .column_state
+                    .order_mut(is_drive_view, is_recycle_bin_view);
                 current_order.clear();
                 current_order.extend_from_slice(order);
                 view.column_state.layout_generation =
@@ -311,6 +338,11 @@ impl MainWindow {
             return;
         }
 
+        if current_path.to_string_lossy() == MY_RECYCLE_BIN_PATH {
+            self.load_recycle_bin_view(side);
+            return;
+        }
+
         if is_root {
             let view = self.active_tab_mut().view_mut(side);
             for d in get_drive_infos() {
@@ -318,11 +350,12 @@ impl MainWindow {
                 let path = d.path;
                 if let (Some(total), Some(free)) = (d.total_space, d.free_space) {
                     view.files.push(FileItem::with_drive_info(
-                        label, path, true, false, None, None, None, None, None, total, free,
+                        label, path, true, false, None, None, None, None, None, None, None, None,
+                        total, free,
                     ));
                 } else {
                     view.files.push(FileItem::new(
-                        label, path, true, false, None, None, None, None, None,
+                        label, path, true, false, None, None, None, None, None, None, None, None,
                     ));
                 }
             }
@@ -362,8 +395,151 @@ impl MainWindow {
         }
     }
 
+    pub fn load_recycle_bin_view(&mut self, side: SplitSide) {
+        use windows::Win32::System::SystemServices::{SFGAO_FOLDER, SFGAO_HIDDEN};
+        use windows::Win32::UI::Shell::{
+            BHID_EnumItems, FOLDERID_RecycleBinFolder, IEnumShellItems, ILFree, ILGetSize,
+            IShellItem, SHCreateItemFromIDList, SHGetIDListFromObject, SHGetKnownFolderIDList,
+            SIGDN_DESKTOPABSOLUTEPARSING, SIGDN_FILESYSPATH, SIGDN_NORMALDISPLAY,
+        };
+
+        let (sort_column, sort_ascending) = {
+            let view = self.active_tab().view(side);
+            (view.sort_column, view.sort_ascending)
+        };
+
+        let mut recycle_items = Vec::new();
+
+        unsafe {
+            let recycle_pidl = match SHGetKnownFolderIDList(&FOLDERID_RecycleBinFolder, 0, None) {
+                Ok(pidl) => pidl,
+                Err(err) => {
+                    eprintln!("Failed to resolve Recycle Bin: {:?}", err);
+                    return;
+                }
+            };
+
+            let recycle_item: IShellItem = match SHCreateItemFromIDList(recycle_pidl) {
+                Ok(item) => item,
+                Err(err) => {
+                    eprintln!("Failed to open Recycle Bin shell item: {:?}", err);
+                    CoTaskMemFree(Some(recycle_pidl as _));
+                    return;
+                }
+            };
+
+            let enum_items: IEnumShellItems =
+                match recycle_item.BindToHandler(None, &BHID_EnumItems) {
+                    Ok(items) => items,
+                    Err(err) => {
+                        eprintln!("Failed to enumerate Recycle Bin items: {:?}", err);
+                        CoTaskMemFree(Some(recycle_pidl as _));
+                        return;
+                    }
+                };
+
+            loop {
+                let mut fetched_items: [Option<IShellItem>; 1] = [None];
+                if let Err(err) = enum_items.Next(&mut fetched_items, None) {
+                    eprintln!("Failed to read Recycle Bin item: {:?}", err);
+                    break;
+                }
+
+                if fetched_items[0].is_none() {
+                    break;
+                }
+
+                let Some(item) = fetched_items[0].take() else {
+                    continue;
+                };
+
+                let recycle_bin_pidl = match SHGetIDListFromObject(&item) {
+                    Ok(pidl) => {
+                        let pidl_size = ILGetSize(Some(pidl as _)) as usize;
+                        let mut pidl_bytes = vec![0u8; pidl_size];
+                        std::ptr::copy_nonoverlapping(
+                            pidl as *const u8,
+                            pidl_bytes.as_mut_ptr(),
+                            pidl_size,
+                        );
+                        ILFree(Some(pidl as _));
+                        Some(pidl_bytes)
+                    }
+                    Err(err) => {
+                        eprintln!("Failed to capture Recycle Bin PIDL: {:?}", err);
+                        None
+                    }
+                };
+
+                let display_name = item
+                    .GetDisplayName(SIGDN_NORMALDISPLAY)
+                    .ok()
+                    .and_then(|name| {
+                        let text = pwstr_to_string(name);
+                        CoTaskMemFree(Some(name.0 as _));
+                        if text.is_empty() { None } else { Some(text) }
+                    })
+                    .unwrap_or_else(|| "Unknown".to_string());
+
+                let path = item
+                    .GetDisplayName(SIGDN_DESKTOPABSOLUTEPARSING)
+                    .or_else(|_| item.GetDisplayName(SIGDN_FILESYSPATH))
+                    .ok()
+                    .map(|name| {
+                        let text = pwstr_to_string(name);
+                        CoTaskMemFree(Some(name.0 as _));
+                        text
+                    });
+
+                let Some(path) = path.map(PathBuf::from) else {
+                    continue;
+                };
+
+                let attrs = item.GetAttributes(SFGAO_FOLDER | SFGAO_HIDDEN).ok();
+                let is_dir = attrs.is_some_and(|flags| flags.contains(SFGAO_FOLDER));
+                let is_hidden = attrs.is_some_and(|flags| flags.contains(SFGAO_HIDDEN));
+
+                let (
+                    file_size,
+                    modified_time,
+                    created_time,
+                    deleted_time,
+                    modified_time_raw,
+                    created_time_raw,
+                    deleted_time_raw,
+                    original_object_name,
+                ) = get_shell_item_metadata(
+                    &item,
+                    self.settings_window.current_settings.date_style,
+                    self.settings_window.current_settings.time_format_24h,
+                );
+
+                recycle_items.push(FileItem::new(
+                    original_object_name.unwrap_or(display_name),
+                    path,
+                    is_dir,
+                    is_hidden,
+                    recycle_bin_pidl,
+                    file_size,
+                    modified_time,
+                    created_time,
+                    deleted_time,
+                    modified_time_raw,
+                    created_time_raw,
+                    deleted_time_raw,
+                ));
+            }
+
+            CoTaskMemFree(Some(recycle_pidl as _));
+        }
+
+        let view = self.active_tab_mut().view_mut(side);
+        view.files = recycle_items;
+        sort_files(&mut view.files, sort_column, sort_ascending);
+    }
+
     pub fn create_new_folder(&mut self) {
-        if self.current_nav().is_root() {
+        if self.current_nav().is_root() || self.current_nav().is_recycle_bin() {
             return;
         }
 
@@ -409,7 +585,7 @@ impl MainWindow {
     }
 
     pub fn create_new_file(&mut self) {
-        if self.current_nav().is_root() {
+        if self.current_nav().is_root() || self.current_nav().is_recycle_bin() {
             return;
         }
 
@@ -456,7 +632,7 @@ impl MainWindow {
     }
 
     pub fn add_favorite(&mut self) {
-        if self.current_nav().is_root() {
+        if self.current_nav().is_root() || self.current_nav().is_recycle_bin() {
             return;
         }
 
@@ -553,6 +729,26 @@ impl MainWindow {
                     eprintln!("Paste failed: {}", e);
                 }
             }
+            ItemViewerContextAction::Restore(paths) => {
+                let recycle_bin_pidls: Vec<Vec<u8>> = {
+                    let view = self.active_tab().view(self.focused_split);
+                    paths
+                        .iter()
+                        .filter_map(|path| {
+                            view.files
+                                .iter()
+                                .find(|item| &item.path == path)
+                                .and_then(|item| item.recycle_bin_pidl.clone())
+                        })
+                        .collect()
+                };
+
+                if let Err(e) = self.restore_paths_native(recycle_bin_pidls) {
+                    eprintln!("Recycle bin restore failed: {:?}", e);
+                }
+
+                self.load_path();
+            }
             ItemViewerContextAction::AddTag(paths) => {
                 self.tags_state.open_picker(paths);
             }
@@ -633,7 +829,8 @@ impl MainWindow {
                 self.rename_state = None;
             }
             ItemViewerContextAction::Delete(paths) => {
-                if let Err(e) = self.delete_paths_native(paths.clone()) {
+                let allow_undo = !self.current_nav().is_recycle_bin();
+                if let Err(e) = self.delete_paths_native(paths.clone(), allow_undo) {
                     eprintln!("Native delete failed: {:?}", e);
 
                     // fallback (rare, but safe)
@@ -671,6 +868,10 @@ impl MainWindow {
             Some(p) if !p.is_empty() => p,
             _ => return Ok(()),
         };
+
+        if self.current_nav().is_recycle_bin() {
+            return Ok(());
+        }
 
         let is_cut = is_clipboard_cut();
         let target_dir = self.current_nav().current.clone();
@@ -764,7 +965,11 @@ impl MainWindow {
         }
     }
 
-    pub fn delete_paths_native(&self, paths: Vec<PathBuf>) -> windows::core::Result<()> {
+    pub fn delete_paths_native(
+        &self,
+        paths: Vec<PathBuf>,
+        allow_undo: bool,
+    ) -> windows::core::Result<()> {
         use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
         use windows::Win32::UI::Shell::{
             FOF_ALLOWUNDO, FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
@@ -774,8 +979,13 @@ impl MainWindow {
         unsafe {
             let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
 
-            // ✅ This enables recycle bin + undo
-            file_op.SetOperationFlags(FOF_ALLOWUNDO | FOF_WANTNUKEWARNING)?;
+            // Recycle-bin view needs permanent delete; normal view keeps undo.
+            let flags = if allow_undo {
+                FOF_ALLOWUNDO | FOF_WANTNUKEWARNING
+            } else {
+                FOF_WANTNUKEWARNING
+            };
+            file_op.SetOperationFlags(flags)?;
 
             for path in paths {
                 let item: IShellItem = SHCreateItemFromParsingName(
@@ -787,6 +997,45 @@ impl MainWindow {
             }
 
             file_op.PerformOperations()?;
+        }
+
+        Ok(())
+    }
+
+    pub fn restore_paths_native(&self, pidls: Vec<Vec<u8>>) -> windows::core::Result<()> {
+        use windows::Win32::System::Com::{CoTaskMemAlloc, CoTaskMemFree};
+
+        unsafe {
+            for pidl_bytes in pidls {
+                let pidl = CoTaskMemAlloc(pidl_bytes.len()) as *mut u8;
+                if pidl.is_null() {
+                    return Err(Error::from(HRESULT(0x80004005u32 as i32)));
+                }
+
+                let result = (|| -> windows::core::Result<()> {
+                    std::ptr::copy_nonoverlapping(pidl_bytes.as_ptr(), pidl, pidl_bytes.len());
+
+                    let shell_item: IShellItem = SHCreateItemFromIDList(pidl as *const ITEMIDLIST)?;
+                    let context_menu: IContextMenu =
+                        shell_item.BindToHandler(None, &BHID_SFUIObject)?;
+
+                    let restore_verb = PCSTR(b"undelete\0".as_ptr());
+                    let info = CMINVOKECOMMANDINFOEX {
+                        cbSize: std::mem::size_of::<CMINVOKECOMMANDINFOEX>() as u32,
+                        fMask: 0,
+                        hwnd: HWND(std::ptr::null_mut()),
+                        lpVerb: restore_verb,
+                        lpVerbW: PCWSTR::null(),
+                        nShow: SW_SHOWNORMAL.0,
+                        ..Default::default()
+                    };
+
+                    context_menu.InvokeCommand(&info as *const _ as *const CMINVOKECOMMANDINFO)
+                })();
+
+                CoTaskMemFree(Some(pidl as _));
+                result?;
+            }
         }
 
         Ok(())
@@ -829,38 +1078,25 @@ impl MainWindow {
         }
     }
 
-    pub fn cleanup(&mut self) {
-        // Signal all background threads to shutdown
+    fn cleanup_resources(&mut self) {
+        println!("Cleaning up resources...");
+
+        // Tell background workers to exit.
         self.shutdown.store(true, Ordering::Relaxed);
 
         for tab in &mut self.tabs {
-            let views: Vec<&mut TabView> = std::iter::once(&mut tab.primary_view)
-                .chain(tab.split_view.iter_mut())
-                .collect();
-            for view in views {
-                // Close channels to wake up waiting threads
-                drop(view.size_req_tx.take());
-                drop(view.size_rx.take());
-                drop(view.rx.take());
+            for view in std::iter::once(&mut tab.primary_view).chain(tab.split_view.iter_mut()) {
+                // Dropping the senders/receivers wakes any blocked workers.
+                view.size_req_tx.take();
+                view.size_rx.take();
+                view.rx.take();
 
-                // Wait for all size calculation threads to finish
+                // Wait for all workers to terminate.
                 for handle in view.size_threads.drain(..) {
                     let _ = handle.join();
                 }
-
-                // Clear caches and collections
-                view.files.clear();
-                view.pending_size_queue.clear();
-                view.pending_size_set.clear();
-                view.explorer_state.selected_paths.clear();
             }
         }
-
-        self.folder_sizes.clear();
-        self.file_type_cache.clear();
-
-        // Drop icon cache
-        drop(self.icon_cache.take());
     }
 
     pub fn handle_draw_settings_window(&mut self, ctx: &egui::Context, palette: &ThemePalette) {
@@ -1086,6 +1322,7 @@ impl MainWindow {
                         _date_style,
                         _item_viewer_file_column_order,
                         _item_viewer_drive_column_order,
+                        _recycle_bin_column_order,
                     ) = load_app_settings();
                     self.tabs[0].primary_view.nav = Navigation::new(start_path);
                     self.tabs[0].split_view = None;
@@ -1199,7 +1436,11 @@ impl MainWindow {
         self.load_path();
     }
 
-    pub fn handle_sidebar_action(&mut self, sidebar_action: Option<SidebarAction>) {
+    pub fn handle_sidebar_action(
+        &mut self,
+        sidebar_action: Option<SidebarAction>,
+        drag_sources: Option<&[PathBuf]>,
+    ) {
         if let Some(action) = sidebar_action {
             if let Some((from, to)) = action.reorder {
                 let len = self.sidebar_state.favorites.len();
@@ -1246,6 +1487,11 @@ impl MainWindow {
             }
             if let Some(path) = action.remove_favorite {
                 self.remove_favorite(&path);
+            }
+            if let Some(target_dir) = action.move_files_to_sidebar_dir.as_ref() {
+                if let Some(sources) = drag_sources {
+                    self.move_selected_paths_to_dir(sources, target_dir.clone());
+                }
             }
         }
     }
@@ -1658,6 +1904,17 @@ impl MainWindow {
     }
 }
 
+unsafe fn pwstr_to_string(pw: windows::core::PWSTR) -> String {
+    let mut len = 0usize;
+    let mut ptr = pw.0;
+    while !ptr.is_null() && unsafe { *ptr } != 0 {
+        len += 1;
+        ptr = unsafe { ptr.add(1) };
+    }
+    let slice = unsafe { std::slice::from_raw_parts(pw.0, len) };
+    String::from_utf16_lossy(slice)
+}
+
 fn split_parent(paths: &[PathBuf]) -> Option<(PathBuf, Vec<PathBuf>)> {
     if paths.is_empty() {
         return None;
@@ -1763,6 +2020,33 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
     if let Some(action) = pending_action {
         let side = explorer.focused_split;
         let is_drive_view = explorer.current_nav().is_root();
+        let is_recycle_bin_view = explorer.current_nav().is_recycle_bin();
+
+        if is_recycle_bin_view {
+            match &action {
+                ItemViewerAction::CreateFolder
+                | ItemViewerAction::CreateFile
+                | ItemViewerAction::OpenTerminal
+                | ItemViewerAction::Open(_)
+                | ItemViewerAction::OpenWithDefault(_)
+                | ItemViewerAction::OpenInNewTab(_)
+                | ItemViewerAction::OpenInSplitView(_)
+                | ItemViewerAction::StartEdit(_)
+                | ItemViewerAction::FilesDropped(_)
+                | ItemViewerAction::MoveItems { .. }
+                | ItemViewerAction::Context(ItemViewerContextAction::Copy(_))
+                | ItemViewerAction::Context(ItemViewerContextAction::CopyPath(_))
+                | ItemViewerAction::Context(ItemViewerContextAction::Paste)
+                | ItemViewerAction::Context(ItemViewerContextAction::AddTag(_))
+                | ItemViewerAction::Context(ItemViewerContextAction::RemoveTag(_))
+                | ItemViewerAction::Context(ItemViewerContextAction::RenameRequest(_, _))
+                | ItemViewerAction::Context(ItemViewerContextAction::RenameCancel) => {
+                    return;
+                }
+                _ => {}
+            }
+        }
+
         match action {
             ItemViewerAction::Sort(col) => explorer.toggle_sort(col),
             ItemViewerAction::ToggleColumnVisibility(column) => {
@@ -1792,6 +2076,10 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                             column_state.layout_generation.wrapping_add(1);
                     }
                     ItemViewerHeaderColumn::Usage => {}
+                    ItemViewerHeaderColumn::Deleted => {
+                        column_state.layout_generation =
+                            column_state.layout_generation.wrapping_add(1);
+                    }
                 }
             }
             ItemViewerAction::FitColumn(column) => {
@@ -1820,63 +2108,89 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             ItemViewerAction::MoveColumnLeft(column) => {
                 let moved = {
                     let view = explorer.active_tab_mut().view_mut(side);
-                    view.column_state.move_column(is_drive_view, column, -1)
+                    view.column_state
+                        .move_column(is_drive_view, is_recycle_bin_view, column, -1)
                 };
                 if moved {
                     let order = explorer
                         .active_tab()
                         .view(side)
                         .column_state
-                        .order(is_drive_view)
+                        .order(is_drive_view, is_recycle_bin_view)
                         .to_vec();
-                    explorer.apply_item_viewer_column_order(is_drive_view, &order);
+                    explorer.apply_item_viewer_column_order(
+                        is_drive_view,
+                        is_recycle_bin_view,
+                        &order,
+                    );
                 }
             }
             ItemViewerAction::MoveColumnRight(column) => {
                 let moved = {
                     let view = explorer.active_tab_mut().view_mut(side);
-                    view.column_state.move_column(is_drive_view, column, 1)
+                    view.column_state
+                        .move_column(is_drive_view, is_recycle_bin_view, column, 1)
                 };
                 if moved {
                     let order = explorer
                         .active_tab()
                         .view(side)
                         .column_state
-                        .order(is_drive_view)
+                        .order(is_drive_view, is_recycle_bin_view)
                         .to_vec();
-                    explorer.apply_item_viewer_column_order(is_drive_view, &order);
+                    explorer.apply_item_viewer_column_order(
+                        is_drive_view,
+                        is_recycle_bin_view,
+                        &order,
+                    );
                 }
             }
             ItemViewerAction::MoveColumnToStart(column) => {
                 let moved = {
                     let view = explorer.active_tab_mut().view_mut(side);
-                    view.column_state
-                        .move_column_to_edge(is_drive_view, column, true)
+                    view.column_state.move_column_to_edge(
+                        is_drive_view,
+                        is_recycle_bin_view,
+                        column,
+                        true,
+                    )
                 };
                 if moved {
                     let order = explorer
                         .active_tab()
                         .view(side)
                         .column_state
-                        .order(is_drive_view)
+                        .order(is_drive_view, is_recycle_bin_view)
                         .to_vec();
-                    explorer.apply_item_viewer_column_order(is_drive_view, &order);
+                    explorer.apply_item_viewer_column_order(
+                        is_drive_view,
+                        is_recycle_bin_view,
+                        &order,
+                    );
                 }
             }
             ItemViewerAction::MoveColumnToEnd(column) => {
                 let moved = {
                     let view = explorer.active_tab_mut().view_mut(side);
-                    view.column_state
-                        .move_column_to_edge(is_drive_view, column, false)
+                    view.column_state.move_column_to_edge(
+                        is_drive_view,
+                        is_recycle_bin_view,
+                        column,
+                        false,
+                    )
                 };
                 if moved {
                     let order = explorer
                         .active_tab()
                         .view(side)
                         .column_state
-                        .order(is_drive_view)
+                        .order(is_drive_view, is_recycle_bin_view)
                         .to_vec();
-                    explorer.apply_item_viewer_column_order(is_drive_view, &order);
+                    explorer.apply_item_viewer_column_order(
+                        is_drive_view,
+                        is_recycle_bin_view,
+                        &order,
+                    );
                 }
             }
             ItemViewerAction::Select(path) => {
@@ -2113,142 +2427,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 // ✅ Defer refresh (important)
                 explorer.dropped_files_pending_ui_refresh = true;
             }
-            ItemViewerAction::BackNavigation => {
-                // Store current path in navigation history before going back
-                if let Some(parent) = explorer.current_nav().get_parent() {
-                    let current = explorer.current_nav().current.clone();
-                    let side = explorer.focused_split;
-                    explorer
-                        .active_tab_mut()
-                        .view_mut(side)
-                        .explorer_state
-                        .navigation_history
-                        .insert(parent, current);
-                }
-
-                explorer.current_nav_mut().go_back();
-                explorer.mark_tab_infos_dirty();
-                explorer.load_path();
-
-                // Restore selection: select the folder we just came from
-                let current_path = explorer.current_nav().current.clone();
-                let side = explorer.focused_split;
-                let view = explorer.active_tab_mut().view_mut(side);
-                let last_visited = view
-                    .explorer_state
-                    .navigation_history
-                    .get(&current_path)
-                    .cloned();
-                if let Some(last_visited) = last_visited {
-                    view.explorer_state.navigation_selection = Some(last_visited);
-                } else {
-                    view.explorer_state.navigation_selection = None;
-                }
-                view.explorer_state.selection_anchor = None;
-                view.explorer_state.selected_paths.clear();
-                view.explorer_state.selection_focus = None;
-            }
             ItemViewerAction::MoveItems {
-                sources,
-                target_dir,
-            } => {
-                unsafe {
-                    let file_op: IFileOperation =
-                        CoCreateInstance(&FileOperation, None, CLSCTX_ALL).unwrap();
-
-                    // Optional: show UI + allow TeraCopy hooks
-                    file_op
-                        .SetOperationFlags(
-                            FOF_SIMPLEPROGRESS | FOF_ALLOWUNDO | FOFX_SHOWELEVATIONPROMPT,
-                        )
-                        .ok();
-
-                    // Convert target dir to IShellItem
-                    let target_item: IShellItem = SHCreateItemFromParsingName(
-                        &HSTRING::from(target_dir.to_string_lossy().to_string()),
-                        None,
-                    )
-                    .unwrap();
-
-                    for source in &sources {
-                        let source_item: IShellItem = SHCreateItemFromParsingName(
-                            &HSTRING::from(source.to_string_lossy().to_string()),
-                            None,
-                        )
-                        .unwrap();
-
-                        file_op
-                            .MoveItem(&source_item, &target_item, None, None)
-                            .ok();
-                    }
-
-                    file_op.PerformOperations().ok();
-                }
-
-                if explorer.move_tagged_paths_to_dir(&sources, &target_dir) {
-                    explorer.persist_tags();
-                }
-
-                {
-                    let side = explorer.focused_split;
-                    let view = explorer.active_tab_mut().view_mut(side);
-                    view.explorer_state.selected_paths.clear();
-                    view.explorer_state.selection_anchor = None;
-                    view.explorer_state.selection_focus = None;
-                }
-                explorer.load_path();
-            }
-            ItemViewerAction::MoveFilesToBreadcrumbDirectory {
-                sources,
-                target_dir,
-            } => {
-                unsafe {
-                    let file_op: IFileOperation =
-                        CoCreateInstance(&FileOperation, None, CLSCTX_ALL).unwrap();
-
-                    // Optional: show UI + allow TeraCopy hooks
-                    file_op
-                        .SetOperationFlags(
-                            FOF_SIMPLEPROGRESS | FOF_ALLOWUNDO | FOFX_SHOWELEVATIONPROMPT,
-                        )
-                        .ok();
-
-                    // Convert target dir to IShellItem
-                    let target_item: IShellItem = SHCreateItemFromParsingName(
-                        &HSTRING::from(target_dir.to_string_lossy().to_string()),
-                        None,
-                    )
-                    .unwrap();
-
-                    for source in &sources {
-                        let source_item: IShellItem = SHCreateItemFromParsingName(
-                            &HSTRING::from(source.to_string_lossy().to_string()),
-                            None,
-                        )
-                        .unwrap();
-
-                        file_op
-                            .MoveItem(&source_item, &target_item, None, None)
-                            .ok();
-                    }
-
-                    file_op.PerformOperations().ok();
-                }
-
-                if explorer.move_tagged_paths_to_dir(&sources, &target_dir) {
-                    explorer.persist_tags();
-                }
-
-                {
-                    let side = explorer.focused_split;
-                    let view = explorer.active_tab_mut().view_mut(side);
-                    view.explorer_state.selected_paths.clear();
-                    view.explorer_state.selection_anchor = None;
-                    view.explorer_state.selection_focus = None;
-                }
-                explorer.load_path();
-            }
-            ItemViewerAction::MoveFilesToTabDirectory {
                 sources,
                 target_dir,
             } => {
@@ -2402,6 +2581,10 @@ pub fn handle_draw_customizetheme_window(
 pub fn tab_title_for(nav: &Navigation) -> String {
     if nav.is_root() {
         return "This PC".to_string();
+    }
+
+    if nav.is_recycle_bin() {
+        return "Recycle Bin".to_string();
     }
 
     nav.current

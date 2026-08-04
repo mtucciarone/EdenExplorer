@@ -505,7 +505,7 @@ fn font_selector(
                             {
                                 selected_text = font.clone();
                                 changed = true;
-                                ui.close_menu();
+                                ui.close();
                             }
                         }
                     });

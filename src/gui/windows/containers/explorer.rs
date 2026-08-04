@@ -61,6 +61,7 @@ pub fn draw_tab_content(
     is_focused: bool,
 ) -> (Option<ItemViewerNavBarAction>, Option<ItemViewerAction>) {
     let is_drive_view = view.nav.is_root();
+    let is_recycle_bin_view = view.nav.is_recycle_bin();
     let mut hovered_drop_target: Option<PathBuf> = None;
     let mut hovered_drop_target_rect: Option<egui::Rect> = None;
     let mut pending_action: Option<ItemViewerAction> = None;
@@ -106,6 +107,7 @@ pub fn draw_tab_content(
                             clipboard_set,
                             clipboard_is_cut,
                             is_drive_view,
+                            is_recycle_bin_view,
                             show_hidden_files_folders,
                             show_item_viewer_icons,
                             icon_cache,

@@ -47,7 +47,6 @@ pub struct TabsAction {
     pub toggle_split: bool,
     pub toggle_pin: Option<PathBuf>,
     pub move_files_to_tab_dir: Option<PathBuf>,
-    pub move_files_to_tab_dir_rect: Option<egui::Rect>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -137,6 +136,7 @@ pub struct ItemViewerColumnState {
     pub show_created: bool,
     pub file_column_order: Vec<ItemViewerHeaderColumn>,
     pub drive_column_order: Vec<ItemViewerHeaderColumn>,
+    pub recycle_bin_column_order: Vec<ItemViewerHeaderColumn>,
     pub layout_generation: u64,
     pub pending_fit_request: Option<ItemViewerColumnFitRequest>,
 }
@@ -150,6 +150,7 @@ impl Default for ItemViewerColumnState {
             show_created: true,
             file_column_order: default_file_column_order(),
             drive_column_order: default_drive_column_order(),
+            recycle_bin_column_order: default_recycle_bin_column_order(),
             layout_generation: 0,
             pending_fit_request: None,
         }
@@ -160,26 +161,43 @@ impl ItemViewerColumnState {
     pub fn from_orders(
         file_column_order: Vec<ItemViewerHeaderColumn>,
         drive_column_order: Vec<ItemViewerHeaderColumn>,
+        recycle_bin_column_order: Vec<ItemViewerHeaderColumn>,
     ) -> Self {
         let mut state = Self::default();
         state.file_column_order =
             sanitize_column_order(file_column_order, &default_file_column_order());
         state.drive_column_order =
             sanitize_column_order(drive_column_order, &default_drive_column_order());
+        state.recycle_bin_column_order = sanitize_column_order(
+            recycle_bin_column_order,
+            &default_recycle_bin_column_order(),
+        );
         state
     }
 
-    pub fn order_mut(&mut self, is_drive_view: bool) -> &mut Vec<ItemViewerHeaderColumn> {
+    pub fn order_mut(
+        &mut self,
+        is_drive_view: bool,
+        is_recycle_bin_view: bool,
+    ) -> &mut Vec<ItemViewerHeaderColumn> {
         if is_drive_view {
             &mut self.drive_column_order
+        } else if is_recycle_bin_view {
+            &mut self.recycle_bin_column_order
         } else {
             &mut self.file_column_order
         }
     }
 
-    pub fn order(&self, is_drive_view: bool) -> &[ItemViewerHeaderColumn] {
+    pub fn order(
+        &self,
+        is_drive_view: bool,
+        is_recycle_bin_view: bool,
+    ) -> &[ItemViewerHeaderColumn] {
         if is_drive_view {
             &self.drive_column_order
+        } else if is_recycle_bin_view {
+            &self.recycle_bin_column_order
         } else {
             &self.file_column_order
         }
@@ -188,6 +206,7 @@ impl ItemViewerColumnState {
     pub fn move_column(
         &mut self,
         is_drive_view: bool,
+        is_recycle_bin_view: bool,
         column: ItemViewerHeaderColumn,
         offset: isize,
     ) -> bool {
@@ -195,7 +214,7 @@ impl ItemViewerColumnState {
             return false;
         }
 
-        let order = self.order_mut(is_drive_view);
+        let order = self.order_mut(is_drive_view, is_recycle_bin_view);
         let Some(index) = order.iter().position(|c| *c == column) else {
             return false;
         };
@@ -220,6 +239,7 @@ impl ItemViewerColumnState {
     pub fn move_column_to_edge(
         &mut self,
         is_drive_view: bool,
+        is_recycle_bin_view: bool,
         column: ItemViewerHeaderColumn,
         to_start: bool,
     ) -> bool {
@@ -227,7 +247,7 @@ impl ItemViewerColumnState {
             return false;
         }
 
-        let order = self.order_mut(is_drive_view);
+        let order = self.order_mut(is_drive_view, is_recycle_bin_view);
         let Some(index) = order.iter().position(|c| *c == column) else {
             return false;
         };
@@ -249,6 +269,7 @@ impl ItemViewerColumnState {
     pub fn visible_order(
         &self,
         is_drive_view: bool,
+        is_recycle_bin_view: bool,
         show_type: bool,
         show_size: bool,
         show_modified: bool,
@@ -266,11 +287,12 @@ impl ItemViewerColumnState {
                 ItemViewerHeaderColumn::Size,
                 ItemViewerHeaderColumn::Modified,
                 ItemViewerHeaderColumn::Created,
+                ItemViewerHeaderColumn::Deleted,
             ]
         };
 
         let mut visible = Vec::new();
-        for column in self.order(is_drive_view) {
+        for column in self.order(is_drive_view, is_recycle_bin_view) {
             if !allowed.contains(column) {
                 continue;
             }
@@ -281,6 +303,7 @@ impl ItemViewerColumnState {
                 ItemViewerHeaderColumn::Created => show_created,
                 ItemViewerHeaderColumn::Usage => true,
                 ItemViewerHeaderColumn::Name => true,
+                ItemViewerHeaderColumn::Deleted => true,
             };
             if shown {
                 visible.push(*column);
@@ -305,6 +328,15 @@ fn default_drive_column_order() -> Vec<ItemViewerHeaderColumn> {
         ItemViewerHeaderColumn::Type,
         ItemViewerHeaderColumn::Size,
         ItemViewerHeaderColumn::Usage,
+    ]
+}
+
+fn default_recycle_bin_column_order() -> Vec<ItemViewerHeaderColumn> {
+    vec![
+        ItemViewerHeaderColumn::Type,
+        ItemViewerHeaderColumn::Size,
+        ItemViewerHeaderColumn::Deleted,
+        ItemViewerHeaderColumn::Created,
     ]
 }
 
@@ -415,6 +447,7 @@ pub struct SidebarAction {
     pub remove_favorite: Option<PathBuf>,
     pub select_favorite: Option<PathBuf>,
     pub reorder: Option<(usize, usize)>, // from_idx, to_idx
+    pub move_files_to_sidebar_dir: Option<PathBuf>,
 }
 
 #[derive(Default)]
@@ -434,6 +467,7 @@ pub struct ItemViewerLayout {
     pub icon_size: f32,
     pub header_height: f32,
     pub is_drive_view: bool,
+    pub is_recycle_bin_view: bool,
 }
 
 #[derive(Default)]
@@ -652,15 +686,13 @@ impl TagsState {
         paths.sort();
         paths.dedup();
 
-        let mut changed = false;
         for path in &paths {
-            changed |= self.remove_path(path);
+            self.remove_path(path);
         }
 
         for path in paths {
             if !group.items.contains(&path) {
                 group.items.push(path);
-                changed = true;
             }
         }
 

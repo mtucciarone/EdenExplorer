@@ -16,6 +16,7 @@ pub enum ItemViewerHeaderColumn {
     Modified,
     Created,
     Usage,
+    Deleted,
 }
 
 pub enum ItemViewerAction {
@@ -44,16 +45,7 @@ pub enum ItemViewerAction {
     StartEdit(PathBuf),
     FilesDropped(Vec<PathBuf>),
     ReplaceSelection(PathBuf),
-    BackNavigation,
     MoveItems {
-        sources: Vec<PathBuf>,
-        target_dir: PathBuf,
-    },
-    MoveFilesToBreadcrumbDirectory {
-        sources: Vec<PathBuf>,
-        target_dir: PathBuf,
-    },
-    MoveFilesToTabDirectory {
         sources: Vec<PathBuf>,
         target_dir: PathBuf,
     },
@@ -65,6 +57,7 @@ pub enum ItemViewerContextAction {
     CopyPath(Vec<PathBuf>),
     Cut(Vec<PathBuf>),
     Paste,
+    Restore(Vec<PathBuf>),
     AddTag(Vec<PathBuf>),
     RemoveTag(Vec<PathBuf>),
     RenameRequest(PathBuf, String),

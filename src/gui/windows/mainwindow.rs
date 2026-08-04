@@ -108,6 +108,7 @@ impl Default for MainWindow {
             date_style,
             item_viewer_file_column_order,
             item_viewer_drive_column_order,
+            recycle_bin_column_order,
         ) = load_app_settings();
         let loaded_settings = AppSettings {
             folder_scanning_enabled,
@@ -124,6 +125,7 @@ impl Default for MainWindow {
             language,
             item_viewer_file_column_order,
             item_viewer_drive_column_order,
+            recycle_bin_column_order,
         };
 
         let system_locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
@@ -151,6 +153,7 @@ impl Default for MainWindow {
             tabs.last_mut().unwrap().primary_view.column_state = ItemViewerColumnState::from_orders(
                 loaded_settings.item_viewer_file_column_order.clone(),
                 loaded_settings.item_viewer_drive_column_order.clone(),
+                loaded_settings.recycle_bin_column_order.clone(),
             );
             next_tab_id += 1;
         } else {
@@ -165,6 +168,7 @@ impl Default for MainWindow {
                     ItemViewerColumnState::from_orders(
                         loaded_settings.item_viewer_file_column_order.clone(),
                         loaded_settings.item_viewer_drive_column_order.clone(),
+                        loaded_settings.recycle_bin_column_order.clone(),
                     );
                 next_tab_id += 1;
             }
@@ -398,6 +402,10 @@ impl eframe::App for MainWindow {
                             .settings_window
                             .current_settings
                             .item_viewer_drive_column_order,
+                        &self
+                            .settings_window
+                            .current_settings
+                            .recycle_bin_column_order,
                     );
 
                     self.last_window_size = Some(current_size);
@@ -448,7 +456,9 @@ impl eframe::App for MainWindow {
             // Shift it to compensate for Windows inset
             let rect = rect.translate(-offset);
 
-            ui.allocate_ui_at_rect(rect, |ui| {
+            ui.scope_builder(
+                egui::UiBuilder::new().max_rect(rect),
+                |ui| {
                 let avail = ui.available_size();
 
                 ui.allocate_ui_with_layout(
@@ -497,6 +507,8 @@ impl eframe::App for MainWindow {
                                             &icon_cache,
                                             &mut self.sidebar_state,
                                             &palette,
+                                            drag_active,
+                                            drag_hover_target.clone(),
                                         ));
                                     });
                                 }
@@ -612,7 +624,9 @@ impl eframe::App for MainWindow {
                                                 egui::vec2(secondary_width, split_height),
                                             );
 
-                                            ui.allocate_ui_at_rect(primary_rect, |ui| {
+                                            ui.scope_builder(
+                                                egui::UiBuilder::new().max_rect(primary_rect),
+                                                |ui| {
                                                 ui.set_clip_rect(primary_rect);
                                                 ui.push_id("pane_0", |ui| {
                                                     ui.allocate_ui_with_layout(
@@ -703,7 +717,9 @@ impl eframe::App for MainWindow {
                                                 });
                                             });
 
-                                            ui.allocate_ui_at_rect(secondary_rect, |ui| {
+                                            ui.scope_builder(
+                                                egui::UiBuilder::new().max_rect(secondary_rect),
+                                                |ui| {
                                                 ui.set_clip_rect(secondary_rect);
                                                 ui.push_id("pane_1", |ui| {
                                                     ui.allocate_ui_with_layout(
@@ -997,6 +1013,9 @@ impl eframe::App for MainWindow {
         let tabs_drag_sources = primary_drag_sources
             .clone()
             .or_else(|| secondary_drag_sources.clone());
+        let sidebar_drag_sources = primary_drag_sources
+            .clone()
+            .or_else(|| secondary_drag_sources.clone());
         let primary_move_target = tabbar_action
             .as_ref()
             .and_then(|a| a.move_files_to_breadcrumb_dir.as_ref())
@@ -1004,6 +1023,10 @@ impl eframe::App for MainWindow {
             || tabs_action
                 .as_ref()
                 .and_then(|a| a.move_files_to_tab_dir.as_ref())
+                .is_some()
+            || sidebar_action
+                .as_ref()
+                .and_then(|a| a.move_files_to_sidebar_dir.as_ref())
                 .is_some();
         let secondary_move_target = secondary_tabbar_action
             .as_ref()
@@ -1014,8 +1037,7 @@ impl eframe::App for MainWindow {
         self.handle_directory_size_updates(ctx);
         self.handle_throttle_size_requests(ctx);
         self.handle_topbar_action(topbar_action);
-        self.handle_sidebar_action(sidebar_action);
-
+        self.handle_sidebar_action(sidebar_action, sidebar_drag_sources.as_deref());
         self.handle_tabs_action(tabs_action, tabs_drag_sources.as_deref());
 
         // Route each view's breadcrumb actions with focus pinned to that view for the

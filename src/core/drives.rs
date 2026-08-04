@@ -260,14 +260,15 @@ fn list_unmounted_volumes() -> Vec<RawDriveInfo> {
             if !volume_name.is_empty() {
                 let mut paths_buf = vec![0u16; 2048];
                 let mut needed: u32 = 0;
-                let mut has_mount_point = false;
+                let has_mount_point = {
+                    let _ = GetVolumePathNamesForVolumeNameW(
+                        PCWSTR(name_buf.as_ptr()),
+                        Some(&mut paths_buf),
+                        &mut needed,
+                    );
 
-                let _ = GetVolumePathNamesForVolumeNameW(
-                    PCWSTR(name_buf.as_ptr()),
-                    Some(&mut paths_buf),
-                    &mut needed,
-                );
-                has_mount_point = paths_buf[0] != 0;
+                    paths_buf[0] != 0
+                };
 
                 if !has_mount_point {
                     let mut free_bytes: u64 = 0;
@@ -489,17 +490,6 @@ unsafe fn wcslen(mut ptr: *const u16) -> usize {
         }
         len
     }
-}
-
-pub fn parse_drive_display(display: &str) -> (String, PathBuf) {
-    if let Some(open) = display.rfind('(') {
-        if display.ends_with(')') {
-            let inside = &display[open + 1..display.len() - 1];
-            return (display.to_string(), PathBuf::from(inside));
-        }
-    }
-
-    (display.to_string(), PathBuf::from(display))
 }
 
 pub fn is_raw_physical_drive_path(path: &PathBuf) -> bool {

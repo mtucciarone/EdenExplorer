@@ -74,11 +74,6 @@ pub fn mark_clipboard_dirty() {
 
 fn save_manual_window_size(hwnd: HWND) {
     unsafe {
-        let mut placement = WINDOWPLACEMENT {
-            length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
-            ..Default::default()
-        };
-
         let mut rect = RECT::default();
         if GetClientRect(hwnd, &mut rect).is_err() {
             return;
@@ -107,6 +102,7 @@ fn save_manual_window_size(hwnd: HWND) {
             date_style,
             item_viewer_file_column_order,
             item_viewer_drive_column_order,
+            recycle_bin_column_order,
         ) = load_app_settings();
         let window_size_mode = WindowSizeMode::Custom { width, height };
 
@@ -126,6 +122,7 @@ fn save_manual_window_size(hwnd: HWND) {
             date_style,
             &item_viewer_file_column_order,
             &item_viewer_drive_column_order,
+            &recycle_bin_column_order,
         );
     }
 }
@@ -242,38 +239,47 @@ unsafe extern "system" fn custom_wndproc(
             mark_clipboard_dirty();
             LRESULT(0)
         }
+
         WM_DEVICECHANGE => {
             mark_drive_cache_dirty();
-            request_repaint(); // ✅ Uses the safe wrapper
+            request_repaint();
             LRESULT(0)
         }
-        WM_NCDESTROY => {
+
+        WM_NCDESTROY => unsafe {
             let _ = RemoveClipboardFormatListener(hwnd);
+
             if let Some(orig) = get_original_wndproc() {
                 CallWindowProcW(orig, hwnd, msg, wparam, lparam)
             } else {
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
-        }
+        },
+
         WM_EXITSIZEMOVE => {
             save_manual_window_size(hwnd);
-            if let Some(orig) = get_original_wndproc() {
-                CallWindowProcW(orig, hwnd, msg, wparam, lparam)
-            } else {
-                DefWindowProcW(hwnd, msg, wparam, lparam)
-            }
-        }
-        WM_GETMINMAXINFO => {
-            let info = &mut *(lparam.0 as *mut MINMAXINFO);
-
-            info.ptMinTrackSize.x = MIN_WIDTH;
-            info.ptMinTrackSize.y = MIN_HEIGHT;
 
             unsafe {
+                if let Some(orig) = get_original_wndproc() {
+                    CallWindowProcW(orig, hwnd, msg, wparam, lparam)
+                } else {
+                    DefWindowProcW(hwnd, msg, wparam, lparam)
+                }
+            }
+        }
+
+        WM_GETMINMAXINFO => {
+            unsafe {
+                let info = &mut *(lparam.0 as *mut MINMAXINFO);
+
+                info.ptMinTrackSize.x = MIN_WIDTH;
+                info.ptMinTrackSize.y = MIN_HEIGHT;
+
                 let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
                 if !monitor.is_invalid() {
                     let mut monitor_info = MONITORINFO::default();
                     monitor_info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+
                     if GetMonitorInfoW(monitor, &mut monitor_info).as_bool() {
                         let work_area = monitor_info.rcWork;
                         let monitor_area = monitor_info.rcMonitor;
@@ -288,11 +294,13 @@ unsafe extern "system" fn custom_wndproc(
 
             LRESULT(0)
         }
+
         WM_NCHITTEST => {
             let x = get_x_lparam(lparam);
             let y = get_y_lparam(lparam);
 
             let mut rect = RECT::default();
+
             unsafe {
                 let _ = GetWindowRect(hwnd, &mut rect);
             }
@@ -331,6 +339,7 @@ unsafe extern "system" fn custom_wndproc(
 
             LRESULT(HTCLIENT as _)
         }
+
         _ => unsafe {
             if let Some(orig) = get_original_wndproc() {
                 CallWindowProcW(orig, hwnd, msg, wparam, lparam)

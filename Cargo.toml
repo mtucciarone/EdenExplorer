@@ -21,10 +21,11 @@ eframe = "0.33.3"
 egui = { version = "0.33.3", features = ["serde"] }
 egui_extras = "0.33.3"
 ntapi = "0.4.3"
-windows = { version = "0.61.3", features = [
+windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_UI_Shell",
     "Win32_UI_Shell_Common",
+    "Win32_UI_Shell_PropertiesSystem",
     "Win32_UI_Controls",
     "Win32_UI_WindowsAndMessaging",
     "Win32_Graphics_Dwm",
@@ -47,7 +48,7 @@ windows = { version = "0.61.3", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_Graphics_DirectWrite",
 ] }
-windows-core = "0.61.2"
+windows-core = "0.62.2"
 crossbeam-channel = "0.5.15"
 dirs = "6.0"
 bincode = "1.3"

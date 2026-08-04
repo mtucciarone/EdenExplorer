@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::LazyLock;
+use windows::Win32::Foundation::E_FAIL;
 use windows::Win32::Graphics::DirectWrite::*;
 use windows::core::*;
 
@@ -10,9 +11,13 @@ static SYSTEM_FONTS: LazyLock<Vec<String>> =
 static FONT_PATHS: LazyLock<HashMap<String, PathBuf>> = LazyLock::new(|| get_font_file_paths());
 
 unsafe fn extract_localized_string(localized: &IDWriteLocalizedStrings) -> Result<String> {
-    let length = localized.GetStringLength(0)?;
+    let length = unsafe { localized.GetStringLength(0)? };
+
     let mut buffer = vec![0u16; (length + 1) as usize];
-    localized.GetString(0, &mut buffer)?;
+
+    unsafe {
+        localized.GetString(0, &mut buffer)?;
+    }
 
     Ok(String::from_utf16_lossy(&buffer[..length as usize]))
 }
@@ -21,28 +26,27 @@ unsafe fn get_file_path_from_font_file(file: &IDWriteFontFile) -> Option<String>
     let mut key_ptr: *mut core::ffi::c_void = std::ptr::null_mut();
     let mut key_size: u32 = 0;
 
-    if file.GetReferenceKey(&mut key_ptr, &mut key_size).is_err() {
-        return None;
-    }
-
-    let loader = file.GetLoader().ok()?;
+    let loader = unsafe {
+        file.GetReferenceKey(&mut key_ptr, &mut key_size).ok()?;
+        file.GetLoader().ok()?
+    };
 
     let local_loader = loader.cast::<IDWriteLocalFontFileLoader>().ok()?;
 
     let mut path_buffer = vec![0u16; 512];
 
-    if local_loader
-        .GetFilePathFromKey(key_ptr, key_size, &mut path_buffer)
-        .is_ok()
-    {
-        let end = path_buffer
-            .iter()
-            .position(|&c| c == 0)
-            .unwrap_or(path_buffer.len());
-        Some(String::from_utf16_lossy(&path_buffer[..end]))
-    } else {
-        None
+    unsafe {
+        local_loader
+            .GetFilePathFromKey(key_ptr, key_size, &mut path_buffer)
+            .ok()?;
     }
+
+    let end = path_buffer
+        .iter()
+        .position(|&c| c == 0)
+        .unwrap_or(path_buffer.len());
+
+    Some(String::from_utf16_lossy(&path_buffer[..end]))
 }
 
 fn get_system_fonts() -> Result<Vec<String>> {
@@ -52,7 +56,7 @@ fn get_system_fonts() -> Result<Vec<String>> {
         let mut collection: Option<IDWriteFontCollection> = None;
         factory.GetSystemFontCollection(&mut collection, true)?;
 
-        let collection = collection.ok_or(Error::from_win32())?;
+        let collection = collection.ok_or(Error::from(E_FAIL))?;
         let count = collection.GetFontFamilyCount();
         let mut fonts = Vec::with_capacity(count as usize);
 

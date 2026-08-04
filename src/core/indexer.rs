@@ -56,6 +56,8 @@ struct AppSettingsSnapshot {
     #[serde(default = "default_item_viewer_drive_column_order")]
     item_viewer_drive_column_order:
         Vec<crate::gui::windows::containers::enums::ItemViewerHeaderColumn>,
+    #[serde(default = "default_recycle_bin_column_order")]
+    recycle_bin_column_order: Vec<crate::gui::windows::containers::enums::ItemViewerHeaderColumn>,
 }
 
 // Legacy snapshot struct for deserializing old settings with HalfScreen
@@ -95,6 +97,7 @@ impl From<LegacyAppSettingsSnapshot> for AppSettingsSnapshot {
             language: default_language(),
             item_viewer_file_column_order: default_item_viewer_file_column_order(),
             item_viewer_drive_column_order: default_item_viewer_drive_column_order(),
+            recycle_bin_column_order: default_recycle_bin_column_order(),
         }
     }
 }
@@ -200,6 +203,16 @@ fn default_item_viewer_drive_column_order()
     ]
 }
 
+fn default_recycle_bin_column_order()
+-> Vec<crate::gui::windows::containers::enums::ItemViewerHeaderColumn> {
+    vec![
+        crate::gui::windows::containers::enums::ItemViewerHeaderColumn::Type,
+        crate::gui::windows::containers::enums::ItemViewerHeaderColumn::Size,
+        crate::gui::windows::containers::enums::ItemViewerHeaderColumn::Deleted,
+        crate::gui::windows::containers::enums::ItemViewerHeaderColumn::Created,
+    ]
+}
+
 fn default_date_style() -> DateStyle {
     DateStyle::UsShort
 }
@@ -286,8 +299,6 @@ pub fn save_tags(snapshot: &TagsSnapshot) {
 }
 
 pub fn load_windows_size_mode_on_start() -> WindowSizeMode {
-    let default_path = PathBuf::from(MY_PC_PATH);
-
     let path = match settings_cache_path() {
         Some(path) => path,
         None => return WindowSizeMode::default(),
@@ -320,6 +331,7 @@ pub fn load_app_settings() -> (
     bool,
     String,
     DateStyle,
+    Vec<crate::gui::windows::containers::enums::ItemViewerHeaderColumn>,
     Vec<crate::gui::windows::containers::enums::ItemViewerHeaderColumn>,
     Vec<crate::gui::windows::containers::enums::ItemViewerHeaderColumn>,
 ) {
@@ -356,6 +368,7 @@ pub fn load_app_settings() -> (
         snapshot.date_style,
         snapshot.item_viewer_file_column_order,
         snapshot.item_viewer_drive_column_order,
+        snapshot.recycle_bin_column_order,
     )
 }
 
@@ -377,6 +390,7 @@ fn default_app_settings(
     DateStyle,
     Vec<crate::gui::windows::containers::enums::ItemViewerHeaderColumn>,
     Vec<crate::gui::windows::containers::enums::ItemViewerHeaderColumn>,
+    Vec<crate::gui::windows::containers::enums::ItemViewerHeaderColumn>,
 ) {
     (
         true,
@@ -394,6 +408,7 @@ fn default_app_settings(
         DateStyle::default(),
         default_item_viewer_file_column_order(),
         default_item_viewer_drive_column_order(),
+        default_recycle_bin_column_order(),
     )
 }
 
@@ -413,6 +428,7 @@ pub fn save_app_settings(
     date_style: DateStyle,
     item_viewer_file_column_order: &[crate::gui::windows::containers::enums::ItemViewerHeaderColumn],
     item_viewer_drive_column_order: &[crate::gui::windows::containers::enums::ItemViewerHeaderColumn],
+    recycle_bin_column_order: &[crate::gui::windows::containers::enums::ItemViewerHeaderColumn],
 ) {
     let path = match settings_cache_path() {
         Some(path) => path,
@@ -435,6 +451,7 @@ pub fn save_app_settings(
         language: language.to_string(),
         item_viewer_file_column_order: item_viewer_file_column_order.to_vec(),
         item_viewer_drive_column_order: item_viewer_drive_column_order.to_vec(),
+        recycle_bin_column_order: recycle_bin_column_order.to_vec(),
     };
     if let Ok(data) = postcard::to_allocvec(&snapshot) {
         let _ = std::fs::write(path, data);

@@ -43,6 +43,12 @@ impl Default for AppSettings {
                 ItemViewerHeaderColumn::Size,
                 ItemViewerHeaderColumn::Usage,
             ],
+            recycle_bin_column_order: vec![
+                ItemViewerHeaderColumn::Type,
+                ItemViewerHeaderColumn::Size,
+                ItemViewerHeaderColumn::Deleted,
+                ItemViewerHeaderColumn::Created,
+            ],
         }
     }
 }

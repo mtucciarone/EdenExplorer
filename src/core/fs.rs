@@ -6,19 +6,27 @@ use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, Instant};
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
+use windows::Win32::Foundation::{FILETIME, PROPERTYKEY};
 use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
 use windows::Win32::Storage::FileSystem::{
     CreateFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_HIDDEN, FILE_FLAG_BACKUP_SEMANTICS,
     FILE_LIST_DIRECTORY, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, GetDiskFreeSpaceExW,
     OPEN_EXISTING,
 };
-use windows::core::PCWSTR;
+use windows::Win32::UI::Shell::PropertiesSystem::PSGetPropertyKeyFromName;
+use windows::Win32::UI::Shell::{IShellItem, IShellItem2};
+use windows::core::w;
+use windows::core::{GUID, Interface, PCWSTR};
 
 const STATUS_NO_MORE_FILES: i32 = 0x80000006u32 as i32;
+static RECYCLE_DATE_DELETED: OnceLock<PROPERTYKEY> = OnceLock::new();
+static RECYCLE_NAME: OnceLock<PROPERTYKEY> = OnceLock::new();
 pub const MY_PC_PATH: &str = "::MY_PC::";
+pub const MY_RECYCLE_BIN_PATH: &str = "::RECYCLE_BIN::";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DateStyle {
@@ -218,7 +226,7 @@ pub fn scan_dir_async(
         }
 
         if portable::is_portable_path(&path) {
-            portable::scan_portable_async(path, tx, date_style, time_format_24h);
+            portable::scan_portable_async(path, tx);
             return;
         }
 
@@ -309,11 +317,14 @@ pub fn scan_dir_async(
                         full_path.clone(),
                         is_dir,
                         is_hidden,
+                        None,
                         file_size,
                         modified_time,
                         created_time,
+                        None,
                         modified_time_raw,
                         created_time_raw,
+                        None,
                     );
 
                     let _ = tx.send(item);
@@ -417,11 +428,14 @@ pub struct FileItem {
     pub path: PathBuf,
     pub is_dir: bool,
     pub is_hidden: bool,
+    pub recycle_bin_pidl: Option<Vec<u8>>,
     pub file_size: Option<u64>,
     pub modified_time: Option<String>,
     pub created_time: Option<String>,
+    pub deleted_time: Option<String>,
     pub modified_time_raw: Option<i64>,
     pub created_time_raw: Option<i64>,
+    pub deleted_time_raw: Option<i64>,
 
     // Optional drive info (only populated for drive roots)
     pub total_space: Option<u64>,
@@ -434,22 +448,28 @@ impl FileItem {
         path: PathBuf,
         is_dir: bool,
         is_hidden: bool,
+        recycle_bin_pidl: Option<Vec<u8>>,
         file_size: Option<u64>,
         modified_time: Option<String>,
         created_time: Option<String>,
+        deleted_time: Option<String>,
         modified_time_raw: Option<i64>,
         created_time_raw: Option<i64>,
+        deleted_time_raw: Option<i64>,
     ) -> Self {
         Self {
             name,
             path,
             is_dir,
             is_hidden,
+            recycle_bin_pidl,
             file_size,
             modified_time,
             created_time,
+            deleted_time,
             modified_time_raw,
             created_time_raw,
+            deleted_time_raw,
             total_space: None,
             free_space: None,
         }
@@ -460,11 +480,14 @@ impl FileItem {
         path: PathBuf,
         is_dir: bool,
         is_hidden: bool,
+        recycle_bin_pidl: Option<Vec<u8>>,
         file_size: Option<u64>,
         modified_time: Option<String>,
         created_time: Option<String>,
+        deleted_time: Option<String>,
         modified_time_raw: Option<i64>,
         created_time_raw: Option<i64>,
+        deleted_time_raw: Option<i64>,
         total: u64,
         free: u64,
     ) -> Self {
@@ -473,13 +496,123 @@ impl FileItem {
             path,
             is_dir,
             is_hidden,
+            recycle_bin_pidl,
             file_size,
             modified_time,
             created_time,
+            deleted_time,
             modified_time_raw,
             created_time_raw,
+            deleted_time_raw,
             total_space: Some(total),
             free_space: Some(free),
         }
     }
+}
+
+#[inline]
+pub fn filetime_struct_to_i64(ft: FILETIME) -> Option<i64> {
+    let value = ((ft.dwHighDateTime as u64) << 32) | (ft.dwLowDateTime as u64);
+
+    if value == 0 { None } else { Some(value as i64) }
+}
+
+/// Source: Windows SDK propkey.h
+pub const PKEY_SIZE: PROPERTYKEY = PROPERTYKEY {
+    fmtid: GUID::from_u128(0xB725F130_47EF_101A_A5F1_02608C9EEBAC),
+    pid: 12,
+};
+
+/// Source: Windows SDK propkey.h
+pub const PKEY_DATE_MODIFIED: PROPERTYKEY = PROPERTYKEY {
+    fmtid: GUID::from_u128(0xB725F130_47EF_101A_A5F1_02608C9EEBAC),
+    pid: 14,
+};
+
+/// Source: Windows SDK propkey.h
+pub const PKEY_DATE_CREATED: PROPERTYKEY = PROPERTYKEY {
+    fmtid: GUID::from_u128(0xB725F130_47EF_101A_A5F1_02608C9EEBAC),
+    pid: 15,
+};
+
+pub fn get_shell_item_metadata(
+    item: &IShellItem,
+    date_style: DateStyle,
+    time_format_24h: bool,
+) -> (
+    Option<u64>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<i64>,
+    Option<i64>,
+    Option<i64>,
+    Option<String>,
+) {
+    let Ok(item2) = item.cast::<IShellItem2>() else {
+        return (None, None, None, None, None, None, None, None);
+    };
+
+    let (file_size, modified_time_raw, created_time_raw, deleted_time_raw, original_name) = unsafe {
+        (
+            item2.GetUInt64(&PKEY_SIZE).ok(),
+            item2
+                .GetFileTime(&PKEY_DATE_MODIFIED)
+                .ok()
+                .and_then(filetime_struct_to_i64),
+            item2
+                .GetFileTime(&PKEY_DATE_CREATED)
+                .ok()
+                .and_then(filetime_struct_to_i64),
+            item2
+                .GetFileTime(recycle_date_deleted_key())
+                .ok()
+                .and_then(filetime_struct_to_i64),
+            item2.GetString(recycle_name_key()).ok(),
+        )
+    };
+
+    let modified_time =
+        modified_time_raw.and_then(|ft| filetime_to_string(ft, date_style, time_format_24h));
+
+    let created_time =
+        created_time_raw.and_then(|ft| filetime_to_string(ft, date_style, time_format_24h));
+
+    let deleted_time =
+        deleted_time_raw.and_then(|ft| filetime_to_string(ft, date_style, time_format_24h));
+
+    let original_name = unsafe { original_name.and_then(|name| name.to_string().ok()) };
+
+    (
+        file_size,
+        modified_time,
+        created_time,
+        deleted_time,
+        modified_time_raw,
+        created_time_raw,
+        deleted_time_raw,
+        original_name,
+    )
+}
+
+fn recycle_date_deleted_key() -> &'static PROPERTYKEY {
+    RECYCLE_DATE_DELETED.get_or_init(|| {
+        let mut key = PROPERTYKEY::default();
+        unsafe {
+            PSGetPropertyKeyFromName(w!("System.Recycle.DateDeleted"), &mut key)
+                .expect("System.Recycle.DateDeleted");
+        }
+        key
+    })
+}
+
+fn recycle_name_key() -> &'static PROPERTYKEY {
+    RECYCLE_NAME.get_or_init(|| {
+        let mut key = PROPERTYKEY::default();
+        unsafe {
+            PSGetPropertyKeyFromName(w!("System.ItemNameDisplay"), &mut key)
+                .expect("PKEY_ItemNameDisplay");
+        }
+        key
+    })
 }
