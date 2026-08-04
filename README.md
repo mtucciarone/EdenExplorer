@@ -8,7 +8,7 @@
   <a href="https://thetalabs.ca/eden-explorer/">
     <img src="https://img.shields.io/badge/🚀%20LIVE%20NOW!-Official%20Website-2ecc71?style=for-the-badge&link=https://thetalabs.ca/eden-explorer/" alt="Official Website Launched">
   </a>
-  <img src="https://img.shields.io/badge/Public%20Beta-Now%20Available-2ecc71?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Public%20Alpha-Now%20Available-2ecc71?style=for-the-badge" />
 </p>
 
 <p align="center">
