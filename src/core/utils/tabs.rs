@@ -1,9 +1,7 @@
 use crate::core::fs::MY_PC_PATH;
-use crate::gui::i18n::I18n;
 use crate::gui::windows::containers::structs::{TabInfo, TabState};
 use crate::gui::windows::mainwindow_imp::tab_title_for;
 use crate::gui::windows::structs::SettingsWindow;
-use eframe::egui;
 use std::path::PathBuf;
 
 /// Rebuilds the tab-strip display cache from the window-global tab list, if dirty.

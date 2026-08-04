@@ -1,7 +1,7 @@
 use crate::core::drives::{
     DriveInfo, consume_drive_list_dirty, get_drive_infos, is_raw_physical_drive_path,
 };
-use crate::core::fs::MY_PC_PATH;
+use crate::core::fs::{MY_PC_PATH, MY_RECYCLE_BIN_PATH};
 use crate::core::utils::text::apply_context_menu_typography;
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
@@ -22,6 +22,7 @@ pub fn draw_sidebar_item(
     path: &PathBuf,
     label: &str,
     is_dir: bool,
+    is_recycle_bin: bool,
     palette: &ThemePalette,
     draggable: bool,
     rect_and_resp: Option<(egui::Rect, egui::Response)>,
@@ -78,9 +79,17 @@ pub fn draw_sidebar_item(
     let icon_size = egui::vec2(palette.sidebar_icon_size, palette.sidebar_icon_size);
     let icon_padding = 4.0;
 
-    let text_offset_x = if let Some(icon) = icon_cache.get(path, is_dir) {
-        let icon_pos = egui::pos2(rect.min.x + 4.0, rect.center().y - icon_size.y / 2.0);
-
+    let icon_pos = egui::pos2(rect.min.x + 4.0, rect.center().y - icon_size.y / 2.0);
+    let text_offset_x = if is_recycle_bin {
+        ui.painter().text(
+            egui::pos2(icon_pos.x + icon_size.x * 0.5, rect.center().y),
+            egui::Align2::CENTER_CENTER,
+            regular::TRASH,
+            egui::FontId::new(icon_size.y * 0.85, egui::FontFamily::Proportional),
+            palette.icon_color,
+        );
+        palette.text_size + icon_size.x + icon_padding
+    } else if let Some(icon) = icon_cache.get(path, is_dir) {
         ui.painter().image(
             (&icon).into(),
             egui::Rect::from_min_size(icon_pos, icon_size),
@@ -310,6 +319,7 @@ pub fn draw_sidebar(
                         &pc_icon_path,
                         &i18n.tr("thispc"),
                         true,
+                        false,
                         palette,
                         false,
                         None,
@@ -338,6 +348,7 @@ pub fn draw_sidebar(
                             &home,
                             &i18n.tr("my_user_home"),
                             true,
+                            false,
                             palette,
                             false,
                             None,
@@ -359,6 +370,35 @@ pub fn draw_sidebar(
                                 }
                             });
                     }
+
+                    let recycle_bin_path = PathBuf::from("C:\\$Recycle.Bin");
+                    let resp = draw_sidebar_item(
+                        ui,
+                        icon_cache,
+                        &recycle_bin_path,
+                        &i18n.tr("recycle_bin"),
+                        true,
+                        true,
+                        palette,
+                        false,
+                        None,
+                    );
+                    if resp.clicked() {
+                        action.nav_to = Some(PathBuf::from(MY_RECYCLE_BIN_PATH));
+                    }
+                    if resp.middle_clicked() {
+                        action.open_new_tab = Some(PathBuf::from(MY_RECYCLE_BIN_PATH));
+                    }
+
+                    Popup::context_menu(&resp)
+                        .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                        .show(|ui| {
+                            apply_context_menu_typography(ui, palette);
+                            if ui.button(&i18n.tr("inputs_newtab")).clicked() {
+                                action.open_new_tab = Some(PathBuf::from(MY_RECYCLE_BIN_PATH));
+                                ui.close();
+                            }
+                        });
 
                     ui.add_space(6.0);
                     ui.add(egui::Label::new(
@@ -419,6 +459,7 @@ pub fn draw_sidebar(
                                 &favorite.path,
                                 &favorite.label,
                                 true,
+                                false,
                                 palette,
                                 true,
                                 Some((*rect, resp.clone())),
@@ -431,6 +472,7 @@ pub fn draw_sidebar(
                                 &favorite.path,
                                 &favorite.label,
                                 true,
+                                false,
                                 palette,
                                 true,
                                 None,

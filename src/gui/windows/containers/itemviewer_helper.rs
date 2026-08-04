@@ -1,7 +1,5 @@
 use crate::core::drives::is_raw_physical_drive_path;
 use crate::core::fs::FileItem;
-use crate::core::fs::MY_PC_PATH;
-use crate::core::portable;
 use crate::core::utils::files::filename_has_valid_characters_realtime;
 use crate::core::utils::text::apply_context_menu_typography;
 use crate::core::utils::widgets::draw_checkbox;
@@ -15,7 +13,6 @@ use crate::gui::utils::{
 use crate::gui::windows::containers::enums::{
     ItemViewerAction, ItemViewerContextAction, ItemViewerHeaderColumn, ItemViewerNavAction,
 };
-use crate::gui::windows::containers::itemviewer::draw_item_viewer;
 use crate::gui::windows::containers::structs::{
     DragState, ExplorerState, FilterState, ItemViewerColumnState, ItemViewerFolderSizeState,
     ItemViewerLayout, ItemViewerNavBarAction, RenameState, TagsState,
@@ -26,10 +23,9 @@ use eframe::egui;
 use egui::ScrollArea;
 use egui::containers::{Popup, PopupCloseBehavior};
 use egui::{FontFamily, FontId};
-use egui_extras::Size;
-use egui_phosphor::{fill, regular};
+use egui_phosphor::regular;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use windows::Win32::Foundation::HWND;
 
 pub fn draw_external_to_internal_drag_overlay(
@@ -59,6 +55,7 @@ pub fn draw_external_to_internal_drag_overlay(
 pub fn compute_layout(
     _ui: &egui::Ui,
     is_drive_view: bool,
+    is_recycle_bin_view: bool,
     palette: &ThemePalette,
 ) -> ItemViewerLayout {
     let row_padding = 2.0;
@@ -72,6 +69,7 @@ pub fn compute_layout(
         icon_size: content_height,
         header_height: row_height,
         is_drive_view,
+        is_recycle_bin_view,
     }
 }
 
@@ -82,6 +80,7 @@ pub fn handle_context_menu_actions(
     is_selected: bool,
     paste_enabled: bool,
     is_drive_view: bool,
+    is_recycle_bin_view: bool,
     is_cut: bool,
     action: &mut Option<ItemViewerAction>,
     _palette: &ThemePalette,
@@ -106,8 +105,45 @@ pub fn handle_context_menu_actions(
     context_paths.sort();
     context_paths.dedup();
 
-    // DRIVE VIEW MODE → ONLY PROPERTIES
     if is_drive_view {
+        if ui.button(i18n.tr("properties")).clicked() {
+            *action = Some(ItemViewerAction::Context(
+                ItemViewerContextAction::Properties(context_paths.clone()),
+            ));
+            ui.close();
+        }
+
+        return;
+    }
+
+    if is_recycle_bin_view {
+        if ui
+            .add_enabled(!is_cut, egui::Button::new(i18n.tr("inputs_cut")))
+            .clicked()
+        {
+            *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Cut(
+                context_paths.clone(),
+            )));
+            ui.close();
+        }
+
+        if ui.button(i18n.tr("recycle_bin_restore")).clicked() {
+            *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Restore(
+                context_paths.clone(),
+            )));
+            ui.close();
+        }
+
+        if ui
+            .button(i18n.tr("recycle_bin_delete_permanently"))
+            .clicked()
+        {
+            *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
+                context_paths.clone(),
+            )));
+            ui.close();
+        }
+
         if ui.button(i18n.tr("properties")).clicked() {
             *action = Some(ItemViewerAction::Context(
                 ItemViewerContextAction::Properties(context_paths.clone()),
@@ -568,6 +604,26 @@ pub fn handle_draw_col_created(
     );
 }
 
+pub fn handle_draw_col_deleted(
+    ui: &mut egui::Ui,
+    file: &FileItem,
+    layout: &ItemViewerLayout,
+    is_selected: bool,
+    is_cut: bool,
+    palette: &ThemePalette,
+    font_id: &egui::FontId,
+) {
+    let color = get_text_color(is_selected, is_cut, palette);
+
+    draw_table_text(
+        ui,
+        layout,
+        file.deleted_time.as_deref().unwrap_or("—"),
+        font_id,
+        color,
+    );
+}
+
 pub fn get_text_color(is_selected: bool, is_cut: bool, palette: &ThemePalette) -> egui::Color32 {
     let base_color = get_row_color(is_selected, palette);
     if is_cut {
@@ -766,6 +822,7 @@ pub fn handle_global_actions(
     drag_state: &mut DragState,
     explorer_state: &mut ExplorerState,
     is_cut_mode: bool,
+    is_recycle_bin_view: bool,
     theme_customizer_window: &mut ThemeCustomizer,
     settings_windows: &mut SettingsWindow,
 ) -> Option<ItemViewerAction> {
@@ -866,7 +923,7 @@ pub fn handle_global_actions(
         for event in &i.events {
             match event {
                 egui::Event::Copy => {
-                    if !explorer_state.selected_paths.is_empty() {
+                    if !is_recycle_bin_view && !explorer_state.selected_paths.is_empty() {
                         action = Some(ItemViewerAction::Context(ItemViewerContextAction::Copy(
                             explorer_state.selected_paths.iter().cloned().collect(),
                         )));
@@ -902,6 +959,9 @@ pub fn handle_global_actions(
         }
 
         if !alt && i.key_pressed(egui::Key::Enter) {
+            if is_recycle_bin_view {
+                return;
+            }
             let selected_paths: Vec<PathBuf> = explorer_state
                 .selected_paths
                 .iter()
@@ -929,11 +989,14 @@ pub fn handle_global_actions(
         if i.modifiers.command && i.key_pressed(egui::Key::A) {
             action = Some(ItemViewerAction::SelectAll);
         }
-        if i.modifiers.command && i.key_released(egui::Key::V) {
+        if i.modifiers.command && i.key_released(egui::Key::V) && !is_recycle_bin_view {
             // Any other key functions won't work with egui v0.33.x
             action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
         }
         if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::C) {
+            if is_recycle_bin_view {
+                return;
+            }
             // Copy path shortcut - only enabled when exactly one item is selected
             if explorer_state.selected_paths.len() == 1 {
                 let path = explorer_state.selected_paths.iter().next().unwrap().clone();
@@ -986,6 +1049,7 @@ pub fn draw_item_viewer_header(
     i18n: &I18n,
     header: &mut egui_extras::TableRow<'_, '_>,
     is_drive_view: bool,
+    is_recycle_bin_view: bool,
     ordered_columns: &[ItemViewerHeaderColumn],
     filtered_indices: &[usize],
     files: &[FileItem],
@@ -1030,6 +1094,7 @@ pub fn draw_item_viewer_header(
         &mut action,
         column_state,
         is_drive_view,
+        is_recycle_bin_view,
     );
 
     for &column in ordered_columns {
@@ -1040,6 +1105,7 @@ pub fn draw_item_viewer_header(
             ItemViewerHeaderColumn::Created => i18n.tr("explorer_cols_created"),
             ItemViewerHeaderColumn::Usage => i18n.tr("explorer_cols_usage"),
             ItemViewerHeaderColumn::Name => i18n.tr("explorer_cols_name"),
+            ItemViewerHeaderColumn::Deleted => i18n.tr("explorer_cols_deleted"),
         };
         draw_header_cell(
             header,
@@ -1053,6 +1119,7 @@ pub fn draw_item_viewer_header(
             &mut action,
             column_state,
             is_drive_view,
+            is_recycle_bin_view,
         );
     }
 
@@ -1071,6 +1138,7 @@ fn draw_header_cell(
     action: &mut Option<ItemViewerAction>,
     column_state: &ItemViewerColumnState,
     is_drive_view: bool,
+    is_recycle_bin_view: bool,
 ) {
     let column_action = match column {
         ItemViewerHeaderColumn::Name => Some(SortColumn::Name),
@@ -1078,6 +1146,7 @@ fn draw_header_cell(
         ItemViewerHeaderColumn::Size => Some(SortColumn::Size),
         ItemViewerHeaderColumn::Modified if !is_drive_view => Some(SortColumn::Modified),
         ItemViewerHeaderColumn::Created if !is_drive_view => Some(SortColumn::Created),
+        ItemViewerHeaderColumn::Deleted if is_recycle_bin_view => Some(SortColumn::Deleted),
         _ => None,
     };
 
@@ -1126,6 +1195,14 @@ fn draw_header_cell(
                     regular::CARET_DOWN
                 },
             ),
+            Some(SortColumn::Deleted) if sort_column == SortColumn::Deleted => (
+                label.clone(),
+                if sort_ascending {
+                    regular::CARET_UP
+                } else {
+                    regular::CARET_DOWN
+                },
+            ),
             _ => (label.clone(), ""),
         };
 
@@ -1148,7 +1225,7 @@ fn draw_header_cell(
             *action = Some(ItemViewerAction::Sort(col));
         }
 
-        let order = column_state.order(is_drive_view);
+        let order = column_state.order(is_drive_view, is_recycle_bin_view);
         let order_index = order.iter().position(|c| *c == column);
 
         Popup::context_menu(&cell_resp)
@@ -1162,6 +1239,7 @@ fn draw_header_cell(
                     column_state,
                     action,
                     is_drive_view,
+                    is_recycle_bin_view,
                     order_index,
                     order.len(),
                 );
@@ -1176,6 +1254,7 @@ fn draw_header_context_menu(
     column_state: &ItemViewerColumnState,
     action: &mut Option<ItemViewerAction>,
     is_drive_view: bool,
+    is_recycle_bin_view: bool,
     order_index: Option<usize>,
     order_len: usize,
 ) {
@@ -1259,6 +1338,22 @@ fn draw_header_context_menu(
             false,
             egui::Checkbox::new(&mut usage_checked, i18n.tr("explorer_cols_usage")),
         );
+    } else if is_recycle_bin_view {
+        let mut deleted_checked = true;
+        ui.add_enabled(
+            false,
+            egui::Checkbox::new(&mut deleted_checked, i18n.tr("explorer_cols_deleted")),
+        );
+        if draw_visibility_checkbox(
+            ui,
+            i18n.tr("explorer_cols_created"),
+            column_state.show_created,
+        ) {
+            *action = Some(ItemViewerAction::ToggleColumnVisibility(
+                ItemViewerHeaderColumn::Created,
+            ));
+            ui.close();
+        }
     } else {
         if draw_visibility_checkbox(
             ui,
@@ -1497,6 +1592,7 @@ pub fn handle_row_click(
     files: &[FileItem],
     drag_state: &DragState,
     explorer_state: &mut ExplorerState,
+    is_recycle_bin_view: bool,
 ) -> Option<ItemViewerAction> {
     if drag_state.active {
         return None;
@@ -1544,6 +1640,9 @@ pub fn handle_row_click(
             && explorer_state.selected_paths.contains(&file.path);
 
         if is_single_selected {
+            if is_recycle_bin_view {
+                return Some(ItemViewerAction::ReplaceSelection(file.path.clone()));
+            }
             return Some(if file.is_dir {
                 ItemViewerAction::Open(file.path.clone())
             } else {

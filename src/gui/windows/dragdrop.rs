@@ -286,7 +286,7 @@ fn read_paths_from_data_object(
         let mut medium: STGMEDIUM = data_object.GetData(&format)?;
         if medium.tymed != TYMED_HGLOBAL.0 as u32 {
             ReleaseStgMedium(&mut medium);
-            return Err(Error::from_win32());
+            return Err(Error::from(HRESULT(0x80004005u32 as i32)));
         }
 
         let hdrop = HDROP(unsafe { medium.u.hGlobal.0 });

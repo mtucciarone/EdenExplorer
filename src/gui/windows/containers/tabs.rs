@@ -8,7 +8,7 @@ use crate::gui::windows::windowsoverrides::{
 use eframe::egui;
 use egui::{FontFamily, FontId};
 use egui_phosphor::{fill, regular};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use windows::Win32::Foundation::HWND;
 
 pub fn draw_tabs(

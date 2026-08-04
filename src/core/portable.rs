@@ -1,4 +1,4 @@
-use crate::core::fs::{DateStyle, FileItem};
+use crate::core::fs::FileItem;
 use crossbeam_channel::Sender;
 use std::collections::HashMap;
 use std::ffi::OsStr;
@@ -137,12 +137,7 @@ pub fn build_breadcrumb_segments(path: &PathBuf) -> Option<Vec<(String, PathBuf)
     Some(segments)
 }
 
-pub fn scan_portable_async(
-    path: PathBuf,
-    tx: Sender<FileItem>,
-    date_style: DateStyle,
-    time_format_24h: bool,
-) {
+pub fn scan_portable_async(path: PathBuf, tx: Sender<FileItem>) {
     std::thread::spawn(move || {
         let mut should_uninit = false;
         unsafe {
@@ -419,7 +414,10 @@ fn enumerate_portable_children(
             virtual_path,
             is_dir,
             is_hidden,
+            None,
             file_size,
+            None,
+            None,
             None,
             None,
             None,
@@ -452,9 +450,11 @@ fn get_u64_value(values: &IPortableDeviceValues, key: &PROPERTYKEY) -> Option<u6
 unsafe fn pwstr_to_string(pw: PWSTR) -> String {
     let mut len = 0usize;
     let mut ptr = pw.0;
-    while !ptr.is_null() && *ptr != 0 {
-        len += 1;
-        ptr = unsafe { ptr.add(1) };
+    unsafe {
+        while !ptr.is_null() && *ptr != 0 {
+            len += 1;
+            ptr = ptr.add(1);
+        }
     }
     let slice = unsafe { std::slice::from_raw_parts(pw.0, len) };
     String::from_utf16_lossy(slice)

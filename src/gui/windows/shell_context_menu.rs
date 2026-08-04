@@ -13,7 +13,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     MFS_DISABLED, MFS_GRAYED, MFT_SEPARATOR, MIIM_FTYPE, MIIM_ID, MIIM_STATE, MIIM_STRING,
     MIIM_SUBMENU,
 };
-use windows::core::{PCSTR, PCWSTR, PWSTR};
+use windows::core::{Error, HRESULT, PCSTR, PCWSTR, PWSTR};
 
 const CONTEXT_MENU_ID_BASE: u32 = 1;
 const CONTEXT_MENU_ID_MAX: u32 = 0x7FFF;
@@ -36,7 +36,8 @@ pub struct ShellContextMenu {
 
 impl ShellContextMenu {
     pub fn for_paths(paths: &[PathBuf], hwnd: HWND) -> windows::core::Result<Self> {
-        let parent = shared_parent(paths).ok_or_else(windows::core::Error::from_win32)?;
+        let parent =
+            shared_parent(paths).ok_or_else(|| Error::from(HRESULT(0x80004005u32 as i32)))?;
         let parent_pidl = pidl_from_path(&parent)?;
 
         let mut full_pidls = Vec::with_capacity(paths.len());
@@ -142,7 +143,7 @@ fn pidl_from_path(path: &Path) -> windows::core::Result<*mut ITEMIDLIST> {
     let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
     let pidl = unsafe { ILCreateFromPathW(PCWSTR(wide.as_ptr())) };
     if pidl.is_null() {
-        Err(windows::core::Error::from_win32())
+        Err(Error::from(HRESULT(0x80004005u32 as i32)))
     } else {
         Ok(pidl)
     }

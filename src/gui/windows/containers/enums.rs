@@ -16,6 +16,7 @@ pub enum ItemViewerHeaderColumn {
     Modified,
     Created,
     Usage,
+    Deleted,
 }
 
 pub enum ItemViewerAction {
@@ -65,6 +66,7 @@ pub enum ItemViewerContextAction {
     CopyPath(Vec<PathBuf>),
     Cut(Vec<PathBuf>),
     Paste,
+    Restore(Vec<PathBuf>),
     AddTag(Vec<PathBuf>),
     RemoveTag(Vec<PathBuf>),
     RenameRequest(PathBuf, String),

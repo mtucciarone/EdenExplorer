@@ -9,6 +9,7 @@ pub enum SortColumn {
     Modified,
     Created,
     Type,
+    Deleted,
 }
 
 pub fn sort_files(files: &mut Vec<FileItem>, column: SortColumn, ascending: bool) {
@@ -22,6 +23,7 @@ pub fn sort_files(files: &mut Vec<FileItem>, column: SortColumn, ascending: bool
             SortColumn::Size => a.file_size.unwrap_or(0).cmp(&b.file_size.unwrap_or(0)),
             SortColumn::Modified => a.modified_time_raw.cmp(&b.modified_time_raw),
             SortColumn::Created => a.created_time_raw.cmp(&b.created_time_raw),
+            SortColumn::Deleted => a.deleted_time_raw.cmp(&b.deleted_time_raw),
             SortColumn::Type => match (a.is_dir, b.is_dir) {
                 (true, false) => Less,
                 (false, true) => Greater,

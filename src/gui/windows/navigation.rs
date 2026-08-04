@@ -1,4 +1,4 @@
-use crate::core::fs::MY_PC_PATH;
+use crate::core::fs::{MY_PC_PATH, MY_RECYCLE_BIN_PATH};
 use crate::gui::windows::structs::Navigation;
 use std::path::PathBuf;
 
@@ -25,9 +25,17 @@ impl Navigation {
         }
     }
 
+    pub fn is_recycle_bin(&self) -> bool {
+        self.current.to_string_lossy() == MY_RECYCLE_BIN_PATH
+    }
+
     /// Get the parent directory of the current path
     pub fn get_parent(&self) -> Option<PathBuf> {
         if self.current.to_string_lossy() == MY_PC_PATH {
+            return None;
+        }
+
+        if self.is_recycle_bin() {
             return None;
         }
 
@@ -60,6 +68,10 @@ impl Navigation {
     pub fn go_up(&mut self) {
         // Prevent breaking virtual root
         if self.current.to_string_lossy() == MY_PC_PATH {
+            return;
+        }
+
+        if self.is_recycle_bin() {
             return;
         }
 

@@ -107,6 +107,7 @@ fn save_manual_window_size(hwnd: HWND) {
             date_style,
             item_viewer_file_column_order,
             item_viewer_drive_column_order,
+            recycle_bin_column_order,
         ) = load_app_settings();
         let window_size_mode = WindowSizeMode::Custom { width, height };
 
@@ -126,6 +127,7 @@ fn save_manual_window_size(hwnd: HWND) {
             date_style,
             &item_viewer_file_column_order,
             &item_viewer_drive_column_order,
+            &recycle_bin_column_order,
         );
     }
 }
@@ -244,7 +246,7 @@ unsafe extern "system" fn custom_wndproc(
         }
         WM_DEVICECHANGE => {
             mark_drive_cache_dirty();
-            request_repaint(); // ✅ Uses the safe wrapper
+            request_repaint();
             LRESULT(0)
         }
         WM_NCDESTROY => {

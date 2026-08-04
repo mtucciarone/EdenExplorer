@@ -33,6 +33,7 @@ pub fn draw_item_viewer(
     clipboard_set: &HashSet<PathBuf>,
     is_cut_mode: bool,
     is_drive_view: bool,
+    is_recycle_bin_view: bool,
     show_hidden_files_folders: bool,
     show_item_viewer_icons: bool,
     icon_cache: &IconCache,
@@ -70,7 +71,7 @@ pub fn draw_item_viewer(
     let mut hovered_drop_target_rect: Option<egui::Rect> = None;
     draw_external_to_internal_drag_overlay(ui, i18n, *external_drag_to_internal_hover);
 
-    let layout = compute_layout(ui, is_drive_view, palette);
+    let layout = compute_layout(ui, is_drive_view, is_recycle_bin_view, palette);
     let modal_input_blocked =
         tags_state.picker.is_some() || theme_customizer_window.open || settings_window.open;
 
@@ -150,6 +151,7 @@ pub fn draw_item_viewer(
             drag_state,
             explorer_state,
             is_cut_mode,
+            is_recycle_bin_view,
             theme_customizer_window,
             settings_window,
         ) {
@@ -190,6 +192,7 @@ pub fn draw_item_viewer(
         let show_created = column_state.show_created;
         let ordered_columns = column_state.visible_order(
             is_drive_view,
+            is_recycle_bin_view,
             show_type,
             show_size,
             show_modified,
@@ -224,6 +227,7 @@ pub fn draw_item_viewer(
         };
         let default_modified_width = (current_width * 0.2).max(120.0);
         let default_created_width = (current_width * 0.2).max(120.0);
+        let default_deleted_width = (current_width * 0.2).max(120.0);
         let default_usage_width = (current_width * 0.2).max(150.0);
         let name_width = if matches!(
             fit_request,
@@ -321,6 +325,23 @@ pub fn draw_item_viewer(
         } else {
             0.0
         };
+        let deleted_width = if is_recycle_bin_view {
+            if matches!(
+                fit_request,
+                Some(ItemViewerColumnFitRequest::All)
+                    | Some(ItemViewerColumnFitRequest::Column(
+                        ItemViewerHeaderColumn::Deleted
+                    ))
+            ) {
+                fit_widths
+                    .map(|w| w.deleted_width)
+                    .unwrap_or(default_deleted_width)
+            } else {
+                default_deleted_width
+            }
+        } else {
+            0.0
+        };
 
         let mut table = TableBuilder::new(ui)
             .vscroll(true)
@@ -410,6 +431,7 @@ pub fn draw_item_viewer(
                 }
                 ItemViewerHeaderColumn::Modified => (modified_width, 120.0),
                 ItemViewerHeaderColumn::Created => (created_width, 120.0),
+                ItemViewerHeaderColumn::Deleted => (deleted_width, 120.0),
                 ItemViewerHeaderColumn::Usage => (usage_width, 150.0),
                 ItemViewerHeaderColumn::Name => continue,
             };
@@ -423,6 +445,7 @@ pub fn draw_item_viewer(
                     i18n,
                     &mut header,
                     layout.is_drive_view,
+                    layout.is_recycle_bin_view,
                     &ordered_columns,
                     &filter_state.cached_indices,
                     files,
@@ -532,6 +555,15 @@ pub fn draw_item_viewer(
                                 palette,
                                 &font_id,
                             ),
+                            ItemViewerHeaderColumn::Deleted => handle_draw_col_deleted(
+                                ui,
+                                file,
+                                &layout,
+                                is_selected,
+                                is_cut,
+                                palette,
+                                &font_id,
+                            ),
                             ItemViewerHeaderColumn::Name => {}
                         });
                     }
@@ -625,12 +657,17 @@ pub fn draw_item_viewer(
                             files,
                             drag_state,
                             explorer_state,
+                            is_recycle_bin_view,
                         ) {
                             action = Some(a);
                         }
                     }
 
-                    if row_resp.middle_clicked() && file.is_dir && !is_non_ntfs_drive {
+                    if row_resp.middle_clicked()
+                        && file.is_dir
+                        && !is_non_ntfs_drive
+                        && !is_recycle_bin_view
+                    {
                         action = Some(ItemViewerAction::OpenInNewTab(file.path.clone()));
                     }
 
@@ -653,6 +690,7 @@ pub fn draw_item_viewer(
                                     is_selected,
                                     paste_enabled,
                                     layout.is_drive_view,
+                                    is_recycle_bin_view,
                                     is_cut,
                                     &mut action,
                                     palette,
@@ -737,7 +775,7 @@ pub fn draw_item_viewer(
                 action = Some(ItemViewerAction::DeselectAll);
             }
 
-            if !layout.is_drive_view {
+            if !layout.is_drive_view && !is_recycle_bin_view {
                 Popup::context_menu(&bg_response)
                     .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                     .show(|ui| {
@@ -777,6 +815,16 @@ pub fn draw_item_viewer(
                             ui.close();
                         }
                         // }
+                    });
+            } else if is_recycle_bin_view {
+                Popup::context_menu(&bg_response)
+                    .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                    .show(|ui| {
+                        apply_context_menu_typography(ui, palette);
+                        if ui.button("Refresh").clicked() {
+                            action = Some(ItemViewerAction::RefreshCurrentDirectory);
+                            ui.close();
+                        }
                     });
             }
         }
@@ -826,6 +874,7 @@ struct ItemViewerColumnWidths {
     modified_width: f32,
     created_width: f32,
     usage_width: f32,
+    deleted_width: f32,
 }
 
 fn compute_item_viewer_column_widths(
@@ -877,6 +926,12 @@ fn compute_item_viewer_column_widths(
         usage_width: measure_text_width(
             ui,
             &i18n.tr("explorer_cols_usage"),
+            font_id,
+            palette.text_header_section,
+        ),
+        deleted_width: measure_text_width(
+            ui,
+            &i18n.tr("explorer_cols_deleted"),
             font_id,
             palette.text_header_section,
         ),

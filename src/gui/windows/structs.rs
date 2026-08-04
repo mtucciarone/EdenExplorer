@@ -55,6 +55,7 @@ pub struct AppSettings {
     pub language: String,
     pub item_viewer_file_column_order: Vec<ItemViewerHeaderColumn>,
     pub item_viewer_drive_column_order: Vec<ItemViewerHeaderColumn>,
+    pub recycle_bin_column_order: Vec<ItemViewerHeaderColumn>,
 }
 
 #[derive(Default)]
