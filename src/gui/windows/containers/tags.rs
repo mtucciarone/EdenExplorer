@@ -42,7 +42,6 @@ pub fn draw_tags(
                 ui.add_space(8.0);
                 draw_container_header(
                     ui,
-                    i18n,
                     palette,
                     hwnd
                 );
@@ -305,14 +304,13 @@ pub fn draw_tags(
                                                     free_space: None,
                                                 };
                                                 let mut action = None;
-                                                handle_context_menu_actions(
+                                                handle_context_menu_actions_tags(
                                                     ui,
                                                     i18n,
                                                     &file_item,
                                                     &mut action,
                                                     palette,
                                                     is_tagged,
-                                                    hwnd,
                                                 );
                                                 if let Some(a) = action {
                                                     tags_state.pending_action = Some(a);
@@ -715,12 +713,7 @@ fn draw_insert_line(ui: &mut egui::Ui, palette: &ThemePalette, y: f32, left: f32
     );
 }
 
-pub fn draw_container_header(
-    ui: &mut egui::Ui,
-    i18n: &I18n,
-    palette: &ThemePalette,
-    hwnd: Option<HWND>,
-) {
+pub fn draw_container_header(ui: &mut egui::Ui, palette: &ThemePalette, hwnd: Option<HWND>) {
     let controls_width = 64.0;
     let full_width = ui.available_width();
     let tabs_width = (full_width - controls_width).max(0.0);
@@ -763,14 +756,13 @@ pub fn draw_container_header(
     );
 }
 
-fn handle_context_menu_actions(
+fn handle_context_menu_actions_tags(
     ui: &mut egui::Ui,
     i18n: &I18n,
     file: &FileItem,
     action: &mut Option<ItemViewerAction>,
     _palette: &ThemePalette,
     is_tagged: bool,
-    hwnd: Option<HWND>,
 ) {
     // Apply context-menu-specific typography
     let mut style = (*ui.ctx().style()).clone();

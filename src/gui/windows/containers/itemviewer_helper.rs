@@ -849,6 +849,7 @@ pub fn handle_global_actions(
     }
 
     if drag_state.active && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        println!("852 - clearing drag_state");
         drag_state.active = false;
         drag_state.source_items.clear();
         drag_state.start_pos = None;
@@ -1153,7 +1154,6 @@ fn draw_header_cell(
     header.col(|ui| {
         let cell_id = ui.id().with(("itemviewer_header_cell", column));
         let cell_resp = ui.interact(ui.max_rect(), cell_id, egui::Sense::click());
-        let is_sortable = column_action.is_some();
         let (sort_label, arrow) = match column_action {
             Some(SortColumn::Name) if sort_column == SortColumn::Name => (
                 label.clone(),

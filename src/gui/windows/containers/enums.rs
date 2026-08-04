@@ -45,16 +45,7 @@ pub enum ItemViewerAction {
     StartEdit(PathBuf),
     FilesDropped(Vec<PathBuf>),
     ReplaceSelection(PathBuf),
-    BackNavigation,
     MoveItems {
-        sources: Vec<PathBuf>,
-        target_dir: PathBuf,
-    },
-    MoveFilesToBreadcrumbDirectory {
-        sources: Vec<PathBuf>,
-        target_dir: PathBuf,
-    },
-    MoveFilesToTabDirectory {
         sources: Vec<PathBuf>,
         target_dir: PathBuf,
     },

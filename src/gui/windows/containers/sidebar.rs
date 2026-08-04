@@ -287,12 +287,16 @@ pub fn draw_sidebar(
     icon_cache: &IconCache,
     sidebar_state: &mut SidebarState,
     palette: &ThemePalette,
+    drag_active: bool,
+    drag_hover_target: Option<PathBuf>,
 ) -> SidebarAction {
     const DRIVE_CACHE_DURATION: Duration = Duration::from_secs(30);
     let mut action = SidebarAction::default();
     let mut drop_index: Option<usize> = None;
     let pointer_pos = ui.ctx().input(|i| i.pointer.hover_pos());
     let pointer_released = ui.ctx().input(|i| i.pointer.primary_released());
+    let mut tab_drop_target: Option<PathBuf> = None;
+    let hovered_target_ref = drag_hover_target.as_ref();
 
     ScrollArea::vertical()
         .id_salt("sidebar_scroll")
@@ -410,19 +414,19 @@ pub fn draw_sidebar(
                     ui.add_space(4.0);
 
                     let is_dragging = sidebar_state.dragging_favorite.is_some();
-                    let mut item_layouts = Vec::new();
+                    let mut item_layouts = Vec::with_capacity(sidebar_state.favorites.len());
 
-                    if is_dragging {
-                        for (i, _favorite) in sidebar_state.favorites.iter().enumerate() {
-                            let (rect, resp) = favorites_item_layout(ui);
+                    for (i, _favorite) in sidebar_state.favorites.iter().enumerate() {
+                        let (rect, resp) = favorites_item_layout(ui);
 
-                            if resp.drag_started() {
-                                sidebar_state.dragging_favorite = Some(i);
-                            }
-
-                            item_layouts.push((rect, resp));
+                        if !is_dragging && resp.drag_started() {
+                            sidebar_state.dragging_favorite = Some(i);
                         }
 
+                        item_layouts.push((rect, resp));
+                    }
+
+                    if is_dragging {
                         if let (Some(pos), Some(drag_idx)) =
                             (pointer_pos, sidebar_state.dragging_favorite)
                         {
@@ -451,33 +455,46 @@ pub fn draw_sidebar(
                     }
 
                     for (i, favorite) in sidebar_state.favorites.iter().enumerate() {
-                        let resp = if is_dragging {
-                            let (rect, resp) = &item_layouts[i];
-                            draw_sidebar_item(
-                                ui,
-                                icon_cache,
-                                &favorite.path,
-                                &favorite.label,
-                                true,
-                                false,
-                                palette,
-                                true,
-                                Some((*rect, resp.clone())),
-                            );
-                            resp.clone()
-                        } else {
-                            draw_sidebar_item(
-                                ui,
-                                icon_cache,
-                                &favorite.path,
-                                &favorite.label,
-                                true,
-                                false,
-                                palette,
-                                true,
-                                None,
-                            )
-                        };
+                        let (rect, resp) = &item_layouts[i];
+                        draw_sidebar_item(
+                            ui,
+                            icon_cache,
+                            &favorite.path,
+                            &favorite.label,
+                            true,
+                            false,
+                            palette,
+                            true,
+                            Some((*rect, resp.clone())),
+                        );
+
+                        if drag_active {
+                            let hovered = hovered_target_ref
+                                .map(|target| target == &favorite.path)
+                                .unwrap_or_else(|| {
+                                    pointer_pos
+                                        .map(|pointer| rect.contains(pointer))
+                                        .unwrap_or(false)
+                                });
+                            if hovered {
+                                let painter = ui
+                                    .ctx()
+                                    .layer_painter(egui::LayerId::new(
+                                        egui::Order::Background,
+                                        ui.id().with("tab_drop_bg").with(favorite.path.clone()),
+                                    ))
+                                    .with_clip_rect(ui.clip_rect());
+                                painter.rect_filled(
+                                    *rect,
+                                    egui::CornerRadius::same(palette.medium_radius),
+                                    palette.primary_hover,
+                                );
+
+                                if pointer_released {
+                                    tab_drop_target = Some(favorite.path.clone());
+                                }
+                            }
+                        }
 
                         if !is_dragging && resp.drag_started() {
                             sidebar_state.dragging_favorite = Some(i);
@@ -630,46 +647,6 @@ pub fn draw_sidebar(
                         }
                     }
 
-                    // ui.add_space(6.0);
-                    // ui.add(egui::Label::new(
-                    //     egui::RichText::new("Network")
-                    //         .size(palette.text_size)
-                    //         .strong(),
-                    // ));
-                    // ui.add_space(4.0);
-
-                    // network_state.update();
-                    // network_state.start_loading();
-
-                    // if network_state.loading {
-                    //     ui.add(egui::Label::new(
-                    //         egui::RichText::new("Scanning...")
-                    //             .size(palette.text_size),
-                    //     ));
-                    // }
-
-                    // for device in &network_state.devices {
-                    //     let device_path = PathBuf::from(format!("\\\\{}", device.name));
-
-                    //     let resp = draw_sidebar_item(
-                    //         ui,
-                    //         icon_cache,
-                    //         &device_path,
-                    //         &device.name,
-                    //         true,
-                    //         palette,
-                    //         false,
-                    //         None,
-                    //     );
-
-                    //     if resp.clicked() {
-                    //         action.nav_to = Some(device_path.clone());
-                    //     }
-                    //     if resp.middle_clicked() {
-                    //         action.open_new_tab = Some(device_path);
-                    //     }
-                    // }
-
                     // Extra bottom padding so last items aren't clipped by scroll boundary.
                     ui.add_space(12.0);
                 });
@@ -677,5 +654,6 @@ pub fn draw_sidebar(
             });
         });
 
+    action.move_files_to_sidebar_dir = tab_drop_target;
     action
 }

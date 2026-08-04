@@ -20,7 +20,7 @@ use crate::gui::windows::containers::enums::{
 use crate::gui::windows::containers::itemviewer_navbar::open_default_terminal;
 use crate::gui::windows::containers::structs::{
     FavoriteItem, ItemViewerColumnFitRequest, ItemViewerColumnState, ItemViewerFolderSizeState,
-    ItemViewerNavBarAction, RenameState, SidebarAction, SplitSide, TabState, TabView, TabsAction,
+    ItemViewerNavBarAction, RenameState, SidebarAction, SplitSide, TabState, TabsAction,
     TopbarAction,
 };
 use crate::gui::windows::customizetheme::draw_theme_customizer;
@@ -48,6 +48,13 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::{Error, HRESULT};
 
 use windows::{Win32::System::Com::*, Win32::UI::Shell::*, core::*};
+
+impl Drop for MainWindow {
+    fn drop(&mut self) {
+        self.cleanup_resources();
+    }
+}
+
 impl MainWindow {
     /// Comprehensive validation for submitted filenames
     /// Used when user submits/commits the filename (Enter, create new file/folder)
@@ -1071,38 +1078,25 @@ impl MainWindow {
         }
     }
 
-    pub fn cleanup(&mut self) {
-        // Signal all background threads to shutdown
+    fn cleanup_resources(&mut self) {
+        println!("Cleaning up resources...");
+
+        // Tell background workers to exit.
         self.shutdown.store(true, Ordering::Relaxed);
 
         for tab in &mut self.tabs {
-            let views: Vec<&mut TabView> = std::iter::once(&mut tab.primary_view)
-                .chain(tab.split_view.iter_mut())
-                .collect();
-            for view in views {
-                // Close channels to wake up waiting threads
-                drop(view.size_req_tx.take());
-                drop(view.size_rx.take());
-                drop(view.rx.take());
+            for view in std::iter::once(&mut tab.primary_view).chain(tab.split_view.iter_mut()) {
+                // Dropping the senders/receivers wakes any blocked workers.
+                view.size_req_tx.take();
+                view.size_rx.take();
+                view.rx.take();
 
-                // Wait for all size calculation threads to finish
+                // Wait for all workers to terminate.
                 for handle in view.size_threads.drain(..) {
                     let _ = handle.join();
                 }
-
-                // Clear caches and collections
-                view.files.clear();
-                view.pending_size_queue.clear();
-                view.pending_size_set.clear();
-                view.explorer_state.selected_paths.clear();
             }
         }
-
-        self.folder_sizes.clear();
-        self.file_type_cache.clear();
-
-        // Drop icon cache
-        drop(self.icon_cache.take());
     }
 
     pub fn handle_draw_settings_window(&mut self, ctx: &egui::Context, palette: &ThemePalette) {
@@ -1442,7 +1436,11 @@ impl MainWindow {
         self.load_path();
     }
 
-    pub fn handle_sidebar_action(&mut self, sidebar_action: Option<SidebarAction>) {
+    pub fn handle_sidebar_action(
+        &mut self,
+        sidebar_action: Option<SidebarAction>,
+        drag_sources: Option<&[PathBuf]>,
+    ) {
         if let Some(action) = sidebar_action {
             if let Some((from, to)) = action.reorder {
                 let len = self.sidebar_state.favorites.len();
@@ -1489,6 +1487,11 @@ impl MainWindow {
             }
             if let Some(path) = action.remove_favorite {
                 self.remove_favorite(&path);
+            }
+            if let Some(target_dir) = action.move_files_to_sidebar_dir.as_ref() {
+                if let Some(sources) = drag_sources {
+                    self.move_selected_paths_to_dir(sources, target_dir.clone());
+                }
             }
         }
     }
@@ -2030,10 +2033,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 | ItemViewerAction::OpenInSplitView(_)
                 | ItemViewerAction::StartEdit(_)
                 | ItemViewerAction::FilesDropped(_)
-                | ItemViewerAction::BackNavigation
                 | ItemViewerAction::MoveItems { .. }
-                | ItemViewerAction::MoveFilesToBreadcrumbDirectory { .. }
-                | ItemViewerAction::MoveFilesToTabDirectory { .. }
                 | ItemViewerAction::Context(ItemViewerContextAction::Copy(_))
                 | ItemViewerAction::Context(ItemViewerContextAction::CopyPath(_))
                 | ItemViewerAction::Context(ItemViewerContextAction::Paste)
@@ -2427,142 +2427,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 // ✅ Defer refresh (important)
                 explorer.dropped_files_pending_ui_refresh = true;
             }
-            ItemViewerAction::BackNavigation => {
-                // Store current path in navigation history before going back
-                if let Some(parent) = explorer.current_nav().get_parent() {
-                    let current = explorer.current_nav().current.clone();
-                    let side = explorer.focused_split;
-                    explorer
-                        .active_tab_mut()
-                        .view_mut(side)
-                        .explorer_state
-                        .navigation_history
-                        .insert(parent, current);
-                }
-
-                explorer.current_nav_mut().go_back();
-                explorer.mark_tab_infos_dirty();
-                explorer.load_path();
-
-                // Restore selection: select the folder we just came from
-                let current_path = explorer.current_nav().current.clone();
-                let side = explorer.focused_split;
-                let view = explorer.active_tab_mut().view_mut(side);
-                let last_visited = view
-                    .explorer_state
-                    .navigation_history
-                    .get(&current_path)
-                    .cloned();
-                if let Some(last_visited) = last_visited {
-                    view.explorer_state.navigation_selection = Some(last_visited);
-                } else {
-                    view.explorer_state.navigation_selection = None;
-                }
-                view.explorer_state.selection_anchor = None;
-                view.explorer_state.selected_paths.clear();
-                view.explorer_state.selection_focus = None;
-            }
             ItemViewerAction::MoveItems {
-                sources,
-                target_dir,
-            } => {
-                unsafe {
-                    let file_op: IFileOperation =
-                        CoCreateInstance(&FileOperation, None, CLSCTX_ALL).unwrap();
-
-                    // Optional: show UI + allow TeraCopy hooks
-                    file_op
-                        .SetOperationFlags(
-                            FOF_SIMPLEPROGRESS | FOF_ALLOWUNDO | FOFX_SHOWELEVATIONPROMPT,
-                        )
-                        .ok();
-
-                    // Convert target dir to IShellItem
-                    let target_item: IShellItem = SHCreateItemFromParsingName(
-                        &HSTRING::from(target_dir.to_string_lossy().to_string()),
-                        None,
-                    )
-                    .unwrap();
-
-                    for source in &sources {
-                        let source_item: IShellItem = SHCreateItemFromParsingName(
-                            &HSTRING::from(source.to_string_lossy().to_string()),
-                            None,
-                        )
-                        .unwrap();
-
-                        file_op
-                            .MoveItem(&source_item, &target_item, None, None)
-                            .ok();
-                    }
-
-                    file_op.PerformOperations().ok();
-                }
-
-                if explorer.move_tagged_paths_to_dir(&sources, &target_dir) {
-                    explorer.persist_tags();
-                }
-
-                {
-                    let side = explorer.focused_split;
-                    let view = explorer.active_tab_mut().view_mut(side);
-                    view.explorer_state.selected_paths.clear();
-                    view.explorer_state.selection_anchor = None;
-                    view.explorer_state.selection_focus = None;
-                }
-                explorer.load_path();
-            }
-            ItemViewerAction::MoveFilesToBreadcrumbDirectory {
-                sources,
-                target_dir,
-            } => {
-                unsafe {
-                    let file_op: IFileOperation =
-                        CoCreateInstance(&FileOperation, None, CLSCTX_ALL).unwrap();
-
-                    // Optional: show UI + allow TeraCopy hooks
-                    file_op
-                        .SetOperationFlags(
-                            FOF_SIMPLEPROGRESS | FOF_ALLOWUNDO | FOFX_SHOWELEVATIONPROMPT,
-                        )
-                        .ok();
-
-                    // Convert target dir to IShellItem
-                    let target_item: IShellItem = SHCreateItemFromParsingName(
-                        &HSTRING::from(target_dir.to_string_lossy().to_string()),
-                        None,
-                    )
-                    .unwrap();
-
-                    for source in &sources {
-                        let source_item: IShellItem = SHCreateItemFromParsingName(
-                            &HSTRING::from(source.to_string_lossy().to_string()),
-                            None,
-                        )
-                        .unwrap();
-
-                        file_op
-                            .MoveItem(&source_item, &target_item, None, None)
-                            .ok();
-                    }
-
-                    file_op.PerformOperations().ok();
-                }
-
-                if explorer.move_tagged_paths_to_dir(&sources, &target_dir) {
-                    explorer.persist_tags();
-                }
-
-                {
-                    let side = explorer.focused_split;
-                    let view = explorer.active_tab_mut().view_mut(side);
-                    view.explorer_state.selected_paths.clear();
-                    view.explorer_state.selection_anchor = None;
-                    view.explorer_state.selection_focus = None;
-                }
-                explorer.load_path();
-            }
-            ItemViewerAction::MoveFilesToTabDirectory {
                 sources,
                 target_dir,
             } => {

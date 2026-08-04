@@ -1,6 +1,5 @@
 use crate::core::drives::DriveInfo;
 use crate::core::indexer::WindowSizeMode;
-use crate::core::networkdevices::NetworkDevicesState;
 use crate::gui::theme::{ThemeMode, ThemePalette};
 use crate::gui::utils::SortColumn;
 use crate::gui::windows::containers::enums::ItemViewerHeaderColumn;
@@ -70,7 +69,6 @@ pub struct SidebarState {
     pub item_clicked: Option<PathBuf>,
     pub dragging_favorite: Option<usize>,
     pub sidebar_default_width: f32,
-    pub network_state: NetworkDevicesState,
     pub cached_drives: Vec<DriveInfo>,
     pub last_drive_refresh: Instant,
     pub non_ntfs_popup_path: Option<PathBuf>,
@@ -84,7 +82,6 @@ impl Default for SidebarState {
             dragging_favorite: None,
             item_clicked: None,
             sidebar_default_width: 250.0,
-            network_state: NetworkDevicesState::default(),
             cached_drives: Vec::new(),
             last_drive_refresh: now.checked_sub(Duration::from_secs(60)).unwrap_or(now),
             non_ntfs_popup_path: None,

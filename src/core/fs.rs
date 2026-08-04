@@ -518,19 +518,19 @@ pub fn filetime_struct_to_i64(ft: FILETIME) -> Option<i64> {
 }
 
 /// Source: Windows SDK propkey.h
-pub const PKEY_Size: PROPERTYKEY = PROPERTYKEY {
+pub const PKEY_SIZE: PROPERTYKEY = PROPERTYKEY {
     fmtid: GUID::from_u128(0xB725F130_47EF_101A_A5F1_02608C9EEBAC),
     pid: 12,
 };
 
 /// Source: Windows SDK propkey.h
-pub const PKEY_DateModified: PROPERTYKEY = PROPERTYKEY {
+pub const PKEY_DATE_MODIFIED: PROPERTYKEY = PROPERTYKEY {
     fmtid: GUID::from_u128(0xB725F130_47EF_101A_A5F1_02608C9EEBAC),
     pid: 14,
 };
 
 /// Source: Windows SDK propkey.h
-pub const PKEY_DateCreated: PROPERTYKEY = PROPERTYKEY {
+pub const PKEY_DATE_CREATED: PROPERTYKEY = PROPERTYKEY {
     fmtid: GUID::from_u128(0xB725F130_47EF_101A_A5F1_02608C9EEBAC),
     pid: 15,
 };
@@ -555,13 +555,13 @@ pub fn get_shell_item_metadata(
 
     let (file_size, modified_time_raw, created_time_raw, deleted_time_raw, original_name) = unsafe {
         (
-            item2.GetUInt64(&PKEY_Size).ok(),
+            item2.GetUInt64(&PKEY_SIZE).ok(),
             item2
-                .GetFileTime(&PKEY_DateModified)
+                .GetFileTime(&PKEY_DATE_MODIFIED)
                 .ok()
                 .and_then(filetime_struct_to_i64),
             item2
-                .GetFileTime(&PKEY_DateCreated)
+                .GetFileTime(&PKEY_DATE_CREATED)
                 .ok()
                 .and_then(filetime_struct_to_i64),
             item2

@@ -47,7 +47,6 @@ pub struct TabsAction {
     pub toggle_split: bool,
     pub toggle_pin: Option<PathBuf>,
     pub move_files_to_tab_dir: Option<PathBuf>,
-    pub move_files_to_tab_dir_rect: Option<egui::Rect>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -448,6 +447,7 @@ pub struct SidebarAction {
     pub remove_favorite: Option<PathBuf>,
     pub select_favorite: Option<PathBuf>,
     pub reorder: Option<(usize, usize)>, // from_idx, to_idx
+    pub move_files_to_sidebar_dir: Option<PathBuf>,
 }
 
 #[derive(Default)]
@@ -686,15 +686,13 @@ impl TagsState {
         paths.sort();
         paths.dedup();
 
-        let mut changed = false;
         for path in &paths {
-            changed |= self.remove_path(path);
+            self.remove_path(path);
         }
 
         for path in paths {
             if !group.items.contains(&path) {
                 group.items.push(path);
-                changed = true;
             }
         }
 

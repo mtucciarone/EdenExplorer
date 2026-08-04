@@ -289,7 +289,7 @@ fn read_paths_from_data_object(
             return Err(Error::from(HRESULT(0x80004005u32 as i32)));
         }
 
-        let hdrop = HDROP(unsafe { medium.u.hGlobal.0 });
+        let hdrop = HDROP(medium.u.hGlobal.0);
         let count = DragQueryFileW(hdrop, 0xFFFFFFFF, None);
         let mut paths = Vec::with_capacity(count as usize);
 

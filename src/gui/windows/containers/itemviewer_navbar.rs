@@ -29,7 +29,6 @@ pub fn draw_itemviewer_navigation_bar(
     let mut action = ItemViewerNavBarAction::default();
     let tabbar_rect = ui.available_rect_before_wrap();
     ui.set_clip_rect(tabbar_rect);
-    let breadcrumb_available_width = tabbar_rect.width();
 
     let pointer_pos = ui.input(|i| i.pointer.interact_pos().or_else(|| i.pointer.hover_pos()));
     let pointer_released =

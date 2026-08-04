@@ -83,7 +83,6 @@ pub fn draw_tabs(
 
                                             if pointer_released {
                                                 tab_drop_target = Some(tab.full_path.clone());
-                                                action.move_files_to_tab_dir_rect = Some(rect);
                                             }
                                         }
                                     }
@@ -260,7 +259,6 @@ fn handle_draw_tab_new_allocated(
 
     // --- Paint background ---
     let rect = egui::Rect::from_min_max(rect.min.round(), rect.max.round());
-    let bg_rect = rect.expand(5.0);
 
     let rounding = egui::CornerRadius {
         nw: corner.nw,

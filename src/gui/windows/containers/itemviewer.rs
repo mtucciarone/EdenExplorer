@@ -134,7 +134,7 @@ pub fn draw_item_viewer(
                 .and_then(|n| n.to_str())
                 .unwrap_or(unknown_label)
         } else {
-            &i18n.tr("items")
+            &i18n.tr("drag_items")
         };
 
         draw_object_drag_ghost(ui, palette, label, false);
@@ -765,9 +765,10 @@ pub fn draw_item_viewer(
                 });
             }
 
-            drag_state.active = false;
-            drag_state.start_pos = None;
-            drag_state.source_items.clear();
+            // println!("769 - clearing drag_state");
+            // drag_state.active = false;
+            // drag_state.start_pos = None;
+            // drag_state.source_items.clear();
         }
 
         if !modal_input_blocked {
