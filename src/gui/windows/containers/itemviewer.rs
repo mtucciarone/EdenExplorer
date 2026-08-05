@@ -151,6 +151,7 @@ pub fn draw_item_viewer(
             drag_state,
             explorer_state,
             is_cut_mode,
+            is_drive_view,
             is_recycle_bin_view,
             theme_customizer_window,
             settings_window,

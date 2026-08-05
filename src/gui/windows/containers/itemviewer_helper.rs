@@ -822,6 +822,7 @@ pub fn handle_global_actions(
     drag_state: &mut DragState,
     explorer_state: &mut ExplorerState,
     is_cut_mode: bool,
+    is_drive_view: bool,
     is_recycle_bin_view: bool,
     theme_customizer_window: &mut ThemeCustomizer,
     settings_windows: &mut SettingsWindow,
@@ -924,14 +925,17 @@ pub fn handle_global_actions(
         for event in &i.events {
             match event {
                 egui::Event::Copy => {
-                    if !is_recycle_bin_view && !explorer_state.selected_paths.is_empty() {
+                    if !is_recycle_bin_view
+                        && !is_drive_view
+                        && !explorer_state.selected_paths.is_empty()
+                    {
                         action = Some(ItemViewerAction::Context(ItemViewerContextAction::Copy(
                             explorer_state.selected_paths.iter().cloned().collect(),
                         )));
                     }
                 }
                 egui::Event::Cut => {
-                    if !explorer_state.selected_paths.is_empty() {
+                    if !is_drive_view && !explorer_state.selected_paths.is_empty() {
                         action = Some(ItemViewerAction::Context(ItemViewerContextAction::Cut(
                             explorer_state.selected_paths.iter().cloned().collect(),
                         )));
@@ -990,12 +994,16 @@ pub fn handle_global_actions(
         if i.modifiers.command && i.key_pressed(egui::Key::A) {
             action = Some(ItemViewerAction::SelectAll);
         }
-        if i.modifiers.command && i.key_released(egui::Key::V) && !is_recycle_bin_view {
+        if i.modifiers.command
+            && i.key_released(egui::Key::V)
+            && !is_recycle_bin_view
+            && !is_drive_view
+        {
             // Any other key functions won't work with egui v0.33.x
             action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
         }
         if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::C) {
-            if is_recycle_bin_view {
+            if is_recycle_bin_view || is_drive_view {
                 return;
             }
             // Copy path shortcut - only enabled when exactly one item is selected
@@ -1007,6 +1015,9 @@ pub fn handle_global_actions(
             }
         }
         if i.key_pressed(egui::Key::Delete) {
+            if is_drive_view {
+                return;
+            }
             let paths: Vec<PathBuf> = if !explorer_state.selected_paths.is_empty() {
                 explorer_state.selected_paths.iter().cloned().collect()
             } else if !filtered_indices.is_empty() {
