@@ -1,3 +1,4 @@
+use crate::core::fs::{MY_PC_PATH, MY_RECYCLE_BIN_PATH};
 use crate::gui::i18n::I18n;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{clickable_icon, truncate_item_text};
@@ -287,9 +288,9 @@ fn handle_draw_tab_new_allocated(
 
     // --- Draw border ---
     let stroke = if is_active {
-        egui::Stroke::new(1.0, palette.tab_border_active)
+        egui::Stroke::new(1.0, palette.borders_active)
     } else {
-        egui::Stroke::new(1.0, palette.tab_border_default)
+        egui::Stroke::new(1.0, palette.borders_default)
     };
 
     painter.rect_stroke(rect, rounding, stroke, egui::StrokeKind::Inside);
@@ -320,7 +321,13 @@ fn handle_draw_tab_new_allocated(
         let tooltip_text = if truncated {
             tab.title.clone()
         } else {
-            tab.full_path.to_string_lossy().to_string()
+            if tab.full_path.to_string_lossy().to_string() == MY_PC_PATH {
+                i18n.tr("thispc")
+            } else if tab.full_path.to_string_lossy().to_string() == MY_RECYCLE_BIN_PATH {
+                i18n.tr("recycle_bin")
+            } else {
+                tab.full_path.to_string_lossy().to_string()
+            }
         };
 
         resp.on_hover_text(
@@ -338,21 +345,43 @@ fn handle_draw_add_new_tab_button(
 ) {
     let size = egui::vec2(28.0, 28.0);
 
-    let frame = egui::Frame::NONE
-        .inner_margin(egui::Margin::same(0))
-        .corner_radius(palette.tab_inactive_radius)
-        .stroke(egui::Stroke::new(1.0, palette.tab_border_default));
+    let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
 
-    let response = frame
-        .show(ui, |ui| {
-            let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
-            let rect = rect.shrink(1.5);
-            let resp = tab_add_button(ui, rect, resp, palette);
-            resp
-        })
-        .inner;
+    let rect = egui::Rect::from_min_max(rect.min.round(), rect.max.round());
 
-    if response.clicked() {
+    let hovered = resp.hovered();
+
+    let fill = if hovered {
+        ui.visuals().widgets.hovered.bg_fill
+    } else {
+        egui::Color32::TRANSPARENT
+    };
+
+    let stroke = if hovered {
+        egui::Stroke::new(1.0, palette.borders_active)
+    } else {
+        egui::Stroke::new(1.0, palette.borders_default)
+    };
+
+    let rounding = egui::CornerRadius {
+        nw: palette.tab_inactive_radius.nw,
+        ne: palette.tab_inactive_radius.ne,
+        sw: 0,
+        se: 0,
+    };
+
+    let painter = ui.painter();
+
+    painter.rect_filled(rect, rounding, fill);
+    painter.rect_stroke(rect, rounding, stroke, egui::StrokeKind::Inside);
+
+    let _ = tab_add_button(ui, rect.shrink(3.0), resp.clone(), palette);
+
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+
+    if resp.clicked() {
         action.open_new = true;
     }
 }
@@ -394,7 +423,7 @@ fn tab_close_button(
         palette.tab_close_normal
     };
 
-    let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
+    let font_id = FontId::new(palette.tab_icon_size, FontFamily::Proportional);
 
     ui.painter().text(
         rect.center(),
@@ -436,7 +465,7 @@ fn tab_add_button(
         palette.icon_color
     };
 
-    let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
+    let font_id = FontId::new(palette.tab_icon_size, FontFamily::Proportional);
 
     ui.painter().text(
         rect.center(),

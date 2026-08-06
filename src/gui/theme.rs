@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::{LazyLock, RwLock};
 
-pub const THEME_VERSION: u32 = 4;
+pub const THEME_VERSION: u32 = 5;
 
 fn default_itemviewer_row_height() -> f32 {
     16.0
@@ -62,8 +62,6 @@ pub struct ThemePalette {
     pub primary: Color32,
     pub primary_hover: Color32,
     pub primary_active: Color32,
-    pub primary_subtle: Color32,
-    pub secondary: Color32,
     pub text_normal: Color32,
     pub text_header_section: Color32,
 
@@ -87,8 +85,8 @@ pub struct ThemePalette {
 
     // 🎯 Handles / borders
     pub resize_handle: Color32,
-    pub tab_border_active: Color32,
-    pub tab_border_default: Color32,
+    pub borders_default: Color32,
+    pub borders_active: Color32,
 
     // 🎯 Tab button colors
     pub tab_close_hover: Color32,
@@ -147,8 +145,6 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         primary: base,
         primary_hover: Color32::from_rgba_unmultiplied(95, 75, 135, 128),
         primary_active: Color32::from_rgb(70, 55, 110),
-        primary_subtle: Color32::from_rgba_unmultiplied(95, 75, 135, 60),
-        secondary: Color32::from_rgb(255, 255, 255),
         text_normal: Color32::from_rgb(160, 170, 180),
         text_header_section: Color32::WHITE,
 
@@ -171,8 +167,8 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
 
         // 🎯 Handles / borders
         resize_handle: Color32::from_rgb(160, 170, 180),
-        tab_border_active: base,
-        tab_border_default: Color32::from_rgba_unmultiplied(95, 75, 135, 60),
+        borders_default: Color32::from_rgba_unmultiplied(95, 75, 135, 60),
+        borders_active: base,
 
         // 🎯 Tab button colors
         tab_close_hover: Color32::from_rgb(200, 52, 52),
@@ -237,8 +233,6 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         primary: base,
         primary_hover: Color32::from_rgba_unmultiplied(110, 85, 160, 90),
         primary_active: Color32::from_rgb(140, 120, 200),
-        primary_subtle: Color32::from_rgba_unmultiplied(110, 85, 160, 40),
-        secondary: Color32::BLACK,
         text_normal: Color32::from_rgb(70, 78, 86),
         text_header_section: Color32::BLACK,
 
@@ -261,8 +255,8 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
 
         // 🎯 Handles / borders
         resize_handle: Color32::from_rgb(160, 170, 180),
-        tab_border_active: base,
-        tab_border_default: Color32::from_rgba_unmultiplied(110, 85, 160, 40),
+        borders_default: Color32::from_rgba_unmultiplied(110, 85, 160, 40),
+        borders_active: base,
 
         // 🎯 Tab button colors
         tab_close_hover: Color32::from_rgb(200, 52, 52),
@@ -416,7 +410,7 @@ pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
 
             style.visuals.widgets.active.bg_fill = palette.primary_active;
 
-            style.visuals.selection.bg_fill = palette.primary_subtle;
+            style.visuals.selection.bg_fill = palette.borders_default;
             style.visuals.selection.stroke.color = palette.primary;
 
             // 🔤 Text
@@ -477,9 +471,8 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
             ((base.g() as u16 * 7) / 10) as u8, // 70% of green
             ((base.b() as u16 * 7) / 10) as u8, // 70% of blue
         );
-        palette.primary_subtle = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 60);
-        palette.tab_border_default =
-            Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 60);
+        palette.borders_default = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 60);
+        palette.borders_default = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 60);
     } else {
         // Light theme calculations
         palette.primary_hover = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 90);
@@ -488,13 +481,12 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
             ((base.g() as u16 * 14) / 10).min(255) as u8, // 140% of green
             ((base.b() as u16 * 14) / 10).min(255) as u8, // 140% of blue
         );
-        palette.primary_subtle = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 40);
-        palette.tab_border_default =
-            Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 40);
+        palette.borders_default = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 40);
+        palette.borders_default = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 40);
     }
 
     // Common to both themes
-    palette.tab_border_active = base;
+    palette.borders_active = base;
     palette.checkbox_bg_hover = base;
     palette.checkbox_bg_active = base;
 }

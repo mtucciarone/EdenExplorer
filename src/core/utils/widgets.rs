@@ -153,7 +153,7 @@ pub fn draw_object_drag_ghost(
         painter.rect_filled(
             ghost_rect,
             CornerRadius::same(palette.medium_radius),
-            palette.primary_subtle,
+            palette.borders_default,
         );
 
         let font_id = FontId::new(palette.text_size, FontFamily::Proportional);

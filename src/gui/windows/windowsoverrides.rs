@@ -171,7 +171,7 @@ pub fn apply_window_override(hwnd: HWND, palette: &ThemePalette) {
             cyBottomHeight: 0,
         };
 
-        let border_color = color32_to_dwm(palette.application_bg_color);
+        let border_color = color32_to_dwm(palette.borders_default);
         let caption_color = color32_to_dwm(palette.application_bg_color);
         let text_color = color32_to_dwm(palette.application_bg_color);
 
