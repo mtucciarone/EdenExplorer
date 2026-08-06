@@ -275,6 +275,7 @@
 
 ### 🚀 Upcoming Alpha Features
 - [ ] New Explorer view that displays pictures in medium/large format
+- [ ] Tab re-ordering via drag'n'drop
 - [ ] Support multi-column sorting (smart grouping)
 - [ ] Add multi-tagging of objects
 - [ ] Enhanced theme customization, such as custom layouts, mix/match UI elements, styles, etc
