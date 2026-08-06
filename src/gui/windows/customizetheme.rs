@@ -408,16 +408,16 @@ pub fn draw_theme_customizer(
                                 ui.end_row();
                                 changed |= color_picker(
                                     ui,
-                                    &i18n.tr("theme_colors_primary_subtle"),
-                                    &mut editing_palette.primary_subtle,
+                                    &i18n.tr("theme_colors_borders_default"),
+                                    &mut editing_palette.borders_default,
                                     &font_id,
                                     label_color,
                                 );
                                 ui.end_row();
                                 changed |= color_picker(
                                     ui,
-                                    &i18n.tr("theme_colors_secondary"),
-                                    &mut editing_palette.secondary,
+                                    &i18n.tr("theme_colors_borders_active"),
+                                    &mut editing_palette.borders_active,
                                     &font_id,
                                     label_color,
                                 );

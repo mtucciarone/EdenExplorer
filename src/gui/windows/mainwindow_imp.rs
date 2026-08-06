@@ -2577,18 +2577,3 @@ pub fn handle_draw_customizetheme_window(
         }
     }
 }
-
-pub fn tab_title_for(nav: &Navigation) -> String {
-    if nav.is_root() {
-        return "This PC".to_string();
-    }
-
-    if nav.is_recycle_bin() {
-        return "Recycle Bin".to_string();
-    }
-
-    nav.current
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| nav.current.display().to_string())
-}

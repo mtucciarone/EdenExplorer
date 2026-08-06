@@ -345,6 +345,9 @@ impl eframe::App for MainWindow {
         if self.theme_dirty {
             apply_theme(ctx, self.theme);
             apply_font_to_context(ctx, &palette);
+            if let Some(hwnd) = self.hwnd {
+                apply_window_override(hwnd, &palette);
+            }
             self.theme_dirty = false;
         }
 
@@ -481,7 +484,7 @@ impl eframe::App for MainWindow {
                         };
 
                         let sidebar_frame = egui::Frame::NONE
-                            .stroke(egui::Stroke::new(1.0, palette.tab_border_default));
+                            .stroke(egui::Stroke::new(1.0, palette.borders_default));
 
                         ui.allocate_ui_with_layout(
                             egui::vec2(sidebar_width, ui.available_height() + 15.5),
@@ -561,6 +564,7 @@ impl eframe::App for MainWindow {
                                 &mut self.tab_infos_cache,
                                 &mut self.tab_infos_dirty,
                                 &self.settings_window,
+                                &self.i18n,
                             );
 
                             ui.allocate_ui_with_layout(
@@ -641,7 +645,7 @@ impl eframe::App for MainWindow {
                                                                     accent_rect.top(),
                                                                     egui::Stroke::new(
                                                                         2.0,
-                                                                        palette.tab_border_active,
+                                                                        palette.borders_active,
                                                                     ),
                                                                 );
                                                             }
@@ -734,7 +738,7 @@ impl eframe::App for MainWindow {
                                                                     accent_rect.top(),
                                                                     egui::Stroke::new(
                                                                         2.0,
-                                                                        palette.tab_border_active,
+                                                                        palette.borders_active,
                                                                     ),
                                                                 );
                                                             }
