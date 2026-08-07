@@ -272,10 +272,6 @@ impl Default for MainWindow {
 }
 
 impl MainWindow {
-    pub fn new() -> Self {
-        Self::new_with_paths(Vec::new())
-    }
-
     pub fn new_with_paths(paths: Vec<PathBuf>) -> Self {
         let mut app = Self::default();
         if !paths.is_empty() {

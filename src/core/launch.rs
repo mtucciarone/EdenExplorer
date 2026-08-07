@@ -14,7 +14,7 @@ use windows::Win32::Foundation::CloseHandle;
 use windows::Win32::Foundation::ERROR_ALREADY_EXISTS;
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Foundation::{GetLastError, HWND, LPARAM, WPARAM};
-use windows::Win32::Globalization::GetUserDefaultLocaleName;
+use windows::Win32::Globalization::GetUserDefaultUILanguage;
 use windows::Win32::System::DataExchange::COPYDATASTRUCT;
 use windows::Win32::System::Threading::{CreateMutexW, ReleaseMutex};
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -30,6 +30,30 @@ const INSTANCE_MUTEX: &str = "Local\\EdenExplorer.SingleInstance.v1";
 const WINDOW_TITLE: &str = "EdenExplorer";
 const COPYDATA_ID: usize = 0x4544_454e;
 static FORWARDED_PATHS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+const LANGUAGE_MAP: &[(u16, &str)] = &[
+    // English
+    (0x0409, "en-US"),
+    (0x0809, "en-US"),
+    (0x0C09, "en-US"),
+    (0x1009, "en-US"),
+    (0x1409, "en-US"),
+    (0x1809, "en-US"),
+    (0x1C09, "en-US"),
+    (0x2009, "en-US"),
+    (0x2409, "en-US"),
+    (0x2809, "en-US"),
+    (0x2C09, "en-US"),
+    (0x3009, "en-US"),
+    (0x3409, "en-US"),
+    // Indonesian
+    (0x0421, "id-ID"),
+    // Japanese
+    (0x0411, "ja-JP"),
+    // Chinese
+    (0x0404, "zh-TW"),
+    (0x0804, "zh-CN"),
+    (0x0C04, "zh-HK"),
+];
 
 pub struct InstanceGuard {
     handle: HANDLE,
@@ -81,64 +105,56 @@ impl LaunchError {
 }
 
 struct LaunchI18n {
-    bundle: FluentBundle<FluentResource>,
+    primary: FluentBundle<FluentResource>,
+    fallback: FluentBundle<FluentResource>,
 }
 
 impl LaunchI18n {
     fn new() -> Self {
         let locale = system_locale();
+        println!("Windows locale: {}", locale);
 
         let langid = LanguageIdentifier::from_str(&locale)
             .unwrap_or_else(|_| LanguageIdentifier::from_str("en-US").unwrap());
 
-        let mut bundle = FluentBundle::new(vec![langid]);
-        bundle.set_use_isolating(false);
+        let mut primary = FluentBundle::new(vec![langid]);
+        primary.set_use_isolating(false);
+        load_locale(&mut primary, &locale);
 
-        // Always load English first.
-        load_locale(&mut bundle, "en-US");
+        let mut fallback = FluentBundle::new(vec![LanguageIdentifier::from_str("en-US").unwrap()]);
+        fallback.set_use_isolating(false);
+        load_locale(&mut fallback, "en-US");
 
-        // Overlay the user's language.
-        if locale != "en-US" {
-            load_locale(&mut bundle, &locale);
-        }
+        Self { primary, fallback }
+    }
 
-        Self { bundle }
+    fn format_bundle(
+        bundle: &FluentBundle<FluentResource>,
+        key: &str,
+        args: Option<&FluentArgs>,
+    ) -> Option<String> {
+        let message = bundle.get_message(key)?;
+        let pattern = message.value()?;
+
+        let mut errors = Vec::new();
+
+        Some(
+            bundle
+                .format_pattern(pattern, args, &mut errors)
+                .to_string(),
+        )
     }
 
     fn tr(&self, key: &str) -> String {
-        let message = match self.bundle.get_message(key) {
-            Some(message) => message,
-            None => return key.to_string(),
-        };
-
-        let pattern = match message.value() {
-            Some(pattern) => pattern,
-            None => return key.to_string(),
-        };
-
-        let mut errors = Vec::new();
-
-        self.bundle
-            .format_pattern(pattern, None, &mut errors)
-            .to_string()
+        Self::format_bundle(&self.primary, key, None)
+            .or_else(|| Self::format_bundle(&self.fallback, key, None))
+            .unwrap_or_else(|| key.to_string())
     }
 
     fn tr_args(&self, key: &str, args: &FluentArgs) -> String {
-        let message = match self.bundle.get_message(key) {
-            Some(message) => message,
-            None => return key.to_string(),
-        };
-
-        let pattern = match message.value() {
-            Some(pattern) => pattern,
-            None => return key.to_string(),
-        };
-
-        let mut errors = Vec::new();
-
-        self.bundle
-            .format_pattern(pattern, Some(args), &mut errors)
-            .to_string()
+        Self::format_bundle(&self.primary, key, Some(args))
+            .or_else(|| Self::format_bundle(&self.fallback, key, Some(args)))
+            .unwrap_or_else(|| key.to_string())
     }
 }
 
@@ -153,28 +169,13 @@ impl Drop for InstanceGuard {
 
 #[cfg(windows)]
 pub fn system_locale() -> String {
-    let mut buf = [0u16; 85];
-    let len = unsafe { GetUserDefaultLocaleName(&mut buf) };
+    let langid = unsafe { GetUserDefaultUILanguage() };
 
-    if len <= 1 {
-        return "en-US".to_string();
-    }
-
-    let locale = String::from_utf16_lossy(&buf[..(len as usize - 1)]);
-
-    // Prefer exact match.
-    if LaunchLocalizations::get(&format!("{}/main.ftl", locale)).is_some() {
-        return locale;
-    }
-
-    // Fall back to language only.
-    if let Some((language, _)) = locale.split_once('-') {
-        if LaunchLocalizations::get(&format!("{}/main.ftl", language)).is_some() {
-            return language.to_string();
-        }
-    }
-
-    "en-US".to_string()
+    LANGUAGE_MAP
+        .iter()
+        .find(|(id, _)| *id == langid)
+        .map(|(_, locale)| (*locale).to_string())
+        .unwrap_or_else(|| "en-US".to_string())
 }
 
 pub fn parse_args<I, S>(args: I) -> Result<LaunchOptions, LaunchError>
@@ -266,29 +267,42 @@ fn wide(value: &str) -> Vec<u16> {
 
 fn load_locale(bundle: &mut FluentBundle<FluentResource>, locale: &str) {
     let path = format!("{}/main.ftl", locale);
-
     let file = match LaunchLocalizations::get(&path) {
         Some(file) => file,
-        None => return,
+        None => {
+            println!("Missing locale file: {}", path);
+            return;
+        }
     };
 
     let source = match file.data {
         Cow::Borrowed(bytes) => match std::str::from_utf8(bytes) {
             Ok(text) => text.to_owned(),
-            Err(_) => return,
+            Err(e) => {
+                println!("UTF-8 error: {:?}", e);
+                return;
+            }
         },
         Cow::Owned(bytes) => match String::from_utf8(bytes) {
             Ok(text) => text,
-            Err(_) => return,
+            Err(e) => {
+                println!("UTF-8 error: {:?}", e);
+                return;
+            }
         },
     };
 
     let resource = match FluentResource::try_new(source) {
         Ok(resource) => resource,
-        Err(_) => return,
+        Err((_, errors)) => {
+            println!("Fluent parse errors: {:?}", errors);
+            return;
+        }
     };
 
-    let _ = bundle.add_resource(resource);
+    if let Err(errors) = bundle.add_resource(resource) {
+        println!("add_resource errors: {:?}", errors);
+    }
 }
 
 fn forward_paths(paths: &[PathBuf]) -> Result<(), LaunchError> {
