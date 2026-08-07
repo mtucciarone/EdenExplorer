@@ -160,3 +160,16 @@ tag_delete_group = Delete Tag Group
 tag_delete_confirm = Are you sure you want to delete this tag group?
 theme_font = Font
 theme_mono_font = Monospace Font
+launch-unknown-option = 
+    Unknown option: 
+    {$option}
+launch-invalid-directory = 
+    Not an existing directory: 
+    {$path}
+launch-mutex-create = 
+    Could not create the instance mutex: 
+    {$error}
+launch-window-not-ready = 
+    The running EdenExplorer window was not ready.
+launch-window-rejected = 
+    The running EdenExplorer window did not accept the request.

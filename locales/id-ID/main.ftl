@@ -157,3 +157,16 @@ tag_delete_group = Hapus Grup Tag
 tag_delete_confirm = Apakah Anda yakin ingin menghapus grup tag ini?
 theme_font = Font
 theme_mono_font = Font Monospace
+launch-unknown-option = 
+    Opsi tidak dikenal: 
+    {$option}
+launch-invalid-directory = 
+    Bukan direktori yang ada: 
+    {$path}
+launch-mutex-create = 
+    Tidak dapat membuat mutex instance: 
+    {$error}
+launch-window-not-ready = 
+    Jendela EdenExplorer yang sedang berjalan tidak siap.
+launch-window-rejected = 
+    Jendela EdenExplorer yang sedang berjalan tidak menerima permintaan.

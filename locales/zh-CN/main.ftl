@@ -157,3 +157,16 @@ tag_delete_group = 删除标签组
 tag_delete_confirm = 您确定要删除此标签组吗？
 theme_font = 字体
 theme_mono_font = 等宽字体
+launch-unknown-option = 
+    未知选项: 
+    {$option}
+launch-invalid-directory = 
+    不是现有目录: 
+    {$path}
+launch-mutex-create = 
+    无法创建实例互斥锁: 
+    {$error}
+launch-window-not-ready = 
+    运行中的 EdenExplorer 窗口未准备好。
+launch-window-rejected = 
+    运行中的 EdenExplorer 窗口拒绝了请求。

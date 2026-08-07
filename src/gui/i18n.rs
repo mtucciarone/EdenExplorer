@@ -19,6 +19,10 @@ impl I18n {
 
         Self::load_locale(&mut bundles, default_locale);
 
+        if default_locale != "en-US" {
+            Self::load_locale(&mut bundles, default_locale);
+        }
+
         Self {
             current_locale: default_locale.to_string(),
             bundles,
