@@ -157,3 +157,16 @@ tag_delete_group = タググループを削除
 tag_delete_confirm = このタググループを削除してもよろしいですか？
 theme_font = フォント
 theme_mono_font = モノスペースフォント
+launch-unknown-option = 
+    不明なオプション: 
+    {$option}
+launch-invalid-directory = 
+    既存のディレクトリではありません: 
+    {$path}
+launch-mutex-create = 
+    インスタンスミューテックスを作成できませんでした: 
+    {$error}
+launch-window-not-ready = 
+    実行中のEdenExplorerウィンドウが準備できていません。
+launch-window-rejected = 
+    実行中のEdenExplorerウィンドウがリクエストを拒否しました。

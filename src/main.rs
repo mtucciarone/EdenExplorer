@@ -3,13 +3,46 @@ mod core;
 mod gui;
 
 use crate::core::indexer::{WindowSizeMode, load_windows_size_mode_on_start};
+use crate::core::launch::{LaunchError, acquire_or_forward, existing_directories, parse_args};
 use crate::core::utils::fonts::apply_custom_font_definitions;
 use crate::gui::windows::windowsoverrides::set_egui_ctx;
 use eframe::{NativeOptions, egui};
+use std::os::windows::ffi::OsStrExt;
 use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
-use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetSystemMetrics, MB_ICONERROR, MB_OK, MessageBoxW, SM_CXSCREEN, SM_CYSCREEN,
+};
+use windows::core::PCWSTR;
 
 fn main() -> eframe::Result<()> {
+    let launch_options = match parse_args(std::env::args()) {
+        Ok(options) => options,
+        Err(error) => {
+            show_launch_error(&error);
+            return Ok(());
+        }
+    };
+    let launch_paths = match existing_directories(&launch_options) {
+        Ok(paths) => paths,
+        Err(error) => {
+            show_launch_error(&error);
+            return Ok(());
+        }
+    };
+
+    let _instance_guard = if launch_options.new_window {
+        None
+    } else {
+        match acquire_or_forward(&launch_paths) {
+            Ok(Some(guard)) => Some(guard),
+            Ok(None) => return Ok(()),
+            Err(error) => {
+                show_launch_error(&error);
+                return Ok(());
+            }
+        }
+    };
+
     unsafe {
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
     }
@@ -52,9 +85,40 @@ fn main() -> eframe::Result<()> {
             cc.egui_ctx.set_fonts(fonts);
             set_egui_ctx(&cc.egui_ctx);
 
-            Ok(Box::new(gui::MainWindow::new()))
+            Ok(Box::new(gui::MainWindow::new_with_paths(
+                launch_paths.clone(),
+            )))
         }),
     )
+}
+
+fn show_launch_error(error: &LaunchError) {
+    let message = error.message();
+
+    #[cfg(windows)]
+    {
+        let text: Vec<u16> = std::ffi::OsStr::new(&message)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+
+        let title: Vec<u16> = std::ffi::OsStr::new("EdenExplorer")
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+
+        unsafe {
+            let _ = MessageBoxW(
+                None,
+                PCWSTR(text.as_ptr()),
+                PCWSTR(title.as_ptr()),
+                MB_OK | MB_ICONERROR,
+            );
+        }
+    }
+
+    #[cfg(not(windows))]
+    eprintln!("{message}");
 }
 
 static ICON_BYTES: &[u8] = include_bytes!("assets/icon.ico");

@@ -152,6 +152,39 @@ impl MainWindow {
         self.mark_tab_infos_dirty();
     }
 
+    pub fn open_startup_paths(&mut self, paths: &[PathBuf]) {
+        let Some(first_path) = paths.first() else {
+            return;
+        };
+
+        let pinned_count = self.settings_window.current_settings.pinned_tabs.len();
+        if pinned_count == 0 {
+            self.tabs[0].primary_view.nav = Navigation::new(first_path.clone());
+            self.active_tab = 0;
+            self.focused_split = SplitSide::Primary;
+            self.load_path();
+        } else {
+            self.open_new_tab(first_path.clone());
+            self.load_path();
+        }
+
+        for path in paths.iter().skip(1) {
+            self.open_new_tab(path.clone());
+        }
+
+        if pinned_count > 0 {
+            self.active_tab = pinned_count;
+            self.focused_split = SplitSide::Primary;
+            self.pending_tab_scroll_id = self.tabs.get(self.active_tab).map(|tab| tab.id);
+            self.load_path();
+        } else {
+            self.active_tab = 0;
+            self.focused_split = SplitSide::Primary;
+            self.pending_tab_scroll_id = self.tabs.first().map(|tab| tab.id);
+        }
+        self.mark_tab_infos_dirty();
+    }
+
     pub fn default_favorites(&self) -> Vec<FavoriteItem> {
         let mut favorites = Vec::new();
         if let Some(home) = dirs::home_dir() {

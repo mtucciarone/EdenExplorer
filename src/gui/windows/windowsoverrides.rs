@@ -1,5 +1,6 @@
 use crate::core::drives::mark_drive_cache_dirty;
 use crate::core::indexer::{WindowSizeMode, load_app_settings, save_app_settings};
+use crate::core::launch::receive_copydata;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::clickable_icon;
 use eframe::egui;
@@ -235,6 +236,14 @@ unsafe extern "system" fn custom_wndproc(
     lparam: LPARAM,
 ) -> LRESULT {
     match msg {
+        WM_COPYDATA => {
+            if receive_copydata(lparam) {
+                request_repaint();
+                LRESULT(1)
+            } else {
+                LRESULT(0)
+            }
+        }
         WM_CLIPBOARDUPDATE => {
             mark_clipboard_dirty();
             LRESULT(0)

@@ -2,6 +2,7 @@ use crate::core::indexer::WindowSizeMode;
 use crate::core::indexer::{
     load_app_settings, load_favorites, load_tags, load_theme_settings, save_app_settings,
 };
+use crate::core::launch::take_forwarded_paths;
 use crate::core::utils::tabs::update_tab_infos_cache;
 use crate::gui::dragdrop::{DragDropBackend, DropTargets};
 use crate::gui::i18n::I18n;
@@ -271,8 +272,11 @@ impl Default for MainWindow {
 }
 
 impl MainWindow {
-    pub fn new() -> Self {
-        let app = Self::default();
+    pub fn new_with_paths(paths: Vec<PathBuf>) -> Self {
+        let mut app = Self::default();
+        if !paths.is_empty() {
+            app.open_startup_paths(&paths);
+        }
         app
     }
 
@@ -291,6 +295,15 @@ impl MainWindow {
 
 impl eframe::App for MainWindow {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        {
+            let forwarded_paths = take_forwarded_paths();
+            for path in &forwarded_paths {
+                self.open_new_tab(path.clone());
+            }
+            if !forwarded_paths.is_empty() {
+                self.load_path();
+            }
+        }
         let palette = get_palette(self.theme);
 
         if self.hwnd.is_none() {
