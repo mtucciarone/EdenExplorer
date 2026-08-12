@@ -1,4 +1,5 @@
 use crate::core::utils::colors::drive_usage_color;
+use crate::core::utils::text::apply_eden_text_overrides;
 use crate::gui::theme::ThemePalette;
 use eframe::egui::*;
 use egui_phosphor::regular::DOTS_SIX_VERTICAL;
@@ -257,11 +258,13 @@ pub fn draw_dropdown(
 
         visuals.widgets.hovered.bg_fill = palette.primary_hover;
         visuals.widgets.active.bg_fill = palette.primary_active;
-
+        apply_eden_visual_overrides(ui, palette);
         egui::ComboBox::from_id_salt(id)
             .width(width)
             .selected_text(selected_text)
             .show_ui(ui, |ui| {
+                apply_eden_text_overrides(ui, palette);
+                apply_eden_visual_overrides(ui, palette);
                 // Popup styling
                 ui.style_mut().text_styles.insert(
                     egui::TextStyle::Body,
@@ -278,4 +281,59 @@ pub fn draw_dropdown(
                 add_contents(ui);
             });
     });
+}
+
+pub fn apply_eden_visual_overrides(ui: &mut egui::Ui, palette: &ThemePalette) {
+    let style = ui.style_mut();
+
+    style.spacing.button_padding = egui::vec2(4.0, 2.0);
+    style.spacing.item_spacing = egui::vec2(6.0, 2.0);
+    style.spacing.menu_margin = egui::Margin::same(4);
+    style.spacing.interact_size.y = palette.text_size + 6.0;
+}
+
+pub fn apply_eden_visual_color_overrides(ui: &mut egui::Ui, palette: &ThemePalette) {
+    let visuals = &mut ui.style_mut().visuals;
+
+    visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
+    visuals.widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+
+    visuals.widgets.hovered.bg_fill = palette.primary;
+    visuals.widgets.hovered.weak_bg_fill = palette.primary;
+
+    visuals.widgets.active.bg_fill = palette.primary;
+    visuals.widgets.active.weak_bg_fill = palette.primary;
+}
+
+pub fn eden_text_label(ui: &mut egui::Ui, palette: &ThemePalette, text: &str) -> egui::Response {
+    apply_eden_text_overrides(ui, palette);
+    ui.label(
+        egui::RichText::new(text)
+            .font(FontId::proportional(palette.text_size))
+            .color(palette.text_normal),
+    )
+}
+
+pub fn eden_button(ui: &mut egui::Ui, palette: &ThemePalette, text: &str) -> egui::Response {
+    apply_eden_visual_overrides(ui, palette);
+    apply_eden_text_overrides(ui, palette);
+    ui.button(egui::RichText::new(text).color(palette.text_normal))
+}
+
+pub fn eden_toggle_button(
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+    selected: bool,
+    text: &str,
+) -> egui::Response {
+    apply_eden_visual_overrides(ui, palette);
+    apply_eden_text_overrides(ui, palette);
+    ui.add(
+        egui::Button::new(egui::RichText::new(text).color(if selected {
+            palette.text_header_section
+        } else {
+            palette.text_normal
+        }))
+        .selected(selected),
+    )
 }

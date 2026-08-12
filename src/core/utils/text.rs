@@ -193,39 +193,26 @@ mod tests {
     }
 }
 
-pub fn apply_context_menu_typography(ui: &mut egui::Ui, palette: &ThemePalette) {
-    let mut style = (*ui.ctx().style()).clone();
-    style.text_styles = [
-        (
-            egui::TextStyle::Body,
-            FontId::proportional(palette.context_menu_text_size),
-        ),
-        (
-            egui::TextStyle::Button,
-            FontId::proportional(palette.context_menu_text_size),
-        ),
-        (
-            egui::TextStyle::Small,
-            FontId::proportional(palette.context_menu_text_size),
-        ),
-        (
-            egui::TextStyle::Heading,
-            FontId::proportional(palette.context_menu_text_size + 2.0),
-        ),
-    ]
-    .into();
-    style.spacing.button_padding = egui::vec2(4.0, 2.0);
-    style.spacing.item_spacing = egui::vec2(6.0, 2.0);
-    style.spacing.menu_margin = egui::Margin::same(4);
-    style.spacing.interact_size = egui::vec2(
-        style.spacing.interact_size.x,
-        palette.context_menu_text_size + 6.0,
+pub fn apply_eden_text_overrides(ui: &mut egui::Ui, palette: &ThemePalette) {
+    let text_styles = &mut ui.style_mut().text_styles;
+
+    text_styles.insert(
+        egui::TextStyle::Body,
+        FontId::proportional(palette.text_size),
     );
-    style.visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
-    style.visuals.widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
-    style.visuals.widgets.hovered.bg_fill = palette.primary;
-    style.visuals.widgets.hovered.weak_bg_fill = palette.primary;
-    style.visuals.widgets.active.bg_fill = palette.primary;
-    style.visuals.widgets.active.weak_bg_fill = palette.primary;
-    ui.set_style(style);
+
+    text_styles.insert(
+        egui::TextStyle::Button,
+        FontId::proportional(palette.text_size),
+    );
+
+    text_styles.insert(
+        egui::TextStyle::Small,
+        FontId::proportional(palette.text_size),
+    );
+
+    text_styles.insert(
+        egui::TextStyle::Heading,
+        FontId::proportional(palette.text_size + 2.0),
+    );
 }

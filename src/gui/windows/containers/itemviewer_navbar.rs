@@ -6,7 +6,7 @@ use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{clear_clipboard_files, clickable_icon, expand_environment_variables};
 use crate::gui::windows::containers::enums::ItemViewerNavAction;
 use crate::gui::windows::containers::structs::{
-    Breadcrumb, ItemViewerNavBarAction, RenderedBreadcrumb, TabView,
+    Breadcrumb, ItemViewerDisplayMode, ItemViewerNavBarAction, RenderedBreadcrumb, TabView,
 };
 use eframe::egui;
 use egui::text::{CCursor, CCursorRange};
@@ -53,9 +53,16 @@ pub fn draw_itemviewer_navigation_bar(
             is_recycle_bin,
             can_go_back,
             can_go_forward,
+            tab.display_mode,
         );
 
         merge_toolbar_action(&mut action, toolbar_action);
+        if action.toggle_gallery {
+            tab.display_mode = match tab.display_mode {
+                ItemViewerDisplayMode::Details => ItemViewerDisplayMode::Gallery,
+                ItemViewerDisplayMode::Gallery => ItemViewerDisplayMode::Details,
+            };
+        }
 
         ui.separator();
 
@@ -345,6 +352,7 @@ fn draw_navigation_bar_buttons(
     is_recycle_bin: bool,
     can_go_back: bool,
     can_go_forward: bool,
+    display_mode: ItemViewerDisplayMode,
 ) -> ItemViewerNavBarAction {
     let mut action = ItemViewerNavBarAction::default();
 
@@ -485,7 +493,29 @@ fn draw_navigation_bar_buttons(
         }
     }
 
-    ui.add_space(4.0);
+    let gallery_color = if display_mode == ItemViewerDisplayMode::Gallery {
+        palette.primary
+    } else {
+        ui.visuals().text_color()
+    };
+    if ui
+        .add_enabled(
+            !is_recycle_bin && !is_root,
+            egui::Label::new(egui::RichText::new(regular::IMAGES_SQUARE).color(gallery_color))
+                .selectable(false)
+                .sense(egui::Sense::click()),
+        )
+        .on_hover_text(
+            egui::RichText::new(i18n.tr("tooltip_gallery_view"))
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+        && !is_recycle_bin
+    {
+        action.toggle_gallery = true;
+    }
 
     if nav_icon_button(
         ui,
@@ -844,4 +874,5 @@ fn merge_toolbar_action(action: &mut ItemViewerNavBarAction, toolbar: ItemViewer
     action.create_file |= toolbar.create_file;
     action.add_favorite |= toolbar.add_favorite;
     action.remove_favorite |= toolbar.remove_favorite;
+    action.toggle_gallery |= toolbar.toggle_gallery;
 }

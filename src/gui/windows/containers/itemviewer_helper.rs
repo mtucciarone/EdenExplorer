@@ -1,8 +1,10 @@
 use crate::core::drives::is_raw_physical_drive_path;
 use crate::core::fs::FileItem;
 use crate::core::utils::files::filename_has_valid_characters_realtime;
-use crate::core::utils::text::apply_context_menu_typography;
-use crate::core::utils::widgets::draw_checkbox;
+use crate::core::utils::text::apply_eden_text_overrides;
+use crate::core::utils::widgets::{
+    apply_eden_visual_color_overrides, apply_eden_visual_overrides, draw_checkbox,
+};
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::{ThemePalette, apply_checkbox_colors};
@@ -90,7 +92,8 @@ pub fn handle_context_menu_actions(
     hwnd: Option<HWND>,
 ) {
     // Apply context-menu-specific typography
-    apply_context_menu_typography(ui, _palette);
+    apply_eden_visual_overrides(ui, _palette);
+    apply_eden_text_overrides(ui, _palette);
 
     // Match Explorer behavior: right-click selects if not already selected
     if !is_selected {
@@ -283,7 +286,9 @@ pub fn handle_context_menu_actions(
         };
 
         ui.menu_button(toggle_label, |ui| {
-            apply_context_menu_typography(ui, _palette);
+            apply_eden_visual_overrides(ui, _palette);
+            apply_eden_visual_color_overrides(ui, _palette);
+            apply_eden_text_overrides(ui, _palette);
 
             if let Some(hwnd) = hwnd {
                 let cache_miss = explorer_state
@@ -312,7 +317,7 @@ pub fn handle_context_menu_actions(
                     if cache.menu.items().is_empty() {
                         ui.label("No Windows menu items for this selection.");
                     } else {
-                        let row_height = _palette.context_menu_text_size + 6.0;
+                        let row_height = _palette.text_size + 6.0;
                         let min_height = (row_height * 6.0) + (ui.spacing().item_spacing.y * 5.0);
                         let max_height = ui.ctx().viewport_rect().height() * 0.8;
                         ScrollArea::vertical()
@@ -1242,7 +1247,7 @@ fn draw_header_cell(
         Popup::context_menu(&cell_resp)
             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| {
-                apply_context_menu_typography(ui, palette);
+                apply_eden_text_overrides(ui, palette);
                 draw_header_context_menu(
                     ui,
                     i18n,

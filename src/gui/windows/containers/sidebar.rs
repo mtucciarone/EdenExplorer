@@ -2,7 +2,7 @@ use crate::core::drives::{
     DriveInfo, consume_drive_list_dirty, get_drive_infos, is_raw_physical_drive_path,
 };
 use crate::core::fs::{MY_PC_PATH, MY_RECYCLE_BIN_PATH};
-use crate::core::utils::text::apply_context_menu_typography;
+use crate::core::utils::text::apply_eden_text_overrides;
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
@@ -338,7 +338,7 @@ pub fn draw_sidebar(
                     Popup::context_menu(&resp)
                         .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                         .show(|ui| {
-                            apply_context_menu_typography(ui, palette);
+                            apply_eden_text_overrides(ui, palette);
                             if ui.button(&i18n.tr("inputs_newtab")).clicked() {
                                 action.open_new_tab = Some(PathBuf::from(MY_PC_PATH));
                                 ui.close();
@@ -367,7 +367,7 @@ pub fn draw_sidebar(
                         Popup::context_menu(&resp)
                             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                             .show(|ui| {
-                                apply_context_menu_typography(ui, palette);
+                                apply_eden_text_overrides(ui, palette);
                                 if ui.button(&i18n.tr("inputs_newtab")).clicked() {
                                     action.open_new_tab = Some(home.clone());
                                     ui.close();
@@ -397,7 +397,7 @@ pub fn draw_sidebar(
                     Popup::context_menu(&resp)
                         .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                         .show(|ui| {
-                            apply_context_menu_typography(ui, palette);
+                            apply_eden_text_overrides(ui, palette);
                             if ui.button(&i18n.tr("inputs_newtab")).clicked() {
                                 action.open_new_tab = Some(PathBuf::from(MY_RECYCLE_BIN_PATH));
                                 ui.close();
@@ -513,7 +513,7 @@ pub fn draw_sidebar(
                         Popup::context_menu(&resp)
                             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                             .show(|ui| {
-                                apply_context_menu_typography(ui, palette);
+                                apply_eden_text_overrides(ui, palette);
                                 if ui.button(&i18n.tr("inputs_newtab")).clicked() {
                                     action.open_new_tab = Some(favorite.path.clone());
                                     ui.close();

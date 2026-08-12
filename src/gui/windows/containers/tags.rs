@@ -769,29 +769,27 @@ fn handle_context_menu_actions_tags(
     style.text_styles = [
         (
             egui::TextStyle::Body,
-            FontId::proportional(_palette.context_menu_text_size),
+            FontId::proportional(_palette.text_size),
         ),
         (
             egui::TextStyle::Button,
-            FontId::proportional(_palette.context_menu_text_size),
+            FontId::proportional(_palette.text_size),
         ),
         (
             egui::TextStyle::Small,
-            FontId::proportional(_palette.context_menu_text_size),
+            FontId::proportional(_palette.text_size),
         ),
         (
             egui::TextStyle::Heading,
-            FontId::proportional(_palette.context_menu_text_size + 2.0),
+            FontId::proportional(_palette.text_size + 2.0),
         ),
     ]
     .into();
     style.spacing.button_padding = egui::vec2(4.0, 2.0);
     style.spacing.item_spacing = egui::vec2(6.0, 2.0);
     style.spacing.menu_margin = egui::Margin::same(4);
-    style.spacing.interact_size = egui::vec2(
-        style.spacing.interact_size.x,
-        _palette.context_menu_text_size + 6.0,
-    );
+    style.spacing.interact_size =
+        egui::vec2(style.spacing.interact_size.x, _palette.text_size + 6.0);
     style.visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
     style.visuals.widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
     style.visuals.widgets.hovered.bg_fill = _palette.primary;
