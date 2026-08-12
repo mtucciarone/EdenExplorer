@@ -201,6 +201,7 @@
   <li><b>Responsive design</b> across window sizes</li>
   <li><b>Modern toolbar</b> with file and folder actions</li>
   <li><b>Tag management system</b> for organizing files and folders</li>
+  <li><b>File Gallery/Thumbnail view</b> for better file organization</li>
 </ul>
 
 <h3>Advanced Features</h3>
@@ -272,9 +273,9 @@
 - [x] Split-pane view in the Explorer
 - [x] Explorer view displays objects that have tags applied to them based on the tag color 
 - [x] Added native Recycle Bin support
+- [x] New Explorer view that displays media files in small/medium/large/extra large format
 
 ### 🚀 Upcoming Alpha Features
-- [ ] New Explorer view that displays pictures in medium/large format
 - [ ] Tab re-ordering via drag'n'drop
 - [ ] Support multi-column sorting (smart grouping)
 - [ ] Add multi-tagging of objects
