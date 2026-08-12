@@ -6,7 +6,7 @@ use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::itemviewer::draw_item_viewer;
 use crate::gui::windows::containers::itemviewer_navbar::draw_itemviewer_navigation_bar;
 use crate::gui::windows::containers::structs::{
-    ItemViewerNavBarAction, RenameState, TabView, TagsState,
+    ItemViewerDisplayMode, ItemViewerNavBarAction, RenameState, TabView, TagsState,
 };
 use crate::gui::windows::structs::{SettingsWindow, ThemeCustomizer};
 use eframe::egui;
@@ -95,43 +95,79 @@ pub fn draw_tab_content(
             });
 
             strip.cell(|ui| {
-                ScrollArea::horizontal()
-                    .id_salt(("item_viewer_horizontal_scroll", tab_id))
-                    .show(ui, |ui| {
-                        pending_action = draw_item_viewer(
-                            ui,
-                            i18n,
-                            view,
-                            folder_sizes,
-                            clipboard_has_files,
-                            clipboard_set,
-                            clipboard_is_cut,
-                            is_drive_view,
-                            is_recycle_bin_view,
-                            show_hidden_files_folders,
-                            show_item_viewer_icons,
-                            icon_cache,
-                            rename_state,
-                            palette,
-                            file_type_cache,
-                            file_size_text_cache,
-                            folder_size_text_cache,
-                            drive_size_text_cache,
-                            external_drag_to_internal_hover,
-                            &mut tabbar_action,
-                            drag_active,
-                            native_drag_active,
-                            drag_hover_target.clone(),
-                            &mut hovered_drop_target,
-                            &mut hovered_drop_target_rect,
-                            tags_state,
-                            theme_customizer,
-                            settings_window,
-                            hwnd,
-                            is_focused,
-                            tab_id,
-                        );
-                    });
+                if view.display_mode == ItemViewerDisplayMode::Gallery {
+                    pending_action = draw_item_viewer(
+                        ui,
+                        i18n,
+                        view,
+                        folder_sizes,
+                        clipboard_has_files,
+                        clipboard_set,
+                        clipboard_is_cut,
+                        is_drive_view,
+                        is_recycle_bin_view,
+                        show_hidden_files_folders,
+                        show_item_viewer_icons,
+                        icon_cache,
+                        rename_state,
+                        palette,
+                        file_type_cache,
+                        file_size_text_cache,
+                        folder_size_text_cache,
+                        drive_size_text_cache,
+                        external_drag_to_internal_hover,
+                        &mut tabbar_action,
+                        drag_active,
+                        native_drag_active,
+                        drag_hover_target.clone(),
+                        &mut hovered_drop_target,
+                        &mut hovered_drop_target_rect,
+                        tags_state,
+                        theme_customizer,
+                        settings_window,
+                        hwnd,
+                        is_focused,
+                        tab_id,
+                    );
+                } else {
+                    ScrollArea::horizontal()
+                        .id_salt(("item_viewer_horizontal_scroll", tab_id))
+                        .show(ui, |ui| {
+                            pending_action = draw_item_viewer(
+                                ui,
+                                i18n,
+                                view,
+                                folder_sizes,
+                                clipboard_has_files,
+                                clipboard_set,
+                                clipboard_is_cut,
+                                is_drive_view,
+                                is_recycle_bin_view,
+                                show_hidden_files_folders,
+                                show_item_viewer_icons,
+                                icon_cache,
+                                rename_state,
+                                palette,
+                                file_type_cache,
+                                file_size_text_cache,
+                                folder_size_text_cache,
+                                drive_size_text_cache,
+                                external_drag_to_internal_hover,
+                                &mut tabbar_action,
+                                drag_active,
+                                native_drag_active,
+                                drag_hover_target.clone(),
+                                &mut hovered_drop_target,
+                                &mut hovered_drop_target_rect,
+                                tags_state,
+                                theme_customizer,
+                                settings_window,
+                                hwnd,
+                                is_focused,
+                                tab_id,
+                            );
+                        });
+                }
             });
 
             drop_targets.item_target.target = hovered_drop_target.clone();

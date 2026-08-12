@@ -1,6 +1,6 @@
 use crate::core::drives::is_raw_physical_drive_path;
 use crate::core::fs::FileItem;
-use crate::core::utils::text::apply_context_menu_typography;
+use crate::core::utils::text::apply_eden_text_overrides;
 use crate::core::utils::widgets::draw_checkbox;
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
@@ -9,10 +9,11 @@ use crate::gui::utils::{draw_object_drag_ghost, format_size, fuzzy_match, get_fi
 use crate::gui::windows::containers::enums::{
     ItemViewerAction, ItemViewerContextAction, ItemViewerHeaderColumn,
 };
+use crate::gui::windows::containers::itemviewer_gallery::draw_gallery_view;
 use crate::gui::windows::containers::itemviewer_helper::*;
 use crate::gui::windows::containers::structs::{
-    ItemViewerColumnFitRequest, ItemViewerFolderSizeState, ItemViewerNavBarAction, RenameState,
-    TabView, TagsState,
+    ItemViewerColumnFitRequest, ItemViewerDisplayMode, ItemViewerFolderSizeState,
+    ItemViewerNavBarAction, RenameState, TabView, TagsState,
 };
 use crate::gui::windows::structs::{SettingsWindow, ThemeCustomizer};
 use eframe::egui;
@@ -57,6 +58,7 @@ pub fn draw_item_viewer(
     is_focused: bool,
     active_tab_id: u64,
 ) -> Option<ItemViewerAction> {
+    let display_mode = view.display_mode;
     let files = &view.files;
     let sort_column = view.sort_column;
     let sort_ascending = view.sort_ascending;
@@ -114,7 +116,7 @@ pub fn draw_item_viewer(
         explorer_state.selection_focus = None;
     }
 
-    if visible_items_empty {
+    if visible_items_empty && display_mode != ItemViewerDisplayMode::Gallery {
         ui.centered_and_justified(|ui| {
             if is_loading && files.is_empty() {
                 ui.add(egui::Spinner::new().size(28.0));
@@ -158,6 +160,42 @@ pub fn draw_item_viewer(
         ) {
             action = Some(global_action);
         }
+    }
+
+    if display_mode == ItemViewerDisplayMode::Gallery && !is_drive_view && !is_recycle_bin_view {
+        return draw_gallery_view(
+            ui,
+            i18n,
+            files,
+            &filter_state.cached_indices,
+            sort_column,
+            sort_ascending,
+            explorer_state,
+            rename_state,
+            drag_state,
+            &mut view.thumbnail_service,
+            &mut view.gallery_state,
+            paste_enabled,
+            clipboard_set,
+            is_cut_mode,
+            icon_cache,
+            palette,
+            external_drag_to_internal_hover,
+            drag_active,
+            native_drag_active,
+            drag_hover_target,
+            hovered_drop_target_out,
+            hovered_drop_target_rect_out,
+            tags_state,
+            theme_customizer_window,
+            settings_window,
+            hwnd,
+            modal_input_blocked,
+            is_focused,
+            active_tab_id,
+            current_dir,
+        )
+        .or(action);
     }
 
     let mut current_hovered_drop_target: Option<PathBuf> = None;
@@ -781,7 +819,7 @@ pub fn draw_item_viewer(
                 Popup::context_menu(&bg_response)
                     .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                     .show(|ui| {
-                        apply_context_menu_typography(ui, palette);
+                        apply_eden_text_overrides(ui, palette);
                         // if !any_row_hovered {
                         if ui.button("New Folder").clicked() {
                             action = Some(ItemViewerAction::CreateFolder);
@@ -822,7 +860,7 @@ pub fn draw_item_viewer(
                 Popup::context_menu(&bg_response)
                     .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                     .show(|ui| {
-                        apply_context_menu_typography(ui, palette);
+                        apply_eden_text_overrides(ui, palette);
                         if ui.button("Refresh").clicked() {
                             action = Some(ItemViewerAction::RefreshCurrentDirectory);
                             ui.close();

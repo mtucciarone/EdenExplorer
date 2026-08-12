@@ -6,6 +6,7 @@ pub mod fonts;
 pub mod sorting;
 pub mod tabs;
 pub mod text;
+pub mod thumbnails;
 pub mod widgets;
 
 pub use clipboard::*;

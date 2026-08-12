@@ -1,5 +1,6 @@
 use crate::core::fs::FileItem;
 use crate::core::indexer::TagsSnapshot;
+use crate::core::utils::thumbnails::ThumbnailService;
 use crate::gui::utils::hsl_to_color32;
 use crate::gui::windows::containers::enums::{
     ItemViewerAction, ItemViewerHeaderColumn, ItemViewerNavAction,
@@ -71,6 +72,9 @@ pub struct TabView {
     pub explorer_state: ExplorerState,
     pub item_viewer_filter_state: FilterState,
     pub column_state: ItemViewerColumnState,
+    pub display_mode: ItemViewerDisplayMode,
+    pub gallery_state: GalleryState,
+    pub thumbnail_service: ThumbnailService,
     pub files: Vec<FileItem>,
     pub drag_state: DragState,
     pub is_loading: bool,
@@ -101,6 +105,9 @@ impl TabView {
             explorer_state: ExplorerState::default(),
             item_viewer_filter_state: FilterState::default(),
             column_state: ItemViewerColumnState::default(),
+            display_mode: ItemViewerDisplayMode::Details,
+            gallery_state: GalleryState::default(),
+            thumbnail_service: ThumbnailService::default(),
             files: Vec::new(),
             drag_state: DragState::default(),
             is_loading: false,
@@ -118,7 +125,56 @@ impl TabView {
     pub fn duplicate_as_new(&self) -> Self {
         let mut view = Self::new(self.nav.clone(), self.sort_column, self.sort_ascending);
         view.column_state = self.column_state.clone();
+        view.display_mode = self.display_mode;
+        view.gallery_state = self.gallery_state;
         view
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ItemViewerDisplayMode {
+    Details,
+    Gallery,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GalleryThumbnailSize {
+    Small,
+    Medium,
+    Large,
+    ExtraLarge,
+}
+
+impl GalleryThumbnailSize {
+    pub fn pixel_size(self) -> f32 {
+        match self {
+            Self::Small => 48.0,
+            Self::Medium => 96.0,
+            Self::Large => 128.0,
+            Self::ExtraLarge => 256.0,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Small => "Small",
+            Self::Medium => "Medium",
+            Self::Large => "Large",
+            Self::ExtraLarge => "Extra Large",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct GalleryState {
+    pub thumbnail_size: GalleryThumbnailSize,
+}
+
+impl Default for GalleryState {
+    fn default() -> Self {
+        Self {
+            thumbnail_size: GalleryThumbnailSize::Medium,
+        }
     }
 }
 
@@ -400,6 +456,7 @@ pub struct ItemViewerNavBarAction {
     pub remove_favorite: bool,
     pub nav_to: Option<PathBuf>,
     pub refresh_current_directory: bool,
+    pub toggle_gallery: bool,
     pub is_breadcrumb_path_edit_active: bool,
     pub move_files_to_breadcrumb_dir: Option<PathBuf>,
     pub move_files_to_breadcrumb_dir_rect: Option<egui::Rect>,
