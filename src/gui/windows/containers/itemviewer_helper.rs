@@ -371,55 +371,49 @@ pub fn handle_draw_col_name(
         egui::Sense::hover(),
     );
 
-// Reserve a fixed area for the icon.
-let icon_size = egui::vec2(layout.icon_size, layout.icon_size);
-let icon_area_width = icon_size.x + ICON_HORIZONTAL_PADDING * 2.0;
+    // Reserve a fixed area for the icon.
+    let icon_size = egui::vec2(layout.icon_size, layout.icon_size);
+    let icon_area_width = icon_size.x + ICON_HORIZONTAL_PADDING * 2.0;
 
-let text_offset_x = if show_item_viewer_icons {
-    let icon_area =
-        egui::Rect::from_min_size(rect.min, egui::vec2(icon_area_width, layout.row_height));
+    let text_offset_x = if show_item_viewer_icons {
+        let icon_area =
+            egui::Rect::from_min_size(rect.min, egui::vec2(icon_area_width, layout.row_height));
 
-    let icon_color = if is_cut {
-        palette.icon_colored_hover.linear_multiply(0.5)
+        let icon_color = if is_cut {
+            palette.icon_colored_hover.linear_multiply(0.5)
+        } else {
+            palette.icon_colored_hover
+        };
+
+        // Use a custom Phosphor icon for recognized folder names.
+        if let Some(glyph) = icon_cache.get_custom_folder_icon(&file.path, file.is_dir) {
+            let font_id = egui::FontId::new(icon_size.x, egui::FontFamily::Proportional);
+
+            ui.painter().text(
+                icon_area.center(),
+                egui::Align2::CENTER_CENTER,
+                glyph,
+                font_id,
+                icon_color,
+            );
+        } else if let Some(icon) = icon_cache.get(&file.path, file.is_dir) {
+            let icon_pos = egui::pos2(
+                icon_area.center().x - icon_size.x * 0.5,
+                icon_area.center().y - icon_size.y * 0.5,
+            );
+
+            ui.painter().image(
+                (&icon).into(),
+                egui::Rect::from_min_size(icon_pos, icon_size),
+                egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1.0, 1.0)),
+                icon_color,
+            );
+        }
+
+        icon_area_width
     } else {
-        palette.icon_colored_hover
+        TEXT_LEFT_PADDING
     };
-
-    // Use a custom Phosphor icon for recognized folder names.
-    if let Some(glyph) = icon_cache.get_custom_folder_icon(&file.path, file.is_dir) {
-        let font_id = egui::FontId::new(
-            icon_size.x,
-            egui::FontFamily::Proportional,
-        );
-
-        ui.painter().text(
-            icon_area.center(),
-            egui::Align2::CENTER_CENTER,
-            glyph,
-            font_id,
-            icon_color,
-        );
-    } else if let Some(icon) = icon_cache.get(&file.path, file.is_dir) {
-        let icon_pos = egui::pos2(
-            icon_area.center().x - icon_size.x * 0.5,
-            icon_area.center().y - icon_size.y * 0.5,
-        );
-
-        ui.painter().image(
-            (&icon).into(),
-            egui::Rect::from_min_size(icon_pos, icon_size),
-            egui::Rect::from_min_size(
-                egui::pos2(0.0, 0.0),
-                egui::vec2(1.0, 1.0),
-            ),
-            icon_color,
-        );
-    }
-
-    icon_area_width
-} else {
-    TEXT_LEFT_PADDING
-};
 
     let text_rect =
         egui::Rect::from_min_max(egui::pos2(rect.min.x + text_offset_x, rect.min.y), rect.max);

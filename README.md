@@ -274,9 +274,9 @@
 - [x] Explorer view displays objects that have tags applied to them based on the tag color 
 - [x] Added native Recycle Bin support
 - [x] New Explorer view that displays media files in small/medium/large/extra large format
+- [x] Add special icons for Desktop, Downloads, My User Home, Music, Videos, My Documents
 
 ### 🚀 Upcoming Alpha Features
-- [ ] Add special icons for Desktop, Downloads, My User Home, Music, Videos, My Documents
 - [ ] Tab re-ordering via drag'n'drop
 - [ ] Support multi-column sorting (smart grouping)
 - [ ] Add multi-tagging of objects

@@ -720,7 +720,12 @@ fn draw_insert_line(ui: &mut egui::Ui, palette: &ThemePalette, y: f32, left: f32
     );
 }
 
-pub fn draw_container_header(i18n: &I18n, ui: &mut egui::Ui, palette: &ThemePalette, hwnd: Option<HWND>) {
+pub fn draw_container_header(
+    i18n: &I18n,
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+    hwnd: Option<HWND>,
+) {
     let controls_width = 64.0;
     let full_width = ui.available_width();
     let tabs_width = (full_width - controls_width).max(0.0);

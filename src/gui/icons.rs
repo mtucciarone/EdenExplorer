@@ -1,6 +1,7 @@
 use crate::core::portable;
 use crossbeam_channel::{Sender, unbounded};
 use eframe::egui;
+use egui_phosphor::regular;
 use std::os::windows::ffi::OsStrExt;
 use std::{
     collections::HashMap,
@@ -28,7 +29,6 @@ use windows::{
     },
     core::PCWSTR,
 };
-use egui_phosphor::regular;
 
 struct IconRequest {
     path: PathBuf,
@@ -141,11 +141,7 @@ impl IconCache {
     }
 
     /// Returns a custom Phosphor icon for folders with a recognized name.
-    pub fn get_custom_folder_icon(
-        &self,
-        path: &Path,
-        is_dir: bool,
-    ) -> Option<&'static str> {
+    pub fn get_custom_folder_icon(&self, path: &Path, is_dir: bool) -> Option<&'static str> {
         if !is_dir {
             return None;
         }

@@ -458,63 +458,45 @@ pub fn draw_sidebar_item(
     }
 
     // --- Icon ---
-let icon_size = egui::vec2(palette.sidebar_icon_size, palette.sidebar_icon_size);
-let icon_padding = 4.0;
+    let icon_size = egui::vec2(palette.sidebar_icon_size, palette.sidebar_icon_size);
+    let icon_padding = 4.0;
 
-let icon_pos = egui::pos2(
-    rect.min.x + 4.0,
-    rect.center().y - icon_size.y / 2.0,
-);
+    let icon_pos = egui::pos2(rect.min.x + 4.0, rect.center().y - icon_size.y / 2.0);
 
-let text_offset_x = if is_recycle_bin {
-    ui.painter().text(
-        egui::pos2(
-            icon_pos.x + icon_size.x * 0.5,
-            rect.center().y,
-        ),
-        egui::Align2::CENTER_CENTER,
-        regular::TRASH,
-        egui::FontId::new(
-            icon_size.y * 0.85,
-            egui::FontFamily::Proportional,
-        ),
-        palette.icon_color,
-    );
+    let text_offset_x = if is_recycle_bin {
+        ui.painter().text(
+            egui::pos2(icon_pos.x + icon_size.x * 0.5, rect.center().y),
+            egui::Align2::CENTER_CENTER,
+            regular::TRASH,
+            egui::FontId::new(icon_size.y * 0.85, egui::FontFamily::Proportional),
+            palette.icon_color,
+        );
 
-    palette.text_size + icon_size.x + icon_padding
-} else if let Some(glyph) = icon_cache.get_custom_folder_icon(path, is_dir) {
-    // Custom Phosphor icon for recognized folders.
-    ui.painter().text(
-        egui::pos2(
-            icon_pos.x + icon_size.x * 0.5,
-            rect.center().y,
-        ),
-        egui::Align2::CENTER_CENTER,
-        glyph,
-        egui::FontId::new(
-            icon_size.y,
-            egui::FontFamily::Proportional,
-        ),
-        palette.icon_color,
-    );
+        palette.text_size + icon_size.x + icon_padding
+    } else if let Some(glyph) = icon_cache.get_custom_folder_icon(path, is_dir) {
+        // Custom Phosphor icon for recognized folders.
+        ui.painter().text(
+            egui::pos2(icon_pos.x + icon_size.x * 0.5, rect.center().y),
+            egui::Align2::CENTER_CENTER,
+            glyph,
+            egui::FontId::new(icon_size.y, egui::FontFamily::Proportional),
+            palette.icon_color,
+        );
 
-    palette.text_size + icon_size.x + icon_padding
-} else if let Some(icon) = icon_cache.get(path, is_dir) {
-    // Windows shell icon fallback.
-    ui.painter().image(
-        (&icon).into(),
-        egui::Rect::from_min_size(icon_pos, icon_size),
-        egui::Rect::from_min_size(
-            egui::pos2(0.0, 0.0),
-            egui::vec2(1.0, 1.0),
-        ),
-        egui::Color32::WHITE,
-    );
+        palette.text_size + icon_size.x + icon_padding
+    } else if let Some(icon) = icon_cache.get(path, is_dir) {
+        // Windows shell icon fallback.
+        ui.painter().image(
+            (&icon).into(),
+            egui::Rect::from_min_size(icon_pos, icon_size),
+            egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
 
-    palette.text_size + icon_size.x + icon_padding
-} else {
-    palette.text_size + 20.0 + icon_padding
-};
+        palette.text_size + icon_size.x + icon_padding
+    } else {
+        palette.text_size + 20.0 + icon_padding
+    };
 
     // --- Text ---
     let text_width = rect.width() - text_offset_x;

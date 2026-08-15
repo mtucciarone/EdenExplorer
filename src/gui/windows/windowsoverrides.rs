@@ -1,6 +1,7 @@
 use crate::core::drives::mark_drive_cache_dirty;
 use crate::core::indexer::{WindowSizeMode, load_app_settings, save_app_settings};
 use crate::core::launch::receive_copydata;
+use crate::gui::i18n::I18n;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::clickable_windows_icon;
 use eframe::egui;
@@ -20,7 +21,6 @@ use windows::Win32::System::DataExchange::{
 };
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::WindowsAndMessaging::*;
-use crate::gui::i18n::I18n;
 
 const MIN_WIDTH: i32 = 600;
 const MIN_HEIGHT: i32 = 400;
@@ -405,7 +405,12 @@ fn get_y_lparam(lparam: LPARAM) -> i32 {
     ((lparam.0 >> 16) & 0xFFFF) as i16 as i32
 }
 
-pub fn handle_draw_windows_buttons(i18n: &I18n, ui: &mut egui::Ui, hwnd: Option<HWND>, palette: &ThemePalette) {
+pub fn handle_draw_windows_buttons(
+    i18n: &I18n,
+    ui: &mut egui::Ui,
+    hwnd: Option<HWND>,
+    palette: &ThemePalette,
+) {
     let old_item_spacing_x = ui.spacing().item_spacing.x;
     ui.spacing_mut().item_spacing.x = 0.0;
 
@@ -434,9 +439,13 @@ pub fn handle_draw_windows_buttons(i18n: &I18n, ui: &mut egui::Ui, hwnd: Option<
 
         if clickable_windows_icon(ui, maximize_icon, palette.primary, palette)
             .on_hover_text(
-                egui::RichText::new(if is_maximized { i18n.tr("restore") } else { i18n.tr("maximize") })
-                    .size(palette.tooltip_text_size)
-                    .color(palette.tooltip_text_color),
+                egui::RichText::new(if is_maximized {
+                    i18n.tr("restore")
+                } else {
+                    i18n.tr("maximize")
+                })
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
             )
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .clicked()
