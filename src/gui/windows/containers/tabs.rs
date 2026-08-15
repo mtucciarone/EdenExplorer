@@ -1,28 +1,32 @@
 use crate::core::fs::{MY_PC_PATH, MY_RECYCLE_BIN_PATH};
 use crate::gui::i18n::I18n;
 use crate::gui::theme::ThemePalette;
-use crate::gui::utils::{clickable_icon, truncate_item_text};
+use crate::gui::utils::truncate_item_text;
 use crate::gui::windows::containers::structs::{TabInfo, TabsAction};
-use crate::gui::windows::windowsoverrides::{
-    handle_draw_windows_buttons, toggle_window_fullscreen,
-};
+use crate::gui::windows::windowsoverrides::toggle_window_fullscreen;
 use eframe::egui;
 use egui::{FontFamily, FontId};
 use egui_phosphor::{fill, regular};
 use std::path::PathBuf;
 use windows::Win32::Foundation::HWND;
 
+const PREFERRED_TAB_WIDTH: f32 = 180.0;
+const MIN_TAB_WIDTH: f32 = 80.0;
+const ADD_TAB_WIDTH: f32 = 28.0;
+const TAB_HEIGHT: f32 = 32.0;
+const TAB_NAV_BUTTON_WIDTH: f32 = 28.0;
+
 pub fn draw_tabs(
     ui: &mut egui::Ui,
     i18n: &I18n,
     tabs: &[TabInfo],
+    tab_scroll_offset: f32,
     active_id: u64,
     palette: &ThemePalette,
     hwnd: Option<HWND>,
     scroll_to_id: Option<u64>,
     drag_active: bool,
     drag_hover_target: Option<PathBuf>,
-    has_split: bool,
 ) -> TabsAction {
     let mut action: TabsAction = TabsAction::default();
     let pointer_pos = ui.input(|i| i.pointer.interact_pos().or_else(|| i.pointer.hover_pos()));
@@ -30,32 +34,93 @@ pub fn draw_tabs(
         ui.input(|i| i.pointer.any_released() && i.pointer.interact_pos().is_some());
     let hovered_target_ref = drag_hover_target.as_ref();
     let mut tab_drop_target: Option<PathBuf> = None;
-    let controls_width = 90.0;
+    let windows_buttons_width = 45.0 * 3.0;
+    let split_button_width = 32.0;
+    let controls_width = windows_buttons_width + split_button_width;
     let full_width = ui.available_width();
-    let tabs_width = (full_width - controls_width).max(0.0);
+    let spacing = ui.spacing().item_spacing.x;
+    // Reserve the + button outside the tab viewport.
+    let tab_count = tabs.len() as f32;
+    let gaps = (tab_count - 1.0).max(0.0);
+    // Space reserved for the entire tab region.
+    // This includes the tabs and, when needed, the left/right navigation buttons.
+    // The + button and window controls remain outside this region.
+    let tab_region_width = (full_width - controls_width - ADD_TAB_WIDTH - spacing).max(0.0);
+
+    // Determine how wide the tabs can be when there are no navigation buttons.
+    let natural_tab_width = if tab_count > 0.0 {
+        ((tab_region_width - gaps * spacing) / tab_count).max(0.0)
+    } else {
+        PREFERRED_TAB_WIDTH
+    };
+
+    let tabs_need_scroll = tab_count > 0.0 && natural_tab_width < MIN_TAB_WIDTH;
+
+    let tab_width = if tabs_need_scroll {
+        MIN_TAB_WIDTH
+    } else {
+        natural_tab_width.min(PREFERRED_TAB_WIDTH)
+    };
+
+    let tabs_content_width = tab_count * tab_width + gaps * spacing;
+
+    // The navigation buttons live INSIDE the fixed tab region.
+    let tab_view_width = if tabs_need_scroll {
+        (tab_region_width - TAB_NAV_BUTTON_WIDTH * 2.0).max(0.0)
+    } else {
+        tabs_content_width
+    };
+
+    let max_scroll_offset = (tabs_content_width - tab_view_width).max(0.0);
+
+    let effective_scroll_offset = if tabs_need_scroll {
+        tab_scroll_offset.min(max_scroll_offset)
+    } else {
+        0.0
+    };
 
     ui.allocate_ui_with_layout(
         egui::vec2(ui.available_width(), 32.0),
         egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
+            ui.add_space(-2.0);
+            // ---------- LEFT NAVIGATION ----------
+            if tabs_need_scroll && handle_draw_nav_button(ui, palette, "left") {
+                action.scroll_left = true;
+            }
+            // ---------- TABS ----------
             ui.allocate_ui_with_layout(
-                egui::vec2(tabs_width, 32.0),
+                egui::vec2(tab_view_width, 32.0),
                 egui::Layout::left_to_right(egui::Align::Min),
                 |ui| {
                     let tabs_rect = ui.available_rect_before_wrap();
+
+                    let pointer_over_tabs = ui
+                        .input(|i| i.pointer.hover_pos())
+                        .is_some_and(|pos| tabs_rect.contains(pos));
+
+                    if pointer_over_tabs && tabs_need_scroll {
+                        let scroll_delta = ui.input(|i| i.smooth_scroll_delta.y);
+
+                        if scroll_delta > 0.0 {
+                            action.scroll_left = true;
+                        } else if scroll_delta < 0.0 {
+                            action.scroll_right = true;
+                        }
+                    }
                     egui::ScrollArea::horizontal()
                         .id_salt("tabs_scroll")
                         .auto_shrink([false, true])
                         .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                        .scroll_offset(egui::vec2(effective_scroll_offset, 0.0))
                         .show(ui, |ui| {
-                            ui.add_space(-2.0);
                             ui.horizontal(|ui| {
                                 for tab in tabs {
-                                    let tab_width = 140.0;
                                     let (rect, resp) = ui.allocate_exact_size(
-                                        egui::vec2(tab_width, 28.0),
+                                        egui::vec2(tab_width, TAB_HEIGHT),
                                         egui::Sense::click(),
                                     );
+
                                     if Some(tab.id) == scroll_to_id {
                                         resp.scroll_to_me(Some(egui::Align::Center));
                                     }
@@ -68,6 +133,7 @@ pub fn draw_tabs(
                                                     .map(|pointer| rect.contains(pointer))
                                                     .unwrap_or(false)
                                             });
+
                                         if hovered {
                                             let painter = ui
                                                 .ctx()
@@ -76,6 +142,7 @@ pub fn draw_tabs(
                                                     ui.id().with("tab_drop_bg").with(tab.id),
                                                 ))
                                                 .with_clip_rect(ui.clip_rect());
+
                                             painter.rect_filled(
                                                 rect,
                                                 egui::CornerRadius::same(palette.medium_radius),
@@ -100,73 +167,48 @@ pub fn draw_tabs(
                                     );
                                 }
                             });
-                            handle_draw_add_new_tab_button(ui, palette, &mut action);
                         });
-
-                    // Drag region: empty space to the right of the last tab
-                    let tab_width = 140.0;
-                    let add_tab_width = 28.0;
-                    let spacing = ui.spacing().item_spacing.x;
-                    let tab_count = tabs.len() as f32;
-                    let gaps = if tab_count > 0.0 {
-                        tab_count - 1.0
-                    } else {
-                        0.0
-                    };
-                    let content_width =
-                        tab_count * tab_width + gaps * spacing + spacing + add_tab_width;
-
-                    if content_width < tabs_rect.width() {
-                        let empty_left = tabs_rect.min.x + content_width;
-                        let drag_rect = egui::Rect::from_min_max(
-                            egui::pos2(empty_left, tabs_rect.min.y),
-                            tabs_rect.max,
-                        );
-                        if drag_rect.width() > 4.0 {
-                            let resp = ui.allocate_rect(drag_rect, egui::Sense::click_and_drag());
-                            if resp.double_clicked() {
-                                if let Some(hwnd) = hwnd {
-                                    toggle_window_fullscreen(hwnd);
-                                }
-                            }
-                            if resp.drag_started() || resp.dragged() {
-                                ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
-                            }
-                            if resp.hovered() {
-                                ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
-                            }
-                        }
-                    }
                 },
             );
 
-            // --- RIGHT SIDE ---
-            ui.allocate_ui_with_layout(
-                egui::vec2(controls_width, 32.0),
-                egui::Layout::right_to_left(egui::Align::Center),
-                |ui| {
-                    handle_draw_windows_buttons(ui, hwnd, palette);
-                    let (icon, tooltip_key) = if has_split {
-                        (regular::ARROWS_MERGE, "tooltip_close_split")
-                    } else {
-                        (regular::COLUMNS_PLUS_RIGHT, "tooltip_open_split")
-                    };
-                    if clickable_icon(ui, icon, palette.primary)
-                        .on_hover_text(
-                            egui::RichText::new(i18n.tr(tooltip_key))
-                                .size(palette.tooltip_text_size)
-                                .color(palette.tooltip_text_color),
-                        )
-                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .clicked()
-                    {
-                        action.toggle_split = true;
+            // ---------- RIGHT NAVIGATION ----------
+            if tabs_need_scroll && handle_draw_nav_button(ui, palette, "right") {
+                action.scroll_right = true;
+            }
+
+            // ---------- ADD NEW TAB BUTTON ----------
+            handle_draw_add_new_tab_button(ui, palette, &mut action);
+
+            // ---------- WINDOWS DRAG AREA ----------
+            let drag_width = ui.available_width();
+
+            if drag_width > 4.0 {
+                let drag_rect = ui.allocate_space(egui::vec2(drag_width, 32.0)).1;
+
+                let resp = ui.interact(
+                    drag_rect,
+                    ui.id().with("tabs_window_drag_area"),
+                    egui::Sense::click_and_drag(),
+                );
+
+                if resp.double_clicked() {
+                    if let Some(hwnd) = hwnd {
+                        toggle_window_fullscreen(hwnd);
                     }
-                },
-            );
+                }
+
+                if resp.drag_started() || resp.dragged() {
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                }
+
+                if resp.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                }
+            }
         },
     );
     action.move_files_to_tab_dir = tab_drop_target;
+    action.max_scroll_offset = max_scroll_offset;
     action
 }
 
@@ -343,7 +385,7 @@ fn handle_draw_add_new_tab_button(
     palette: &ThemePalette,
     action: &mut TabsAction,
 ) {
-    let size = egui::vec2(28.0, 28.0);
+    let size = egui::vec2(32.0, 32.0);
 
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
 
@@ -384,6 +426,48 @@ fn handle_draw_add_new_tab_button(
     if resp.clicked() {
         action.open_new = true;
     }
+}
+
+fn handle_draw_nav_button(ui: &mut egui::Ui, palette: &ThemePalette, direction: &str) -> bool {
+    let size = egui::vec2(32.0, 32.0);
+
+    let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
+
+    let rect = egui::Rect::from_min_max(rect.min.round(), rect.max.round());
+
+    let hovered = resp.hovered();
+
+    let fill = if hovered {
+        ui.visuals().widgets.hovered.bg_fill
+    } else {
+        egui::Color32::TRANSPARENT
+    };
+
+    let stroke = if hovered {
+        egui::Stroke::new(1.0, palette.borders_active)
+    } else {
+        egui::Stroke::new(1.0, palette.borders_default)
+    };
+
+    let rounding = egui::CornerRadius {
+        nw: palette.tab_inactive_radius.nw,
+        ne: palette.tab_inactive_radius.ne,
+        sw: 0,
+        se: 0,
+    };
+
+    let painter = ui.painter();
+
+    painter.rect_filled(rect, rounding, fill);
+    painter.rect_stroke(rect, rounding, stroke, egui::StrokeKind::Inside);
+
+    let _ = tab_nav_button(ui, rect.shrink(3.0), resp.clone(), palette, direction);
+
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+
+    resp.clicked()
 }
 
 fn tab_close_button(
@@ -471,6 +555,53 @@ fn tab_add_button(
         rect.center(),
         egui::Align2::CENTER_CENTER,
         regular::PLUS,
+        font_id,
+        color,
+    );
+
+    if hovered {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+
+    resp
+}
+
+fn tab_nav_button(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    resp: egui::Response,
+    palette: &ThemePalette,
+    direction: &str,
+) -> egui::Response {
+    let hovered = resp.hovered();
+
+    let bg = if hovered {
+        palette.tab_add_hover
+    } else {
+        egui::Color32::TRANSPARENT
+    };
+
+    let visual_rect = rect.shrink(4.0);
+
+    ui.painter()
+        .rect_filled(visual_rect, palette.tab_button_radius, bg);
+
+    let color = if hovered {
+        palette.icon_colored_hover
+    } else {
+        palette.icon_color
+    };
+
+    let font_id = FontId::new(palette.tab_icon_size, FontFamily::Proportional);
+
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        if direction == "left" {
+            regular::CARET_LEFT
+        } else {
+            regular::CARET_RIGHT
+        },
         font_id,
         color,
     );

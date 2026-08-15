@@ -171,3 +171,7 @@ launch-window-not-ready =
     運行中的 EdenExplorer 窗口未準備好。
 launch-window-rejected = 
     運行中的 EdenExplorer 窗口拒絕了請求。
+theme_sidebar_item_spacing_y = 側邊欄項目垂直間距
+restore = 復原
+maximize = 最大化
+minimize = 最小化

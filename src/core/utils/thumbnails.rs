@@ -16,7 +16,7 @@ use windows::Win32::System::Com::{
 };
 use windows::Win32::UI::Shell::{
     ISharedBitmap, IShellItem, IThumbnailCache, LocalThumbnailCache, SHCreateItemFromParsingName,
-    WTS_CACHEFLAGS, WTS_EXTRACT, WTS_FASTEXTRACT, WTS_FLAGS, WTS_INCACHEONLY, WTS_THUMBNAILID,
+    WTS_CACHEFLAGS, WTS_EXTRACT, WTS_FLAGS, WTS_INCACHEONLY, WTS_THUMBNAILID,
 };
 use windows::core::{Error, HRESULT, HSTRING, Result};
 
@@ -199,26 +199,37 @@ fn run_thumbnail_job(job: ThumbnailJob, tx: Sender<ThumbnailResult>) {
 
 fn extract_thumbnail(path: &Path) -> Result<ThumbnailImage> {
     let _com = ComGuard::init()?;
+
     let shell_item: IShellItem = unsafe {
         SHCreateItemFromParsingName(&HSTRING::from(path.to_string_lossy().as_ref()), None)?
     };
+
     let cache: IThumbnailCache =
         unsafe { CoCreateInstance(&LocalThumbnailCache, None, CLSCTX_INPROC_SERVER)? };
 
-    for flags in [WTS_INCACHEONLY, WTS_FASTEXTRACT, WTS_EXTRACT] {
-        if let Ok(image) = get_thumbnail_with_flags(&cache, &shell_item, flags) {
-            return Ok(image);
+    if let Ok(result) = get_thumbnail_with_flags(&cache, &shell_item, WTS_INCACHEONLY) {
+        if !result.low_quality {
+            return Ok(result.image);
         }
     }
 
+    if let Ok(result) = get_thumbnail_with_flags(&cache, &shell_item, WTS_EXTRACT) {
+        return Ok(result.image);
+    }
+
     Err(thumbnail_error("thumbnail unavailable"))
+}
+
+struct ExtractedThumbnail {
+    image: ThumbnailImage,
+    low_quality: bool,
 }
 
 fn get_thumbnail_with_flags(
     cache: &IThumbnailCache,
     shell_item: &IShellItem,
     flags: WTS_FLAGS,
-) -> Result<ThumbnailImage> {
+) -> Result<ExtractedThumbnail> {
     let mut bitmap: Option<ISharedBitmap> = None;
     let mut out_flags = WTS_CACHEFLAGS::default();
     let mut thumbnail_id = WTS_THUMBNAILID::default();
@@ -238,7 +249,12 @@ fn get_thumbnail_with_flags(
         return Err(thumbnail_error("thumbnail bitmap missing"));
     };
 
-    shared_bitmap_to_rgba(&bitmap)
+    let image = shared_bitmap_to_rgba(&bitmap)?;
+
+    let low_quality = image.size[0] < THUMBNAIL_SOURCE_SIZE as usize
+        || image.size[1] < THUMBNAIL_SOURCE_SIZE as usize;
+
+    Ok(ExtractedThumbnail { image, low_quality })
 }
 
 fn shared_bitmap_to_rgba(bitmap: &ISharedBitmap) -> Result<ThumbnailImage> {

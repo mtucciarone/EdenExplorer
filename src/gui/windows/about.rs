@@ -43,10 +43,14 @@ pub fn draw_about_window(
         .resizable(false)
         .fixed_size([400.0, 400.0])
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-        .frame(egui::Frame::popup(&ctx.style()).corner_radius(egui::CornerRadius::same(8)))
+        .frame(
+            egui::Frame::popup(&ctx.style_of(ctx.theme()))
+                .corner_radius(egui::CornerRadius::same(8)),
+        )
         .show(ctx, |ui| {
             // 🎯 Smaller font override (fix giant UI)
-            let mut style = (*ui.ctx().style()).clone();
+            let mut style = (**ui.style()).clone();
+
             style.text_styles = [
                 (egui::TextStyle::Heading, egui::FontId::proportional(14.0)),
                 (
@@ -63,10 +67,14 @@ pub fn draw_about_window(
                 ),
             ]
             .into();
+
             ui.set_style(style);
+
             ui.set_width(ui.available_width());
+
             ui.vertical(|ui| {
                 ui.set_width(ui.available_width());
+
                 let font_id = FontId::new(palette.text_size, egui::FontFamily::Proportional);
 
                 ui.label(
@@ -75,7 +83,9 @@ pub fn draw_about_window(
                         .size(palette.text_size)
                         .color(palette.text_normal),
                 );
+
                 ui.add_space(8.0);
+
                 ui.label(
                     egui::RichText::new(format!(
                         "{}: Matthew Tucciarone (GitHub: mtucciarone)",
@@ -85,6 +95,7 @@ pub fn draw_about_window(
                     .size(palette.text_size)
                     .color(palette.text_normal),
                 );
+
                 ui.label(
                     egui::RichText::new(format!(
                         "{}: https://github.com/mtucciarone/EdenExplorer",
@@ -94,6 +105,7 @@ pub fn draw_about_window(
                     .size(palette.text_size)
                     .color(palette.text_normal),
                 );
+
                 ui.label(
                     egui::RichText::new(format!(
                         "{}: {}",
@@ -104,13 +116,16 @@ pub fn draw_about_window(
                     .size(palette.text_size)
                     .color(palette.text_normal),
                 );
+
                 ui.label(
                     egui::RichText::new(format!("{}: MIT", &i18n.tr("about_license")))
                         .font(font_id.clone())
                         .size(palette.text_size)
                         .color(palette.text_normal),
                 );
+
                 ui.separator();
+
                 // Footer
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -124,6 +139,7 @@ pub fn draw_about_window(
                 });
             });
         });
+
     // Update the open state based on should_close
     if should_close {
         settings.open = false;

@@ -1,5 +1,6 @@
 use crate::core::fs::{DateStyle, MY_PC_PATH};
 use crate::gui::theme::{THEME_VERSION, ThemePalette, get_default_palette};
+use crate::gui::windows::containers::enums::ItemViewerHeaderColumn;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -51,13 +52,17 @@ struct AppSettingsSnapshot {
     #[serde(default = "default_language")]
     language: String,
     #[serde(default = "default_item_viewer_file_column_order")]
-    item_viewer_file_column_order:
-        Vec<crate::gui::windows::containers::enums::ItemViewerHeaderColumn>,
+    item_viewer_file_column_order: Vec<ItemViewerHeaderColumn>,
     #[serde(default = "default_item_viewer_drive_column_order")]
-    item_viewer_drive_column_order:
-        Vec<crate::gui::windows::containers::enums::ItemViewerHeaderColumn>,
+    item_viewer_drive_column_order: Vec<ItemViewerHeaderColumn>,
     #[serde(default = "default_recycle_bin_column_order")]
-    recycle_bin_column_order: Vec<crate::gui::windows::containers::enums::ItemViewerHeaderColumn>,
+    recycle_bin_column_order: Vec<ItemViewerHeaderColumn>,
+    #[serde(default = "default_item_viewer_file_column_size")]
+    item_viewer_file_column_sizes: Vec<f32>,
+    #[serde(default = "default_item_viewer_drive_column_size")]
+    item_viewer_drive_column_sizes: Vec<f32>,
+    #[serde(default = "default_recycle_bin_column_size")]
+    recycle_bin_column_sizes: Vec<f32>,
 }
 
 // Legacy snapshot struct for deserializing old settings with HalfScreen
@@ -98,6 +103,9 @@ impl From<LegacyAppSettingsSnapshot> for AppSettingsSnapshot {
             item_viewer_file_column_order: default_item_viewer_file_column_order(),
             item_viewer_drive_column_order: default_item_viewer_drive_column_order(),
             recycle_bin_column_order: default_recycle_bin_column_order(),
+            item_viewer_file_column_sizes: default_item_viewer_file_column_size(),
+            item_viewer_drive_column_sizes: default_item_viewer_drive_column_size(),
+            recycle_bin_column_sizes: default_recycle_bin_column_size(),
         }
     }
 }
@@ -184,33 +192,42 @@ fn default_language() -> String {
     "en-US".to_string()
 }
 
-fn default_item_viewer_file_column_order()
--> Vec<crate::gui::windows::containers::enums::ItemViewerHeaderColumn> {
+fn default_item_viewer_file_column_order() -> Vec<ItemViewerHeaderColumn> {
     vec![
-        crate::gui::windows::containers::enums::ItemViewerHeaderColumn::Type,
-        crate::gui::windows::containers::enums::ItemViewerHeaderColumn::Size,
-        crate::gui::windows::containers::enums::ItemViewerHeaderColumn::Modified,
-        crate::gui::windows::containers::enums::ItemViewerHeaderColumn::Created,
+        ItemViewerHeaderColumn::Type,
+        ItemViewerHeaderColumn::Size,
+        ItemViewerHeaderColumn::Modified,
+        ItemViewerHeaderColumn::Created,
     ]
 }
 
-fn default_item_viewer_drive_column_order()
--> Vec<crate::gui::windows::containers::enums::ItemViewerHeaderColumn> {
+fn default_item_viewer_drive_column_order() -> Vec<ItemViewerHeaderColumn> {
     vec![
-        crate::gui::windows::containers::enums::ItemViewerHeaderColumn::Type,
-        crate::gui::windows::containers::enums::ItemViewerHeaderColumn::Size,
-        crate::gui::windows::containers::enums::ItemViewerHeaderColumn::Usage,
+        ItemViewerHeaderColumn::Type,
+        ItemViewerHeaderColumn::Size,
+        ItemViewerHeaderColumn::Usage,
     ]
 }
 
-fn default_recycle_bin_column_order()
--> Vec<crate::gui::windows::containers::enums::ItemViewerHeaderColumn> {
+fn default_recycle_bin_column_order() -> Vec<ItemViewerHeaderColumn> {
     vec![
-        crate::gui::windows::containers::enums::ItemViewerHeaderColumn::Type,
-        crate::gui::windows::containers::enums::ItemViewerHeaderColumn::Size,
-        crate::gui::windows::containers::enums::ItemViewerHeaderColumn::Deleted,
-        crate::gui::windows::containers::enums::ItemViewerHeaderColumn::Created,
+        ItemViewerHeaderColumn::Type,
+        ItemViewerHeaderColumn::Size,
+        ItemViewerHeaderColumn::Deleted,
+        ItemViewerHeaderColumn::Created,
     ]
+}
+
+pub fn default_item_viewer_file_column_size() -> Vec<f32> {
+    vec![180.0, 60.0, 75.0, 100.0, 100.0]
+}
+
+pub fn default_item_viewer_drive_column_size() -> Vec<f32> {
+    vec![180.0, 120.0, 150.0]
+}
+
+pub fn default_recycle_bin_column_size() -> Vec<f32> {
+    vec![180.0, 60.0, 120.0, 100.0, 100.0]
 }
 
 fn default_date_style() -> DateStyle {
@@ -331,9 +348,12 @@ pub fn load_app_settings() -> (
     bool,
     String,
     DateStyle,
-    Vec<crate::gui::windows::containers::enums::ItemViewerHeaderColumn>,
-    Vec<crate::gui::windows::containers::enums::ItemViewerHeaderColumn>,
-    Vec<crate::gui::windows::containers::enums::ItemViewerHeaderColumn>,
+    Vec<ItemViewerHeaderColumn>,
+    Vec<ItemViewerHeaderColumn>,
+    Vec<ItemViewerHeaderColumn>,
+    Vec<f32>,
+    Vec<f32>,
+    Vec<f32>,
 ) {
     let default_path = PathBuf::from(MY_PC_PATH);
 
@@ -369,6 +389,9 @@ pub fn load_app_settings() -> (
         snapshot.item_viewer_file_column_order,
         snapshot.item_viewer_drive_column_order,
         snapshot.recycle_bin_column_order,
+        snapshot.item_viewer_file_column_sizes,
+        snapshot.item_viewer_drive_column_sizes,
+        snapshot.recycle_bin_column_sizes,
     )
 }
 
@@ -388,9 +411,12 @@ fn default_app_settings(
     bool,
     String,
     DateStyle,
-    Vec<crate::gui::windows::containers::enums::ItemViewerHeaderColumn>,
-    Vec<crate::gui::windows::containers::enums::ItemViewerHeaderColumn>,
-    Vec<crate::gui::windows::containers::enums::ItemViewerHeaderColumn>,
+    Vec<ItemViewerHeaderColumn>,
+    Vec<ItemViewerHeaderColumn>,
+    Vec<ItemViewerHeaderColumn>,
+    Vec<f32>,
+    Vec<f32>,
+    Vec<f32>,
 ) {
     (
         true,
@@ -409,6 +435,9 @@ fn default_app_settings(
         default_item_viewer_file_column_order(),
         default_item_viewer_drive_column_order(),
         default_recycle_bin_column_order(),
+        default_item_viewer_file_column_size(),
+        default_item_viewer_drive_column_size(),
+        default_recycle_bin_column_size(),
     )
 }
 
@@ -426,9 +455,12 @@ pub fn save_app_settings(
     sort_ascending: bool,
     language: &str,
     date_style: DateStyle,
-    item_viewer_file_column_order: &[crate::gui::windows::containers::enums::ItemViewerHeaderColumn],
-    item_viewer_drive_column_order: &[crate::gui::windows::containers::enums::ItemViewerHeaderColumn],
-    recycle_bin_column_order: &[crate::gui::windows::containers::enums::ItemViewerHeaderColumn],
+    item_viewer_file_column_order: &[ItemViewerHeaderColumn],
+    item_viewer_drive_column_order: &[ItemViewerHeaderColumn],
+    recycle_bin_column_order: &[ItemViewerHeaderColumn],
+    item_viewer_file_column_sizes: &[f32],
+    item_viewer_drive_column_sizes: &[f32],
+    recycle_bin_column_sizes: &[f32],
 ) {
     let path = match settings_cache_path() {
         Some(path) => path,
@@ -452,6 +484,9 @@ pub fn save_app_settings(
         item_viewer_file_column_order: item_viewer_file_column_order.to_vec(),
         item_viewer_drive_column_order: item_viewer_drive_column_order.to_vec(),
         recycle_bin_column_order: recycle_bin_column_order.to_vec(),
+        item_viewer_file_column_sizes: item_viewer_file_column_sizes.to_vec(),
+        item_viewer_drive_column_sizes: item_viewer_drive_column_sizes.to_vec(),
+        recycle_bin_column_sizes: recycle_bin_column_sizes.to_vec(),
     };
     if let Ok(data) = postcard::to_allocvec(&snapshot) {
         let _ = std::fs::write(path, data);

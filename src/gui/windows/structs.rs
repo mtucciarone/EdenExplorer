@@ -55,6 +55,9 @@ pub struct AppSettings {
     pub item_viewer_file_column_order: Vec<ItemViewerHeaderColumn>,
     pub item_viewer_drive_column_order: Vec<ItemViewerHeaderColumn>,
     pub recycle_bin_column_order: Vec<ItemViewerHeaderColumn>,
+    pub item_viewer_file_column_sizes: Vec<f32>,
+    pub item_viewer_drive_column_sizes: Vec<f32>,
+    pub recycle_bin_column_sizes: Vec<f32>,
 }
 
 #[derive(Default)]

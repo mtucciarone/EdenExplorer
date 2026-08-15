@@ -2,7 +2,9 @@ use crate::core::drives::is_raw_physical_drive_path;
 use crate::core::fs::FileItem;
 use crate::core::utils::text::apply_eden_text_overrides;
 use crate::core::utils::thumbnails::{ThumbnailPriority, ThumbnailService};
-use crate::core::utils::widgets::{apply_eden_visual_overrides, draw_dropdown};
+use crate::core::utils::widgets::{
+    apply_eden_dropdown_visual_color_overrides, apply_eden_visual_overrides, draw_dropdown,
+};
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
@@ -24,8 +26,6 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use windows::Win32::Foundation::HWND;
 
-const TILE_GAP: f32 = 12.0;
-const TILE_PADDING: f32 = 10.0;
 const LABEL_HEIGHT: f32 = 34.0;
 const TOOLBAR_HEIGHT: f32 = 24.0;
 const GALLERY_TOOLBAR_GAP: f32 = 6.0;
@@ -96,12 +96,14 @@ pub fn draw_gallery_view(
     let pointer_released = ui.ctx().input(|i| i.pointer.primary_released());
     let hovered_target_ref = drag_hover_target.as_ref();
     let thumb_size = gallery_state.thumbnail_size.pixel_size();
-    let tile_width = thumb_size + TILE_PADDING * 2.0 + 26.0;
-    let tile_height = thumb_size + TILE_PADDING * 2.0 + LABEL_HEIGHT;
-    let row_pitch = tile_height + TILE_GAP;
-    let col_pitch = tile_width + TILE_GAP;
+    let tile_width = thumb_size + gallery_state.thumbnail_padding * 2.0 + 26.0;
+    let tile_height = thumb_size + gallery_state.thumbnail_padding * 2.0 + LABEL_HEIGHT;
+    let row_pitch = tile_height + gallery_state.thumbnail_gap;
+    let col_pitch = tile_width + gallery_state.thumbnail_gap;
     let available_width = ui.available_width().max(tile_width);
-    let columns = ((available_width + TILE_GAP) / col_pitch).floor().max(1.0) as usize;
+    let columns = ((available_width + gallery_state.thumbnail_gap) / col_pitch)
+        .floor()
+        .max(1.0) as usize;
     let rows = filtered_indices.len().div_ceil(columns);
     let content_height = (rows as f32 * row_pitch).max(ui.available_height());
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
@@ -185,6 +187,7 @@ pub fn draw_gallery_view(
                             is_cut_mode,
                             palette,
                             &font_id,
+                            &gallery_state,
                         );
 
                         if let Some(a) = tile_action {
@@ -411,8 +414,14 @@ fn draw_gallery_toolbar(
             .max_rect(rect)
             .layout(egui::Layout::left_to_right(egui::Align::Min)),
         |ui| {
+            ui.add_space(2.25);
             apply_eden_visual_overrides(ui, palette);
+            apply_eden_dropdown_visual_color_overrides(ui, palette);
             apply_eden_text_overrides(ui, palette);
+            ui.style_mut().visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
+            ui.style_mut().visuals.widgets.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+            ui.style_mut().visuals.widgets.open.bg_fill = egui::Color32::TRANSPARENT;
+            ui.style_mut().visuals.widgets.open.weak_bg_fill = egui::Color32::TRANSPARENT;
 
             const GALLERY_SORT_COMBO_WIDTH: f32 = 120.0;
 
@@ -448,6 +457,7 @@ fn draw_gallery_toolbar(
             );
 
             for size in [
+                GalleryThumbnailSize::ExtraSmall,
                 GalleryThumbnailSize::Small,
                 GalleryThumbnailSize::Medium,
                 GalleryThumbnailSize::Large,
@@ -467,6 +477,20 @@ fn draw_gallery_toolbar(
                     .clicked()
                 {
                     gallery_state.thumbnail_size = size;
+                    gallery_state.thumbnail_gap = match size {
+                        GalleryThumbnailSize::ExtraSmall => 0.0,
+                        GalleryThumbnailSize::Small => 4.0,
+                        GalleryThumbnailSize::Medium => 8.0,
+                        GalleryThumbnailSize::Large => 12.0,
+                        GalleryThumbnailSize::ExtraLarge => 16.0,
+                    };
+                    gallery_state.thumbnail_padding = match size {
+                        GalleryThumbnailSize::ExtraSmall => 0.0,
+                        GalleryThumbnailSize::Small => 2.0,
+                        GalleryThumbnailSize::Medium => 6.0,
+                        GalleryThumbnailSize::Large => 8.0,
+                        GalleryThumbnailSize::ExtraLarge => 10.0,
+                    };
                 }
             }
         },
@@ -491,6 +515,7 @@ fn draw_gallery_tile(
     is_cut_mode: bool,
     palette: &ThemePalette,
     font_id: &FontId,
+    gallery_state: &GalleryState,
 ) -> (egui::Response, Option<ItemViewerAction>) {
     let response = ui.interact(
         rect,
@@ -520,7 +545,7 @@ fn draw_gallery_tile(
     let preview_rect = egui::Rect::from_center_size(
         egui::pos2(
             rect.center().x,
-            rect.top() + TILE_PADDING + thumb_size * 0.5,
+            rect.top() + gallery_state.thumbnail_padding + thumb_size * 0.5,
         ),
         egui::vec2(thumb_size, thumb_size),
     );
@@ -555,7 +580,7 @@ fn draw_gallery_tile(
             },
         );
     } else if let Some(icon) = icon_cache.get(&file.path, file.is_dir) {
-        let icon_size = (thumb_size * 0.42).clamp(32.0, 96.0);
+        let icon_size = (thumb_size * 0.35).clamp(24.0, 80.0);
 
         let icon_rect =
             egui::Rect::from_center_size(preview_rect.center(), egui::vec2(icon_size, icon_size));
@@ -581,8 +606,14 @@ fn draw_gallery_tile(
     }
 
     let text_rect = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + TILE_PADDING, preview_rect.bottom() + 8.0),
-        egui::pos2(rect.right() - TILE_PADDING, rect.bottom() - 4.0),
+        egui::pos2(
+            rect.left() + gallery_state.thumbnail_padding,
+            preview_rect.bottom() + 8.0,
+        ),
+        egui::pos2(
+            rect.right() - gallery_state.thumbnail_padding,
+            rect.bottom() - 4.0,
+        ),
     );
 
     let editing_path = rename_state.as_ref().map(|rs| rs.path.clone());

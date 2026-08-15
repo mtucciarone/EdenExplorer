@@ -43,6 +43,7 @@ pub fn draw_itemviewer_navigation_bar(
     let is_recycle_bin = tab.nav.is_recycle_bin();
 
     ui.horizontal(|ui| {
+        ui.add_space(1.5);
         let toolbar_action = draw_navigation_bar_buttons(
             ui,
             i18n,
@@ -113,7 +114,11 @@ pub fn draw_itemviewer_navigation_bar(
                     ui.add(
                         egui::TextEdit::singleline(&mut tab.breadcrumb_path_buffer)
                             .id(text_edit_id)
-                            .frame(!tab.breadcrumb_path_error)
+                            .frame(if tab.breadcrumb_path_error {
+                                egui::Frame::NONE
+                            } else {
+                                egui::Frame::default()
+                            })
                             .desired_width(ui.available_width() - 40.0)
                             .font(FontId::new(
                                 palette.text_size,
@@ -397,7 +402,7 @@ fn draw_navigation_bar_buttons(
         action.nav = Some(ItemViewerNavAction::Up);
     }
 
-    if clickable_icon(ui, regular::ARROWS_CLOCKWISE, palette.primary)
+    if clickable_icon(ui, regular::ARROWS_CLOCKWISE, palette)
         .on_hover_text(
             egui::RichText::new(i18n.tr("tooltip_refresh"))
                 .size(palette.tooltip_text_size)

@@ -15,6 +15,7 @@ pub fn draw_topbar(
     sidebar_collapsed: bool,
     hwnd: Option<HWND>,
     palette: &crate::gui::theme::ThemePalette,
+    has_split: bool,
 ) -> TopbarAction {
     let mut action = TopbarAction::default();
 
@@ -31,6 +32,7 @@ pub fn draw_topbar(
                 hwnd,
                 palette,
                 &mut action,
+                has_split,
             );
             draw_drag_region(ui, hwnd);
         });
@@ -50,6 +52,7 @@ pub fn draw_topbar(
                     hwnd,
                     palette,
                     &mut action,
+                    has_split,
                 );
             });
 
@@ -70,7 +73,7 @@ fn draw_hamburger_menu(
 
     let menu_open = ui.memory(|mem| mem.data.get_temp::<bool>(menu_id).unwrap_or(false));
 
-    if clickable_icon(ui, regular::LIST, palette.primary)
+    if clickable_icon(ui, regular::LIST, palette)
         .on_hover_text(
             egui::RichText::new(&i18n.tr("tooltip_mainmenu"))
                 .size(palette.tooltip_text_size)
@@ -130,10 +133,34 @@ fn draw_mode_icons(
     _hwnd: Option<HWND>,
     palette: &crate::gui::theme::ThemePalette,
     action: &mut TopbarAction,
+    has_split: bool,
 ) {
+    let sidebar_tooltip_key = if sidebar_collapsed {
+        "tooltip_show_sidebar"
+    } else {
+        "tooltip_hide_sidebar"
+    };
+    if clickable_active_icon(
+        ui,
+        regular::SIDEBAR_SIMPLE,
+        ui.visuals().text_color(),
+        !sidebar_collapsed,
+        palette,
+    )
+    .on_hover_text(
+        egui::RichText::new(&i18n.tr(sidebar_tooltip_key))
+            .size(palette.tooltip_text_size)
+            .color(palette.tooltip_text_color),
+    )
+    .on_hover_cursor(egui::CursorIcon::PointingHand)
+    .clicked()
+    {
+        action.toggle_sidebar = true;
+    }
+
     let icon = if is_dark { regular::SUN } else { regular::MOON };
 
-    if clickable_icon(ui, icon, palette.primary)
+    if clickable_icon(ui, icon, palette)
         .on_hover_text(
             egui::RichText::new(&i18n.tr("tooltip_theme"))
                 .size(palette.tooltip_text_size)
@@ -145,10 +172,12 @@ fn draw_mode_icons(
         action.toggle_theme = true;
     }
 
+    ui.separator();
+
     let file_explorer_icon = if is_file_explorer {
-        regular::FOLDER_OPEN
+        regular::TABS
     } else {
-        regular::FOLDER
+        regular::TABS
     };
 
     if clickable_active_icon(
@@ -156,7 +185,7 @@ fn draw_mode_icons(
         file_explorer_icon,
         ui.visuals().text_color(),
         is_file_explorer,
-        palette.primary,
+        palette,
     )
     .on_hover_text(
         egui::RichText::new(&i18n.tr("tooltip_show_file_explorer"))
@@ -174,7 +203,7 @@ fn draw_mode_icons(
         regular::TAG,
         ui.visuals().text_color(),
         !is_file_explorer,
-        palette.primary,
+        palette,
     )
     .on_hover_text(
         egui::RichText::new(&i18n.tr("tooltip_show_tags"))
@@ -187,28 +216,23 @@ fn draw_mode_icons(
         action.toggle_file_explorer = true;
     }
 
-    let sidebar_tooltip_key = if sidebar_collapsed {
-        "tooltip_show_sidebar"
-    } else {
-        "tooltip_hide_sidebar"
-    };
-
-    if clickable_active_icon(
-        ui,
-        regular::SIDEBAR_SIMPLE,
-        ui.visuals().text_color(),
-        !sidebar_collapsed,
-        palette.primary,
-    )
-    .on_hover_text(
-        egui::RichText::new(&i18n.tr(sidebar_tooltip_key))
-            .size(palette.tooltip_text_size)
-            .color(palette.tooltip_text_color),
-    )
-    .on_hover_cursor(egui::CursorIcon::PointingHand)
-    .clicked()
-    {
-        action.toggle_sidebar = true;
+    if is_file_explorer {
+        let (icon, tooltip_key) = if has_split {
+            (regular::ARROWS_IN_LINE_HORIZONTAL, "tooltip_close_split")
+        } else {
+            (regular::SPLIT_HORIZONTAL, "tooltip_open_split")
+        };
+        if clickable_icon(ui, icon, palette)
+            .on_hover_text(
+                egui::RichText::new(i18n.tr(tooltip_key))
+                    .size(palette.tooltip_text_size)
+                    .color(palette.tooltip_text_color),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+        {
+            action.toggle_active_tab_split = true;
+        }
     }
 }
 

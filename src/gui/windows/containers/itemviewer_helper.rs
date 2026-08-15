@@ -16,8 +16,9 @@ use crate::gui::windows::containers::enums::{
     ItemViewerAction, ItemViewerContextAction, ItemViewerHeaderColumn, ItemViewerNavAction,
 };
 use crate::gui::windows::containers::structs::{
-    DragState, ExplorerState, FilterState, ItemViewerColumnState, ItemViewerFolderSizeState,
-    ItemViewerLayout, ItemViewerNavBarAction, RenameState, TagsState,
+    DragState, ExplorerState, FilterState, ItemViewerColumnFitRequest, ItemViewerColumnLayout,
+    ItemViewerColumnState, ItemViewerColumnWidths, ItemViewerFolderSizeState, ItemViewerLayout,
+    ItemViewerNavBarAction, RenameState, TagsState,
 };
 use crate::gui::windows::shell_context_menu::ShellContextMenu;
 use crate::gui::windows::structs::{SettingsWindow, ThemeCustomizer};
@@ -370,36 +371,55 @@ pub fn handle_draw_col_name(
         egui::Sense::hover(),
     );
 
-    // Reserve a fixed area for the icon.
-    let icon_size = egui::vec2(layout.icon_size, layout.icon_size);
-    let icon_area_width = icon_size.x + ICON_HORIZONTAL_PADDING * 2.0;
+// Reserve a fixed area for the icon.
+let icon_size = egui::vec2(layout.icon_size, layout.icon_size);
+let icon_area_width = icon_size.x + ICON_HORIZONTAL_PADDING * 2.0;
 
-    let text_offset_x = if show_item_viewer_icons {
-        if let Some(icon) = icon_cache.get(&file.path, file.is_dir) {
-            let icon_area =
-                egui::Rect::from_min_size(rect.min, egui::vec2(icon_area_width, layout.row_height));
+let text_offset_x = if show_item_viewer_icons {
+    let icon_area =
+        egui::Rect::from_min_size(rect.min, egui::vec2(icon_area_width, layout.row_height));
 
-            let icon_pos = egui::pos2(
-                icon_area.center().x - icon_size.x * 0.5,
-                icon_area.center().y - icon_size.y * 0.5,
-            );
-
-            ui.painter().image(
-                (&icon).into(),
-                egui::Rect::from_min_size(icon_pos, icon_size),
-                egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1.0, 1.0)),
-                if is_cut {
-                    palette.icon_colored_hover.linear_multiply(0.5)
-                } else {
-                    palette.icon_colored_hover
-                },
-            );
-        }
-
-        icon_area_width
+    let icon_color = if is_cut {
+        palette.icon_colored_hover.linear_multiply(0.5)
     } else {
-        TEXT_LEFT_PADDING
+        palette.icon_colored_hover
     };
+
+    // Use a custom Phosphor icon for recognized folder names.
+    if let Some(glyph) = icon_cache.get_custom_folder_icon(&file.path, file.is_dir) {
+        let font_id = egui::FontId::new(
+            icon_size.x,
+            egui::FontFamily::Proportional,
+        );
+
+        ui.painter().text(
+            icon_area.center(),
+            egui::Align2::CENTER_CENTER,
+            glyph,
+            font_id,
+            icon_color,
+        );
+    } else if let Some(icon) = icon_cache.get(&file.path, file.is_dir) {
+        let icon_pos = egui::pos2(
+            icon_area.center().x - icon_size.x * 0.5,
+            icon_area.center().y - icon_size.y * 0.5,
+        );
+
+        ui.painter().image(
+            (&icon).into(),
+            egui::Rect::from_min_size(icon_pos, icon_size),
+            egui::Rect::from_min_size(
+                egui::pos2(0.0, 0.0),
+                egui::vec2(1.0, 1.0),
+            ),
+            icon_color,
+        );
+    }
+
+    icon_area_width
+} else {
+    TEXT_LEFT_PADDING
+};
 
     let text_rect =
         egui::Rect::from_min_max(egui::pos2(rect.min.x + text_offset_x, rect.min.y), rect.max);
@@ -1099,29 +1119,14 @@ pub fn draw_item_viewer_header(
         });
     }
 
-    draw_header_cell(
-        header,
-        i18n,
-        palette,
-        &font_id,
-        sort_column,
-        sort_ascending,
-        ItemViewerHeaderColumn::Name,
-        i18n.tr("explorer_cols_name"),
-        &mut action,
-        column_state,
-        is_drive_view,
-        is_recycle_bin_view,
-    );
-
     for &column in ordered_columns {
         let label = match column {
+            ItemViewerHeaderColumn::Name => i18n.tr("explorer_cols_name"),
             ItemViewerHeaderColumn::Type => i18n.tr("explorer_cols_type"),
             ItemViewerHeaderColumn::Size => i18n.tr("explorer_cols_size"),
             ItemViewerHeaderColumn::Modified => i18n.tr("explorer_cols_modified"),
             ItemViewerHeaderColumn::Created => i18n.tr("explorer_cols_created"),
             ItemViewerHeaderColumn::Usage => i18n.tr("explorer_cols_usage"),
-            ItemViewerHeaderColumn::Name => i18n.tr("explorer_cols_name"),
             ItemViewerHeaderColumn::Deleted => i18n.tr("explorer_cols_deleted"),
         };
         draw_header_cell(
@@ -1303,6 +1308,7 @@ fn draw_header_context_menu(
             *action = Some(ItemViewerAction::MoveColumnLeft(clicked_column));
             ui.close();
         }
+
         if ui
             .add_enabled(can_move_right, egui::Button::new("Move right"))
             .clicked()
@@ -1310,6 +1316,7 @@ fn draw_header_context_menu(
             *action = Some(ItemViewerAction::MoveColumnRight(clicked_column));
             ui.close();
         }
+
         if ui
             .add_enabled(can_move_left, egui::Button::new("Move to start"))
             .clicked()
@@ -1317,6 +1324,7 @@ fn draw_header_context_menu(
             *action = Some(ItemViewerAction::MoveColumnToStart(clicked_column));
             ui.close();
         }
+
         if ui
             .add_enabled(can_move_right, egui::Button::new("Move to end"))
             .clicked()
@@ -1328,20 +1336,33 @@ fn draw_header_context_menu(
         ui.separator();
     }
 
+    // Name is always visible.
     let mut name_checked = true;
     ui.add_enabled(
         false,
         egui::Checkbox::new(&mut name_checked, i18n.tr("explorer_cols_name")),
     );
 
-    if draw_visibility_checkbox(ui, i18n.tr("explorer_cols_type"), column_state.show_type) {
+    let type_visible = column_state.is_column_visible(
+        is_drive_view,
+        is_recycle_bin_view,
+        ItemViewerHeaderColumn::Type,
+    );
+
+    if draw_visibility_checkbox(ui, i18n.tr("explorer_cols_type"), type_visible) {
         *action = Some(ItemViewerAction::ToggleColumnVisibility(
             ItemViewerHeaderColumn::Type,
         ));
         ui.close();
     }
 
-    if draw_visibility_checkbox(ui, i18n.tr("explorer_cols_size"), column_state.show_size) {
+    let size_visible = column_state.is_column_visible(
+        is_drive_view,
+        is_recycle_bin_view,
+        ItemViewerHeaderColumn::Size,
+    );
+
+    if draw_visibility_checkbox(ui, i18n.tr("explorer_cols_size"), size_visible) {
         *action = Some(ItemViewerAction::ToggleColumnVisibility(
             ItemViewerHeaderColumn::Size,
         ));
@@ -1349,44 +1370,53 @@ fn draw_header_context_menu(
     }
 
     if is_drive_view {
+        // Usage is always visible in drive view.
         let mut usage_checked = true;
         ui.add_enabled(
             false,
             egui::Checkbox::new(&mut usage_checked, i18n.tr("explorer_cols_usage")),
         );
     } else if is_recycle_bin_view {
+        // Deleted is always visible in recycle-bin view.
         let mut deleted_checked = true;
         ui.add_enabled(
             false,
             egui::Checkbox::new(&mut deleted_checked, i18n.tr("explorer_cols_deleted")),
         );
-        if draw_visibility_checkbox(
-            ui,
-            i18n.tr("explorer_cols_created"),
-            column_state.show_created,
-        ) {
+
+        let created_visible = column_state.is_column_visible(
+            is_drive_view,
+            is_recycle_bin_view,
+            ItemViewerHeaderColumn::Created,
+        );
+
+        if draw_visibility_checkbox(ui, i18n.tr("explorer_cols_created"), created_visible) {
             *action = Some(ItemViewerAction::ToggleColumnVisibility(
                 ItemViewerHeaderColumn::Created,
             ));
             ui.close();
         }
     } else {
-        if draw_visibility_checkbox(
-            ui,
-            i18n.tr("explorer_cols_modified"),
-            column_state.show_modified,
-        ) {
+        let modified_visible = column_state.is_column_visible(
+            is_drive_view,
+            is_recycle_bin_view,
+            ItemViewerHeaderColumn::Modified,
+        );
+
+        if draw_visibility_checkbox(ui, i18n.tr("explorer_cols_modified"), modified_visible) {
             *action = Some(ItemViewerAction::ToggleColumnVisibility(
                 ItemViewerHeaderColumn::Modified,
             ));
             ui.close();
         }
 
-        if draw_visibility_checkbox(
-            ui,
-            i18n.tr("explorer_cols_created"),
-            column_state.show_created,
-        ) {
+        let created_visible = column_state.is_column_visible(
+            is_drive_view,
+            is_recycle_bin_view,
+            ItemViewerHeaderColumn::Created,
+        );
+
+        if draw_visibility_checkbox(ui, i18n.tr("explorer_cols_created"), created_visible) {
             *action = Some(ItemViewerAction::ToggleColumnVisibility(
                 ItemViewerHeaderColumn::Created,
             ));
@@ -1696,4 +1726,403 @@ pub fn draw_table_text(
     );
 
     response.on_hover_cursor(egui::CursorIcon::Default)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn compute_item_viewer_column_layout(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    column_state: &mut ItemViewerColumnState,
+    filter_state: &FilterState,
+    files: &[FileItem],
+    folder_sizes: &HashMap<PathBuf, ItemViewerFolderSizeState>,
+    is_drive_view: bool,
+    is_recycle_bin_view: bool,
+    show_item_viewer_icons: bool,
+    palette: &ThemePalette,
+    font_id: &FontId,
+    file_type_cache: &mut HashMap<String, String>,
+    file_size_text_cache: &mut HashMap<PathBuf, (u64, String)>,
+    folder_size_text_cache: &mut HashMap<PathBuf, (u64, bool, String)>,
+    drive_size_text_cache: &mut HashMap<PathBuf, (u64, u64, String)>,
+    viewport_width: f32,
+) -> ItemViewerColumnLayout {
+    let fit_request = column_state.pending_fit_request.take();
+    let layout_generation = column_state.layout_generation;
+    let ordered_columns = column_state.visible_order(is_drive_view, is_recycle_bin_view);
+
+    let mut column_sizes_changed = false;
+    let current_width = viewport_width.max(1.0);
+
+    // Handle any pending auto-fit request. The calculated widths are stored
+    // back into column_state so they persist across frames and column reordering.
+    if let Some(fit_request) = fit_request {
+        let widths = compute_item_viewer_column_widths(
+            ui,
+            i18n,
+            files,
+            &filter_state.cached_indices,
+            folder_sizes,
+            is_drive_view,
+            show_item_viewer_icons,
+            palette,
+            font_id,
+            file_type_cache,
+            file_size_text_cache,
+            folder_size_text_cache,
+            drive_size_text_cache,
+        );
+
+        match fit_request {
+            ItemViewerColumnFitRequest::All => {
+                column_state.set_all_column_widths(is_drive_view, is_recycle_bin_view, &widths);
+
+                column_sizes_changed = true;
+            }
+
+            ItemViewerColumnFitRequest::Column(column) => {
+                let width = match column {
+                    ItemViewerHeaderColumn::Name => widths.name,
+                    ItemViewerHeaderColumn::Type => widths.type_width,
+                    ItemViewerHeaderColumn::Size => widths.size_width,
+                    ItemViewerHeaderColumn::Modified => widths.modified_width,
+                    ItemViewerHeaderColumn::Created => widths.created_width,
+                    ItemViewerHeaderColumn::Deleted => widths.deleted_width,
+                    ItemViewerHeaderColumn::Usage => widths.usage_width,
+                };
+
+                column_state.set_column_width(is_drive_view, is_recycle_bin_view, column, width);
+
+                column_sizes_changed = true;
+            }
+        }
+    }
+
+    // Default widths are only used when a column has never been explicitly
+    // sized or fitted.
+    let default_name_width = (current_width * 0.35).max(180.0);
+    let default_type_width = (current_width * 0.10).max(60.0);
+
+    let default_size_width = if is_drive_view {
+        (current_width * 0.14).max(120.0)
+    } else {
+        (current_width * 0.10).max(75.0)
+    };
+
+    let default_modified_width = (current_width * 0.20).max(100.0);
+    let default_created_width = (current_width * 0.20).max(100.0);
+    let default_deleted_width = (current_width * 0.20).max(100.0);
+    let default_usage_width = (current_width * 0.20).max(150.0);
+
+    let name_width = column_state
+        .column_width(
+            is_drive_view,
+            is_recycle_bin_view,
+            ItemViewerHeaderColumn::Name,
+        )
+        .unwrap_or(default_name_width);
+
+    let type_width = if ordered_columns.contains(&ItemViewerHeaderColumn::Type) {
+        column_state
+            .column_width(
+                is_drive_view,
+                is_recycle_bin_view,
+                ItemViewerHeaderColumn::Type,
+            )
+            .unwrap_or(default_type_width)
+    } else {
+        0.0
+    };
+
+    let size_width = if ordered_columns.contains(&ItemViewerHeaderColumn::Size) {
+        column_state
+            .column_width(
+                is_drive_view,
+                is_recycle_bin_view,
+                ItemViewerHeaderColumn::Size,
+            )
+            .unwrap_or(default_size_width)
+    } else {
+        0.0
+    };
+
+    let usage_width = if ordered_columns.contains(&ItemViewerHeaderColumn::Usage) {
+        column_state
+            .column_width(
+                is_drive_view,
+                is_recycle_bin_view,
+                ItemViewerHeaderColumn::Usage,
+            )
+            .unwrap_or(default_usage_width)
+    } else {
+        0.0
+    };
+
+    let modified_width = if ordered_columns.contains(&ItemViewerHeaderColumn::Modified) {
+        column_state
+            .column_width(
+                is_drive_view,
+                is_recycle_bin_view,
+                ItemViewerHeaderColumn::Modified,
+            )
+            .unwrap_or(default_modified_width)
+    } else {
+        0.0
+    };
+
+    let created_width = if ordered_columns.contains(&ItemViewerHeaderColumn::Created) {
+        column_state
+            .column_width(
+                is_drive_view,
+                is_recycle_bin_view,
+                ItemViewerHeaderColumn::Created,
+            )
+            .unwrap_or(default_created_width)
+    } else {
+        0.0
+    };
+
+    let deleted_width = if ordered_columns.contains(&ItemViewerHeaderColumn::Deleted) {
+        column_state
+            .column_width(
+                is_drive_view,
+                is_recycle_bin_view,
+                ItemViewerHeaderColumn::Deleted,
+            )
+            .unwrap_or(default_deleted_width)
+    } else {
+        0.0
+    };
+
+    ItemViewerColumnLayout {
+        layout_generation,
+        ordered_columns,
+        name_width,
+        type_width,
+        size_width,
+        usage_width,
+        modified_width,
+        created_width,
+        deleted_width,
+        column_sizes_changed,
+    }
+}
+
+fn compute_item_viewer_column_widths(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    files: &[FileItem],
+    filtered_indices: &[usize],
+    folder_sizes: &HashMap<PathBuf, ItemViewerFolderSizeState>,
+    is_drive_view: bool,
+    show_item_viewer_icons: bool,
+    palette: &ThemePalette,
+    font_id: &FontId,
+    file_type_cache: &mut HashMap<String, String>,
+    file_size_text_cache: &mut HashMap<PathBuf, (u64, String)>,
+    folder_size_text_cache: &mut HashMap<PathBuf, (u64, bool, String)>,
+    drive_size_text_cache: &mut HashMap<PathBuf, (u64, u64, String)>,
+) -> ItemViewerColumnWidths {
+    let mut widths = ItemViewerColumnWidths {
+        name: measure_text_width(
+            ui,
+            &i18n.tr("explorer_cols_name"),
+            font_id,
+            palette.text_header_section,
+        ),
+        type_width: measure_text_width(
+            ui,
+            &i18n.tr("explorer_cols_type"),
+            font_id,
+            palette.text_header_section,
+        ),
+        size_width: measure_text_width(
+            ui,
+            &i18n.tr("explorer_cols_size"),
+            font_id,
+            palette.text_header_section,
+        ),
+        modified_width: measure_text_width(
+            ui,
+            &i18n.tr("explorer_cols_modified"),
+            font_id,
+            palette.text_header_section,
+        ),
+        created_width: measure_text_width(
+            ui,
+            &i18n.tr("explorer_cols_created"),
+            font_id,
+            palette.text_header_section,
+        ),
+        usage_width: measure_text_width(
+            ui,
+            &i18n.tr("explorer_cols_usage"),
+            font_id,
+            palette.text_header_section,
+        ),
+        deleted_width: measure_text_width(
+            ui,
+            &i18n.tr("explorer_cols_deleted"),
+            font_id,
+            palette.text_header_section,
+        ),
+    };
+
+    let icon_padding = if show_item_viewer_icons {
+        palette.row_height + 6.0
+    } else {
+        0.0
+    };
+
+    for &idx in filtered_indices {
+        let file = &files[idx];
+
+        widths.name = widths
+            .name
+            .max(measure_text_width(ui, &file.name, font_id, palette.text_normal) + icon_padding);
+
+        let type_text = if file.is_dir {
+            "Folder".to_string()
+        } else if let Some(ext) = file.path.extension().and_then(|ext| ext.to_str()) {
+            get_file_type_name(ext, file_type_cache).to_string()
+        } else {
+            get_file_type_name("", file_type_cache).to_string()
+        };
+        widths.type_width = widths.type_width.max(measure_text_width(
+            ui,
+            &type_text,
+            font_id,
+            palette.text_normal,
+        ));
+
+        let size_text = resolve_size_text(
+            file,
+            folder_sizes,
+            file_size_text_cache,
+            folder_size_text_cache,
+            drive_size_text_cache,
+        );
+        widths.size_width = widths.size_width.max(measure_text_width(
+            ui,
+            &size_text,
+            font_id,
+            palette.text_normal,
+        ));
+
+        if is_drive_view {
+            widths.usage_width = widths.usage_width.max(
+                measure_text_width(
+                    ui,
+                    &i18n.tr("explorer_cols_usage"),
+                    font_id,
+                    palette.text_normal,
+                ) + 60.0,
+            );
+        } else {
+            widths.modified_width = widths.modified_width.max(measure_text_width(
+                ui,
+                file.modified_time.as_deref().unwrap_or("—"),
+                font_id,
+                palette.text_normal,
+            ));
+            widths.created_width = widths.created_width.max(measure_text_width(
+                ui,
+                file.created_time.as_deref().unwrap_or("—"),
+                font_id,
+                palette.text_normal,
+            ));
+        }
+    }
+
+    widths.name = widths.name.max(220.0);
+    widths.type_width = widths.type_width.max(60.0);
+    widths.size_width = widths.size_width.max(75.0);
+    widths.modified_width = widths.modified_width.max(120.0);
+    widths.created_width = widths.created_width.max(120.0);
+    widths.usage_width = widths.usage_width.max(150.0);
+
+    widths
+}
+
+fn measure_text_width(
+    ui: &mut egui::Ui,
+    text: &str,
+    font_id: &FontId,
+    color: egui::Color32,
+) -> f32 {
+    ui.fonts_mut(|fonts| {
+        fonts
+            .layout_no_wrap(text.to_owned(), font_id.clone(), color)
+            .size()
+            .x
+    })
+}
+
+fn resolve_size_text(
+    file: &FileItem,
+    folder_sizes: &HashMap<PathBuf, ItemViewerFolderSizeState>,
+    file_size_text_cache: &mut HashMap<PathBuf, (u64, String)>,
+    folder_size_text_cache: &mut HashMap<PathBuf, (u64, bool, String)>,
+    drive_size_text_cache: &mut HashMap<PathBuf, (u64, u64, String)>,
+) -> String {
+    if let (Some(total), Some(free)) = (file.total_space, file.free_space) {
+        let key = &file.path;
+        if let Some((cached_total, cached_free, cached_text)) = drive_size_text_cache.get(key) {
+            if *cached_total == total && *cached_free == free {
+                return cached_text.clone();
+            }
+        }
+
+        let formatted = format!("{} / {}", format_size(free), format_size(total));
+        drive_size_text_cache.insert(file.path.clone(), (total, free, formatted.clone()));
+        return formatted;
+    }
+
+    if file.is_dir {
+        if let Some(state) = folder_sizes.get(&file.path) {
+            if let Some((bytes, done, value)) = folder_size_text_cache.get(&file.path) {
+                if *bytes == state.bytes && *done == state.done {
+                    return value.clone();
+                }
+            }
+
+            let label = format_size(state.bytes);
+            let value = if state.done {
+                label
+            } else {
+                format!("⏳ {}", label)
+            };
+            folder_size_text_cache
+                .insert(file.path.clone(), (state.bytes, state.done, value.clone()));
+            return value;
+        }
+
+        return "—".to_string();
+    }
+
+    if let Some(size) = file.file_size {
+        if let Some((cached_size, value)) = file_size_text_cache.get(&file.path) {
+            if *cached_size == size {
+                return value.clone();
+            }
+        }
+
+        let value = format_size(size);
+        file_size_text_cache.insert(file.path.clone(), (size, value.clone()));
+        return value;
+    }
+
+    "—".to_string()
+}
+
+pub fn table_background_response(ui: &mut egui::Ui) -> egui::Response {
+    let mut rect = ui.available_rect_before_wrap();
+
+    rect.max.x -= ui.spacing().scroll.allocated_width();
+
+    ui.interact(
+        rect,
+        ui.id().with("item_viewer_background"),
+        egui::Sense::click(),
+    )
 }

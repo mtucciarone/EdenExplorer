@@ -18,7 +18,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use windows::Win32::Foundation::HWND;
 
-const RIGHT_MARGIN: f32 = 8.0;
+const RIGHT_MARGIN: f32 = 20.0;
 const COLUMN_SPACING: f32 = 20.0;
 const FILES_COLUMN_WIDTH: f32 = 56.0;
 const FOLDERS_COLUMN_WIDTH: f32 = 56.0;
@@ -60,6 +60,7 @@ pub fn draw_tab_content(
     drop_targets: &mut DropTargets,
     is_focused: bool,
 ) -> (Option<ItemViewerNavBarAction>, Option<ItemViewerAction>) {
+    let viewport_width = ui.available_width();
     let is_drive_view = view.nav.is_root();
     let is_recycle_bin_view = view.nav.is_recycle_bin();
     let mut hovered_drop_target: Option<PathBuf> = None;
@@ -128,11 +129,14 @@ pub fn draw_tab_content(
                         hwnd,
                         is_focused,
                         tab_id,
+                        viewport_width,
                     );
                 } else {
                     ScrollArea::horizontal()
                         .id_salt(("item_viewer_horizontal_scroll", tab_id))
+                        .auto_shrink([false, false])
                         .show(ui, |ui| {
+                            ui.set_min_width(viewport_width);
                             pending_action = draw_item_viewer(
                                 ui,
                                 i18n,
@@ -165,6 +169,7 @@ pub fn draw_tab_content(
                                 hwnd,
                                 is_focused,
                                 tab_id,
+                                viewport_width,
                             );
                         });
                 }

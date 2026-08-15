@@ -51,6 +51,9 @@ impl Default for AppSettings {
                 ItemViewerHeaderColumn::Deleted,
                 ItemViewerHeaderColumn::Created,
             ],
+            item_viewer_file_column_sizes: vec![],
+            item_viewer_drive_column_sizes: vec![],
+            recycle_bin_column_sizes: vec![],
         }
     }
 }
@@ -115,7 +118,7 @@ fn setting_checkbox(
     palette: &ThemePalette,
     checked: &mut bool,
     label: RichText,
-    id: impl std::hash::Hash,
+    id: impl std::hash::Hash + std::fmt::Debug,
 ) -> bool {
     let mut changed = false;
 
@@ -169,7 +172,7 @@ where
 pub fn combo_box_string(
     ui: &mut egui::Ui,
     palette: &ThemePalette,
-    id: impl std::hash::Hash,
+    id: impl std::hash::Hash + std::fmt::Debug,
     width: f32,
     value: &mut String,
     options: &[(&str, String)],
@@ -232,13 +235,16 @@ pub fn draw_settings_window(
     egui::Window::new(i18n.tr("settings"))
         .collapsible(false)
         .resizable(false)
-        .fixed_size([600.0, 500.0])
+        .fixed_size([600.0, 550.0])
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .open(&mut settings.open)
-        .frame(egui::Frame::popup(&ctx.style()).corner_radius(egui::CornerRadius::same(8)))
+        .frame(
+            egui::Frame::popup(&ctx.style_of(ctx.theme()))
+                .corner_radius(egui::CornerRadius::same(8)),
+        )
         .show(ctx, |ui| {
             // 🎯 Smaller font override (fix giant UI)
-            let mut style = (*ui.ctx().style()).clone();
+            let mut style = (**ui.style()).clone();
             style.text_styles = [
                 (egui::TextStyle::Heading, egui::FontId::proportional(14.0)),
                 (
@@ -664,7 +670,7 @@ pub fn draw_settings_window(
                             .fixed_size([400.0, 150.0])
                             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
                             .frame(
-                                egui::Frame::popup(&ctx.style())
+                                egui::Frame::popup(&ctx.style_of(ctx.theme()))
                                     .corner_radius(egui::CornerRadius::same(8)),
                             )
                             .show(ctx, |ui| {
