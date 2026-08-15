@@ -30,7 +30,7 @@ fn main() -> eframe::Result<()> {
         }
     };
 
-    let _instance_guard = if launch_options.new_window {
+    let _instance_guard = if launch_options.new_window || launch_paths.is_empty() {
         None
     } else {
         match acquire_or_forward(&launch_paths) {

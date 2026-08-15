@@ -274,9 +274,9 @@
 - [x] Explorer view displays objects that have tags applied to them based on the tag color 
 - [x] Added native Recycle Bin support
 - [x] New Explorer view that displays media files in small/medium/large/extra large format
+- [x] Add special icons for Desktop, Downloads, My User Home, Music, Videos, My Documents
 
 ### 🚀 Upcoming Alpha Features
-- [ ] Add special icons for Desktop, Downloads, My User Home, Music, Videos, My Documents
 - [ ] Tab re-ordering via drag'n'drop
 - [ ] Support multi-column sorting (smart grouping)
 - [ ] Add multi-tagging of objects
@@ -285,11 +285,11 @@
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=mtucciarone%2FEdenExplorer">
+<a href="https://www.star-history.com/?repos=mtucciarone%2Fedenexplorer&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=mtucciarone/EdenExplorer&type=date&theme=dark&legend=top-left&sealed_token=Vc9gAQ1EyNnsDshDmlm_VHBAb2pSnvtzPSk4Ip2omG5jagl9CGXy2C8L95S9d_GkLvTh49MUH8vx6A9y7hEGpgJ4x0tv0ZgDqqVAqJs9nxm3Ys_3F1PHK1jpm4v1UHK5yrZ4AJjo99PRtk7JQZV_08P0z5gCxq5EiNnz-YWNQRqeY4nGJyDwhqH5mCqT" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=mtucciarone/EdenExplorer&type=date&legend=top-left&sealed_token=Vc9gAQ1EyNnsDshDmlm_VHBAb2pSnvtzPSk4Ip2omG5jagl9CGXy2C8L95S9d_GkLvTh49MUH8vx6A9y7hEGpgJ4x0tv0ZgDqqVAqJs9nxm3Ys_3F1PHK1jpm4v1UHK5yrZ4AJjo99PRtk7JQZV_08P0z5gCxq5EiNnz-YWNQRqeY4nGJyDwhqH5mCqT" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=mtucciarone/EdenExplorer&type=date&legend=top-left&sealed_token=Vc9gAQ1EyNnsDshDmlm_VHBAb2pSnvtzPSk4Ip2omG5jagl9CGXy2C8L95S9d_GkLvTh49MUH8vx6A9y7hEGpgJ4x0tv0ZgDqqVAqJs9nxm3Ys_3F1PHK1jpm4v1UHK5yrZ4AJjo99PRtk7JQZV_08P0z5gCxq5EiNnz-YWNQRqeY4nGJyDwhqH5mCqT" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=mtucciarone/edenexplorer&type=date&theme=dark&legend=top-left&sealed_token=NI5dBaKp_iac6WVxE46Q87Ri_obOUEGRld3AK0tm-wDI4Q-mCBlbqFcK5p1RpdylDEyaAME4_B-EyS3tCik9fMvdUFV5TfBCYtlmdNn1ivy4QWSSQXMGESzTxp438CEXvm1y49Mu2_r0YodXYa_oTaIMKkwsRKnAdRB1VCGBorGKIbqE63fU68LsK6bN" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=mtucciarone/edenexplorer&type=date&legend=top-left&sealed_token=NI5dBaKp_iac6WVxE46Q87Ri_obOUEGRld3AK0tm-wDI4Q-mCBlbqFcK5p1RpdylDEyaAME4_B-EyS3tCik9fMvdUFV5TfBCYtlmdNn1ivy4QWSSQXMGESzTxp438CEXvm1y49Mu2_r0YodXYa_oTaIMKkwsRKnAdRB1VCGBorGKIbqE63fU68LsK6bN" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=mtucciarone/edenexplorer&type=date&legend=top-left&sealed_token=NI5dBaKp_iac6WVxE46Q87Ri_obOUEGRld3AK0tm-wDI4Q-mCBlbqFcK5p1RpdylDEyaAME4_B-EyS3tCik9fMvdUFV5TfBCYtlmdNn1ivy4QWSSQXMGESzTxp438CEXvm1y49Mu2_r0YodXYa_oTaIMKkwsRKnAdRB1VCGBorGKIbqE63fU68LsK6bN" />
  </picture>
 </a>
 

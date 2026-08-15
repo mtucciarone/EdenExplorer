@@ -29,7 +29,7 @@ use crate::gui::windows::structs::{
     AboutWindow, AppSettings, Navigation, SettingsWindow, SidebarState, ThemeCustomizer,
 };
 use crate::gui::windows::windowsoverrides::{
-    apply_window_override, consume_clipboard_dirty, install_wndproc,
+    apply_window_override, consume_clipboard_dirty, handle_draw_windows_buttons, install_wndproc,
 };
 use eframe::egui;
 use std::collections::HashMap;
@@ -64,6 +64,7 @@ pub struct MainWindow {
     pub(crate) active_tab: usize,
     pub(crate) tab_infos_cache: Vec<TabInfo>,
     pub(crate) tab_infos_dirty: bool,
+    pub(crate) tab_scroll_offset: f32,
     pub(crate) pending_tab_scroll_id: Option<u64>,
     pub(crate) focused_split: SplitSide,
     pub(crate) next_tab_id: u64,
@@ -110,6 +111,9 @@ impl Default for MainWindow {
             item_viewer_file_column_order,
             item_viewer_drive_column_order,
             recycle_bin_column_order,
+            item_viewer_file_column_sizes,
+            item_viewer_drive_column_sizes,
+            recycle_bin_column_sizes,
         ) = load_app_settings();
         let loaded_settings = AppSettings {
             folder_scanning_enabled,
@@ -127,6 +131,9 @@ impl Default for MainWindow {
             item_viewer_file_column_order,
             item_viewer_drive_column_order,
             recycle_bin_column_order,
+            item_viewer_file_column_sizes,
+            item_viewer_drive_column_sizes,
+            recycle_bin_column_sizes,
         };
 
         let system_locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
@@ -155,6 +162,9 @@ impl Default for MainWindow {
                 loaded_settings.item_viewer_file_column_order.clone(),
                 loaded_settings.item_viewer_drive_column_order.clone(),
                 loaded_settings.recycle_bin_column_order.clone(),
+                loaded_settings.item_viewer_file_column_sizes.clone(),
+                loaded_settings.item_viewer_drive_column_sizes.clone(),
+                loaded_settings.recycle_bin_column_sizes.clone(),
             );
             next_tab_id += 1;
         } else {
@@ -170,6 +180,9 @@ impl Default for MainWindow {
                         loaded_settings.item_viewer_file_column_order.clone(),
                         loaded_settings.item_viewer_drive_column_order.clone(),
                         loaded_settings.recycle_bin_column_order.clone(),
+                        loaded_settings.item_viewer_file_column_sizes.clone(),
+                        loaded_settings.item_viewer_drive_column_sizes.clone(),
+                        loaded_settings.recycle_bin_column_sizes.clone(),
                     );
                 next_tab_id += 1;
             }
@@ -180,6 +193,8 @@ impl Default for MainWindow {
             active_tab: 0,
             tab_infos_cache: Vec::new(),
             tab_infos_dirty: true,
+
+            tab_scroll_offset: 0.0,
             pending_tab_scroll_id: None,
             focused_split: SplitSide::Primary,
             next_tab_id,
@@ -294,7 +309,7 @@ impl MainWindow {
 }
 
 impl eframe::App for MainWindow {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         {
             let forwarded_paths = take_forwarded_paths();
             for path in &forwarded_paths {
@@ -352,12 +367,12 @@ impl eframe::App for MainWindow {
                     .unwrap_or(false)
         } || native_drag_active;
         if let Some(backend) = dragdrop {
-            backend.set_scale_factor(ctx.pixels_per_point());
+            backend.set_scale_factor(ui.ctx().pixels_per_point());
         }
 
         if self.theme_dirty {
-            apply_theme(ctx, self.theme);
-            apply_font_to_context(ctx, &palette);
+            apply_theme(ui.ctx(), self.theme);
+            apply_font_to_context(ui.ctx(), &palette);
             if let Some(hwnd) = self.hwnd {
                 apply_window_override(hwnd, &palette);
             }
@@ -365,7 +380,7 @@ impl eframe::App for MainWindow {
         }
 
         // Auto-save window size when it changes (including maximize/restore)
-        if let Some(viewport_rect) = ctx.input(|i| i.viewport().inner_rect) {
+        if let Some(viewport_rect) = ui.ctx().input(|i| i.viewport().inner_rect) {
             let current_size = (viewport_rect.width(), viewport_rect.height());
 
             // Check if window size changed from last recorded size
@@ -422,6 +437,18 @@ impl eframe::App for MainWindow {
                             .settings_window
                             .current_settings
                             .recycle_bin_column_order,
+                        &self
+                            .settings_window
+                            .current_settings
+                            .item_viewer_file_column_sizes,
+                        &self
+                            .settings_window
+                            .current_settings
+                            .item_viewer_drive_column_sizes,
+                        &self
+                            .settings_window
+                            .current_settings
+                            .recycle_bin_column_sizes,
                     );
 
                     self.last_window_size = Some(current_size);
@@ -440,13 +467,12 @@ impl eframe::App for MainWindow {
         }
 
         // Increase scroll speed for the explorer view.
-        ctx.input_mut(|i| {
-            // i.raw_scroll_delta *= 8.0;
+        ui.ctx().input_mut(|i| {
             i.smooth_scroll_delta *= 6.0;
         });
 
         if self.icon_cache.is_none() {
-            self.icon_cache = Some(IconCache::new(ctx.clone()));
+            self.icon_cache = Some(IconCache::new(ui.ctx().clone()));
         }
 
         let icon_cache = self.icon_cache.take().unwrap();
@@ -458,14 +484,12 @@ impl eframe::App for MainWindow {
         let mut tabbar_action = None;
         let mut secondary_tabbar_action: Option<ItemViewerNavBarAction> = None;
         let mut secondary_pending_action: Option<ItemViewerAction> = None;
-        let mut primary_focus_click = false;
-        let mut secondary_focus_click = false;
-        let mut trigger_toggle_split = false;
         let mut tags_changed = false;
+        let has_split = self.tabs[self.active_tab].split_view.is_some();
 
         let offset = egui::vec2(8.0, 8.0);
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             // CentralPanel available rect
             let rect = ui.min_rect();
 
@@ -513,6 +537,7 @@ impl eframe::App for MainWindow {
                                         self.sidebar_collapsed,
                                         self.hwnd,
                                         &palette,
+                                        has_split,
                                     ));
                                 });
                                 if !self.sidebar_collapsed {
@@ -585,38 +610,86 @@ impl eframe::App for MainWindow {
                                 egui::Layout::top_down(egui::Align::Min),
                                 |ui| {
                                     let active_id = self.tabs[self.active_tab].id;
-                                    let has_split = self.tabs[self.active_tab].split_view.is_some();
 
                                     egui::Frame::NONE.show(ui, |ui| {
-                                        ui.add_space(8.0);
+                                        let topbar_rect = ui.allocate_exact_size(
+                                            egui::vec2(ui.available_width(), 32.0),
+                                            egui::Sense::hover(),
+                                        ).0;
+
+                                        // -------------------------
+                                        // Tabs
+                                        // -------------------------
+
+                                        let tabs_rect = egui::Rect::from_min_size(
+                                            topbar_rect.min + egui::vec2(0.0, 4.0),
+                                            egui::vec2(topbar_rect.width(), 24.0),
+                                        );
+
                                         let scroll_to_id = self.pending_tab_scroll_id;
-                                        tabs_action = Some(draw_tabs(
-                                            ui,
-                                            &self.i18n,
-                                            &self.tab_infos_cache,
-                                            active_id,
-                                            &palette,
-                                            self.hwnd,
-                                            scroll_to_id,
-                                            drag_active,
-                                            drag_hover_target.clone(),
-                                            has_split,
-                                        ));
+
+                                        ui.scope_builder(
+                                            egui::UiBuilder::new().max_rect(tabs_rect),
+                                            |ui| {
+                                                tabs_action = Some(draw_tabs(
+                                                    ui,
+                                                    &self.i18n,
+                                                    &self.tab_infos_cache,
+                                                    self.tab_scroll_offset,
+                                                    active_id,
+                                                    &palette,
+                                                    self.hwnd,
+                                                    scroll_to_id,
+                                                    drag_active,
+                                                    drag_hover_target.clone(),
+                                                ));
+                                            },
+                                        );
+
                                         if scroll_to_id.is_some() {
                                             self.pending_tab_scroll_id = None;
                                         }
-                                    });
 
+                                        // -------------------------
+                                        // Window controls
+                                        // -------------------------
+
+                                        let controls_width = 45.0 * 3.0;
+
+                                        let viewport_rect = ui.ctx().viewport_rect();
+
+                                        let controls_rect = egui::Rect::from_min_size(
+                                            egui::pos2(
+                                                viewport_rect.right() - controls_width,
+                                                topbar_rect.top(),
+                                            ),
+                                            egui::vec2(controls_width, 32.0),
+                                        );
+
+                                        ui.scope_builder(
+                                            egui::UiBuilder::new().max_rect(controls_rect),
+                                            |ui| {
+                                                ui.with_layout(
+                                                    egui::Layout::right_to_left(egui::Align::Min),
+                                                    |ui| {
+                                                        handle_draw_windows_buttons(&self.i18n, ui, self.hwnd, &palette);
+                                                    },
+                                                );
+                                            },
+                                        );
+                                    });
                                     let container = egui::Frame::NONE
                                         .stroke(egui::Stroke::NONE)
                                         .fill(egui::Color32::TRANSPARENT)
-                                        .inner_margin(egui::Margin::symmetric(10, 0));
+                                        .inner_margin(egui::Margin {
+                                            left: 3,
+                                            right: 0,
+                                            top: 0,
+                                            bottom: 0,
+                                        });
 
                                     container.show(ui, |ui| {
                                         if has_split {
-                                            let primary_focused =
-                                                self.focused_split == SplitSide::Primary;
-                                            let secondary_focused = !primary_focused;
                                             let split_rect = ui.available_rect_before_wrap();
                                             let (split_rect, _) = ui.allocate_exact_size(
                                                 split_rect.size(),
@@ -641,6 +714,29 @@ impl eframe::App for MainWindow {
                                                 egui::vec2(secondary_width, split_height),
                                             );
 
+                                            let (pointer_pos, primary_clicked) = ui.ctx().input(|i| {
+                                                (
+                                                    i.pointer.interact_pos(),
+                                                    i.pointer.primary_clicked(),
+                                                )
+                                            });
+
+                                            if primary_clicked {
+                                                if let Some(pos) = pointer_pos {
+                                                    let in_primary = primary_rect.contains(pos);
+                                                    let in_secondary = secondary_rect.contains(pos);
+
+                                                    if in_primary {
+                                                        self.focused_split = SplitSide::Primary;
+                                                    } else if in_secondary {
+                                                        self.focused_split = SplitSide::Secondary;
+                                                    }
+                                                }
+                                            }
+
+                                            let primary_focused = self.focused_split == SplitSide::Primary;
+                                            let secondary_focused = !primary_focused;
+
                                             ui.scope_builder(
                                                 egui::UiBuilder::new().max_rect(primary_rect),
                                                 |ui| {
@@ -663,21 +759,6 @@ impl eframe::App for MainWindow {
                                                                 );
                                                             }
                                                             ui.add_space(2.0);
-
-                                                            let catch_rect =
-                                                                ui.available_rect_before_wrap();
-                                                            if ui
-                                                                .interact(
-                                                                    catch_rect,
-                                                                    ui.id().with(
-                                                                        "pane_focus_catch_primary",
-                                                                    ),
-                                                                    egui::Sense::click(),
-                                                                )
-                                                                .clicked()
-                                                            {
-                                                                primary_focus_click = true;
-                                                            }
 
                                                             let tab_id = self.tabs[self.active_tab].id;
                                                             let is_favorited = self
@@ -757,21 +838,6 @@ impl eframe::App for MainWindow {
                                                             }
                                                             ui.add_space(2.0);
 
-                                                            let catch_rect =
-                                                                ui.available_rect_before_wrap();
-                                                            if ui
-                                                                .interact(
-                                                                    catch_rect,
-                                                                    ui.id().with(
-                                                                        "pane_focus_catch_secondary",
-                                                                    ),
-                                                                    egui::Sense::click(),
-                                                                )
-                                                                .clicked()
-                                                            {
-                                                                secondary_focus_click = true;
-                                                            }
-
                                                             let tab_id = self.tabs[self.active_tab].id;
                                                             let is_favorited = self.tabs
                                                                 [self.active_tab]
@@ -830,19 +896,6 @@ impl eframe::App for MainWindow {
                                                     );
                                                 });
                                             });
-
-                                            if primary_focus_click
-                                                || tabbar_action.is_some()
-                                                || pending_action.is_some()
-                                            {
-                                                self.focused_split = SplitSide::Primary;
-                                            }
-                                            if secondary_focus_click
-                                                || secondary_tabbar_action.is_some()
-                                                || secondary_pending_action.is_some()
-                                            {
-                                                self.focused_split = SplitSide::Secondary;
-                                            }
                                         } else {
                                             let tab_id = self.tabs[self.active_tab].id;
                                             let is_favorited =
@@ -893,14 +946,6 @@ impl eframe::App for MainWindow {
                                     });
                                 },
                             );
-
-                            if tabs_action
-                                .as_ref()
-                                .map(|a| a.toggle_split)
-                                .unwrap_or(false)
-                            {
-                                trigger_toggle_split = true;
-                            }
                         } else if draw_tags(
                             ui,
                             &self.i18n,
@@ -929,16 +974,12 @@ impl eframe::App for MainWindow {
             });
         });
 
-        if trigger_toggle_split {
-            self.toggle_split_for_active_tab();
-        }
-
         if let Some(backend) = self.dragdrop.as_ref() {
             backend.update_drop_targets(drop_targets);
         }
 
         if pending_action.is_none() {
-            let dropped_paths: Vec<PathBuf> = ctx.input(|i| {
+            let dropped_paths: Vec<PathBuf> = ui.ctx().input(|i| {
                 i.raw
                     .dropped_files
                     .iter()
@@ -1050,9 +1091,9 @@ impl eframe::App for MainWindow {
             .and_then(|a| a.move_files_to_breadcrumb_dir.as_ref())
             .is_some();
 
-        self.handle_directory_batch_recieve(ctx);
-        self.handle_directory_size_updates(ctx);
-        self.handle_throttle_size_requests(ctx);
+        self.handle_directory_batch_recieve(ui.ctx());
+        self.handle_directory_size_updates(ui.ctx());
+        self.handle_throttle_size_requests(ui.ctx());
         self.handle_topbar_action(topbar_action);
         self.handle_sidebar_action(sidebar_action, sidebar_drag_sources.as_deref());
         self.handle_tabs_action(tabs_action, tabs_drag_sources.as_deref());
@@ -1115,20 +1156,20 @@ impl eframe::App for MainWindow {
             handle_pending_actions(secondary_pending_action, self);
         }
         self.focused_split = restore_focus;
-        if draw_tag_picker_popup(ctx, &self.i18n, &palette, &mut self.tags_state) {
+        if draw_tag_picker_popup(ui.ctx(), &self.i18n, &palette, &mut self.tags_state) {
             tags_changed = true;
         }
         handle_draw_customizetheme_window(
             &mut self.i18n,
-            ctx,
+            ui.ctx(),
             &mut self.theme_customizer,
             &palette,
             self.theme,
             &mut self.theme_dirty,
         );
-        self.handle_draw_settings_window(ctx, &palette);
-        self.handle_draw_about_window(ctx, &palette);
-        self.handle_global_shortcuts(ctx);
+        self.handle_draw_settings_window(ui.ctx(), &palette);
+        self.handle_draw_about_window(ui.ctx(), &palette);
+        self.handle_global_shortcuts(ui.ctx());
 
         if tags_changed {
             self.persist_tags();

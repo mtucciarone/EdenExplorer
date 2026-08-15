@@ -174,3 +174,7 @@ launch-window-not-ready =
     The running EdenExplorer window was not ready.
 launch-window-rejected = 
     The running EdenExplorer window did not accept the request.
+theme_sidebar_item_spacing_y = Sidebar Item Vertical Spacing
+restore = Restore
+maximize = Maximize
+minimize = Minimize

@@ -146,6 +146,18 @@ impl MainWindow {
                 .current_settings
                 .recycle_bin_column_order
                 .clone(),
+            self.settings_window
+                .current_settings
+                .item_viewer_file_column_sizes
+                .clone(),
+            self.settings_window
+                .current_settings
+                .item_viewer_drive_column_sizes
+                .clone(),
+            self.settings_window
+                .current_settings
+                .recycle_bin_column_sizes
+                .clone(),
         );
         self.tabs.last_mut().unwrap().primary_view.column_state = column_state;
         self.active_tab = self.tabs.len() - 1;
@@ -275,6 +287,18 @@ impl MainWindow {
                 .settings_window
                 .current_settings
                 .recycle_bin_column_order,
+            &self
+                .settings_window
+                .current_settings
+                .item_viewer_file_column_sizes,
+            &self
+                .settings_window
+                .current_settings
+                .item_viewer_drive_column_sizes,
+            &self
+                .settings_window
+                .current_settings
+                .recycle_bin_column_sizes,
         );
     }
 
@@ -300,6 +324,10 @@ impl MainWindow {
                 .current_settings
                 .item_viewer_file_column_order
         };
+        eprintln!(
+            "SAVE COLUMN ORDER: drive={} recycle={} order={:?}",
+            is_drive_view, is_recycle_bin_view, order
+        );
         *target_order = order.to_vec();
 
         for tab in &mut self.tabs {
@@ -1356,6 +1384,9 @@ impl MainWindow {
                         _item_viewer_file_column_order,
                         _item_viewer_drive_column_order,
                         _recycle_bin_column_order,
+                        _item_viewer_file_column_sizes,
+                        _item_viewer_drive_column_sizes,
+                        _recycle_bin_column_sizes,
                     ) = load_app_settings();
                     self.tabs[0].primary_view.nav = Navigation::new(start_path);
                     self.tabs[0].split_view = None;
@@ -1389,6 +1420,14 @@ impl MainWindow {
                 if let Some(sources) = drag_sources {
                     self.move_selected_paths_to_dir(sources, target_dir.clone());
                 }
+            }
+            if action.scroll_left {
+                self.tab_scroll_offset = (self.tab_scroll_offset - 180.0).max(0.0);
+            }
+
+            if action.scroll_right {
+                self.tab_scroll_offset =
+                    (self.tab_scroll_offset + 180.0).min(action.max_scroll_offset);
             }
         }
     }
@@ -1576,6 +1615,9 @@ impl MainWindow {
             }
             if action.toggle_sidebar {
                 self.sidebar_collapsed = !self.sidebar_collapsed;
+            }
+            if action.toggle_active_tab_split {
+                self.toggle_split_for_active_tab();
             }
         }
     }
@@ -2083,48 +2125,48 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
         match action {
             ItemViewerAction::Sort(col) => explorer.toggle_sort(col),
             ItemViewerAction::ToggleColumnVisibility(column) => {
-                let view = explorer.active_tab_mut().view_mut(side);
-                let column_state = &mut view.column_state;
+                let new_order = {
+                    let view = explorer.active_tab_mut().view_mut(side);
+                    let column_state = &mut view.column_state;
 
-                match column {
-                    ItemViewerHeaderColumn::Name => {}
-                    ItemViewerHeaderColumn::Type => {
-                        column_state.show_type = !column_state.show_type;
-                        column_state.layout_generation =
-                            column_state.layout_generation.wrapping_add(1);
+                    if column_state.toggle_column_visibility(
+                        is_drive_view,
+                        is_recycle_bin_view,
+                        column,
+                    ) {
+                        Some(
+                            column_state
+                                .order(is_drive_view, is_recycle_bin_view)
+                                .to_vec(),
+                        )
+                    } else {
+                        None
                     }
-                    ItemViewerHeaderColumn::Size => {
-                        column_state.show_size = !column_state.show_size;
-                        column_state.layout_generation =
-                            column_state.layout_generation.wrapping_add(1);
-                    }
-                    ItemViewerHeaderColumn::Modified => {
-                        column_state.show_modified = !column_state.show_modified;
-                        column_state.layout_generation =
-                            column_state.layout_generation.wrapping_add(1);
-                    }
-                    ItemViewerHeaderColumn::Created => {
-                        column_state.show_created = !column_state.show_created;
-                        column_state.layout_generation =
-                            column_state.layout_generation.wrapping_add(1);
-                    }
-                    ItemViewerHeaderColumn::Usage => {}
-                    ItemViewerHeaderColumn::Deleted => {
-                        column_state.layout_generation =
-                            column_state.layout_generation.wrapping_add(1);
-                    }
+                };
+
+                if let Some(order) = new_order {
+                    explorer.apply_item_viewer_column_order(
+                        is_drive_view,
+                        is_recycle_bin_view,
+                        &order,
+                    );
                 }
             }
             ItemViewerAction::FitColumn(column) => {
                 let view = explorer.active_tab_mut().view_mut(side);
+
                 view.column_state.pending_fit_request =
                     Some(ItemViewerColumnFitRequest::Column(column));
+
                 view.column_state.layout_generation =
                     view.column_state.layout_generation.wrapping_add(1);
             }
+
             ItemViewerAction::FitAllColumns => {
                 let view = explorer.active_tab_mut().view_mut(side);
+
                 view.column_state.pending_fit_request = Some(ItemViewerColumnFitRequest::All);
+
                 view.column_state.layout_generation =
                     view.column_state.layout_generation.wrapping_add(1);
             }
@@ -2509,6 +2551,36 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     view.explorer_state.selection_focus = None;
                 }
                 explorer.load_path();
+            }
+            ItemViewerAction::ColumnSizesChanged => {
+                let sizes = {
+                    let view = explorer.active_tab().view(side);
+
+                    view.column_state
+                        .column_sizes(is_drive_view, is_recycle_bin_view)
+                        .to_vec()
+                };
+
+                let target_sizes = if is_drive_view {
+                    &mut explorer
+                        .settings_window
+                        .current_settings
+                        .item_viewer_drive_column_sizes
+                } else if is_recycle_bin_view {
+                    &mut explorer
+                        .settings_window
+                        .current_settings
+                        .recycle_bin_column_sizes
+                } else {
+                    &mut explorer
+                        .settings_window
+                        .current_settings
+                        .item_viewer_file_column_sizes
+                };
+
+                *target_sizes = sizes;
+
+                explorer.save_app_settings_to_disk();
             }
         }
     }

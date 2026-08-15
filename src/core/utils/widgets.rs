@@ -9,7 +9,7 @@ pub fn clickable_active_icon(
     icon: &str,
     default_color: Color32,
     is_active: bool,
-    is_active_color: Color32,
+    palette: &ThemePalette,
 ) -> Response {
     let font_id = FontId::default();
 
@@ -20,9 +20,13 @@ pub fn clickable_active_icon(
     let (rect, resp) = ui.allocate_exact_size(galley.size(), Sense::click());
 
     let color = if is_active {
-        is_active_color
+        palette.primary
     } else {
-        default_color
+        if resp.hovered() {
+            palette.primary
+        } else {
+            default_color
+        }
     };
 
     ui.painter()
@@ -31,7 +35,7 @@ pub fn clickable_active_icon(
     resp
 }
 
-pub fn clickable_icon(ui: &mut Ui, icon: &str, hover_color: Color32) -> Response {
+pub fn clickable_icon(ui: &mut Ui, icon: &str, palette: &ThemePalette) -> Response {
     let font_id = FontId::default();
 
     let galley =
@@ -41,13 +45,41 @@ pub fn clickable_icon(ui: &mut Ui, icon: &str, hover_color: Color32) -> Response
     let (rect, resp) = ui.allocate_exact_size(galley.size(), Sense::click());
 
     let color = if resp.hovered() {
-        hover_color
+        palette.primary
     } else {
         ui.visuals().text_color()
     };
 
     ui.painter()
         .text(rect.center(), Align2::CENTER_CENTER, icon, font_id, color);
+
+    resp
+}
+
+pub fn clickable_windows_icon(
+    ui: &mut Ui,
+    icon: &str,
+    hover_bg: Color32,
+    palette: &ThemePalette,
+) -> Response {
+    const BUTTON_WIDTH: f32 = 45.0;
+    const BUTTON_HEIGHT: f32 = 26.0;
+    const ICON_SIZE: f32 = 14.0;
+
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(BUTTON_WIDTH, BUTTON_HEIGHT), Sense::click());
+
+    if resp.hovered() {
+        ui.painter().rect_filled(rect, 0.0, hover_bg);
+    }
+
+    ui.painter().text(
+        rect.center(),
+        Align2::CENTER_CENTER,
+        icon,
+        FontId::proportional(ICON_SIZE),
+        palette.icon_color,
+    );
 
     resp
 }
@@ -192,7 +224,7 @@ pub fn draw_checkbox(
     ui: &mut egui::Ui,
     palette: &ThemePalette,
     checked: &mut bool,
-    id: impl std::hash::Hash,
+    id: impl std::hash::Hash + std::fmt::Debug,
 ) -> egui::Response {
     let size = ui.available_rect_before_wrap().height().min(12.0);
 
@@ -247,7 +279,7 @@ pub fn draw_checkbox(
 pub fn draw_dropdown(
     ui: &mut egui::Ui,
     palette: &ThemePalette,
-    id: impl std::hash::Hash,
+    id: impl std::hash::Hash + std::fmt::Debug,
     width: f32,
     selected_text: impl Into<egui::WidgetText>,
     add_contents: impl FnOnce(&mut egui::Ui),
@@ -259,6 +291,7 @@ pub fn draw_dropdown(
         visuals.widgets.hovered.bg_fill = palette.primary_hover;
         visuals.widgets.active.bg_fill = palette.primary_active;
         apply_eden_visual_overrides(ui, palette);
+        apply_eden_dropdown_visual_color_overrides(ui, palette);
         egui::ComboBox::from_id_salt(id)
             .width(width)
             .selected_text(selected_text)
@@ -290,6 +323,17 @@ pub fn apply_eden_visual_overrides(ui: &mut egui::Ui, palette: &ThemePalette) {
     style.spacing.item_spacing = egui::vec2(6.0, 2.0);
     style.spacing.menu_margin = egui::Margin::same(4);
     style.spacing.interact_size.y = palette.text_size + 6.0;
+}
+
+pub fn apply_eden_dropdown_visual_color_overrides(ui: &mut egui::Ui, palette: &ThemePalette) {
+    let visuals = &mut ui.style_mut().visuals;
+
+    visuals.widgets.active.bg_fill = egui::Color32::TRANSPARENT;
+    visuals.widgets.active.weak_bg_fill = egui::Color32::TRANSPARENT;
+    visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(palette.medium_radius);
+    visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(palette.medium_radius);
+    visuals.widgets.active.corner_radius = egui::CornerRadius::same(palette.medium_radius);
+    visuals.widgets.open.corner_radius = egui::CornerRadius::same(palette.medium_radius);
 }
 
 pub fn apply_eden_visual_color_overrides(ui: &mut egui::Ui, palette: &ThemePalette) {

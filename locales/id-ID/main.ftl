@@ -171,3 +171,7 @@ launch-window-not-ready =
     Jendela EdenExplorer yang sedang berjalan tidak siap.
 launch-window-rejected = 
     Jendela EdenExplorer yang sedang berjalan tidak menerima permintaan.
+theme_sidebar_item_spacing_y = Spasi Vertikal Item Sidebar
+restore = Pulihkan
+maximize = Maksimalkan
+minimize = Minimalkan

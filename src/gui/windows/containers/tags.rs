@@ -41,6 +41,7 @@ pub fn draw_tags(
             egui::Frame::NONE.show(ui, |ui| {
                 ui.add_space(8.0);
                 draw_container_header(
+                    i18n,
                     ui,
                     palette,
                     hwnd
@@ -160,14 +161,14 @@ pub fn draw_tags(
                                                 .size(palette.text_size)
                                                 .color(palette.tooltip_text_color),
                                         );
-                                        if clickable_icon(ui, regular::TRASH, palette.primary)
+                                        if clickable_icon(ui, regular::TRASH, palette)
                                             .on_hover_text(i18n.tr("tag_delete_group"))
                                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                                             .clicked()
                                         {
                                             delete_confirmation = Some(group_id);
                                         }
-                                            if clickable_icon(ui, regular::PENCIL_SIMPLE, palette.primary)
+                                        if clickable_icon(ui, regular::PENCIL_SIMPLE, palette)
                                             .on_hover_text(i18n.tr("inputs_rename"))
                                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                                             .clicked()
@@ -440,9 +441,12 @@ pub fn draw_delete_confirmation_popup(
         .resizable(false)
         .default_width(360.0)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-        .frame(egui::Frame::popup(&ctx.style()).corner_radius(egui::CornerRadius::same(8)))
+        .frame(
+            egui::Frame::popup(&ctx.style_of(ctx.theme()))
+                .corner_radius(egui::CornerRadius::same(8)),
+        )
         .show(ctx, |ui| {
-            let mut style = (*ui.ctx().style()).clone();
+            let mut style = (**ui.style()).clone();
             style.text_styles = [
                 (egui::TextStyle::Heading, egui::FontId::proportional(14.0)),
                 (
@@ -529,9 +533,12 @@ pub fn draw_tag_picker_popup(
         .resizable(false)
         .default_width(360.0)
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-        .frame(egui::Frame::popup(&ctx.style()).corner_radius(egui::CornerRadius::same(8)))
+        .frame(
+            egui::Frame::popup(&ctx.style_of(ctx.theme()))
+                .corner_radius(egui::CornerRadius::same(8)),
+        )
         .show(ctx, |ui| {
-            let mut style = (*ui.ctx().style()).clone();
+            let mut style = (**ui.style()).clone();
             style.text_styles = [
                 (egui::TextStyle::Heading, egui::FontId::proportional(14.0)),
                 (
@@ -713,7 +720,12 @@ fn draw_insert_line(ui: &mut egui::Ui, palette: &ThemePalette, y: f32, left: f32
     );
 }
 
-pub fn draw_container_header(ui: &mut egui::Ui, palette: &ThemePalette, hwnd: Option<HWND>) {
+pub fn draw_container_header(
+    i18n: &I18n,
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+    hwnd: Option<HWND>,
+) {
     let controls_width = 64.0;
     let full_width = ui.available_width();
     let tabs_width = (full_width - controls_width).max(0.0);
@@ -749,7 +761,7 @@ pub fn draw_container_header(ui: &mut egui::Ui, palette: &ThemePalette, hwnd: Op
                 egui::vec2(controls_width, 32.0),
                 egui::Layout::right_to_left(egui::Align::Center),
                 |ui| {
-                    handle_draw_windows_buttons(ui, hwnd, palette);
+                    handle_draw_windows_buttons(i18n, ui, hwnd, palette);
                 },
             );
         },
@@ -765,7 +777,7 @@ fn handle_context_menu_actions_tags(
     is_tagged: bool,
 ) {
     // Apply context-menu-specific typography
-    let mut style = (*ui.ctx().style()).clone();
+    let mut style = (**ui.style()).clone();
     style.text_styles = [
         (
             egui::TextStyle::Body,

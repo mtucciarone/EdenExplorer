@@ -16,270 +16,6 @@ use egui_phosphor::regular;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-pub fn draw_sidebar_item(
-    ui: &mut egui::Ui,
-    icon_cache: &IconCache,
-    path: &PathBuf,
-    label: &str,
-    is_dir: bool,
-    is_recycle_bin: bool,
-    palette: &ThemePalette,
-    draggable: bool,
-    rect_and_resp: Option<(egui::Rect, egui::Response)>,
-) -> egui::Response {
-    let height = 18.0;
-
-    // --- Get rect + response ---
-    let (rect, resp) = if let Some((rect, resp)) = rect_and_resp {
-        (rect, resp)
-    } else {
-        let available_width = ui.available_width();
-        ui.allocate_exact_size(
-            egui::vec2(available_width, height),
-            if draggable {
-                egui::Sense::click_and_drag()
-            } else {
-                egui::Sense::click()
-            },
-        )
-    };
-
-    // --- Hover background + cursor ---
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(if draggable {
-            egui::CursorIcon::Grab
-        } else {
-            egui::CursorIcon::Default
-        });
-
-        ui.painter().rect_filled(
-            rect,
-            egui::CornerRadius::same(palette.medium_radius),
-            palette.primary_hover,
-        );
-
-        if draggable {
-            let handle_width = 12.0;
-            let handle_rect = egui::Rect::from_min_size(
-                egui::pos2(rect.right() - handle_width - 4.0, rect.top()),
-                egui::vec2(handle_width, rect.height()),
-            );
-
-            ui.painter().text(
-                handle_rect.center(),
-                egui::Align2::CENTER_CENTER,
-                regular::DOTS_SIX_VERTICAL,
-                egui::FontId::new(14.0, egui::FontFamily::Proportional),
-                palette.icon_color,
-            );
-        }
-    }
-
-    // --- Icon ---
-    let icon_size = egui::vec2(palette.sidebar_icon_size, palette.sidebar_icon_size);
-    let icon_padding = 4.0;
-
-    let icon_pos = egui::pos2(rect.min.x + 4.0, rect.center().y - icon_size.y / 2.0);
-    let text_offset_x = if is_recycle_bin {
-        ui.painter().text(
-            egui::pos2(icon_pos.x + icon_size.x * 0.5, rect.center().y),
-            egui::Align2::CENTER_CENTER,
-            regular::TRASH,
-            egui::FontId::new(icon_size.y * 0.85, egui::FontFamily::Proportional),
-            palette.icon_color,
-        );
-        palette.text_size + icon_size.x + icon_padding
-    } else if let Some(icon) = icon_cache.get(path, is_dir) {
-        ui.painter().image(
-            (&icon).into(),
-            egui::Rect::from_min_size(icon_pos, icon_size),
-            egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1.0, 1.0)),
-            egui::Color32::WHITE,
-        );
-
-        palette.text_size + icon_size.x + icon_padding
-    } else {
-        palette.text_size + 20.0 + icon_padding
-    };
-
-    // --- Text ---
-    let text_width = rect.width() - text_offset_x;
-    let font_id = egui::FontId::new(palette.text_size, egui::FontFamily::Proportional);
-    let color = ui.visuals().text_color();
-
-    let (display_name, truncated) = truncate_item_text(ui, label, text_width, &font_id, color);
-
-    let text_pos = egui::pos2(rect.min.x + text_offset_x, rect.center().y - 2.0);
-
-    ui.painter().text(
-        text_pos,
-        egui::Align2::LEFT_CENTER,
-        display_name,
-        font_id,
-        color,
-    );
-
-    // --- Tooltip + cursor ---
-    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-
-    if truncated {
-        resp.on_hover_text(
-            egui::RichText::new(label)
-                .size(palette.tooltip_text_size)
-                .color(palette.tooltip_text_color),
-        )
-    } else {
-        resp.on_hover_text(
-            egui::RichText::new(path.to_string_lossy())
-                .size(palette.tooltip_text_size)
-                .color(palette.tooltip_text_color),
-        )
-    }
-}
-
-fn favorites_item_layout(ui: &mut egui::Ui) -> (egui::Rect, egui::Response) {
-    let available_width = ui.available_width();
-    let height = 18.0;
-
-    ui.allocate_exact_size(
-        egui::vec2(available_width, height),
-        egui::Sense::click_and_drag(),
-    )
-}
-
-/// Draw a drive item with usage bar and size on hover
-fn sidebar_drive_item(
-    ui: &mut egui::Ui,
-    icon_cache: &IconCache,
-    drive: &DriveInfo,
-    palette: &ThemePalette,
-    selected: bool,
-) -> egui::Response {
-    let available_width = ui.available_width();
-    let height = 32.0;
-
-    let (rect, mut resp) =
-        ui.allocate_exact_size(egui::vec2(available_width, height), egui::Sense::click());
-
-    // Background (selected > active click > hover)
-    let fill_color = if selected {
-        palette.primary_active
-    } else if resp.is_pointer_button_down_on() {
-        palette.primary_active
-    } else if resp.hovered() {
-        palette.primary_hover
-    } else {
-        egui::Color32::TRANSPARENT
-    };
-
-    if fill_color != egui::Color32::TRANSPARENT {
-        ui.painter().rect_filled(
-            rect,
-            egui::CornerRadius::same(palette.medium_radius),
-            fill_color,
-        );
-    }
-
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-
-    // --- Top row: icon + label ---
-    let icon_size = egui::vec2(palette.sidebar_icon_size, palette.sidebar_icon_size);
-    let icon_padding = 4.0;
-
-    let text_offset_x = if let Some(icon) = icon_cache.get(&drive.path, true) {
-        let icon_pos = egui::pos2(rect.min.x + 4.0, rect.min.y + 4.0);
-
-        ui.painter().image(
-            (&icon).into(),
-            egui::Rect::from_min_size(icon_pos, icon_size),
-            egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1.0, 1.0)),
-            palette.icon_windows,
-        );
-
-        palette.text_size + icon_size.x + icon_padding
-    } else {
-        palette.text_size + 20.0 + icon_padding
-    };
-
-    // --- DISPLAY TEXT ---
-    let text_width = available_width - text_offset_x;
-    let max_chars = (text_width / 7.0) as usize;
-
-    let display_name = if drive.display.len() > max_chars && max_chars > 3 {
-        // Use character boundaries instead of byte indices
-        let mut char_count = 0;
-        let mut byte_end = 0;
-        for (i, _) in drive.display.char_indices() {
-            if char_count >= max_chars - 3 {
-                break;
-            }
-            char_count += 1;
-            byte_end = i;
-        }
-        format!("{}...", &drive.display[..byte_end])
-    } else {
-        drive.display.clone()
-    };
-
-    let text_y = rect.min.y + 4.0 + icon_size.y / 2.0;
-    let text_pos = egui::pos2(rect.min.x + text_offset_x, text_y);
-    let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
-
-    ui.painter().text(
-        text_pos,
-        egui::Align2::LEFT_CENTER,
-        display_name,
-        font_id,
-        ui.visuals().text_color(),
-    );
-
-    // --- Bottom row: progress bar ---
-    if let (Some(total), Some(free)) = (drive.total_space, drive.free_space) {
-        let bar_height = 6.0;
-        let max_bar_width = 180.0;
-        let bar_width = (available_width - 8.0).min(max_bar_width);
-
-        let bar_rect = egui::Rect::from_min_size(
-            egui::pos2(rect.min.x + 4.0, rect.bottom() - bar_height),
-            egui::vec2(bar_width, bar_height),
-        );
-
-        let bar_bg = palette.drive_usage_background;
-        let bar_fill = drive_usage_color((total - free) as f32 / total as f32, palette);
-
-        ui.painter().rect_filled(
-            bar_rect,
-            egui::CornerRadius::same(palette.small_radius),
-            bar_bg,
-        );
-
-        let used_ratio = (total - free) as f32 / total as f32;
-        let fill_width = bar_rect.width() * used_ratio;
-
-        let fill_rect = egui::Rect::from_min_size(bar_rect.min, egui::vec2(fill_width, bar_height));
-
-        ui.painter().rect_filled(
-            fill_rect,
-            egui::CornerRadius::same(palette.small_radius),
-            bar_fill,
-        );
-
-        let gb = 1024.0 * 1024.0 * 1024.0;
-        let used_gb = (total - free) as f64 / gb;
-        let total_gb = total as f64 / gb;
-
-        resp = resp.on_hover_text(
-            egui::RichText::new(format!("{:.1}/{:.1}GB", used_gb, total_gb))
-                .size(palette.tooltip_text_size)
-                .color(palette.tooltip_text_color),
-        );
-    }
-
-    resp
-}
-
 /// Draw the sidebar, supporting favorites reordering
 pub fn draw_sidebar(
     ui: &mut egui::Ui,
@@ -306,7 +42,7 @@ pub fn draw_sidebar(
                 ui.add_space(12.0);
                 ui.vertical(|ui| {
                     ui.add_space(8.0);
-                    ui.spacing_mut().item_spacing.y *= 0.5;
+                    ui.spacing_mut().item_spacing.y *= palette.sidebar_item_spacing_y;
 
                     ui.add(egui::Label::new(
                         egui::RichText::new(&i18n.tr("places"))
@@ -417,7 +153,7 @@ pub fn draw_sidebar(
                     let mut item_layouts = Vec::with_capacity(sidebar_state.favorites.len());
 
                     for (i, _favorite) in sidebar_state.favorites.iter().enumerate() {
-                        let (rect, resp) = favorites_item_layout(ui);
+                        let (rect, resp) = favorites_item_layout(ui, palette);
 
                         if !is_dragging && resp.drag_started() {
                             sidebar_state.dragging_favorite = Some(i);
@@ -656,4 +392,298 @@ pub fn draw_sidebar(
 
     action.move_files_to_sidebar_dir = tab_drop_target;
     action
+}
+
+pub fn draw_sidebar_item(
+    ui: &mut egui::Ui,
+    icon_cache: &IconCache,
+    path: &PathBuf,
+    label: &str,
+    is_dir: bool,
+    is_recycle_bin: bool,
+    palette: &ThemePalette,
+    draggable: bool,
+    rect_and_resp: Option<(egui::Rect, egui::Response)>,
+) -> egui::Response {
+    let height = if palette.sidebar_item_spacing_y > 1.0 {
+        18.0 * palette.sidebar_item_spacing_y
+    } else {
+        18.0
+    };
+
+    // --- Get rect + response ---
+    let (rect, resp) = if let Some((rect, resp)) = rect_and_resp {
+        (rect, resp)
+    } else {
+        let available_width = ui.available_width();
+        ui.allocate_exact_size(
+            egui::vec2(available_width, height),
+            if draggable {
+                egui::Sense::click_and_drag()
+            } else {
+                egui::Sense::click()
+            },
+        )
+    };
+
+    // --- Hover background + cursor ---
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(if draggable {
+            egui::CursorIcon::Grab
+        } else {
+            egui::CursorIcon::Default
+        });
+
+        ui.painter().rect_filled(
+            rect,
+            egui::CornerRadius::same(palette.medium_radius),
+            palette.primary_hover,
+        );
+
+        if draggable {
+            let handle_width = 12.0;
+            let handle_rect = egui::Rect::from_min_size(
+                egui::pos2(rect.right() - handle_width - 4.0, rect.top()),
+                egui::vec2(handle_width, rect.height()),
+            );
+
+            ui.painter().text(
+                handle_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                regular::DOTS_SIX_VERTICAL,
+                egui::FontId::new(14.0, egui::FontFamily::Proportional),
+                palette.icon_color,
+            );
+        }
+    }
+
+    // --- Icon ---
+    let icon_size = egui::vec2(palette.sidebar_icon_size, palette.sidebar_icon_size);
+    let icon_padding = 4.0;
+
+    let icon_pos = egui::pos2(rect.min.x + 4.0, rect.center().y - icon_size.y / 2.0);
+
+    let text_offset_x = if is_recycle_bin {
+        ui.painter().text(
+            egui::pos2(icon_pos.x + icon_size.x * 0.5, rect.center().y),
+            egui::Align2::CENTER_CENTER,
+            regular::TRASH,
+            egui::FontId::new(icon_size.y * 0.85, egui::FontFamily::Proportional),
+            palette.icon_color,
+        );
+
+        palette.text_size + icon_size.x + icon_padding
+    } else if let Some(glyph) = icon_cache.get_custom_folder_icon(path, is_dir) {
+        // Custom Phosphor icon for recognized folders.
+        ui.painter().text(
+            egui::pos2(icon_pos.x + icon_size.x * 0.5, rect.center().y),
+            egui::Align2::CENTER_CENTER,
+            glyph,
+            egui::FontId::new(icon_size.y, egui::FontFamily::Proportional),
+            palette.icon_color,
+        );
+
+        palette.text_size + icon_size.x + icon_padding
+    } else if let Some(icon) = icon_cache.get(path, is_dir) {
+        // Windows shell icon fallback.
+        ui.painter().image(
+            (&icon).into(),
+            egui::Rect::from_min_size(icon_pos, icon_size),
+            egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+
+        palette.text_size + icon_size.x + icon_padding
+    } else {
+        palette.text_size + 20.0 + icon_padding
+    };
+
+    // --- Text ---
+    let text_width = rect.width() - text_offset_x;
+    let font_id = egui::FontId::new(palette.text_size, egui::FontFamily::Proportional);
+    let color = ui.visuals().text_color();
+
+    let (display_name, truncated) = truncate_item_text(ui, label, text_width, &font_id, color);
+
+    let text_pos = egui::pos2(rect.min.x + text_offset_x, rect.center().y - 2.0);
+
+    ui.painter().text(
+        text_pos,
+        egui::Align2::LEFT_CENTER,
+        display_name,
+        font_id,
+        color,
+    );
+
+    // --- Tooltip + cursor ---
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+
+    if truncated {
+        resp.on_hover_text(
+            egui::RichText::new(label)
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+    } else {
+        resp.on_hover_text(
+            egui::RichText::new(path.to_string_lossy())
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+    }
+}
+
+fn favorites_item_layout(
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+) -> (egui::Rect, egui::Response) {
+    let available_width = ui.available_width();
+
+    let height = if palette.sidebar_item_spacing_y > 1.0 {
+        18.0 * palette.sidebar_item_spacing_y
+    } else {
+        18.0
+    };
+
+    ui.allocate_exact_size(
+        egui::vec2(available_width, height),
+        egui::Sense::click_and_drag(),
+    )
+}
+
+/// Draw a drive item with usage bar and size on hover
+fn sidebar_drive_item(
+    ui: &mut egui::Ui,
+    icon_cache: &IconCache,
+    drive: &DriveInfo,
+    palette: &ThemePalette,
+    selected: bool,
+) -> egui::Response {
+    let available_width = ui.available_width();
+    let height = if palette.sidebar_item_spacing_y > 1.0 {
+        32.0 * palette.sidebar_item_spacing_y
+    } else {
+        32.0
+    };
+
+    let (rect, mut resp) =
+        ui.allocate_exact_size(egui::vec2(available_width, height), egui::Sense::click());
+
+    // Background (selected > active click > hover)
+    let fill_color = if selected {
+        palette.primary_active
+    } else if resp.is_pointer_button_down_on() {
+        palette.primary_active
+    } else if resp.hovered() {
+        palette.primary_hover
+    } else {
+        egui::Color32::TRANSPARENT
+    };
+
+    if fill_color != egui::Color32::TRANSPARENT {
+        ui.painter().rect_filled(
+            rect,
+            egui::CornerRadius::same(palette.medium_radius),
+            fill_color,
+        );
+    }
+
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+
+    // --- Top row: icon + label ---
+    let icon_size = egui::vec2(palette.sidebar_icon_size, palette.sidebar_icon_size);
+    let icon_padding = 4.0;
+
+    let text_offset_x = if let Some(icon) = icon_cache.get(&drive.path, true) {
+        let icon_pos = egui::pos2(rect.min.x + 4.0, rect.min.y + 4.0);
+
+        ui.painter().image(
+            (&icon).into(),
+            egui::Rect::from_min_size(icon_pos, icon_size),
+            egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1.0, 1.0)),
+            palette.icon_windows,
+        );
+
+        palette.text_size + icon_size.x + icon_padding
+    } else {
+        palette.text_size + 20.0 + icon_padding
+    };
+
+    // --- DISPLAY TEXT ---
+    let text_width = available_width - text_offset_x;
+    let max_chars = (text_width / 7.0) as usize;
+
+    let display_name = if drive.display.len() > max_chars && max_chars > 3 {
+        // Use character boundaries instead of byte indices
+        let mut char_count = 0;
+        let mut byte_end = 0;
+        for (i, _) in drive.display.char_indices() {
+            if char_count >= max_chars - 3 {
+                break;
+            }
+            char_count += 1;
+            byte_end = i;
+        }
+        format!("{}...", &drive.display[..byte_end])
+    } else {
+        drive.display.clone()
+    };
+
+    let text_y = rect.min.y + 4.0 + icon_size.y / 2.0;
+    let text_pos = egui::pos2(rect.min.x + text_offset_x, text_y);
+    let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
+
+    ui.painter().text(
+        text_pos,
+        egui::Align2::LEFT_CENTER,
+        display_name,
+        font_id,
+        ui.visuals().text_color(),
+    );
+
+    // --- Bottom row: progress bar ---
+    if let (Some(total), Some(free)) = (drive.total_space, drive.free_space) {
+        let bar_height = 6.0;
+        let max_bar_width = 180.0;
+        let bar_width = (available_width - 8.0).min(max_bar_width);
+
+        let bar_rect = egui::Rect::from_min_size(
+            egui::pos2(rect.min.x + 4.0, rect.bottom() - bar_height),
+            egui::vec2(bar_width, bar_height),
+        );
+
+        let bar_bg = palette.drive_usage_background;
+        let bar_fill = drive_usage_color((total - free) as f32 / total as f32, palette);
+
+        ui.painter().rect_filled(
+            bar_rect,
+            egui::CornerRadius::same(palette.small_radius),
+            bar_bg,
+        );
+
+        let used_ratio = (total - free) as f32 / total as f32;
+        let fill_width = bar_rect.width() * used_ratio;
+
+        let fill_rect = egui::Rect::from_min_size(bar_rect.min, egui::vec2(fill_width, bar_height));
+
+        ui.painter().rect_filled(
+            fill_rect,
+            egui::CornerRadius::same(palette.small_radius),
+            bar_fill,
+        );
+
+        let gb = 1024.0 * 1024.0 * 1024.0;
+        let used_gb = (total - free) as f64 / gb;
+        let total_gb = total as f64 / gb;
+
+        resp = resp.on_hover_text(
+            egui::RichText::new(format!("{:.1}/{:.1}GB", used_gb, total_gb))
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        );
+    }
+
+    resp
 }

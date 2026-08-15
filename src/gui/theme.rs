@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::{LazyLock, RwLock};
 
-pub const THEME_VERSION: u32 = 6;
+pub const THEME_VERSION: u32 = 7;
 
 fn default_itemviewer_row_height() -> f32 {
     16.0
@@ -81,6 +81,7 @@ pub struct ThemePalette {
     pub row_bg: Color32,
     #[serde(default = "default_itemviewer_row_height")]
     pub row_height: f32,
+    pub sidebar_item_spacing_y: f32,
 
     // 🎯 Handles / borders
     pub resize_handle: Color32,
@@ -162,6 +163,7 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         row_selected_bg: Color32::from_rgb(70, 78, 86),
         row_bg: Color32::from_rgb(40, 45, 50),
         row_height: default_itemviewer_row_height(),
+        sidebar_item_spacing_y: 0.5,
 
         // 🎯 Handles / borders
         resize_handle: Color32::from_rgb(160, 170, 180),
@@ -249,6 +251,7 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         row_selected_bg: Color32::from_rgb(70, 78, 86),
         row_bg: Color32::from_rgb(240, 245, 250),
         row_height: default_itemviewer_row_height(),
+        sidebar_item_spacing_y: 0.5,
 
         // 🎯 Handles / borders
         resize_handle: Color32::from_rgb(160, 170, 180),
@@ -340,7 +343,12 @@ pub fn set_palette(mode: ThemeMode, palette: ThemePalette) {
 }
 
 pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
-    let mut style = (*ctx.style()).clone();
+    let theme = match mode {
+        ThemeMode::Dark => egui::Theme::Dark,
+        ThemeMode::Light => egui::Theme::Light,
+    };
+
+    let mut style = (*ctx.style_of(theme)).clone();
     let palette = get_palette(mode);
 
     style.visuals = match mode {
@@ -419,7 +427,8 @@ pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
         }
     }
 
-    ctx.set_style(style);
+    ctx.set_style_of(theme, style);
+    ctx.set_theme(theme);
 }
 
 pub fn apply_checkbox_colors(ui: &mut egui::Ui, palette: &ThemePalette, checked: bool) {

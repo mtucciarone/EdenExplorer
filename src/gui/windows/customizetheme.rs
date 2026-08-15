@@ -5,14 +5,12 @@ use crate::gui::theme::{
     regenerate_base_derived_colors,
 };
 use crate::gui::utils::rgba_color_edit_button;
-use crate::gui::utils::text::apply_eden_text_overrides;
 use crate::gui::utils::widgets::{
     apply_eden_visual_overrides, draw_dropdown, eden_button, eden_text_label, eden_toggle_button,
 };
 use crate::gui::windows::enums::ThemeCustomizerAction;
 use crate::gui::windows::structs::ThemeCustomizer;
 use eframe::egui;
-use egui::{FontFamily, FontId};
 
 fn selectable_mode(
     ui: &mut egui::Ui,
@@ -60,15 +58,15 @@ pub fn draw_theme_customizer(
     egui::Window::new(i18n.tr("theme_title"))
         .collapsible(false)
         .resizable(false)
-        .fixed_size([600.0, 500.0])
+        .fixed_size([600.0, 550.0])
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .open(&mut customizer.open)
-        .frame(egui::Frame::popup(&ctx.style()).corner_radius(egui::CornerRadius::same(8)))
+        .frame(
+            egui::Frame::popup(&ctx.style_of(ctx.theme()))
+                .corner_radius(egui::CornerRadius::same(8)),
+        )
         .show(ctx, |ui| {
             ui.set_width(ui.available_width());
-
-            let label_color = palette.text_normal;
-            let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
             // TOP SECTION: select which palette to edit
             ui.horizontal(|ui| {
                 if selectable_mode(
@@ -224,6 +222,29 @@ pub fn draw_theme_customizer(
                                                 )
                                                 .range(8.0..=32.0)
                                                 .speed(0.2),
+                                            )
+                                            .changed();
+                                    },
+                                );
+                                ui.end_row();
+
+                                eden_text_label(
+                                    ui,
+                                    palette,
+                                    &i18n.tr("theme_sidebar_item_spacing_y"),
+                                );
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        apply_eden_visual_overrides(ui, palette);
+                                        changed |= ui
+                                            .add_sized(
+                                                egui::vec2(90.0, 0.0),
+                                                egui::DragValue::new(
+                                                    &mut editing_palette.sidebar_item_spacing_y,
+                                                )
+                                                .range(-0.3..=2.0)
+                                                .speed(0.1),
                                             )
                                             .changed();
                                     },

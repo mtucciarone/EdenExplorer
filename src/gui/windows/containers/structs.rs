@@ -1,5 +1,9 @@
 use crate::core::fs::FileItem;
 use crate::core::indexer::TagsSnapshot;
+use crate::core::indexer::{
+    default_item_viewer_drive_column_size, default_item_viewer_file_column_size,
+    default_recycle_bin_column_size,
+};
 use crate::core::utils::thumbnails::ThumbnailService;
 use crate::gui::utils::hsl_to_color32;
 use crate::gui::windows::containers::enums::{
@@ -45,12 +49,14 @@ pub struct TabsAction {
     pub activate: Option<u64>,
     pub close: Option<u64>,
     pub open_new: bool,
-    pub toggle_split: bool,
     pub toggle_pin: Option<PathBuf>,
     pub move_files_to_tab_dir: Option<PathBuf>,
+    pub scroll_left: bool,
+    pub scroll_right: bool,
+    pub max_scroll_offset: f32,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SplitSide {
     Primary,
     Secondary,
@@ -139,6 +145,7 @@ pub enum ItemViewerDisplayMode {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GalleryThumbnailSize {
+    ExtraSmall,
     Small,
     Medium,
     Large,
@@ -148,6 +155,7 @@ pub enum GalleryThumbnailSize {
 impl GalleryThumbnailSize {
     pub fn pixel_size(self) -> f32 {
         match self {
+            Self::ExtraSmall => 24.0,
             Self::Small => 48.0,
             Self::Medium => 96.0,
             Self::Large => 128.0,
@@ -157,6 +165,7 @@ impl GalleryThumbnailSize {
 
     pub fn label(self) -> &'static str {
         match self {
+            Self::ExtraSmall => "Extra Small",
             Self::Small => "Small",
             Self::Medium => "Medium",
             Self::Large => "Large",
@@ -168,12 +177,16 @@ impl GalleryThumbnailSize {
 #[derive(Clone, Copy, Debug)]
 pub struct GalleryState {
     pub thumbnail_size: GalleryThumbnailSize,
+    pub thumbnail_gap: f32,
+    pub thumbnail_padding: f32,
 }
 
 impl Default for GalleryState {
     fn default() -> Self {
         Self {
             thumbnail_size: GalleryThumbnailSize::Medium,
+            thumbnail_gap: 12.0,
+            thumbnail_padding: 6.0,
         }
     }
 }
@@ -186,13 +199,14 @@ pub enum ItemViewerColumnFitRequest {
 
 #[derive(Clone, Debug)]
 pub struct ItemViewerColumnState {
-    pub show_type: bool,
-    pub show_size: bool,
-    pub show_modified: bool,
-    pub show_created: bool,
     pub file_column_order: Vec<ItemViewerHeaderColumn>,
     pub drive_column_order: Vec<ItemViewerHeaderColumn>,
     pub recycle_bin_column_order: Vec<ItemViewerHeaderColumn>,
+
+    pub file_column_sizes: Vec<f32>,
+    pub drive_column_sizes: Vec<f32>,
+    pub recycle_bin_column_sizes: Vec<f32>,
+
     pub layout_generation: u64,
     pub pending_fit_request: Option<ItemViewerColumnFitRequest>,
 }
@@ -200,13 +214,12 @@ pub struct ItemViewerColumnState {
 impl Default for ItemViewerColumnState {
     fn default() -> Self {
         Self {
-            show_type: true,
-            show_size: true,
-            show_modified: true,
-            show_created: true,
             file_column_order: default_file_column_order(),
             drive_column_order: default_drive_column_order(),
             recycle_bin_column_order: default_recycle_bin_column_order(),
+            file_column_sizes: default_item_viewer_file_column_size(),
+            drive_column_sizes: default_item_viewer_drive_column_size(),
+            recycle_bin_column_sizes: default_recycle_bin_column_size(),
             layout_generation: 0,
             pending_fit_request: None,
         }
@@ -214,10 +227,223 @@ impl Default for ItemViewerColumnState {
 }
 
 impl ItemViewerColumnState {
+    pub fn toggle_column_visibility(
+        &mut self,
+        is_drive_view: bool,
+        is_recycle_bin_view: bool,
+        column: ItemViewerHeaderColumn,
+    ) -> bool {
+        if column == ItemViewerHeaderColumn::Name {
+            return false;
+        }
+
+        let order = self.order_mut(is_drive_view, is_recycle_bin_view);
+
+        if let Some(index) = order.iter().position(|c| *c == column) {
+            order.remove(index);
+            return true;
+        }
+
+        let default_order = if is_drive_view {
+            default_drive_column_order()
+        } else if is_recycle_bin_view {
+            default_recycle_bin_column_order()
+        } else {
+            default_file_column_order()
+        };
+
+        let default_index = default_order
+            .iter()
+            .position(|c| *c == column)
+            .unwrap_or(order.len());
+
+        let insert_index = order
+            .iter()
+            .filter_map(|existing| default_order.iter().position(|c| c == existing))
+            .filter(|&index| index < default_index)
+            .count();
+
+        order.insert(insert_index, column);
+
+        true
+    }
+    pub fn is_column_visible(
+        &self,
+        is_drive_view: bool,
+        is_recycle_bin_view: bool,
+        column: ItemViewerHeaderColumn,
+    ) -> bool {
+        if column == ItemViewerHeaderColumn::Name {
+            return true;
+        }
+
+        self.order(is_drive_view, is_recycle_bin_view)
+            .contains(&column)
+    }
+
+    pub fn column_width(
+        &self,
+        is_drive_view: bool,
+        is_recycle_bin_view: bool,
+        column: ItemViewerHeaderColumn,
+    ) -> Option<f32> {
+        let sizes = if is_drive_view {
+            &self.drive_column_sizes
+        } else if is_recycle_bin_view {
+            &self.recycle_bin_column_sizes
+        } else {
+            &self.file_column_sizes
+        };
+
+        let index = if is_drive_view {
+            match column {
+                ItemViewerHeaderColumn::Name => 0,
+                ItemViewerHeaderColumn::Size => 1,
+                ItemViewerHeaderColumn::Usage => 2,
+                _ => return None,
+            }
+        } else if is_recycle_bin_view {
+            match column {
+                ItemViewerHeaderColumn::Name => 0,
+                ItemViewerHeaderColumn::Type => 1,
+                ItemViewerHeaderColumn::Size => 2,
+                ItemViewerHeaderColumn::Deleted => 3,
+                ItemViewerHeaderColumn::Created => 4,
+                _ => return None,
+            }
+        } else {
+            match column {
+                ItemViewerHeaderColumn::Name => 0,
+                ItemViewerHeaderColumn::Type => 1,
+                ItemViewerHeaderColumn::Size => 2,
+                ItemViewerHeaderColumn::Modified => 3,
+                ItemViewerHeaderColumn::Created => 4,
+                _ => return None,
+            }
+        };
+
+        sizes.get(index).copied()
+    }
+
+    pub fn set_column_width(
+        &mut self,
+        is_drive_view: bool,
+        is_recycle_bin_view: bool,
+        column: ItemViewerHeaderColumn,
+        width: f32,
+    ) {
+        let sizes = if is_drive_view {
+            &mut self.drive_column_sizes
+        } else if is_recycle_bin_view {
+            &mut self.recycle_bin_column_sizes
+        } else {
+            &mut self.file_column_sizes
+        };
+
+        let index = if is_drive_view {
+            match column {
+                ItemViewerHeaderColumn::Name => 0,
+                ItemViewerHeaderColumn::Size => 1,
+                ItemViewerHeaderColumn::Usage => 2,
+                _ => return,
+            }
+        } else if is_recycle_bin_view {
+            match column {
+                ItemViewerHeaderColumn::Name => 0,
+                ItemViewerHeaderColumn::Type => 1,
+                ItemViewerHeaderColumn::Size => 2,
+                ItemViewerHeaderColumn::Deleted => 3,
+                ItemViewerHeaderColumn::Created => 4,
+                _ => return,
+            }
+        } else {
+            match column {
+                ItemViewerHeaderColumn::Name => 0,
+                ItemViewerHeaderColumn::Type => 1,
+                ItemViewerHeaderColumn::Size => 2,
+                ItemViewerHeaderColumn::Modified => 3,
+                ItemViewerHeaderColumn::Created => 4,
+                _ => return,
+            }
+        };
+
+        if let Some(slot) = sizes.get_mut(index) {
+            *slot = width;
+        }
+    }
+
+    pub fn set_all_column_widths(
+        &mut self,
+        is_drive_view: bool,
+        is_recycle_bin_view: bool,
+        widths: &ItemViewerColumnWidths,
+    ) {
+        self.set_column_width(
+            is_drive_view,
+            is_recycle_bin_view,
+            ItemViewerHeaderColumn::Name,
+            widths.name,
+        );
+
+        self.set_column_width(
+            is_drive_view,
+            is_recycle_bin_view,
+            ItemViewerHeaderColumn::Type,
+            widths.type_width,
+        );
+
+        self.set_column_width(
+            is_drive_view,
+            is_recycle_bin_view,
+            ItemViewerHeaderColumn::Size,
+            widths.size_width,
+        );
+
+        self.set_column_width(
+            is_drive_view,
+            is_recycle_bin_view,
+            ItemViewerHeaderColumn::Modified,
+            widths.modified_width,
+        );
+
+        self.set_column_width(
+            is_drive_view,
+            is_recycle_bin_view,
+            ItemViewerHeaderColumn::Created,
+            widths.created_width,
+        );
+
+        self.set_column_width(
+            is_drive_view,
+            is_recycle_bin_view,
+            ItemViewerHeaderColumn::Deleted,
+            widths.deleted_width,
+        );
+
+        self.set_column_width(
+            is_drive_view,
+            is_recycle_bin_view,
+            ItemViewerHeaderColumn::Usage,
+            widths.usage_width,
+        );
+    }
+    pub fn column_sizes(&self, is_drive_view: bool, is_recycle_bin_view: bool) -> &[f32] {
+        if is_drive_view {
+            &self.drive_column_sizes
+        } else if is_recycle_bin_view {
+            &self.recycle_bin_column_sizes
+        } else {
+            &self.file_column_sizes
+        }
+    }
+
     pub fn from_orders(
         file_column_order: Vec<ItemViewerHeaderColumn>,
         drive_column_order: Vec<ItemViewerHeaderColumn>,
         recycle_bin_column_order: Vec<ItemViewerHeaderColumn>,
+        file_column_sizes: Vec<f32>,
+        drive_column_sizes: Vec<f32>,
+        recycle_bin_column_sizes: Vec<f32>,
     ) -> Self {
         let mut state = Self::default();
         state.file_column_order =
@@ -228,6 +454,12 @@ impl ItemViewerColumnState {
             recycle_bin_column_order,
             &default_recycle_bin_column_order(),
         );
+        state.file_column_sizes =
+            sanitize_column_sizes(file_column_sizes, &default_item_viewer_file_column_size());
+        state.drive_column_sizes =
+            sanitize_column_sizes(drive_column_sizes, &default_item_viewer_drive_column_size());
+        state.recycle_bin_column_sizes =
+            sanitize_column_sizes(recycle_bin_column_sizes, &default_recycle_bin_column_size());
         state
     }
 
@@ -326,42 +558,38 @@ impl ItemViewerColumnState {
         &self,
         is_drive_view: bool,
         is_recycle_bin_view: bool,
-        show_type: bool,
-        show_size: bool,
-        show_modified: bool,
-        show_created: bool,
     ) -> Vec<ItemViewerHeaderColumn> {
-        let allowed = if is_drive_view {
-            vec![
-                ItemViewerHeaderColumn::Type,
+        let allowed: &[ItemViewerHeaderColumn] = if is_drive_view {
+            &[
+                ItemViewerHeaderColumn::Name,
                 ItemViewerHeaderColumn::Size,
                 ItemViewerHeaderColumn::Usage,
             ]
+        } else if is_recycle_bin_view {
+            &[
+                ItemViewerHeaderColumn::Name,
+                ItemViewerHeaderColumn::Type,
+                ItemViewerHeaderColumn::Size,
+                ItemViewerHeaderColumn::Deleted,
+                ItemViewerHeaderColumn::Created,
+            ]
         } else {
-            vec![
+            &[
+                ItemViewerHeaderColumn::Name,
                 ItemViewerHeaderColumn::Type,
                 ItemViewerHeaderColumn::Size,
                 ItemViewerHeaderColumn::Modified,
                 ItemViewerHeaderColumn::Created,
-                ItemViewerHeaderColumn::Deleted,
             ]
         };
 
-        let mut visible = Vec::new();
+        let mut visible = Vec::with_capacity(allowed.len());
+
+        // Name is always visible and always first.
+        visible.push(ItemViewerHeaderColumn::Name);
+
         for column in self.order(is_drive_view, is_recycle_bin_view) {
-            if !allowed.contains(column) {
-                continue;
-            }
-            let shown = match column {
-                ItemViewerHeaderColumn::Type => show_type,
-                ItemViewerHeaderColumn::Size => show_size,
-                ItemViewerHeaderColumn::Modified => show_modified,
-                ItemViewerHeaderColumn::Created => show_created,
-                ItemViewerHeaderColumn::Usage => true,
-                ItemViewerHeaderColumn::Name => true,
-                ItemViewerHeaderColumn::Deleted => true,
-            };
-            if shown {
+            if allowed.contains(column) && *column != ItemViewerHeaderColumn::Name {
                 visible.push(*column);
             }
         }
@@ -370,8 +598,27 @@ impl ItemViewerColumnState {
     }
 }
 
+fn sanitize_column_sizes(sizes: Vec<f32>, defaults: &[f32]) -> Vec<f32> {
+    if sizes.len() != defaults.len() {
+        return defaults.to_vec();
+    }
+
+    sizes
+        .into_iter()
+        .zip(defaults.iter().copied())
+        .map(|(size, default)| {
+            if size.is_finite() && size > 0.0 {
+                size
+            } else {
+                default
+            }
+        })
+        .collect()
+}
+
 fn default_file_column_order() -> Vec<ItemViewerHeaderColumn> {
     vec![
+        ItemViewerHeaderColumn::Name,
         ItemViewerHeaderColumn::Type,
         ItemViewerHeaderColumn::Size,
         ItemViewerHeaderColumn::Modified,
@@ -381,6 +628,7 @@ fn default_file_column_order() -> Vec<ItemViewerHeaderColumn> {
 
 fn default_drive_column_order() -> Vec<ItemViewerHeaderColumn> {
     vec![
+        ItemViewerHeaderColumn::Name,
         ItemViewerHeaderColumn::Type,
         ItemViewerHeaderColumn::Size,
         ItemViewerHeaderColumn::Usage,
@@ -389,6 +637,7 @@ fn default_drive_column_order() -> Vec<ItemViewerHeaderColumn> {
 
 fn default_recycle_bin_column_order() -> Vec<ItemViewerHeaderColumn> {
     vec![
+        ItemViewerHeaderColumn::Name,
         ItemViewerHeaderColumn::Type,
         ItemViewerHeaderColumn::Size,
         ItemViewerHeaderColumn::Deleted,
@@ -400,15 +649,14 @@ fn sanitize_column_order(
     order: Vec<ItemViewerHeaderColumn>,
     default_order: &[ItemViewerHeaderColumn],
 ) -> Vec<ItemViewerHeaderColumn> {
-    let mut sanitized = Vec::with_capacity(default_order.len());
+    let mut sanitized = Vec::with_capacity(order.len());
+
     for column in order {
         if default_order.contains(&column) && !sanitized.contains(&column) {
             sanitized.push(column);
         }
     }
-    if sanitized.len() != default_order.len() {
-        return default_order.to_vec();
-    }
+
     sanitized
 }
 
@@ -516,6 +764,7 @@ pub struct TopbarAction {
     pub exit: bool,
     pub toggle_file_explorer: bool,
     pub toggle_sidebar: bool,
+    pub toggle_active_tab_split: bool,
 }
 
 #[derive(Default)]
@@ -823,4 +1072,28 @@ impl TagsState {
 pub fn default_tag_color() -> Color32 {
     let hue = rand::rng().random_range(0.0..360.0);
     hsl_to_color32(hue, 0.55, 0.88)
+}
+
+pub struct ItemViewerColumnLayout {
+    pub layout_generation: u64,
+    pub ordered_columns: Vec<ItemViewerHeaderColumn>,
+    pub name_width: f32,
+    pub type_width: f32,
+    pub size_width: f32,
+    pub usage_width: f32,
+    pub modified_width: f32,
+    pub created_width: f32,
+    pub deleted_width: f32,
+    pub column_sizes_changed: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ItemViewerColumnWidths {
+    pub name: f32,
+    pub type_width: f32,
+    pub size_width: f32,
+    pub modified_width: f32,
+    pub created_width: f32,
+    pub usage_width: f32,
+    pub deleted_width: f32,
 }

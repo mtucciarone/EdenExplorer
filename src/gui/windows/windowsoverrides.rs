@@ -1,8 +1,9 @@
 use crate::core::drives::mark_drive_cache_dirty;
 use crate::core::indexer::{WindowSizeMode, load_app_settings, save_app_settings};
 use crate::core::launch::receive_copydata;
+use crate::gui::i18n::I18n;
 use crate::gui::theme::ThemePalette;
-use crate::gui::utils::clickable_icon;
+use crate::gui::utils::clickable_windows_icon;
 use eframe::egui;
 use egui::Context;
 use egui_phosphor::regular;
@@ -13,7 +14,7 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Dwm::*;
 use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
+    ClientToScreen, GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
 };
 use windows::Win32::System::DataExchange::{
     AddClipboardFormatListener, RemoveClipboardFormatListener,
@@ -23,9 +24,9 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 const MIN_WIDTH: i32 = 600;
 const MIN_HEIGHT: i32 = 400;
-const RESIZE_BORDER: i32 = 6;
+/// Width of the client-area region reserved for native window resizing.
+const RESIZE_BORDER: i32 = 2;
 
-// ✅ Fixed: Use AtomicPtr instead of static mut
 static ORIGINAL_WNDPROC: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
 
 fn get_original_wndproc() -> Option<WNDPROC> {
@@ -104,6 +105,9 @@ fn save_manual_window_size(hwnd: HWND) {
             item_viewer_file_column_order,
             item_viewer_drive_column_order,
             recycle_bin_column_order,
+            item_viewer_file_column_sizes,
+            item_viewer_drive_column_sizes,
+            recycle_bin_column_sizes,
         ) = load_app_settings();
         let window_size_mode = WindowSizeMode::Custom { width, height };
 
@@ -124,6 +128,9 @@ fn save_manual_window_size(hwnd: HWND) {
             &item_viewer_file_column_order,
             &item_viewer_drive_column_order,
             &recycle_bin_column_order,
+            &item_viewer_file_column_sizes,
+            &item_viewer_drive_column_sizes,
+            &recycle_bin_column_sizes,
         );
     }
 }
@@ -308,45 +315,76 @@ unsafe extern "system" fn custom_wndproc(
             let x = get_x_lparam(lparam);
             let y = get_y_lparam(lparam);
 
-            let mut rect = RECT::default();
-
             unsafe {
-                let _ = GetWindowRect(hwnd, &mut rect);
-            }
+                let mut client_rect = RECT::default();
 
-            let width = rect.right - rect.left;
-            let height = rect.bottom - rect.top;
+                if GetClientRect(hwnd, &mut client_rect).is_err() {
+                    return DefWindowProcW(hwnd, msg, wparam, lparam);
+                }
 
-            let local_x = x - rect.left;
-            let local_y = y - rect.top;
+                // Convert client top-left and bottom-right to screen coordinates.
+                let mut top_left = POINT {
+                    x: client_rect.left,
+                    y: client_rect.top,
+                };
 
-            if local_x < RESIZE_BORDER && local_y < RESIZE_BORDER {
-                return LRESULT(HTTOPLEFT as _);
-            }
-            if local_x >= width - RESIZE_BORDER && local_y < RESIZE_BORDER {
-                return LRESULT(HTTOPRIGHT as _);
-            }
-            if local_x < RESIZE_BORDER && local_y >= height - RESIZE_BORDER {
-                return LRESULT(HTBOTTOMLEFT as _);
-            }
-            if local_x >= width - RESIZE_BORDER && local_y >= height - RESIZE_BORDER {
-                return LRESULT(HTBOTTOMRIGHT as _);
-            }
+                let mut bottom_right = POINT {
+                    x: client_rect.right,
+                    y: client_rect.bottom,
+                };
 
-            if local_x < RESIZE_BORDER {
-                return LRESULT(HTLEFT as _);
-            }
-            if local_x >= width - RESIZE_BORDER {
-                return LRESULT(HTRIGHT as _);
-            }
-            if local_y < RESIZE_BORDER {
-                return LRESULT(HTTOP as _);
-            }
-            if local_y >= height - RESIZE_BORDER {
-                return LRESULT(HTBOTTOM as _);
-            }
+                let _ = ClientToScreen(hwnd, &mut top_left);
+                let _ = ClientToScreen(hwnd, &mut bottom_right);
 
-            LRESULT(HTCLIENT as _)
+                let left = top_left.x;
+                let top = top_left.y;
+                let right = bottom_right.x;
+                let bottom = bottom_right.y;
+
+                let resize = RESIZE_BORDER;
+
+                // Top-left
+                if x >= left && x < left + resize && y >= top && y < top + resize {
+                    return LRESULT(HTTOPLEFT as _);
+                }
+
+                // Top-right
+                if x >= right - resize && x < right && y >= top && y < top + resize {
+                    return LRESULT(HTTOPRIGHT as _);
+                }
+
+                // Bottom-left
+                if x >= left && x < left + resize && y >= bottom - resize && y < bottom {
+                    return LRESULT(HTBOTTOMLEFT as _);
+                }
+
+                // Bottom-right
+                if x >= right - resize && x < right && y >= bottom - resize && y < bottom {
+                    return LRESULT(HTBOTTOMRIGHT as _);
+                }
+
+                // Left
+                if x >= left && x < left + resize {
+                    return LRESULT(HTLEFT as _);
+                }
+
+                // Right
+                if x >= right - resize && x < right {
+                    return LRESULT(HTRIGHT as _);
+                }
+
+                // Top
+                if y >= top && y < top + resize {
+                    return LRESULT(HTTOP as _);
+                }
+
+                // Bottom
+                if y >= bottom - resize && y < bottom {
+                    return LRESULT(HTBOTTOM as _);
+                }
+
+                LRESULT(HTCLIENT as _)
+            }
         }
 
         _ => unsafe {
@@ -367,11 +405,27 @@ fn get_y_lparam(lparam: LPARAM) -> i32 {
     ((lparam.0 >> 16) & 0xFFFF) as i16 as i32
 }
 
-pub fn handle_draw_windows_buttons(ui: &mut egui::Ui, hwnd: Option<HWND>, palette: &ThemePalette) {
+pub fn handle_draw_windows_buttons(
+    i18n: &I18n,
+    ui: &mut egui::Ui,
+    hwnd: Option<HWND>,
+    palette: &ThemePalette,
+) {
+    let old_item_spacing_x = ui.spacing().item_spacing.x;
+    ui.spacing_mut().item_spacing.x = 0.0;
+
     if let Some(hwnd) = hwnd {
-        if clickable_icon(ui, regular::X, palette.primary)
+        let is_maximized = unsafe { IsZoomed(hwnd).as_bool() };
+
+        let maximize_icon = if is_maximized {
+            regular::COPY
+        } else {
+            regular::SQUARE
+        };
+
+        if clickable_windows_icon(ui, regular::X, palette.tab_close_hover, palette)
             .on_hover_text(
-                egui::RichText::new("Close")
+                egui::RichText::new(i18n.tr("close"))
                     .size(palette.tooltip_text_size)
                     .color(palette.tooltip_text_color),
             )
@@ -383,11 +437,15 @@ pub fn handle_draw_windows_buttons(ui: &mut egui::Ui, hwnd: Option<HWND>, palett
             }
         }
 
-        if clickable_icon(ui, regular::SQUARE, palette.primary)
+        if clickable_windows_icon(ui, maximize_icon, palette.primary, palette)
             .on_hover_text(
-                egui::RichText::new("Maximize")
-                    .size(palette.tooltip_text_size)
-                    .color(palette.tooltip_text_color),
+                egui::RichText::new(if is_maximized {
+                    i18n.tr("restore")
+                } else {
+                    i18n.tr("maximize")
+                })
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
             )
             .on_hover_cursor(egui::CursorIcon::PointingHand)
             .clicked()
@@ -395,9 +453,9 @@ pub fn handle_draw_windows_buttons(ui: &mut egui::Ui, hwnd: Option<HWND>, palett
             toggle_window_fullscreen(hwnd);
         }
 
-        if clickable_icon(ui, regular::MINUS, palette.primary)
+        if clickable_windows_icon(ui, regular::MINUS, palette.primary, palette)
             .on_hover_text(
-                egui::RichText::new("Minimize")
+                egui::RichText::new(i18n.tr("minimize"))
                     .size(palette.tooltip_text_size)
                     .color(palette.tooltip_text_color),
             )
@@ -409,6 +467,7 @@ pub fn handle_draw_windows_buttons(ui: &mut egui::Ui, hwnd: Option<HWND>, palett
             }
         }
     }
+    ui.spacing_mut().item_spacing.x = old_item_spacing_x;
 }
 
 pub fn toggle_window_fullscreen(hwnd: HWND) {
