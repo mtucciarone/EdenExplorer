@@ -275,9 +275,9 @@
 - [x] Added native Recycle Bin support
 - [x] New Explorer view that displays media files in small/medium/large/extra large format
 - [x] Add special icons for Desktop, Downloads, My User Home, Music, Videos, My Documents
+- [x] CLI now accepts `::MY_PC::`, `::RECYCLE_BIN::`, `shell:MyComputerFolder`, and `shell:RecycleBinFolder` as valid directories
 
 ### 🚀 Upcoming Alpha Features
-- [ ] Tab re-ordering via drag'n'drop
 - [ ] Support multi-column sorting (smart grouping)
 - [ ] Add multi-tagging of objects
 - [ ] Enhanced theme customization, such as custom layouts, mix/match UI elements, styles, etc
