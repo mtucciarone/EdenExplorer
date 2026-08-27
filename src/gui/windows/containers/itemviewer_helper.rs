@@ -643,6 +643,26 @@ pub fn handle_draw_col_deleted(
     );
 }
 
+pub fn handle_draw_col_original_directory(
+    ui: &mut egui::Ui,
+    file: &FileItem,
+    layout: &ItemViewerLayout,
+    is_selected: bool,
+    is_cut: bool,
+    palette: &ThemePalette,
+    font_id: &egui::FontId,
+) {
+    let color = get_text_color(is_selected, is_cut, palette);
+
+    draw_table_text(
+        ui,
+        layout,
+        file.original_directory.as_deref().unwrap_or("—"),
+        font_id,
+        color,
+    );
+}
+
 pub fn get_text_color(is_selected: bool, is_cut: bool, palette: &ThemePalette) -> egui::Color32 {
     let base_color = get_row_color(is_selected, palette);
     if is_cut {
@@ -1116,6 +1136,9 @@ pub fn draw_item_viewer_header(
     for &column in ordered_columns {
         let label = match column {
             ItemViewerHeaderColumn::Name => i18n.tr("explorer_cols_name"),
+            ItemViewerHeaderColumn::OriginalDirectory => {
+                i18n.tr("explorer_cols_original_directory")
+            }
             ItemViewerHeaderColumn::Type => i18n.tr("explorer_cols_type"),
             ItemViewerHeaderColumn::Size => i18n.tr("explorer_cols_size"),
             ItemViewerHeaderColumn::Modified => i18n.tr("explorer_cols_modified"),
@@ -1158,6 +1181,9 @@ fn draw_header_cell(
 ) {
     let column_action = match column {
         ItemViewerHeaderColumn::Name => Some(SortColumn::Name),
+        ItemViewerHeaderColumn::OriginalDirectory if is_recycle_bin_view => {
+            Some(SortColumn::OriginalDirectory)
+        }
         ItemViewerHeaderColumn::Type => Some(SortColumn::Type),
         ItemViewerHeaderColumn::Size => Some(SortColumn::Size),
         ItemViewerHeaderColumn::Modified if !is_drive_view => Some(SortColumn::Modified),
@@ -1218,6 +1244,16 @@ fn draw_header_cell(
                     regular::CARET_DOWN
                 },
             ),
+            Some(SortColumn::OriginalDirectory) if sort_column == SortColumn::OriginalDirectory => {
+                (
+                    label.clone(),
+                    if sort_ascending {
+                        regular::CARET_UP
+                    } else {
+                        regular::CARET_DOWN
+                    },
+                )
+            }
             _ => (label.clone(), ""),
         };
 
@@ -1336,6 +1372,13 @@ fn draw_header_context_menu(
         false,
         egui::Checkbox::new(&mut name_checked, i18n.tr("explorer_cols_name")),
     );
+
+    if is_recycle_bin_view {
+        ui.add_enabled(
+            false,
+            egui::Checkbox::new(&mut true, i18n.tr("explorer_cols_original_directory")),
+        );
+    }
 
     let type_visible = column_state.is_column_visible(
         is_drive_view,
@@ -1777,6 +1820,7 @@ pub fn compute_item_viewer_column_layout(
             ItemViewerColumnFitRequest::Column(column) => {
                 let width = match column {
                     ItemViewerHeaderColumn::Name => widths.name,
+                    ItemViewerHeaderColumn::OriginalDirectory => widths.original_directory_width,
                     ItemViewerHeaderColumn::Type => widths.type_width,
                     ItemViewerHeaderColumn::Size => widths.size_width,
                     ItemViewerHeaderColumn::Modified => widths.modified_width,
@@ -1807,6 +1851,7 @@ pub fn compute_item_viewer_column_layout(
     let default_created_width = (current_width * 0.20).max(100.0);
     let default_deleted_width = (current_width * 0.20).max(100.0);
     let default_usage_width = (current_width * 0.20).max(150.0);
+    let default_original_directory_width = (current_width * 0.20).max(200.0);
 
     let name_width = column_state
         .column_width(
@@ -1815,6 +1860,19 @@ pub fn compute_item_viewer_column_layout(
             ItemViewerHeaderColumn::Name,
         )
         .unwrap_or(default_name_width);
+
+    let original_directory_width =
+        if ordered_columns.contains(&ItemViewerHeaderColumn::OriginalDirectory) {
+            column_state
+                .column_width(
+                    is_drive_view,
+                    is_recycle_bin_view,
+                    ItemViewerHeaderColumn::OriginalDirectory,
+                )
+                .unwrap_or(default_original_directory_width)
+        } else {
+            0.0
+        };
 
     let type_width = if ordered_columns.contains(&ItemViewerHeaderColumn::Type) {
         column_state
@@ -1898,6 +1956,7 @@ pub fn compute_item_viewer_column_layout(
         modified_width,
         created_width,
         deleted_width,
+        original_directory_width,
         column_sizes_changed,
     }
 }
@@ -1921,6 +1980,12 @@ fn compute_item_viewer_column_widths(
         name: measure_text_width(
             ui,
             &i18n.tr("explorer_cols_name"),
+            font_id,
+            palette.text_header_section,
+        ),
+        original_directory_width: measure_text_width(
+            ui,
+            &i18n.tr("explorer_cols_original_directory"),
             font_id,
             palette.text_header_section,
         ),

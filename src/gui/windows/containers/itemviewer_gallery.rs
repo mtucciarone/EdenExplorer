@@ -672,5 +672,6 @@ fn sort_label(i18n: &I18n, column: SortColumn) -> String {
         SortColumn::Modified => i18n.tr("explorer_cols_modified"),
         SortColumn::Created => i18n.tr("explorer_cols_created"),
         SortColumn::Deleted => i18n.tr("explorer_cols_deleted"),
+        SortColumn::OriginalDirectory => i18n.tr("explorer_cols_original_directory"),
     }
 }

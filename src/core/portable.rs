@@ -422,6 +422,7 @@ fn enumerate_portable_children(
             None,
             None,
             None,
+            None,
         );
         pending.push(item.clone());
 

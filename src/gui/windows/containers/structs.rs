@@ -305,10 +305,11 @@ impl ItemViewerColumnState {
         } else if is_recycle_bin_view {
             match column {
                 ItemViewerHeaderColumn::Name => 0,
-                ItemViewerHeaderColumn::Type => 1,
-                ItemViewerHeaderColumn::Size => 2,
-                ItemViewerHeaderColumn::Deleted => 3,
-                ItemViewerHeaderColumn::Created => 4,
+                ItemViewerHeaderColumn::OriginalDirectory => 1,
+                ItemViewerHeaderColumn::Type => 2,
+                ItemViewerHeaderColumn::Size => 3,
+                ItemViewerHeaderColumn::Deleted => 4,
+                ItemViewerHeaderColumn::Created => 5,
                 _ => return None,
             }
         } else {
@@ -350,10 +351,11 @@ impl ItemViewerColumnState {
         } else if is_recycle_bin_view {
             match column {
                 ItemViewerHeaderColumn::Name => 0,
-                ItemViewerHeaderColumn::Type => 1,
-                ItemViewerHeaderColumn::Size => 2,
-                ItemViewerHeaderColumn::Deleted => 3,
-                ItemViewerHeaderColumn::Created => 4,
+                ItemViewerHeaderColumn::OriginalDirectory => 1,
+                ItemViewerHeaderColumn::Type => 2,
+                ItemViewerHeaderColumn::Size => 3,
+                ItemViewerHeaderColumn::Deleted => 4,
+                ItemViewerHeaderColumn::Created => 5,
                 _ => return,
             }
         } else {
@@ -383,6 +385,13 @@ impl ItemViewerColumnState {
             is_recycle_bin_view,
             ItemViewerHeaderColumn::Name,
             widths.name,
+        );
+
+        self.set_column_width(
+            is_drive_view,
+            is_recycle_bin_view,
+            ItemViewerHeaderColumn::OriginalDirectory,
+            widths.original_directory_width,
         );
 
         self.set_column_width(
@@ -568,6 +577,7 @@ impl ItemViewerColumnState {
         } else if is_recycle_bin_view {
             &[
                 ItemViewerHeaderColumn::Name,
+                ItemViewerHeaderColumn::OriginalDirectory,
                 ItemViewerHeaderColumn::Type,
                 ItemViewerHeaderColumn::Size,
                 ItemViewerHeaderColumn::Deleted,
@@ -638,6 +648,7 @@ fn default_drive_column_order() -> Vec<ItemViewerHeaderColumn> {
 fn default_recycle_bin_column_order() -> Vec<ItemViewerHeaderColumn> {
     vec![
         ItemViewerHeaderColumn::Name,
+        ItemViewerHeaderColumn::OriginalDirectory,
         ItemViewerHeaderColumn::Type,
         ItemViewerHeaderColumn::Size,
         ItemViewerHeaderColumn::Deleted,
@@ -649,12 +660,29 @@ fn sanitize_column_order(
     order: Vec<ItemViewerHeaderColumn>,
     default_order: &[ItemViewerHeaderColumn],
 ) -> Vec<ItemViewerHeaderColumn> {
-    let mut sanitized = Vec::with_capacity(order.len());
+    let mut sanitized = Vec::with_capacity(default_order.len());
 
+    // Keep all valid columns from the user's saved order.
     for column in order {
         if default_order.contains(&column) && !sanitized.contains(&column) {
             sanitized.push(column);
         }
+    }
+
+    // Add any newly introduced columns according to their position
+    // in the default order, while preserving the user's existing order.
+    for (default_index, &column) in default_order.iter().enumerate() {
+        if sanitized.contains(&column) {
+            continue;
+        }
+
+        let insert_index = sanitized
+            .iter()
+            .filter_map(|existing| default_order.iter().position(|default| default == existing))
+            .filter(|&index| index < default_index)
+            .count();
+
+        sanitized.insert(insert_index, column);
     }
 
     sanitized
@@ -1084,6 +1112,7 @@ pub struct ItemViewerColumnLayout {
     pub modified_width: f32,
     pub created_width: f32,
     pub deleted_width: f32,
+    pub original_directory_width: f32,
     pub column_sizes_changed: bool,
 }
 
@@ -1096,4 +1125,5 @@ pub struct ItemViewerColumnWidths {
     pub created_width: f32,
     pub usage_width: f32,
     pub deleted_width: f32,
+    pub original_directory_width: f32,
 }

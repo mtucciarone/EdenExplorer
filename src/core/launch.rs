@@ -1,10 +1,11 @@
+use crate::core::fs::{MY_PC_PATH, MY_RECYCLE_BIN_PATH};
 use fluent_bundle::{FluentArgs, FluentBundle, FluentResource};
 use rust_embed::RustEmbed;
 use std::borrow::Cow;
 use std::ffi::c_void;
 use std::mem::size_of;
 use std::os::windows::ffi::OsStrExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Mutex;
 use std::thread;
@@ -195,7 +196,7 @@ where
         } else if !after_double_dash && arg.starts_with('-') {
             return Err(LaunchError::UnknownOption(arg));
         } else if !arg.is_empty() {
-            options.paths.push(PathBuf::from(arg));
+            options.paths.push(normalize_path(PathBuf::from(arg)));
         }
     }
 
@@ -204,12 +205,15 @@ where
 
 pub fn existing_directories(options: &LaunchOptions) -> Result<Vec<PathBuf>, LaunchError> {
     let mut paths = Vec::with_capacity(options.paths.len());
+
     for path in &options.paths {
-        if !path.is_dir() {
+        if !is_virtual_path(path) && !path.is_dir() {
             return Err(LaunchError::InvalidDirectory(path.clone()));
         }
+
         paths.push(path.clone());
     }
+
     Ok(paths)
 }
 
@@ -243,7 +247,7 @@ pub fn receive_copydata(lparam: LPARAM) -> bool {
         .take_while(|part| !part.is_empty())
         .map(String::from_utf16_lossy)
         .map(PathBuf::from)
-        .filter(|path| path.is_dir())
+        .filter(|path| is_virtual_path(path) || path.is_dir())
         .collect::<Vec<_>>();
     if let Ok(mut pending) = FORWARDED_PATHS.lock() {
         pending.extend(paths);
@@ -357,6 +361,32 @@ fn forward_paths(paths: &[PathBuf]) -> Result<(), LaunchError> {
     Ok(())
 }
 
+pub fn normalize_path(path: PathBuf) -> PathBuf {
+    let value = path.to_string_lossy();
+
+    if value.eq_ignore_ascii_case(MY_PC_PATH)
+        || value.eq_ignore_ascii_case("file:\\")
+        || value.eq_ignore_ascii_case("shell:MyComputerFolder")
+    {
+        return PathBuf::from(MY_PC_PATH);
+    }
+
+    if value.eq_ignore_ascii_case(MY_RECYCLE_BIN_PATH)
+        || value.eq_ignore_ascii_case("shell:RecycleBinFolder")
+    {
+        return PathBuf::from(MY_RECYCLE_BIN_PATH);
+    }
+
+    path
+}
+
+pub fn is_virtual_path(path: &Path) -> bool {
+    matches!(
+        path.to_string_lossy().as_ref(),
+        MY_PC_PATH | MY_RECYCLE_BIN_PATH
+    )
+}
+
 #[cfg(not(windows))]
 pub fn take_forwarded_paths() -> Vec<PathBuf> {
     Vec::new()
@@ -407,5 +437,70 @@ mod tests {
         let value = i18n.tr("launch-window-not-ready");
 
         assert_ne!(value, "");
+    }
+
+    #[test]
+    fn normalizes_my_pc_aliases() {
+        let aliases = [
+            "::MY_PC::",
+            "file:\\",
+            "shell:MyComputerFolder",
+            "SHELL:MYCOMPUTERFOLDER",
+        ];
+
+        for alias in aliases {
+            let options = parse_args(["EdenExplorer.exe", alias]).unwrap();
+
+            assert_eq!(
+                options.paths,
+                vec![PathBuf::from(MY_PC_PATH)],
+                "failed to normalize {alias:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn normalizes_recycle_bin_aliases() {
+        let aliases = [
+            "::RECYCLE_BIN::",
+            "shell:RecycleBinFolder",
+            "SHELL:RECYCLEBINFOLDER",
+        ];
+
+        for alias in aliases {
+            let options = parse_args(["EdenExplorer.exe", alias]).unwrap();
+
+            assert_eq!(
+                options.paths,
+                vec![PathBuf::from(MY_RECYCLE_BIN_PATH)],
+                "failed to normalize {alias:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn preserves_normal_directories() {
+        let options = parse_args(["EdenExplorer.exe", "C:\\Projects", "D:\\Archive"]).unwrap();
+
+        assert_eq!(
+            options.paths,
+            vec![PathBuf::from("C:\\Projects"), PathBuf::from("D:\\Archive"),]
+        );
+    }
+
+    #[test]
+    fn normalizes_virtual_paths_before_directory_validation() {
+        let options =
+            parse_args(["EdenExplorer.exe", "file:\\", "shell:RecycleBinFolder"]).unwrap();
+
+        let paths = existing_directories(&options).unwrap();
+
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from(MY_PC_PATH),
+                PathBuf::from(MY_RECYCLE_BIN_PATH),
+            ]
+        );
     }
 }

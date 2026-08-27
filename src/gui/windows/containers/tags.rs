@@ -276,6 +276,7 @@ pub fn draw_tags(
                                                 modified_time_raw: None,
                                                 created_time_raw: None,
                                                 deleted_time_raw: None,
+                                                original_directory: None,
                                                 total_space: None,
                                                 free_space: None,
                                             };
@@ -301,6 +302,7 @@ pub fn draw_tags(
                                                     modified_time_raw: None,
                                                     created_time_raw: None,
                                                     deleted_time_raw: None,
+                                                    original_directory: None,
                                                     total_space: None,
                                                     free_space: None,
                                                 };
