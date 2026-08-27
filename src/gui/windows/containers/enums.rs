@@ -17,6 +17,7 @@ pub enum ItemViewerHeaderColumn {
     Created,
     Usage,
     Deleted,
+    OriginalDirectory,
 }
 
 pub enum ItemViewerAction {

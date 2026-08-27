@@ -25,6 +25,7 @@ use windows::core::{GUID, Interface, PCWSTR};
 const STATUS_NO_MORE_FILES: i32 = 0x80000006u32 as i32;
 static RECYCLE_DATE_DELETED: OnceLock<PROPERTYKEY> = OnceLock::new();
 static RECYCLE_NAME: OnceLock<PROPERTYKEY> = OnceLock::new();
+static RECYCLE_ORIGINAL_DIRECTORY: OnceLock<PROPERTYKEY> = OnceLock::new();
 pub const MY_PC_PATH: &str = "::MY_PC::";
 pub const MY_RECYCLE_BIN_PATH: &str = "::RECYCLE_BIN::";
 
@@ -325,6 +326,7 @@ pub fn scan_dir_async(
                         modified_time_raw,
                         created_time_raw,
                         None,
+                        None,
                     );
 
                     let _ = tx.send(item);
@@ -436,6 +438,7 @@ pub struct FileItem {
     pub modified_time_raw: Option<i64>,
     pub created_time_raw: Option<i64>,
     pub deleted_time_raw: Option<i64>,
+    pub original_directory: Option<String>,
 
     // Optional drive info (only populated for drive roots)
     pub total_space: Option<u64>,
@@ -456,6 +459,7 @@ impl FileItem {
         modified_time_raw: Option<i64>,
         created_time_raw: Option<i64>,
         deleted_time_raw: Option<i64>,
+        original_directory: Option<String>,
     ) -> Self {
         Self {
             name,
@@ -470,6 +474,7 @@ impl FileItem {
             modified_time_raw,
             created_time_raw,
             deleted_time_raw,
+            original_directory,
             total_space: None,
             free_space: None,
         }
@@ -488,6 +493,7 @@ impl FileItem {
         modified_time_raw: Option<i64>,
         created_time_raw: Option<i64>,
         deleted_time_raw: Option<i64>,
+        original_directory: Option<String>,
         total: u64,
         free: u64,
     ) -> Self {
@@ -504,6 +510,7 @@ impl FileItem {
             modified_time_raw,
             created_time_raw,
             deleted_time_raw,
+            original_directory,
             total_space: Some(total),
             free_space: Some(free),
         }
@@ -548,12 +555,20 @@ pub fn get_shell_item_metadata(
     Option<i64>,
     Option<i64>,
     Option<String>,
+    Option<String>,
 ) {
     let Ok(item2) = item.cast::<IShellItem2>() else {
-        return (None, None, None, None, None, None, None, None);
+        return (None, None, None, None, None, None, None, None, None);
     };
 
-    let (file_size, modified_time_raw, created_time_raw, deleted_time_raw, original_name) = unsafe {
+    let (
+        file_size,
+        modified_time_raw,
+        created_time_raw,
+        deleted_time_raw,
+        original_name,
+        original_directory,
+    ) = unsafe {
         (
             item2.GetUInt64(&PKEY_SIZE).ok(),
             item2
@@ -569,6 +584,7 @@ pub fn get_shell_item_metadata(
                 .ok()
                 .and_then(filetime_struct_to_i64),
             item2.GetString(recycle_name_key()).ok(),
+            item2.GetString(recycle_original_directory_key()).ok(),
         )
     };
 
@@ -583,6 +599,8 @@ pub fn get_shell_item_metadata(
 
     let original_name = unsafe { original_name.and_then(|name| name.to_string().ok()) };
 
+    let original_directory = unsafe { original_directory.and_then(|dir| dir.to_string().ok()) };
+
     (
         file_size,
         modified_time,
@@ -592,6 +610,7 @@ pub fn get_shell_item_metadata(
         created_time_raw,
         deleted_time_raw,
         original_name,
+        original_directory,
     )
 }
 
@@ -613,6 +632,19 @@ fn recycle_name_key() -> &'static PROPERTYKEY {
             PSGetPropertyKeyFromName(w!("System.ItemNameDisplay"), &mut key)
                 .expect("PKEY_ItemNameDisplay");
         }
+        key
+    })
+}
+
+fn recycle_original_directory_key() -> &'static PROPERTYKEY {
+    RECYCLE_ORIGINAL_DIRECTORY.get_or_init(|| {
+        let mut key = PROPERTYKEY::default();
+
+        unsafe {
+            PSGetPropertyKeyFromName(w!("System.Recycle.DeletedFrom"), &mut key)
+                .expect("System.Recycle.DeletedFrom");
+        }
+
         key
     })
 }

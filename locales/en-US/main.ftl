@@ -119,6 +119,7 @@ explorer_cols_usage = Usage
 explorer_cols_modified = Modified
 explorer_cols_created = Created
 explorer_cols_deleted = Deleted
+explorer_cols_original_directory = Original Directory
 gallery_sort_by = Sort By
 about_description = EdenExplorer is a next-generation, blazing-fast fully open-source file explorer built for Windows 11+ using Rust and egui. Designed from the ground up for performance, efficiency, and modern workflows, EdenExplorer is the best FOSS alternative to the default Windows File Explorer.
 about_author = Author

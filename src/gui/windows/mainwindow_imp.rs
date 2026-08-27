@@ -412,11 +412,12 @@ impl MainWindow {
                 if let (Some(total), Some(free)) = (d.total_space, d.free_space) {
                     view.files.push(FileItem::with_drive_info(
                         label, path, true, false, None, None, None, None, None, None, None, None,
-                        total, free,
+                        None, total, free,
                     ));
                 } else {
                     view.files.push(FileItem::new(
                         label, path, true, false, None, None, None, None, None, None, None, None,
+                        None,
                     ));
                 }
             }
@@ -569,6 +570,7 @@ impl MainWindow {
                     created_time_raw,
                     deleted_time_raw,
                     original_object_name,
+                    original_directory,
                 ) = get_shell_item_metadata(
                     &item,
                     self.settings_window.current_settings.date_style,
@@ -588,6 +590,7 @@ impl MainWindow {
                     modified_time_raw,
                     created_time_raw,
                     deleted_time_raw,
+                    original_directory,
                 ));
             }
 

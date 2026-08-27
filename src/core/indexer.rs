@@ -211,6 +211,7 @@ fn default_item_viewer_drive_column_order() -> Vec<ItemViewerHeaderColumn> {
 
 fn default_recycle_bin_column_order() -> Vec<ItemViewerHeaderColumn> {
     vec![
+        ItemViewerHeaderColumn::OriginalDirectory,
         ItemViewerHeaderColumn::Type,
         ItemViewerHeaderColumn::Size,
         ItemViewerHeaderColumn::Deleted,
@@ -227,7 +228,7 @@ pub fn default_item_viewer_drive_column_size() -> Vec<f32> {
 }
 
 pub fn default_recycle_bin_column_size() -> Vec<f32> {
-    vec![180.0, 60.0, 120.0, 100.0, 100.0]
+    vec![180.0, 200.0, 60.0, 120.0, 100.0, 100.0]
 }
 
 fn default_date_style() -> DateStyle {

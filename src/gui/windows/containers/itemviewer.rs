@@ -351,6 +351,12 @@ pub fn draw_item_viewer(
                         .at_least(180.0)
                         .resizable(true),
 
+                    ItemViewerHeaderColumn::OriginalDirectory => {
+                        Column::initial(column_layout.original_directory_width)
+                            .at_least(200.0)
+                            .resizable(true)
+                    }
+
                     ItemViewerHeaderColumn::Type => Column::initial(column_layout.type_width)
                         .at_least(60.0)
                         .resizable(true),
@@ -808,6 +814,18 @@ fn draw_item_viewer_row_column(
             ) {
                 *action = Some(a);
             }
+        }
+
+        ItemViewerHeaderColumn::OriginalDirectory => {
+            handle_draw_col_original_directory(
+                ui,
+                file,
+                layout,
+                is_selected,
+                is_cut,
+                palette,
+                font_id,
+            );
         }
 
         ItemViewerHeaderColumn::Type => {
