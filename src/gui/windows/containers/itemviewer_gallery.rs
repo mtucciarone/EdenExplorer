@@ -449,7 +449,12 @@ fn draw_gallery_toolbar(
                         (SortColumn::Created, i18n.tr("explorer_cols_created")),
                     ] {
                         if ui.selectable_label(sort_column == column, label).clicked() {
-                            action = Some(ItemViewerAction::Sort(column));
+                            let modifiers = ui.input(|input| input.modifiers);
+                            action = Some(ItemViewerAction::Sort {
+                                column,
+                                additive: modifiers.shift,
+                                remove: modifiers.ctrl,
+                            });
                             ui.close();
                         }
                     }

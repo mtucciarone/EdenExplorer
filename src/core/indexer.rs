@@ -1,5 +1,6 @@
 use crate::core::fs::{DateStyle, MY_PC_PATH};
 use crate::gui::theme::{THEME_VERSION, ThemePalette, get_default_palette};
+use crate::gui::utils::SortKey;
 use crate::gui::windows::containers::enums::ItemViewerHeaderColumn;
 use crate::gui::windows::containers::structs::{GalleryThumbnailSize, ItemViewerDisplayMode};
 use serde::{Deserialize, Serialize};
@@ -93,6 +94,8 @@ pub struct DirectorySettingsSnapshot {
     pub sort_column: crate::gui::utils::SortColumn,
     #[serde(default)]
     pub sort_ascending: bool,
+    #[serde(default)]
+    pub sort_keys: Vec<SortKey>,
 }
 
 fn default_gallery_thumbnail_size() -> GalleryThumbnailSize {

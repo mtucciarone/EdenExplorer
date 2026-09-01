@@ -5,7 +5,7 @@ use crate::core::indexer::{
     default_recycle_bin_column_size,
 };
 use crate::core::utils::thumbnails::ThumbnailService;
-use crate::gui::utils::hsl_to_color32;
+use crate::gui::utils::{SortKey, hsl_to_color32};
 use crate::gui::windows::containers::enums::{
     ItemViewerAction, ItemViewerHeaderColumn, ItemViewerNavAction,
 };
@@ -76,6 +76,7 @@ pub struct TabView {
     pub breadcrumb_path_error_animation_time: f64,
     pub sort_column: crate::gui::utils::SortColumn,
     pub sort_ascending: bool,
+    pub sort_keys: Vec<SortKey>,
     pub explorer_state: ExplorerState,
     pub item_viewer_filter_state: FilterState,
     pub column_state: ItemViewerColumnState,
@@ -109,6 +110,10 @@ impl TabView {
             breadcrumb_path_error_animation_time: 0.0,
             sort_column: default_sort_column,
             sort_ascending: default_sort_ascending,
+            sort_keys: vec![SortKey {
+                column: default_sort_column,
+                ascending: default_sort_ascending,
+            }],
             explorer_state: ExplorerState::default(),
             item_viewer_filter_state: FilterState::default(),
             column_state: ItemViewerColumnState::default(),
@@ -131,6 +136,7 @@ impl TabView {
     /// and sort as `self`, but with its own (empty) selection/filter/listing.
     pub fn duplicate_as_new(&self) -> Self {
         let mut view = Self::new(self.nav.clone(), self.sort_column, self.sort_ascending);
+        view.sort_keys = self.sort_keys.clone();
         view.column_state = self.column_state.clone();
         view.display_mode = self.display_mode;
         view.gallery_state = self.gallery_state;

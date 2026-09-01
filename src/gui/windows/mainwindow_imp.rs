@@ -11,8 +11,8 @@ use crate::gui::theme::{
     ThemeMode, ThemePalette, apply_font_to_context, get_default_palette, set_palette,
 };
 use crate::gui::utils::{
-    SortColumn, clear_clipboard_files, get_clipboard_files, is_clipboard_cut, set_clipboard_files,
-    shell_delete_to_recycle_bin, show_copy_move_dialog, sort_files,
+    SortColumn, SortKey, clear_clipboard_files, get_clipboard_files, is_clipboard_cut,
+    set_clipboard_files, shell_delete_to_recycle_bin, show_copy_move_dialog, sort_files_by_keys,
 };
 use crate::gui::windows::about::draw_about_window;
 use crate::gui::windows::containers::enums::{
@@ -78,6 +78,10 @@ pub(crate) fn default_directory_settings_snapshot(directory: PathBuf) -> Directo
         gallery_thumbnail_size: GalleryThumbnailSize::Medium,
         sort_column: SortColumn::Name,
         sort_ascending: true,
+        sort_keys: vec![SortKey {
+            column: SortColumn::Name,
+            ascending: true,
+        }],
     }
 }
 
@@ -95,6 +99,7 @@ pub(crate) fn directory_settings_snapshot_for_view(view: &TabView) -> DirectoryS
         gallery_thumbnail_size: view.gallery_state.thumbnail_size,
         sort_column: view.sort_column,
         sort_ascending: view.sort_ascending,
+        sort_keys: view.sort_keys.clone(),
     }
 }
 
@@ -121,13 +126,26 @@ pub(crate) fn apply_directory_settings_to_view(view: &mut TabView, settings: &Ap
         view.display_mode = snapshot.display_mode;
         view.gallery_state
             .set_thumbnail_size(snapshot.gallery_thumbnail_size);
-        view.sort_column = snapshot.sort_column;
-        view.sort_ascending = snapshot.sort_ascending;
+        view.sort_keys = if snapshot.sort_keys.is_empty() {
+            vec![SortKey {
+                column: snapshot.sort_column,
+                ascending: snapshot.sort_ascending,
+            }]
+        } else {
+            snapshot.sort_keys.clone()
+        };
+        let primary = view.sort_keys[0];
+        view.sort_column = primary.column;
+        view.sort_ascending = primary.ascending;
     } else {
         view.column_state = default_column_state(settings);
         view.item_viewer_filter_state = FilterState::default();
         view.display_mode = ItemViewerDisplayMode::Details;
         view.gallery_state = Default::default();
+        view.sort_keys = vec![SortKey {
+            column: settings.sort_column,
+            ascending: settings.sort_ascending,
+        }];
         view.sort_column = settings.sort_column;
         view.sort_ascending = settings.sort_ascending;
     }
@@ -318,24 +336,46 @@ impl MainWindow {
         favorites
     }
 
-    pub fn toggle_sort(&mut self, col: SortColumn) {
+    pub fn toggle_sort(&mut self, col: SortColumn, additive: bool, remove: bool) {
         let side = self.focused_split;
-        let (sort_column, sort_ascending) = {
+        let sort_keys = {
             let view = self.active_tab_mut().view_mut(side);
-            if view.sort_column == col {
-                view.sort_ascending = !view.sort_ascending;
+            if remove {
+                view.sort_keys.retain(|key| key.column != col);
+                if view.sort_keys.is_empty() {
+                    view.sort_keys.push(SortKey {
+                        column: SortColumn::Name,
+                        ascending: true,
+                    });
+                }
+            } else if additive {
+                if let Some(key) = view.sort_keys.iter_mut().find(|key| key.column == col) {
+                    key.ascending = !key.ascending;
+                } else {
+                    view.sort_keys.push(SortKey {
+                        column: col,
+                        ascending: true,
+                    });
+                }
             } else {
-                view.sort_column = col;
-                view.sort_ascending = true;
+                let ascending = view
+                    .sort_keys
+                    .first()
+                    .filter(|key| key.column == col)
+                    .map(|key| !key.ascending)
+                    .unwrap_or(true);
+                view.sort_keys = vec![SortKey {
+                    column: col,
+                    ascending,
+                }];
             }
-            (view.sort_column, view.sort_ascending)
+            let primary = view.sort_keys[0];
+            view.sort_column = primary.column;
+            view.sort_ascending = primary.ascending;
+            view.sort_keys.clone()
         };
 
-        sort_files(
-            &mut self.active_tab_mut().view_mut(side).files,
-            sort_column,
-            sort_ascending,
-        );
+        sort_files_by_keys(&mut self.active_tab_mut().view_mut(side).files, &sort_keys);
 
         let snapshot = directory_settings_snapshot_for_view(self.active_tab().view(side));
         let _ = persist_directory_settings_snapshot(
@@ -442,10 +482,6 @@ impl MainWindow {
             view.item_viewer_filter_state.dirty = true;
             view.item_viewer_filter_state.cached_indices.clear();
         }
-        let (sort_column, sort_ascending) = {
-            let view = self.active_tab().view(side);
-            (view.sort_column, view.sort_ascending)
-        };
         self.folder_sizes.clear();
         self.file_size_text_cache.clear();
         self.folder_size_text_cache.clear();
@@ -482,7 +518,7 @@ impl MainWindow {
                 }
             }
 
-            sort_files(&mut view.files, sort_column, sort_ascending);
+            sort_files_by_keys(&mut view.files, &view.sort_keys);
             return;
         }
 
@@ -523,11 +559,6 @@ impl MainWindow {
             BHID_EnumItems, FOLDERID_RecycleBinFolder, IEnumShellItems, ILFree, ILGetSize,
             IShellItem, SHCreateItemFromIDList, SHGetIDListFromObject, SHGetKnownFolderIDList,
             SIGDN_DESKTOPABSOLUTEPARSING, SIGDN_FILESYSPATH, SIGDN_NORMALDISPLAY,
-        };
-
-        let (sort_column, sort_ascending) = {
-            let view = self.active_tab().view(side);
-            (view.sort_column, view.sort_ascending)
         };
 
         let mut recycle_items = Vec::new();
@@ -659,7 +690,7 @@ impl MainWindow {
 
         let view = self.active_tab_mut().view_mut(side);
         view.files = recycle_items;
-        sort_files(&mut view.files, sort_column, sort_ascending);
+        sort_files_by_keys(&mut view.files, &view.sort_keys);
     }
 
     pub fn create_new_folder(&mut self) {
@@ -2013,12 +2044,8 @@ impl MainWindow {
         }
 
         if updated {
-            let (sort_column, sort_ascending) = {
-                let view = self.active_tab().view(side);
-                (view.sort_column, view.sort_ascending)
-            };
             let view = self.active_tab_mut().view_mut(side);
-            sort_files(&mut view.files, sort_column, sort_ascending);
+            sort_files_by_keys(&mut view.files, &view.sort_keys);
         }
         updated
     }
@@ -2078,13 +2105,9 @@ impl MainWindow {
                 }
             }
 
-            let (sort_column, sort_ascending) = {
-                let view = self.active_tab().view(side);
-                (view.sort_column, view.sort_ascending)
-            };
             let view = self.active_tab_mut().view_mut(side);
             view.files.extend(batch);
-            sort_files(&mut view.files, sort_column, sort_ascending);
+            sort_files_by_keys(&mut view.files, &view.sort_keys);
             any_change = true;
         }
 
@@ -2243,7 +2266,11 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
         }
 
         match action {
-            ItemViewerAction::Sort(col) => explorer.toggle_sort(col),
+            ItemViewerAction::Sort {
+                column,
+                additive,
+                remove,
+            } => explorer.toggle_sort(column, additive, remove),
             ItemViewerAction::ToggleColumnVisibility(column) => {
                 let new_order = {
                     let view = explorer.active_tab_mut().view_mut(side);

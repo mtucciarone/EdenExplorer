@@ -313,6 +313,11 @@ unsafe extern "system" fn custom_wndproc(
             LRESULT(0)
         }
 
+        // Keep the custom borderless frame's client area aligned with the
+        // window. Without this, Windows 10 may retain a non-client top inset
+        // after WS_THICKFRAME is added, offsetting both painting and input.
+        WM_NCCALCSIZE if wparam.0 != 0 => LRESULT(0),
+
         WM_NCHITTEST => {
             let x = get_x_lparam(lparam);
             let y = get_y_lparam(lparam);
