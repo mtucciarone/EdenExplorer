@@ -23,7 +23,8 @@ use crate::gui::windows::containers::tags::{
 };
 use crate::gui::windows::containers::topbar::draw_topbar;
 use crate::gui::windows::mainwindow_imp::{
-    handle_draw_customizetheme_window, handle_pending_actions,
+    apply_directory_settings_to_view, directory_settings_snapshot_for_view,
+    handle_draw_customizetheme_window, handle_pending_actions, persist_directory_settings_snapshot,
 };
 use crate::gui::windows::structs::{
     AboutWindow, AppSettings, Navigation, SettingsWindow, SidebarState, ThemeCustomizer,
@@ -114,6 +115,7 @@ impl Default for MainWindow {
             item_viewer_file_column_sizes,
             item_viewer_drive_column_sizes,
             recycle_bin_column_sizes,
+            directory_settings,
         ) = load_app_settings();
         let loaded_settings = AppSettings {
             folder_scanning_enabled,
@@ -134,6 +136,7 @@ impl Default for MainWindow {
             item_viewer_file_column_sizes,
             item_viewer_drive_column_sizes,
             recycle_bin_column_sizes,
+            directory_settings,
         };
 
         let system_locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
@@ -247,6 +250,14 @@ impl Default for MainWindow {
 
         app.i18n.set_locale(lang);
         app.settings_window.current_settings = loaded_settings;
+
+        let current_settings = app.settings_window.current_settings.clone();
+        for tab in &mut app.tabs {
+            apply_directory_settings_to_view(&mut tab.primary_view, &current_settings);
+            if let Some(split) = tab.split_view.as_mut() {
+                apply_directory_settings_to_view(split, &current_settings);
+            }
+        }
 
         match load_theme_settings() {
             Some((light, dark)) => {
@@ -449,6 +460,7 @@ impl eframe::App for MainWindow {
                             .settings_window
                             .current_settings
                             .recycle_bin_column_sizes,
+                        &self.settings_window.current_settings.directory_settings,
                     );
 
                     self.last_window_size = Some(current_size);
@@ -810,6 +822,19 @@ impl eframe::App for MainWindow {
                                                             );
                                                             tabbar_action = a;
                                                             pending_action = b;
+                                                            let snapshot =
+                                                                directory_settings_snapshot_for_view(
+                                                                    &self.tabs[self.active_tab]
+                                                                        .primary_view,
+                                                                );
+                                                            let _ =
+                                                                persist_directory_settings_snapshot(
+                                                                    &mut self
+                                                                        .settings_window
+                                                                        .current_settings
+                                                                        .directory_settings,
+                                                                    snapshot,
+                                                                );
                                                         },
                                                     );
                                                 });
@@ -892,6 +917,21 @@ impl eframe::App for MainWindow {
                                                             );
                                                             secondary_tabbar_action = a;
                                                             secondary_pending_action = b;
+                                                            let snapshot =
+                                                                directory_settings_snapshot_for_view(
+                                                                    self.tabs[self.active_tab]
+                                                                        .split_view
+                                                                        .as_ref()
+                                                                        .unwrap(),
+                                                                );
+                                                            let _ =
+                                                                persist_directory_settings_snapshot(
+                                                                    &mut self
+                                                                        .settings_window
+                                                                        .current_settings
+                                                                        .directory_settings,
+                                                                    snapshot,
+                                                                );
                                                         },
                                                     );
                                                 });
@@ -942,6 +982,17 @@ impl eframe::App for MainWindow {
                                             );
                                             tabbar_action = a;
                                             pending_action = b;
+                                            let snapshot =
+                                                directory_settings_snapshot_for_view(
+                                                    &self.tabs[self.active_tab].primary_view,
+                                                );
+                                            let _ = persist_directory_settings_snapshot(
+                                                &mut self
+                                                    .settings_window
+                                                    .current_settings
+                                                    .directory_settings,
+                                                snapshot,
+                                            );
                                         }
                                     });
                                 },

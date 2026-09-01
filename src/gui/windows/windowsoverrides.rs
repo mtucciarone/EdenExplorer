@@ -108,6 +108,7 @@ fn save_manual_window_size(hwnd: HWND) {
             item_viewer_file_column_sizes,
             item_viewer_drive_column_sizes,
             recycle_bin_column_sizes,
+            directory_settings,
         ) = load_app_settings();
         let window_size_mode = WindowSizeMode::Custom { width, height };
 
@@ -131,6 +132,7 @@ fn save_manual_window_size(hwnd: HWND) {
             &item_viewer_file_column_sizes,
             &item_viewer_drive_column_sizes,
             &recycle_bin_column_sizes,
+            &directory_settings,
         );
     }
 }

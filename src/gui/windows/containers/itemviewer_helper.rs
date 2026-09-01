@@ -1195,6 +1195,20 @@ fn draw_header_cell(
     header.col(|ui| {
         let cell_id = ui.id().with(("itemviewer_header_cell", column));
         let cell_resp = ui.interact(ui.max_rect(), cell_id, egui::Sense::click());
+        let cell_rect = cell_resp.rect;
+        let divider_rect = egui::Rect::from_min_max(
+            egui::pos2(cell_rect.right() - 8.0, cell_rect.top()),
+            egui::pos2(cell_rect.right() + 12.0, cell_rect.bottom()),
+        );
+        let divider_double_clicked = ui.input(|input| {
+            input
+                .pointer
+                .button_double_clicked(egui::PointerButton::Primary)
+                && input
+                    .pointer
+                    .interact_pos()
+                    .is_some_and(|pos| divider_rect.contains(pos))
+        });
         let (sort_label, arrow) = match column_action {
             Some(SortColumn::Name) if sort_column == SortColumn::Name => (
                 label.clone(),
@@ -1274,6 +1288,9 @@ fn draw_header_cell(
             && let Some(col) = column_action
         {
             *action = Some(ItemViewerAction::Sort(col));
+        }
+        if divider_double_clicked {
+            *action = Some(ItemViewerAction::FitColumn(column));
         }
 
         let order = column_state.order(is_drive_view, is_recycle_bin_view);
@@ -1785,7 +1802,6 @@ pub fn compute_item_viewer_column_layout(
     viewport_width: f32,
 ) -> ItemViewerColumnLayout {
     let fit_request = column_state.pending_fit_request.take();
-    let layout_generation = column_state.layout_generation;
     let ordered_columns = column_state.visible_order(is_drive_view, is_recycle_bin_view);
 
     let mut column_sizes_changed = false;
@@ -1947,7 +1963,6 @@ pub fn compute_item_viewer_column_layout(
     };
 
     ItemViewerColumnLayout {
-        layout_generation,
         ordered_columns,
         name_width,
         type_width,

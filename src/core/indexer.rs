@@ -1,6 +1,7 @@
 use crate::core::fs::{DateStyle, MY_PC_PATH};
 use crate::gui::theme::{THEME_VERSION, ThemePalette, get_default_palette};
 use crate::gui::windows::containers::enums::ItemViewerHeaderColumn;
+use crate::gui::windows::containers::structs::{GalleryThumbnailSize, ItemViewerDisplayMode};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -63,6 +64,39 @@ struct AppSettingsSnapshot {
     item_viewer_drive_column_sizes: Vec<f32>,
     #[serde(default = "default_recycle_bin_column_size")]
     recycle_bin_column_sizes: Vec<f32>,
+    #[serde(default)]
+    directory_settings: Vec<DirectorySettingsSnapshot>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DirectorySettingsSnapshot {
+    pub directory: PathBuf,
+    #[serde(default = "default_item_viewer_file_column_order")]
+    pub item_viewer_file_column_order: Vec<ItemViewerHeaderColumn>,
+    #[serde(default = "default_item_viewer_drive_column_order")]
+    pub item_viewer_drive_column_order: Vec<ItemViewerHeaderColumn>,
+    #[serde(default = "default_recycle_bin_column_order")]
+    pub recycle_bin_column_order: Vec<ItemViewerHeaderColumn>,
+    #[serde(default = "default_item_viewer_file_column_size")]
+    pub item_viewer_file_column_sizes: Vec<f32>,
+    #[serde(default = "default_item_viewer_drive_column_size")]
+    pub item_viewer_drive_column_sizes: Vec<f32>,
+    #[serde(default = "default_recycle_bin_column_size")]
+    pub recycle_bin_column_sizes: Vec<f32>,
+    #[serde(default)]
+    pub filter_query: String,
+    #[serde(default)]
+    pub display_mode: ItemViewerDisplayMode,
+    #[serde(default = "default_gallery_thumbnail_size")]
+    pub gallery_thumbnail_size: GalleryThumbnailSize,
+    #[serde(default = "default_sort_column")]
+    pub sort_column: crate::gui::utils::SortColumn,
+    #[serde(default)]
+    pub sort_ascending: bool,
+}
+
+fn default_gallery_thumbnail_size() -> GalleryThumbnailSize {
+    GalleryThumbnailSize::Medium
 }
 
 // Legacy snapshot struct for deserializing old settings with HalfScreen
@@ -106,6 +140,7 @@ impl From<LegacyAppSettingsSnapshot> for AppSettingsSnapshot {
             item_viewer_file_column_sizes: default_item_viewer_file_column_size(),
             item_viewer_drive_column_sizes: default_item_viewer_drive_column_size(),
             recycle_bin_column_sizes: default_recycle_bin_column_size(),
+            directory_settings: Vec::new(),
         }
     }
 }
@@ -355,6 +390,7 @@ pub fn load_app_settings() -> (
     Vec<f32>,
     Vec<f32>,
     Vec<f32>,
+    Vec<DirectorySettingsSnapshot>,
 ) {
     let default_path = PathBuf::from(MY_PC_PATH);
 
@@ -393,6 +429,7 @@ pub fn load_app_settings() -> (
         snapshot.item_viewer_file_column_sizes,
         snapshot.item_viewer_drive_column_sizes,
         snapshot.recycle_bin_column_sizes,
+        snapshot.directory_settings,
     )
 }
 
@@ -418,6 +455,7 @@ fn default_app_settings(
     Vec<f32>,
     Vec<f32>,
     Vec<f32>,
+    Vec<DirectorySettingsSnapshot>,
 ) {
     (
         true,
@@ -439,6 +477,7 @@ fn default_app_settings(
         default_item_viewer_file_column_size(),
         default_item_viewer_drive_column_size(),
         default_recycle_bin_column_size(),
+        Vec::new(),
     )
 }
 
@@ -462,6 +501,7 @@ pub fn save_app_settings(
     item_viewer_file_column_sizes: &[f32],
     item_viewer_drive_column_sizes: &[f32],
     recycle_bin_column_sizes: &[f32],
+    directory_settings: &[DirectorySettingsSnapshot],
 ) {
     let path = match settings_cache_path() {
         Some(path) => path,
@@ -488,6 +528,7 @@ pub fn save_app_settings(
         item_viewer_file_column_sizes: item_viewer_file_column_sizes.to_vec(),
         item_viewer_drive_column_sizes: item_viewer_drive_column_sizes.to_vec(),
         recycle_bin_column_sizes: recycle_bin_column_sizes.to_vec(),
+        directory_settings: directory_settings.to_vec(),
     };
     if let Ok(data) = postcard::to_allocvec(&snapshot) {
         let _ = std::fs::write(path, data);

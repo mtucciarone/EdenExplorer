@@ -14,6 +14,7 @@ use crate::gui::windows::structs::Navigation;
 use crossbeam_channel::{Receiver, Sender};
 use egui::Color32;
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
@@ -137,19 +138,31 @@ impl TabView {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ItemViewerDisplayMode {
     Details,
     Gallery,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+impl Default for ItemViewerDisplayMode {
+    fn default() -> Self {
+        Self::Details
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GalleryThumbnailSize {
     ExtraSmall,
     Small,
     Medium,
     Large,
     ExtraLarge,
+}
+
+impl Default for GalleryThumbnailSize {
+    fn default() -> Self {
+        Self::Medium
+    }
 }
 
 impl GalleryThumbnailSize {
@@ -188,6 +201,26 @@ impl Default for GalleryState {
             thumbnail_gap: 12.0,
             thumbnail_padding: 6.0,
         }
+    }
+}
+
+impl GalleryState {
+    pub fn set_thumbnail_size(&mut self, size: GalleryThumbnailSize) {
+        self.thumbnail_size = size;
+        self.thumbnail_gap = match size {
+            GalleryThumbnailSize::ExtraSmall => 0.0,
+            GalleryThumbnailSize::Small => 4.0,
+            GalleryThumbnailSize::Medium => 8.0,
+            GalleryThumbnailSize::Large => 12.0,
+            GalleryThumbnailSize::ExtraLarge => 16.0,
+        };
+        self.thumbnail_padding = match size {
+            GalleryThumbnailSize::ExtraSmall => 0.0,
+            GalleryThumbnailSize::Small => 2.0,
+            GalleryThumbnailSize::Medium => 6.0,
+            GalleryThumbnailSize::Large => 8.0,
+            GalleryThumbnailSize::ExtraLarge => 10.0,
+        };
     }
 }
 
@@ -436,16 +469,6 @@ impl ItemViewerColumnState {
             widths.usage_width,
         );
     }
-    pub fn column_sizes(&self, is_drive_view: bool, is_recycle_bin_view: bool) -> &[f32] {
-        if is_drive_view {
-            &self.drive_column_sizes
-        } else if is_recycle_bin_view {
-            &self.recycle_bin_column_sizes
-        } else {
-            &self.file_column_sizes
-        }
-    }
-
     pub fn from_orders(
         file_column_order: Vec<ItemViewerHeaderColumn>,
         drive_column_order: Vec<ItemViewerHeaderColumn>,
@@ -1103,7 +1126,6 @@ pub fn default_tag_color() -> Color32 {
 }
 
 pub struct ItemViewerColumnLayout {
-    pub layout_generation: u64,
     pub ordered_columns: Vec<ItemViewerHeaderColumn>,
     pub name_width: f32,
     pub type_width: f32,

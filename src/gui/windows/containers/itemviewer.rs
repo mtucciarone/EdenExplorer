@@ -278,7 +278,9 @@ pub fn draw_item_viewer(
                 .id_salt((
                     "item_viewer_table",
                     active_tab_id,
-                    column_layout.layout_generation,
+                    &current_dir,
+                    is_drive_view,
+                    is_recycle_bin_view,
                 ));
 
             // If we have a pending selection from a refresh, scroll to it and select it
