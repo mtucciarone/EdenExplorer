@@ -21,7 +21,11 @@ pub enum ItemViewerHeaderColumn {
 }
 
 pub enum ItemViewerAction {
-    Sort(SortColumn),
+    Sort {
+        column: SortColumn,
+        additive: bool,
+        remove: bool,
+    },
     ToggleColumnVisibility(ItemViewerHeaderColumn),
     FitColumn(ItemViewerHeaderColumn),
     FitAllColumns,

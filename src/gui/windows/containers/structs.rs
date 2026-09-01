@@ -5,7 +5,7 @@ use crate::core::indexer::{
     default_recycle_bin_column_size,
 };
 use crate::core::utils::thumbnails::ThumbnailService;
-use crate::gui::utils::hsl_to_color32;
+use crate::gui::utils::{SortKey, hsl_to_color32};
 use crate::gui::windows::containers::enums::{
     ItemViewerAction, ItemViewerHeaderColumn, ItemViewerNavAction,
 };
@@ -14,6 +14,7 @@ use crate::gui::windows::structs::Navigation;
 use crossbeam_channel::{Receiver, Sender};
 use egui::Color32;
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
@@ -75,6 +76,7 @@ pub struct TabView {
     pub breadcrumb_path_error_animation_time: f64,
     pub sort_column: crate::gui::utils::SortColumn,
     pub sort_ascending: bool,
+    pub sort_keys: Vec<SortKey>,
     pub explorer_state: ExplorerState,
     pub item_viewer_filter_state: FilterState,
     pub column_state: ItemViewerColumnState,
@@ -108,6 +110,10 @@ impl TabView {
             breadcrumb_path_error_animation_time: 0.0,
             sort_column: default_sort_column,
             sort_ascending: default_sort_ascending,
+            sort_keys: vec![SortKey {
+                column: default_sort_column,
+                ascending: default_sort_ascending,
+            }],
             explorer_state: ExplorerState::default(),
             item_viewer_filter_state: FilterState::default(),
             column_state: ItemViewerColumnState::default(),
@@ -130,6 +136,7 @@ impl TabView {
     /// and sort as `self`, but with its own (empty) selection/filter/listing.
     pub fn duplicate_as_new(&self) -> Self {
         let mut view = Self::new(self.nav.clone(), self.sort_column, self.sort_ascending);
+        view.sort_keys = self.sort_keys.clone();
         view.column_state = self.column_state.clone();
         view.display_mode = self.display_mode;
         view.gallery_state = self.gallery_state;
@@ -137,19 +144,31 @@ impl TabView {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ItemViewerDisplayMode {
     Details,
     Gallery,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+impl Default for ItemViewerDisplayMode {
+    fn default() -> Self {
+        Self::Details
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GalleryThumbnailSize {
     ExtraSmall,
     Small,
     Medium,
     Large,
     ExtraLarge,
+}
+
+impl Default for GalleryThumbnailSize {
+    fn default() -> Self {
+        Self::Medium
+    }
 }
 
 impl GalleryThumbnailSize {
@@ -188,6 +207,26 @@ impl Default for GalleryState {
             thumbnail_gap: 12.0,
             thumbnail_padding: 6.0,
         }
+    }
+}
+
+impl GalleryState {
+    pub fn set_thumbnail_size(&mut self, size: GalleryThumbnailSize) {
+        self.thumbnail_size = size;
+        self.thumbnail_gap = match size {
+            GalleryThumbnailSize::ExtraSmall => 0.0,
+            GalleryThumbnailSize::Small => 4.0,
+            GalleryThumbnailSize::Medium => 8.0,
+            GalleryThumbnailSize::Large => 12.0,
+            GalleryThumbnailSize::ExtraLarge => 16.0,
+        };
+        self.thumbnail_padding = match size {
+            GalleryThumbnailSize::ExtraSmall => 0.0,
+            GalleryThumbnailSize::Small => 2.0,
+            GalleryThumbnailSize::Medium => 6.0,
+            GalleryThumbnailSize::Large => 8.0,
+            GalleryThumbnailSize::ExtraLarge => 10.0,
+        };
     }
 }
 
@@ -436,16 +475,6 @@ impl ItemViewerColumnState {
             widths.usage_width,
         );
     }
-    pub fn column_sizes(&self, is_drive_view: bool, is_recycle_bin_view: bool) -> &[f32] {
-        if is_drive_view {
-            &self.drive_column_sizes
-        } else if is_recycle_bin_view {
-            &self.recycle_bin_column_sizes
-        } else {
-            &self.file_column_sizes
-        }
-    }
-
     pub fn from_orders(
         file_column_order: Vec<ItemViewerHeaderColumn>,
         drive_column_order: Vec<ItemViewerHeaderColumn>,
@@ -1103,7 +1132,6 @@ pub fn default_tag_color() -> Color32 {
 }
 
 pub struct ItemViewerColumnLayout {
-    pub layout_generation: u64,
     pub ordered_columns: Vec<ItemViewerHeaderColumn>,
     pub name_width: f32,
     pub type_width: f32,

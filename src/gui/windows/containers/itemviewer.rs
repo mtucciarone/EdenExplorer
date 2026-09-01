@@ -63,6 +63,7 @@ pub fn draw_item_viewer(
     let files = &view.files;
     let sort_column = view.sort_column;
     let sort_ascending = view.sort_ascending;
+    let sort_keys = view.sort_keys.clone();
     let column_state = &mut view.column_state;
     let filter_state = &mut view.item_viewer_filter_state;
     let drag_state = &mut view.drag_state;
@@ -261,6 +262,15 @@ pub fn draw_item_viewer(
         ui.scope_builder(egui::UiBuilder::new().max_rect(table_rect), |ui| {
             ui.visuals_mut().widgets.noninteractive.bg_stroke =
                 egui::Stroke::new(1.0, palette.borders_default);
+            let table_id_salt = egui::Id::new((
+                "item_viewer_table",
+                active_tab_id,
+                &current_dir,
+                is_drive_view,
+                is_recycle_bin_view,
+                column_state.layout_generation,
+            ));
+            let table_state_id = ui.id().with(table_id_salt);
             let mut table = TableBuilder::new(ui)
                 .vscroll(true)
                 .max_scroll_height(available_height)
@@ -275,11 +285,7 @@ pub fn draw_item_viewer(
                 })
                 .animate_scrolling(true)
                 .resizable(true)
-                .id_salt((
-                    "item_viewer_table",
-                    active_tab_id,
-                    column_layout.layout_generation,
-                ));
+                .id_salt(table_id_salt);
 
             // If we have a pending selection from a refresh, scroll to it and select it
             if let Some(pending_paths) = explorer_state.pending_selection_paths.clone() {
@@ -399,8 +405,7 @@ pub fn draw_item_viewer(
                         &column_layout.ordered_columns,
                         &filter_state.cached_indices,
                         files,
-                        sort_column,
-                        sort_ascending,
+                        &sort_keys,
                         &palette,
                         explorer_state,
                         &*column_state,
@@ -627,6 +632,54 @@ pub fn draw_item_viewer(
 
                     action = Some(ItemViewerAction::ColumnSizesChanged);
                 }
+            }
+
+            let divider_tolerance = ui.style().interaction.resize_grab_radius_side + 3.0;
+            let divider_double_clicked_column = ui.ctx().input(|input| {
+                let Some(pointer_pos) = input.pointer.interact_pos() else {
+                    return None;
+                };
+                if !input
+                    .pointer
+                    .button_double_clicked(egui::PointerButton::Primary)
+                    || !table_rect.contains(pointer_pos)
+                {
+                    return None;
+                }
+
+                let spacing_x = ui.spacing().item_spacing.x;
+                let mut divider_x = table_rect.left() - spacing_x * 0.5;
+                for (table_index, width) in actual_column_widths.iter().enumerate() {
+                    divider_x += *width + spacing_x;
+                    if (pointer_pos.x - divider_x).abs() <= divider_tolerance {
+                        return table_index.checked_sub(checkbox_column_count).and_then(
+                            |column_index| column_layout.ordered_columns.get(column_index).copied(),
+                        );
+                    }
+                }
+                None
+            });
+
+            if let Some(column) = divider_double_clicked_column {
+                action = Some(ItemViewerAction::FitColumn(column));
+            }
+
+            let divider_double_clicked_column = (0..actual_column_widths.len()).find_map(|index| {
+                let resize_id = table_state_id.with("resize_column").with(index);
+                ui.ctx()
+                    .read_response(resize_id)
+                    .filter(|response| response.double_clicked())
+                    .and_then(|_| {
+                        index
+                            .checked_sub(checkbox_column_count)
+                            .and_then(|column_index| {
+                                column_layout.ordered_columns.get(column_index).copied()
+                            })
+                    })
+            });
+
+            if let Some(column) = divider_double_clicked_column {
+                action = Some(ItemViewerAction::FitColumn(column));
             }
 
             if let Some(rect) = hovered_drop_target_rect {

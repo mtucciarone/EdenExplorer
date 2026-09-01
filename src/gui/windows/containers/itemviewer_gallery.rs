@@ -449,7 +449,12 @@ fn draw_gallery_toolbar(
                         (SortColumn::Created, i18n.tr("explorer_cols_created")),
                     ] {
                         if ui.selectable_label(sort_column == column, label).clicked() {
-                            action = Some(ItemViewerAction::Sort(column));
+                            let modifiers = ui.input(|input| input.modifiers);
+                            action = Some(ItemViewerAction::Sort {
+                                column,
+                                additive: modifiers.shift,
+                                remove: modifiers.ctrl,
+                            });
                             ui.close();
                         }
                     }
@@ -476,21 +481,7 @@ fn draw_gallery_toolbar(
                     )
                     .clicked()
                 {
-                    gallery_state.thumbnail_size = size;
-                    gallery_state.thumbnail_gap = match size {
-                        GalleryThumbnailSize::ExtraSmall => 0.0,
-                        GalleryThumbnailSize::Small => 4.0,
-                        GalleryThumbnailSize::Medium => 8.0,
-                        GalleryThumbnailSize::Large => 12.0,
-                        GalleryThumbnailSize::ExtraLarge => 16.0,
-                    };
-                    gallery_state.thumbnail_padding = match size {
-                        GalleryThumbnailSize::ExtraSmall => 0.0,
-                        GalleryThumbnailSize::Small => 2.0,
-                        GalleryThumbnailSize::Medium => 6.0,
-                        GalleryThumbnailSize::Large => 8.0,
-                        GalleryThumbnailSize::ExtraLarge => 10.0,
-                    };
+                    gallery_state.set_thumbnail_size(size);
                 }
             }
         },

@@ -9,7 +9,7 @@ use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::{ThemePalette, apply_checkbox_colors};
 use crate::gui::utils::{
-    SortColumn, clear_clipboard_files, drive_usage_bar, format_size, get_file_type_name,
+    SortColumn, SortKey, clear_clipboard_files, drive_usage_bar, format_size, get_file_type_name,
     truncate_item_text,
 };
 use crate::gui::windows::containers::enums::{
@@ -1104,8 +1104,7 @@ pub fn draw_item_viewer_header(
     ordered_columns: &[ItemViewerHeaderColumn],
     filtered_indices: &[usize],
     files: &[FileItem],
-    sort_column: SortColumn,
-    sort_ascending: bool,
+    sort_keys: &[SortKey],
     palette: &crate::gui::theme::ThemePalette,
     explorer_state: &mut ExplorerState,
     column_state: &ItemViewerColumnState,
@@ -1151,8 +1150,7 @@ pub fn draw_item_viewer_header(
             i18n,
             palette,
             &font_id,
-            sort_column,
-            sort_ascending,
+            sort_keys,
             column,
             label,
             &mut action,
@@ -1170,8 +1168,7 @@ fn draw_header_cell(
     i18n: &I18n,
     palette: &crate::gui::theme::ThemePalette,
     font_id: &FontId,
-    sort_column: SortColumn,
-    sort_ascending: bool,
+    sort_keys: &[SortKey],
     column: ItemViewerHeaderColumn,
     label: String,
     action: &mut Option<ItemViewerAction>,
@@ -1195,67 +1192,17 @@ fn draw_header_cell(
     header.col(|ui| {
         let cell_id = ui.id().with(("itemviewer_header_cell", column));
         let cell_resp = ui.interact(ui.max_rect(), cell_id, egui::Sense::click());
-        let (sort_label, arrow) = match column_action {
-            Some(SortColumn::Name) if sort_column == SortColumn::Name => (
-                label.clone(),
-                if sort_ascending {
+        let arrow = column_action
+            .and_then(|column| sort_keys.iter().find(|key| key.column == column))
+            .map(|key| {
+                if key.ascending {
                     regular::CARET_UP
                 } else {
                     regular::CARET_DOWN
-                },
-            ),
-            Some(SortColumn::Type) if sort_column == SortColumn::Type => (
-                label.clone(),
-                if sort_ascending {
-                    regular::CARET_UP
-                } else {
-                    regular::CARET_DOWN
-                },
-            ),
-            Some(SortColumn::Size) if sort_column == SortColumn::Size => (
-                label.clone(),
-                if sort_ascending {
-                    regular::CARET_UP
-                } else {
-                    regular::CARET_DOWN
-                },
-            ),
-            Some(SortColumn::Modified) if sort_column == SortColumn::Modified => (
-                label.clone(),
-                if sort_ascending {
-                    regular::CARET_UP
-                } else {
-                    regular::CARET_DOWN
-                },
-            ),
-            Some(SortColumn::Created) if sort_column == SortColumn::Created => (
-                label.clone(),
-                if sort_ascending {
-                    regular::CARET_UP
-                } else {
-                    regular::CARET_DOWN
-                },
-            ),
-            Some(SortColumn::Deleted) if sort_column == SortColumn::Deleted => (
-                label.clone(),
-                if sort_ascending {
-                    regular::CARET_UP
-                } else {
-                    regular::CARET_DOWN
-                },
-            ),
-            Some(SortColumn::OriginalDirectory) if sort_column == SortColumn::OriginalDirectory => {
-                (
-                    label.clone(),
-                    if sort_ascending {
-                        regular::CARET_UP
-                    } else {
-                        regular::CARET_DOWN
-                    },
-                )
-            }
-            _ => (label.clone(), ""),
-        };
+                }
+            })
+            .unwrap_or("");
+        let sort_label = label;
 
         ui.add(
             egui::Label::new(
@@ -1273,9 +1220,13 @@ fn draw_header_cell(
         if cell_resp.clicked()
             && let Some(col) = column_action
         {
-            *action = Some(ItemViewerAction::Sort(col));
+            let modifiers = ui.input(|input| input.modifiers);
+            *action = Some(ItemViewerAction::Sort {
+                column: col,
+                additive: modifiers.shift,
+                remove: modifiers.ctrl,
+            });
         }
-
         let order = column_state.order(is_drive_view, is_recycle_bin_view);
         let order_index = order.iter().position(|c| *c == column);
 
@@ -1785,7 +1736,6 @@ pub fn compute_item_viewer_column_layout(
     viewport_width: f32,
 ) -> ItemViewerColumnLayout {
     let fit_request = column_state.pending_fit_request.take();
-    let layout_generation = column_state.layout_generation;
     let ordered_columns = column_state.visible_order(is_drive_view, is_recycle_bin_view);
 
     let mut column_sizes_changed = false;
@@ -1834,6 +1784,8 @@ pub fn compute_item_viewer_column_layout(
                 column_sizes_changed = true;
             }
         }
+
+        column_state.layout_generation = column_state.layout_generation.wrapping_add(1);
     }
 
     // Default widths are only used when a column has never been explicitly
@@ -1947,7 +1899,6 @@ pub fn compute_item_viewer_column_layout(
     };
 
     ItemViewerColumnLayout {
-        layout_generation,
         ordered_columns,
         name_width,
         type_width,

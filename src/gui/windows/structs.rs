@@ -1,5 +1,5 @@
 use crate::core::drives::DriveInfo;
-use crate::core::indexer::WindowSizeMode;
+use crate::core::indexer::{DirectorySettingsSnapshot, WindowSizeMode};
 use crate::gui::theme::{ThemeMode, ThemePalette};
 use crate::gui::utils::SortColumn;
 use crate::gui::windows::containers::enums::ItemViewerHeaderColumn;
@@ -58,6 +58,7 @@ pub struct AppSettings {
     pub item_viewer_file_column_sizes: Vec<f32>,
     pub item_viewer_drive_column_sizes: Vec<f32>,
     pub recycle_bin_column_sizes: Vec<f32>,
+    pub directory_settings: Vec<DirectorySettingsSnapshot>,
 }
 
 #[derive(Default)]

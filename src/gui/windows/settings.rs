@@ -55,6 +55,7 @@ impl Default for AppSettings {
             item_viewer_file_column_sizes: vec![],
             item_viewer_drive_column_sizes: vec![],
             recycle_bin_column_sizes: vec![],
+            directory_settings: vec![],
         }
     }
 }

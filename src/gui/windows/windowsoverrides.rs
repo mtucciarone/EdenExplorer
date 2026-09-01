@@ -108,6 +108,7 @@ fn save_manual_window_size(hwnd: HWND) {
             item_viewer_file_column_sizes,
             item_viewer_drive_column_sizes,
             recycle_bin_column_sizes,
+            directory_settings,
         ) = load_app_settings();
         let window_size_mode = WindowSizeMode::Custom { width, height };
 
@@ -131,6 +132,7 @@ fn save_manual_window_size(hwnd: HWND) {
             &item_viewer_file_column_sizes,
             &item_viewer_drive_column_sizes,
             &recycle_bin_column_sizes,
+            &directory_settings,
         );
     }
 }
@@ -310,6 +312,11 @@ unsafe extern "system" fn custom_wndproc(
 
             LRESULT(0)
         }
+
+        // Keep the custom borderless frame's client area aligned with the
+        // window. Without this, Windows 10 may retain a non-client top inset
+        // after WS_THICKFRAME is added, offsetting both painting and input.
+        WM_NCCALCSIZE if wparam.0 != 0 => LRESULT(0),
 
         WM_NCHITTEST => {
             let x = get_x_lparam(lparam);

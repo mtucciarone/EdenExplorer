@@ -2,7 +2,8 @@ use crate::core::drives::{get_drive_infos, is_raw_physical_drive_path};
 use crate::core::fs::{FileItem, get_shell_item_metadata};
 use crate::core::fs::{MY_RECYCLE_BIN_PATH, parallel_directory_scan, scan_dir_async};
 use crate::core::indexer::{
-    load_app_settings, save_app_settings, save_favorites, save_tags, save_theme_settings,
+    DirectorySettingsSnapshot, load_app_settings, save_app_settings, save_favorites, save_tags,
+    save_theme_settings,
 };
 use crate::gui::MainWindow;
 use crate::gui::i18n::I18n;
@@ -10,8 +11,8 @@ use crate::gui::theme::{
     ThemeMode, ThemePalette, apply_font_to_context, get_default_palette, set_palette,
 };
 use crate::gui::utils::{
-    SortColumn, clear_clipboard_files, get_clipboard_files, is_clipboard_cut, set_clipboard_files,
-    shell_delete_to_recycle_bin, show_copy_move_dialog, sort_files,
+    SortColumn, SortKey, clear_clipboard_files, get_clipboard_files, is_clipboard_cut,
+    set_clipboard_files, shell_delete_to_recycle_bin, show_copy_move_dialog, sort_files_by_keys,
 };
 use crate::gui::windows::about::draw_about_window;
 use crate::gui::windows::containers::enums::{
@@ -19,14 +20,15 @@ use crate::gui::windows::containers::enums::{
 };
 use crate::gui::windows::containers::itemviewer_navbar::open_default_terminal;
 use crate::gui::windows::containers::structs::{
-    FavoriteItem, ItemViewerColumnFitRequest, ItemViewerColumnState, ItemViewerFolderSizeState,
-    ItemViewerNavBarAction, RenameState, SidebarAction, SplitSide, TabState, TabsAction,
+    FavoriteItem, FilterState, GalleryThumbnailSize, ItemViewerColumnFitRequest,
+    ItemViewerColumnState, ItemViewerDisplayMode, ItemViewerFolderSizeState,
+    ItemViewerNavBarAction, RenameState, SidebarAction, SplitSide, TabState, TabView, TabsAction,
     TopbarAction,
 };
 use crate::gui::windows::customizetheme::draw_theme_customizer;
 use crate::gui::windows::enums::{SettingsAction, ThemeCustomizerAction};
 use crate::gui::windows::settings::draw_settings_window;
-use crate::gui::windows::structs::{Navigation, ThemeCustomizer};
+use crate::gui::windows::structs::{AppSettings, Navigation, ThemeCustomizer};
 use crate::gui::windows::windowsoverrides::mark_clipboard_dirty;
 use crate::gui::windows::windowsoverrides::toggle_window_fullscreen;
 use crossbeam_channel::Receiver;
@@ -48,6 +50,138 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::{Error, HRESULT};
 
 use windows::{Win32::System::Com::*, Win32::UI::Shell::*, core::*};
+
+pub(crate) fn default_column_state(settings: &AppSettings) -> ItemViewerColumnState {
+    ItemViewerColumnState::from_orders(
+        settings.item_viewer_file_column_order.clone(),
+        settings.item_viewer_drive_column_order.clone(),
+        settings.recycle_bin_column_order.clone(),
+        settings.item_viewer_file_column_sizes.clone(),
+        settings.item_viewer_drive_column_sizes.clone(),
+        settings.recycle_bin_column_sizes.clone(),
+    )
+}
+
+pub(crate) fn default_directory_settings_snapshot(directory: PathBuf) -> DirectorySettingsSnapshot {
+    let default_settings = AppSettings::default();
+
+    DirectorySettingsSnapshot {
+        directory,
+        item_viewer_file_column_order: default_settings.item_viewer_file_column_order,
+        item_viewer_drive_column_order: default_settings.item_viewer_drive_column_order,
+        recycle_bin_column_order: default_settings.recycle_bin_column_order,
+        item_viewer_file_column_sizes: default_settings.item_viewer_file_column_sizes,
+        item_viewer_drive_column_sizes: default_settings.item_viewer_drive_column_sizes,
+        recycle_bin_column_sizes: default_settings.recycle_bin_column_sizes,
+        filter_query: String::new(),
+        display_mode: ItemViewerDisplayMode::Details,
+        gallery_thumbnail_size: GalleryThumbnailSize::Medium,
+        sort_column: SortColumn::Name,
+        sort_ascending: true,
+        sort_keys: vec![SortKey {
+            column: SortColumn::Name,
+            ascending: true,
+        }],
+    }
+}
+
+pub(crate) fn directory_settings_snapshot_for_view(view: &TabView) -> DirectorySettingsSnapshot {
+    DirectorySettingsSnapshot {
+        directory: view.nav.current.clone(),
+        item_viewer_file_column_order: view.column_state.file_column_order.clone(),
+        item_viewer_drive_column_order: view.column_state.drive_column_order.clone(),
+        recycle_bin_column_order: view.column_state.recycle_bin_column_order.clone(),
+        item_viewer_file_column_sizes: view.column_state.file_column_sizes.clone(),
+        item_viewer_drive_column_sizes: view.column_state.drive_column_sizes.clone(),
+        recycle_bin_column_sizes: view.column_state.recycle_bin_column_sizes.clone(),
+        filter_query: view.item_viewer_filter_state.query.clone(),
+        display_mode: view.display_mode,
+        gallery_thumbnail_size: view.gallery_state.thumbnail_size,
+        sort_column: view.sort_column,
+        sort_ascending: view.sort_ascending,
+        sort_keys: view.sort_keys.clone(),
+    }
+}
+
+pub(crate) fn apply_directory_settings_to_view(view: &mut TabView, settings: &AppSettings) {
+    let snapshot = settings
+        .directory_settings
+        .iter()
+        .find(|entry| entry.directory == view.nav.current);
+
+    if let Some(snapshot) = snapshot {
+        view.column_state = ItemViewerColumnState::from_orders(
+            snapshot.item_viewer_file_column_order.clone(),
+            snapshot.item_viewer_drive_column_order.clone(),
+            snapshot.recycle_bin_column_order.clone(),
+            snapshot.item_viewer_file_column_sizes.clone(),
+            snapshot.item_viewer_drive_column_sizes.clone(),
+            snapshot.recycle_bin_column_sizes.clone(),
+        );
+        view.item_viewer_filter_state = FilterState {
+            active: !snapshot.filter_query.is_empty(),
+            query: snapshot.filter_query.clone(),
+            ..Default::default()
+        };
+        view.display_mode = snapshot.display_mode;
+        view.gallery_state
+            .set_thumbnail_size(snapshot.gallery_thumbnail_size);
+        view.sort_keys = if snapshot.sort_keys.is_empty() {
+            vec![SortKey {
+                column: snapshot.sort_column,
+                ascending: snapshot.sort_ascending,
+            }]
+        } else {
+            snapshot.sort_keys.clone()
+        };
+        let primary = view.sort_keys[0];
+        view.sort_column = primary.column;
+        view.sort_ascending = primary.ascending;
+    } else {
+        view.column_state = default_column_state(settings);
+        view.item_viewer_filter_state = FilterState::default();
+        view.display_mode = ItemViewerDisplayMode::Details;
+        view.gallery_state = Default::default();
+        view.sort_keys = vec![SortKey {
+            column: settings.sort_column,
+            ascending: settings.sort_ascending,
+        }];
+        view.sort_column = settings.sort_column;
+        view.sort_ascending = settings.sort_ascending;
+    }
+}
+
+pub(crate) fn persist_directory_settings_snapshot(
+    entries: &mut Vec<DirectorySettingsSnapshot>,
+    snapshot: DirectorySettingsSnapshot,
+) -> bool {
+    let default_snapshot = default_directory_settings_snapshot(snapshot.directory.clone());
+
+    if snapshot == default_snapshot {
+        if let Some(pos) = entries
+            .iter()
+            .position(|entry| entry.directory == snapshot.directory)
+        {
+            entries.remove(pos);
+            return true;
+        }
+        return false;
+    }
+
+    if let Some(pos) = entries
+        .iter()
+        .position(|entry| entry.directory == snapshot.directory)
+    {
+        if entries[pos] == snapshot {
+            return false;
+        }
+        entries[pos] = snapshot;
+        true
+    } else {
+        entries.push(snapshot);
+        true
+    }
+}
 
 impl Drop for MainWindow {
     fn drop(&mut self) {
@@ -133,33 +267,11 @@ impl MainWindow {
         };
         self.tabs
             .push(TabState::new(id, nav, sort_column, sort_ascending));
-        let column_state = ItemViewerColumnState::from_orders(
-            self.settings_window
-                .current_settings
-                .item_viewer_file_column_order
-                .clone(),
-            self.settings_window
-                .current_settings
-                .item_viewer_drive_column_order
-                .clone(),
-            self.settings_window
-                .current_settings
-                .recycle_bin_column_order
-                .clone(),
-            self.settings_window
-                .current_settings
-                .item_viewer_file_column_sizes
-                .clone(),
-            self.settings_window
-                .current_settings
-                .item_viewer_drive_column_sizes
-                .clone(),
-            self.settings_window
-                .current_settings
-                .recycle_bin_column_sizes
-                .clone(),
+        let current_settings = self.settings_window.current_settings.clone();
+        apply_directory_settings_to_view(
+            &mut self.tabs.last_mut().unwrap().primary_view,
+            &current_settings,
         );
-        self.tabs.last_mut().unwrap().primary_view.column_state = column_state;
         self.active_tab = self.tabs.len() - 1;
         self.mark_tab_infos_dirty();
     }
@@ -224,30 +336,53 @@ impl MainWindow {
         favorites
     }
 
-    pub fn toggle_sort(&mut self, col: SortColumn) {
+    pub fn toggle_sort(&mut self, col: SortColumn, additive: bool, remove: bool) {
         let side = self.focused_split;
-        let (sort_column, sort_ascending) = {
+        let sort_keys = {
             let view = self.active_tab_mut().view_mut(side);
-            if view.sort_column == col {
-                view.sort_ascending = !view.sort_ascending;
+            if remove {
+                view.sort_keys.retain(|key| key.column != col);
+                if view.sort_keys.is_empty() {
+                    view.sort_keys.push(SortKey {
+                        column: SortColumn::Name,
+                        ascending: true,
+                    });
+                }
+            } else if additive {
+                if let Some(key) = view.sort_keys.iter_mut().find(|key| key.column == col) {
+                    key.ascending = !key.ascending;
+                } else {
+                    view.sort_keys.push(SortKey {
+                        column: col,
+                        ascending: true,
+                    });
+                }
             } else {
-                view.sort_column = col;
-                view.sort_ascending = true;
+                let ascending = view
+                    .sort_keys
+                    .first()
+                    .filter(|key| key.column == col)
+                    .map(|key| !key.ascending)
+                    .unwrap_or(true);
+                view.sort_keys = vec![SortKey {
+                    column: col,
+                    ascending,
+                }];
             }
-            (view.sort_column, view.sort_ascending)
+            let primary = view.sort_keys[0];
+            view.sort_column = primary.column;
+            view.sort_ascending = primary.ascending;
+            view.sort_keys.clone()
         };
 
-        // Update settings window with new sorting values (the default new tabs start with)
-        self.settings_window.current_settings.sort_column = sort_column;
-        self.settings_window.current_settings.sort_ascending = sort_ascending;
+        sort_files_by_keys(&mut self.active_tab_mut().view_mut(side).files, &sort_keys);
 
-        sort_files(
-            &mut self.active_tab_mut().view_mut(side).files,
-            sort_column,
-            sort_ascending,
+        let snapshot = directory_settings_snapshot_for_view(self.active_tab().view(side));
+        let _ = persist_directory_settings_snapshot(
+            &mut self.settings_window.current_settings.directory_settings,
+            snapshot,
         );
 
-        // Automatically save settings when sorting changes
         self.save_app_settings_to_disk();
     }
 
@@ -299,61 +434,24 @@ impl MainWindow {
                 .settings_window
                 .current_settings
                 .recycle_bin_column_sizes,
+            &self.settings_window.current_settings.directory_settings,
         );
     }
 
     fn apply_item_viewer_column_order(
         &mut self,
+        side: SplitSide,
         is_drive_view: bool,
         is_recycle_bin_view: bool,
         order: &[ItemViewerHeaderColumn],
     ) {
-        let target_order = if is_drive_view {
-            &mut self
-                .settings_window
-                .current_settings
-                .item_viewer_drive_column_order
-        } else if is_recycle_bin_view {
-            &mut self
-                .settings_window
-                .current_settings
-                .recycle_bin_column_order
-        } else {
-            &mut self
-                .settings_window
-                .current_settings
-                .item_viewer_file_column_order
-        };
-        eprintln!(
-            "SAVE COLUMN ORDER: drive={} recycle={} order={:?}",
-            is_drive_view, is_recycle_bin_view, order
-        );
-        *target_order = order.to_vec();
-
-        for tab in &mut self.tabs {
-            {
-                let view = &mut tab.primary_view;
-                let current_order = view
-                    .column_state
-                    .order_mut(is_drive_view, is_recycle_bin_view);
-                current_order.clear();
-                current_order.extend_from_slice(order);
-                view.column_state.layout_generation =
-                    view.column_state.layout_generation.wrapping_add(1);
-            }
-
-            if let Some(view) = tab.split_view.as_mut() {
-                let current_order = view
-                    .column_state
-                    .order_mut(is_drive_view, is_recycle_bin_view);
-                current_order.clear();
-                current_order.extend_from_slice(order);
-                view.column_state.layout_generation =
-                    view.column_state.layout_generation.wrapping_add(1);
-            }
-        }
-
-        self.save_app_settings_to_disk();
+        let view = self.active_tab_mut().view_mut(side);
+        let current_order = view
+            .column_state
+            .order_mut(is_drive_view, is_recycle_bin_view);
+        current_order.clear();
+        current_order.extend_from_slice(order);
+        view.column_state.layout_generation = view.column_state.layout_generation.wrapping_add(1);
     }
 
     pub fn load_path(&mut self) {
@@ -361,18 +459,16 @@ impl MainWindow {
     }
 
     pub(crate) fn load_view(&mut self, side: SplitSide) {
-        let (sort_column, sort_ascending, current_path, is_root) = {
+        let (current_path, is_root) = {
             let view = self.active_tab().view(side);
-            (
-                view.sort_column,
-                view.sort_ascending,
-                view.nav.current.clone(),
-                view.nav.is_root(),
-            )
+            (view.nav.current.clone(), view.nav.is_root())
         };
+
+        let current_settings = self.settings_window.current_settings.clone();
 
         {
             let view = self.active_tab_mut().view_mut(side);
+            apply_directory_settings_to_view(view, &current_settings);
             view.files.clear();
             view.rx = None;
             view.size_req_tx = None;
@@ -422,7 +518,7 @@ impl MainWindow {
                 }
             }
 
-            sort_files(&mut view.files, sort_column, sort_ascending);
+            sort_files_by_keys(&mut view.files, &view.sort_keys);
             return;
         }
 
@@ -463,11 +559,6 @@ impl MainWindow {
             BHID_EnumItems, FOLDERID_RecycleBinFolder, IEnumShellItems, ILFree, ILGetSize,
             IShellItem, SHCreateItemFromIDList, SHGetIDListFromObject, SHGetKnownFolderIDList,
             SIGDN_DESKTOPABSOLUTEPARSING, SIGDN_FILESYSPATH, SIGDN_NORMALDISPLAY,
-        };
-
-        let (sort_column, sort_ascending) = {
-            let view = self.active_tab().view(side);
-            (view.sort_column, view.sort_ascending)
         };
 
         let mut recycle_items = Vec::new();
@@ -599,7 +690,7 @@ impl MainWindow {
 
         let view = self.active_tab_mut().view_mut(side);
         view.files = recycle_items;
-        sort_files(&mut view.files, sort_column, sort_ascending);
+        sort_files_by_keys(&mut view.files, &view.sort_keys);
     }
 
     pub fn create_new_folder(&mut self) {
@@ -1208,6 +1299,13 @@ impl MainWindow {
         if let Some(action) = tabbar_action.as_ref().and_then(|t| t.nav.as_ref()) {
             match action {
                 ItemViewerNavAction::Back => {
+                    let snapshot = directory_settings_snapshot_for_view(
+                        self.active_tab().view(self.focused_split),
+                    );
+                    let _ = persist_directory_settings_snapshot(
+                        &mut self.settings_window.current_settings.directory_settings,
+                        snapshot,
+                    );
                     // Store current path in navigation history before going back
                     if let Some(parent) = self.current_nav().get_parent() {
                         let current = self.current_nav().current.clone();
@@ -1220,8 +1318,24 @@ impl MainWindow {
                     }
                     self.current_nav_mut().go_back();
                 }
-                ItemViewerNavAction::Forward => self.current_nav_mut().go_forward(),
+                ItemViewerNavAction::Forward => {
+                    let snapshot = directory_settings_snapshot_for_view(
+                        self.active_tab().view(self.focused_split),
+                    );
+                    let _ = persist_directory_settings_snapshot(
+                        &mut self.settings_window.current_settings.directory_settings,
+                        snapshot,
+                    );
+                    self.current_nav_mut().go_forward();
+                }
                 ItemViewerNavAction::Up => {
+                    let snapshot = directory_settings_snapshot_for_view(
+                        self.active_tab().view(self.focused_split),
+                    );
+                    let _ = persist_directory_settings_snapshot(
+                        &mut self.settings_window.current_settings.directory_settings,
+                        snapshot,
+                    );
                     // Store current path in navigation history before going up
                     if let Some(parent) = self.current_nav().get_parent() {
                         let current = self.current_nav().current.clone();
@@ -1254,6 +1368,13 @@ impl MainWindow {
             }
         } else {
             if let Some(path) = tabbar_action.as_ref().and_then(|t| t.nav_to.as_ref()) {
+                let snapshot = directory_settings_snapshot_for_view(
+                    self.active_tab().view(self.focused_split),
+                );
+                let _ = persist_directory_settings_snapshot(
+                    &mut self.settings_window.current_settings.directory_settings,
+                    snapshot,
+                );
                 // Store current path in navigation history before navigating
                 if let Some(parent) = self.current_nav().get_parent() {
                     let current = self.current_nav().current.clone();
@@ -1349,6 +1470,11 @@ impl MainWindow {
                 self.next_tab_id += 1;
                 self.tabs
                     .push(TabState::new(id, cloned_nav, sort_column, sort_ascending));
+                let current_settings = self.settings_window.current_settings.clone();
+                apply_directory_settings_to_view(
+                    &mut self.tabs.last_mut().unwrap().primary_view,
+                    &current_settings,
+                );
                 self.active_tab = self.tabs.len() - 1;
                 self.focused_split = SplitSide::Primary;
                 self.pending_tab_scroll_id = Some(id);
@@ -1358,6 +1484,20 @@ impl MainWindow {
             if let Some(id) = action.close {
                 if self.tabs.len() > 1 {
                     if let Some(idx) = self.tabs.iter().position(|t| t.id == id) {
+                        if let Some(tab) = self.tabs.get(idx) {
+                            let snapshot = directory_settings_snapshot_for_view(&tab.primary_view);
+                            let _ = persist_directory_settings_snapshot(
+                                &mut self.settings_window.current_settings.directory_settings,
+                                snapshot,
+                            );
+                            if let Some(split) = tab.split_view.as_ref() {
+                                let snapshot = directory_settings_snapshot_for_view(split);
+                                let _ = persist_directory_settings_snapshot(
+                                    &mut self.settings_window.current_settings.directory_settings,
+                                    snapshot,
+                                );
+                            }
+                        }
                         self.tabs.remove(idx);
                         if self.active_tab >= self.tabs.len() {
                             self.active_tab = self.tabs.len() - 1;
@@ -1370,6 +1510,11 @@ impl MainWindow {
                         self.load_path();
                     }
                 } else {
+                    let snapshot = directory_settings_snapshot_for_view(&self.tabs[0].primary_view);
+                    let _ = persist_directory_settings_snapshot(
+                        &mut self.settings_window.current_settings.directory_settings,
+                        snapshot,
+                    );
                     let (
                         _folder_scanning_enabled,
                         _show_hidden_files_folders,
@@ -1390,6 +1535,7 @@ impl MainWindow {
                         _item_viewer_file_column_sizes,
                         _item_viewer_drive_column_sizes,
                         _recycle_bin_column_sizes,
+                        _directory_settings,
                     ) = load_app_settings();
                     self.tabs[0].primary_view.nav = Navigation::new(start_path);
                     self.tabs[0].split_view = None;
@@ -1461,6 +1607,8 @@ impl MainWindow {
             .view(SplitSide::Primary)
             .duplicate_as_new();
         new_view.nav = Navigation::new(path);
+        let current_settings = self.settings_window.current_settings.clone();
+        apply_directory_settings_to_view(&mut new_view, &current_settings);
         let tab = self.active_tab_mut();
         tab.split_view = Some(new_view);
         self.focused_split = SplitSide::Secondary;
@@ -1896,12 +2044,8 @@ impl MainWindow {
         }
 
         if updated {
-            let (sort_column, sort_ascending) = {
-                let view = self.active_tab().view(side);
-                (view.sort_column, view.sort_ascending)
-            };
             let view = self.active_tab_mut().view_mut(side);
-            sort_files(&mut view.files, sort_column, sort_ascending);
+            sort_files_by_keys(&mut view.files, &view.sort_keys);
         }
         updated
     }
@@ -1961,13 +2105,9 @@ impl MainWindow {
                 }
             }
 
-            let (sort_column, sort_ascending) = {
-                let view = self.active_tab().view(side);
-                (view.sort_column, view.sort_ascending)
-            };
             let view = self.active_tab_mut().view_mut(side);
             view.files.extend(batch);
-            sort_files(&mut view.files, sort_column, sort_ascending);
+            sort_files_by_keys(&mut view.files, &view.sort_keys);
             any_change = true;
         }
 
@@ -2126,7 +2266,11 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
         }
 
         match action {
-            ItemViewerAction::Sort(col) => explorer.toggle_sort(col),
+            ItemViewerAction::Sort {
+                column,
+                additive,
+                remove,
+            } => explorer.toggle_sort(column, additive, remove),
             ItemViewerAction::ToggleColumnVisibility(column) => {
                 let new_order = {
                     let view = explorer.active_tab_mut().view_mut(side);
@@ -2149,9 +2293,16 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
 
                 if let Some(order) = new_order {
                     explorer.apply_item_viewer_column_order(
+                        side,
                         is_drive_view,
                         is_recycle_bin_view,
                         &order,
+                    );
+                    let snapshot =
+                        directory_settings_snapshot_for_view(explorer.active_tab().view(side));
+                    let _ = persist_directory_settings_snapshot(
+                        &mut explorer.settings_window.current_settings.directory_settings,
+                        snapshot,
                     );
                 }
             }
@@ -2197,9 +2348,16 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                         .order(is_drive_view, is_recycle_bin_view)
                         .to_vec();
                     explorer.apply_item_viewer_column_order(
+                        side,
                         is_drive_view,
                         is_recycle_bin_view,
                         &order,
+                    );
+                    let snapshot =
+                        directory_settings_snapshot_for_view(explorer.active_tab().view(side));
+                    let _ = persist_directory_settings_snapshot(
+                        &mut explorer.settings_window.current_settings.directory_settings,
+                        snapshot,
                     );
                 }
             }
@@ -2217,9 +2375,16 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                         .order(is_drive_view, is_recycle_bin_view)
                         .to_vec();
                     explorer.apply_item_viewer_column_order(
+                        side,
                         is_drive_view,
                         is_recycle_bin_view,
                         &order,
+                    );
+                    let snapshot =
+                        directory_settings_snapshot_for_view(explorer.active_tab().view(side));
+                    let _ = persist_directory_settings_snapshot(
+                        &mut explorer.settings_window.current_settings.directory_settings,
+                        snapshot,
                     );
                 }
             }
@@ -2241,9 +2406,16 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                         .order(is_drive_view, is_recycle_bin_view)
                         .to_vec();
                     explorer.apply_item_viewer_column_order(
+                        side,
                         is_drive_view,
                         is_recycle_bin_view,
                         &order,
+                    );
+                    let snapshot =
+                        directory_settings_snapshot_for_view(explorer.active_tab().view(side));
+                    let _ = persist_directory_settings_snapshot(
+                        &mut explorer.settings_window.current_settings.directory_settings,
+                        snapshot,
                     );
                 }
             }
@@ -2265,9 +2437,16 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                         .order(is_drive_view, is_recycle_bin_view)
                         .to_vec();
                     explorer.apply_item_viewer_column_order(
+                        side,
                         is_drive_view,
                         is_recycle_bin_view,
                         &order,
+                    );
+                    let snapshot =
+                        directory_settings_snapshot_for_view(explorer.active_tab().view(side));
+                    let _ = persist_directory_settings_snapshot(
+                        &mut explorer.settings_window.current_settings.directory_settings,
+                        snapshot,
                     );
                 }
             }
@@ -2395,6 +2574,13 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     view.item_viewer_filter_state.dirty = true;
                     view.item_viewer_filter_state.cached_indices.clear();
                 }
+                let snapshot = directory_settings_snapshot_for_view(
+                    explorer.active_tab().view(explorer.focused_split),
+                );
+                let _ = persist_directory_settings_snapshot(
+                    &mut explorer.settings_window.current_settings.directory_settings,
+                    snapshot,
+                );
 
                 // Store current path in navigation history before navigating
                 if let Some(parent) = explorer.current_nav().get_parent() {
@@ -2556,32 +2742,12 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 explorer.load_path();
             }
             ItemViewerAction::ColumnSizesChanged => {
-                let sizes = {
-                    let view = explorer.active_tab().view(side);
-
-                    view.column_state
-                        .column_sizes(is_drive_view, is_recycle_bin_view)
-                        .to_vec()
-                };
-
-                let target_sizes = if is_drive_view {
-                    &mut explorer
-                        .settings_window
-                        .current_settings
-                        .item_viewer_drive_column_sizes
-                } else if is_recycle_bin_view {
-                    &mut explorer
-                        .settings_window
-                        .current_settings
-                        .recycle_bin_column_sizes
-                } else {
-                    &mut explorer
-                        .settings_window
-                        .current_settings
-                        .item_viewer_file_column_sizes
-                };
-
-                *target_sizes = sizes;
+                let snapshot =
+                    directory_settings_snapshot_for_view(explorer.active_tab().view(side));
+                let _ = persist_directory_settings_snapshot(
+                    &mut explorer.settings_window.current_settings.directory_settings,
+                    snapshot,
+                );
 
                 explorer.save_app_settings_to_disk();
             }
