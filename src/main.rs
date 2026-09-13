@@ -2,7 +2,7 @@
 mod core;
 mod gui;
 
-use crate::core::indexer::{WindowSizeMode, load_windows_size_mode_on_start};
+use crate::core::indexer::{WindowSizeMode, load_window_position, load_windows_size_mode_on_start};
 use crate::core::launch::{LaunchError, acquire_or_forward, existing_directories, parse_args};
 use crate::core::utils::fonts::apply_custom_font_definitions;
 use crate::gui::windows::windowsoverrides::set_egui_ctx;
@@ -60,8 +60,19 @@ fn main() -> eframe::Result<()> {
         }
     };
 
-    let pos_x = ((screen_w - window_size.x) * 0.5).max(0.0);
-    let pos_y = ((screen_h - window_size.y) * 0.5).max(0.0);
+    // Restore the window to wherever the user last left it, if we have a
+    // saved position and it's still at least partly on a screen (guards
+    // against a saved position from a monitor setup that's since changed) -
+    // otherwise fall back to centering like a fresh install would.
+    let (pos_x, pos_y) = match load_window_position() {
+        Some((x, y)) if x + window_size.x > 0.0 && y + window_size.y > 0.0 && x < screen_w && y < screen_h => {
+            (x, y)
+        }
+        _ => (
+            ((screen_w - window_size.x) * 0.5).max(0.0),
+            ((screen_h - window_size.y) * 0.5).max(0.0),
+        ),
+    };
 
     let options = NativeOptions {
         viewport: egui::ViewportBuilder::default()

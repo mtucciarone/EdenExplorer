@@ -1,26 +1,31 @@
-use crate::core::fs::FileItem;
+use crate::core::fs::{DateStyle, FileItem, filetime_to_string};
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
-use crate::gui::utils::{clickable_icon, draw_object_drag_ghost, rgba_color_edit_button};
+use crate::gui::utils::{
+    clickable_icon, draw_object_drag_ghost, format_size, get_file_type_name,
+    ghost_dialog_button, primary_dialog_button, rgba_color_edit_button,
+};
 use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
 use crate::gui::windows::containers::sidebar::draw_sidebar_item;
-use crate::gui::windows::containers::structs::TagsState;
-use crate::gui::windows::windowsoverrides::handle_draw_windows_buttons;
+use crate::gui::windows::containers::structs::{
+    TagColumn, TagColumnFitRequest, TagColumnState, TagsState,
+};
+use crate::gui::windows::settings::{reorder_buttons, setting_label};
 use eframe::egui;
 use egui::FontId;
 use egui::ScrollArea;
 use egui::containers::{Popup, PopupCloseBehavior};
+use egui_extras::{Column, TableBuilder};
 use egui_phosphor::regular;
+use std::collections::HashMap;
 use std::path::PathBuf;
-use windows::Win32::Foundation::HWND;
 
 pub fn draw_tags(
     ui: &mut egui::Ui,
     i18n: &I18n,
     icon_cache: &IconCache,
     palette: &ThemePalette,
-    hwnd: Option<HWND>,
     tags_state: &mut TagsState,
 ) -> bool {
     let mut changed = false;
@@ -31,22 +36,20 @@ pub fn draw_tags(
     let pointer_released = ui.ctx().input(|input| input.pointer.primary_released());
     let groups_len = tags_state.groups.len();
 
+    setting_label(
+        ui,
+        &i18n.tr("settings_tags"),
+        Some((&i18n.tr("tooltip_settings_tags"), palette)),
+        palette,
+    );
+    ui.add_space(8.0);
+
     let tabs_width = ui.available_width();
     ui.allocate_ui_with_layout(
         egui::vec2(tabs_width, ui.available_height()),
         egui::Layout::top_down(egui::Align::Min),
         |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
-
-            egui::Frame::NONE.show(ui, |ui| {
-                ui.add_space(8.0);
-                draw_container_header(
-                    i18n,
-                    ui,
-                    palette,
-                    hwnd
-                );
-            });
 
                 if tags_state.groups.is_empty() {
                     ui.centered_and_justified(|ui| {
@@ -60,8 +63,19 @@ pub fn draw_tags(
                     .min_scrolled_height(ui.available_height())
                     .show(ui, |ui| {
                 ui.vertical(|ui| {
-                    ui.add_space(-4.0); // align the first group vertically with the side bar border
-                    ui.spacing_mut().item_spacing.y = 8.0;
+                    // A real top padding, not the previous negative space
+                    // (tuned back when this page had no title above it, to
+                    // pull the first group up flush with the sidebar) -
+                    // that negative offset pushed the first group's own
+                    // bordered frame slightly above this scroll area's own
+                    // clip bounds, clipping its top border off entirely
+                    // (the same "content drawn flush against/past a clip
+                    // boundary loses that edge" issue documented elsewhere
+                    // in this codebase for a different border).
+                    ui.add_space(4.0);
+                    ui.spacing_mut().item_spacing.y = 12.0;
+
+                    let mut group_reorder: Option<(usize, usize)> = None;
 
                     for group_index in 0..groups_len {
                         let group_id = tags_state.groups[group_index].id;
@@ -87,9 +101,10 @@ pub fn draw_tags(
                         let group = &mut tags_state.groups[group_index];
 
                         let group_frame = egui::Frame::NONE
-                            .stroke(egui::Stroke::NONE)
-                            .fill(egui::Color32::TRANSPARENT)
-                            .inner_margin(egui::Margin::symmetric(10, 10));
+                            .fill(palette.faint_bg_color)
+                            .stroke(egui::Stroke::new(1.0, group_color.gamma_multiply(0.35)))
+                            .corner_radius(egui::CornerRadius::same(palette.medium_radius))
+                            .inner_margin(egui::Margin::symmetric(12, 10));
 
                         group_frame.show(ui, |ui| {
                             ui.set_width(ui.available_width());
@@ -103,6 +118,13 @@ pub fn draw_tags(
                                 );
 
                             let header_response = header_state.show_header(ui, |ui| {
+                                ui.label(
+                                    egui::RichText::new(regular::TAG)
+                                        .size(palette.text_size + 3.0)
+                                        .color(group_color),
+                                );
+                                ui.add_space(4.0);
+
                                 if editing_this_group {
                                     if let Some(rename) = rename_state
                                         .as_mut()
@@ -156,11 +178,21 @@ pub fn draw_tags(
                                         if rgba_color_edit_button(ui, &mut group.color).changed() {
                                             changed = true;
                                         }
-                                        ui.label(
-                                            egui::RichText::new(format!("({})", group_items.len()))
-                                                .size(palette.text_size)
-                                                .color(palette.tooltip_text_color),
-                                        );
+                                        egui::Frame::NONE
+                                            .fill(group_color.linear_multiply(0.18))
+                                            .corner_radius(egui::CornerRadius::same(
+                                                palette.small_radius,
+                                            ))
+                                            .inner_margin(egui::Margin::symmetric(7, 2))
+                                            .show(ui, |ui| {
+                                                ui.label(
+                                                    egui::RichText::new(
+                                                        group_items.len().to_string(),
+                                                    )
+                                                    .size(palette.text_size - 1.0)
+                                                    .color(group_color),
+                                                );
+                                            });
                                         if clickable_icon(ui, regular::TRASH, palette)
                                             .on_hover_text(i18n.tr("tag_delete_group"))
                                             .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -181,15 +213,22 @@ pub fn draw_tags(
                                                 },
                                             );
                                         }
+                                        if let Some(swap) =
+                                            reorder_buttons(ui, palette, group_index, groups_len)
+                                        {
+                                            group_reorder = Some(swap);
+                                        }
                                     },
                                 );
                             });
 
                             let _ = header_response.body(|ui| {
+                                ui.add_space(6.0);
+                                ui.add(egui::Separator::default().horizontal().spacing(0.0));
+                                ui.add_space(6.0);
+
                                 let collapsible_body_frame = egui::Frame::NONE
-                                    .stroke(egui::Stroke::new(1.0, group_color.gamma_multiply(0.8)))
-                                    .fill(palette.row_bg.linear_multiply(0.18))
-                                    .inner_margin(egui::Margin::symmetric(10, 10));
+                                    .inner_margin(egui::Margin::symmetric(4, 0));
 
                                 collapsible_body_frame.show(ui, |ui| {
                                     if group_items.is_empty() {
@@ -314,6 +353,7 @@ pub fn draw_tags(
                                                     &mut action,
                                                     palette,
                                                     is_tagged,
+                                                    Some(group_id),
                                                 );
                                                 if let Some(a) = action {
                                                     tags_state.pending_action = Some(a);
@@ -389,10 +429,11 @@ pub fn draw_tags(
                         if should_clear_drag {
                             drag_state = None;
                         }
+                    }
 
-                        if group_index + 1 < groups_len {
-                            ui.add_space(-12.0); // remove vertical margins between tag groups
-                        }
+                    if let Some((from, to)) = group_reorder {
+                        tags_state.groups.swap(from, to);
+                        changed = true;
                     }
                 });
             });
@@ -405,7 +446,479 @@ pub fn draw_tags(
     tags_state.drag_state = drag_state;
     tags_state.rename_state = rename_state;
     tags_state.delete_confirmation = delete_confirmation;
+
+    if changed {
+        crate::core::indexer::save_tags(&tags_state.to_snapshot());
+    }
+
     changed
+}
+
+/// Converts a filesystem `SystemTime` into the Windows FILETIME representation
+/// `filetime_to_string` expects, so tag-view rows can reuse the same
+/// date/time formatting as the rest of the app.
+fn system_time_to_filetime(time: std::time::SystemTime) -> i64 {
+    match time.duration_since(std::time::UNIX_EPOCH) {
+        Ok(dur) => {
+            (dur.as_secs() as i64 + 11_644_473_600) * 10_000_000 + (dur.subsec_nanos() as i64 / 100)
+        }
+        Err(err) => {
+            let dur = err.duration();
+            (11_644_473_600 - dur.as_secs() as i64) * 10_000_000
+        }
+    }
+}
+
+struct TagViewRow {
+    path: PathBuf,
+    name: String,
+    is_dir: bool,
+    type_name: String,
+    location: String,
+    size: Option<u64>,
+    modified: Option<String>,
+}
+
+fn measure_text_width(ui: &mut egui::Ui, text: &str, font_id: &FontId) -> f32 {
+    ui.fonts_mut(|fonts| {
+        fonts
+            .layout_no_wrap(text.to_owned(), font_id.clone(), egui::Color32::WHITE)
+            .size()
+            .x
+    })
+}
+
+const TAG_HEADER_TOP_PADDING: f32 = 6.0;
+
+fn tag_column_min_width(column: TagColumn) -> f32 {
+    match column {
+        TagColumn::Name => 160.0,
+        TagColumn::Type => 70.0,
+        TagColumn::Location => 150.0,
+        TagColumn::Size => 60.0,
+        TagColumn::Modified => 100.0,
+    }
+}
+
+/// Content-based width for every tag-view column, computed fresh from
+/// `rows` whenever a fit is requested (mirrors
+/// `compute_item_viewer_column_widths` for the regular folder/recycle-bin
+/// table).
+fn compute_tag_column_widths(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    rows: &[TagViewRow],
+    font_id: &FontId,
+) -> [f32; 5] {
+    let icon_padding = 22.0;
+    let mut widths = [
+        measure_text_width(ui, &i18n.tr(TagColumn::Name.i18n_key()), font_id),
+        measure_text_width(ui, &i18n.tr(TagColumn::Type.i18n_key()), font_id),
+        measure_text_width(ui, &i18n.tr(TagColumn::Location.i18n_key()), font_id),
+        measure_text_width(ui, &i18n.tr(TagColumn::Size.i18n_key()), font_id),
+        measure_text_width(ui, &i18n.tr(TagColumn::Modified.i18n_key()), font_id),
+    ];
+
+    for row in rows {
+        widths[TagColumn::Name.index()] = widths[TagColumn::Name.index()]
+            .max(measure_text_width(ui, &row.name, font_id) + icon_padding);
+        widths[TagColumn::Type.index()] =
+            widths[TagColumn::Type.index()].max(measure_text_width(ui, &row.type_name, font_id));
+        widths[TagColumn::Location.index()] = widths[TagColumn::Location.index()]
+            .max(measure_text_width(ui, &row.location, font_id));
+        let size_text = row.size.map(format_size).unwrap_or_default();
+        widths[TagColumn::Size.index()] =
+            widths[TagColumn::Size.index()].max(measure_text_width(ui, &size_text, font_id));
+        widths[TagColumn::Modified.index()] = widths[TagColumn::Modified.index()].max(
+            measure_text_width(ui, row.modified.as_deref().unwrap_or(""), font_id),
+        );
+    }
+
+    for column in [
+        TagColumn::Name,
+        TagColumn::Type,
+        TagColumn::Location,
+        TagColumn::Size,
+        TagColumn::Modified,
+    ] {
+        widths[column.index()] = widths[column.index()].max(tag_column_min_width(column));
+    }
+
+    widths
+}
+
+fn draw_tag_header_context_menu(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    clicked_column: TagColumn,
+    column_state: &mut TagColumnState,
+    order_index: Option<usize>,
+    order_len: usize,
+) {
+    if ui
+        .button(i18n.tr("itemviewer_size_column_to_fit"))
+        .clicked()
+    {
+        column_state.pending_fit_request = Some(TagColumnFitRequest::Column(clicked_column));
+        column_state.layout_generation = column_state.layout_generation.wrapping_add(1);
+        ui.close();
+    }
+
+    if ui
+        .button(i18n.tr("itemviewer_size_all_columns_to_fit"))
+        .clicked()
+    {
+        column_state.pending_fit_request = Some(TagColumnFitRequest::All);
+        column_state.layout_generation = column_state.layout_generation.wrapping_add(1);
+        ui.close();
+    }
+
+    if clicked_column != TagColumn::Name {
+        ui.separator();
+
+        let can_move_left = order_index.is_some_and(|idx| idx > 0);
+        let can_move_right = order_index.is_some_and(|idx| idx + 1 < order_len);
+
+        if ui
+            .add_enabled(can_move_left, egui::Button::new("Move left"))
+            .clicked()
+        {
+            column_state.move_left(clicked_column);
+            column_state.layout_generation = column_state.layout_generation.wrapping_add(1);
+            ui.close();
+        }
+
+        if ui
+            .add_enabled(can_move_right, egui::Button::new("Move right"))
+            .clicked()
+        {
+            column_state.move_right(clicked_column);
+            column_state.layout_generation = column_state.layout_generation.wrapping_add(1);
+            ui.close();
+        }
+
+        if ui
+            .add_enabled(can_move_left, egui::Button::new("Move to start"))
+            .clicked()
+        {
+            column_state.move_to_start(clicked_column);
+            column_state.layout_generation = column_state.layout_generation.wrapping_add(1);
+            ui.close();
+        }
+
+        if ui
+            .add_enabled(can_move_right, egui::Button::new("Move to end"))
+            .clicked()
+        {
+            column_state.move_to_end(clicked_column);
+            column_state.layout_generation = column_state.layout_generation.wrapping_add(1);
+            ui.close();
+        }
+    }
+}
+
+/// Renders the virtual "tagged items" list for one tag group: every file/
+/// folder tagged with it, shown as its own table (name, type, location,
+/// size, modified) rather than a real filesystem directory listing.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_tag_view(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    icon_cache: &IconCache,
+    palette: &ThemePalette,
+    tags_state: &mut TagsState,
+    group_id: u64,
+    file_type_cache: &mut HashMap<String, String>,
+    date_style: DateStyle,
+    time_format_24h: bool,
+    custom_date_format: &str,
+) -> Option<ItemViewerAction> {
+    let mut action = None;
+
+    let Some(group) = tags_state.groups.iter().find(|g| g.id == group_id) else {
+        ui.centered_and_justified(|ui| {
+            ui.label(i18n.tr("tag_empty_state"));
+        });
+        return None;
+    };
+
+    if group.items.is_empty() {
+        ui.centered_and_justified(|ui| {
+            ui.label(i18n.tr("tag_empty_group"));
+        });
+        return None;
+    }
+
+    let rows: Vec<TagViewRow> = group
+        .items
+        .iter()
+        .map(|path| {
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.display().to_string());
+            let location = path
+                .parent()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
+            let metadata = std::fs::metadata(path).ok();
+            let is_dir = metadata
+                .as_ref()
+                .map(|m| m.is_dir())
+                .unwrap_or_else(|| path.is_dir());
+            let type_name = if is_dir {
+                "Folder".to_string()
+            } else {
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                get_file_type_name(ext, file_type_cache).to_string()
+            };
+            let size = metadata.as_ref().filter(|_| !is_dir).map(|m| m.len());
+            let modified = metadata.as_ref().and_then(|m| m.modified().ok()).and_then(|t| {
+                filetime_to_string(
+                    system_time_to_filetime(t),
+                    date_style,
+                    time_format_24h,
+                    custom_date_format,
+                )
+            });
+
+            TagViewRow {
+                path: path.clone(),
+                name,
+                is_dir,
+                type_name,
+                location,
+                size,
+                modified,
+            }
+        })
+        .collect();
+
+    let row_height = 22.0;
+    let header_height = row_height + TAG_HEADER_TOP_PADDING * 2.0;
+    let font_id = egui::FontId::proportional(palette.text_size);
+
+    let column_state = &mut tags_state.column_state;
+
+    let mut fit_request = column_state.pending_fit_request.take();
+
+    // Auto-fit on the very first render of this (freshly opened) group's
+    // table, same "fit once, then leave the user's manual resizes alone"
+    // behavior as the regular folder/recycle-bin table.
+    if fit_request.is_none() && !column_state.auto_fit_checked {
+        column_state.auto_fit_checked = true;
+        let sizes_are_default = TagColumnState::default().order == column_state.order
+            && [
+                TagColumn::Name,
+                TagColumn::Type,
+                TagColumn::Location,
+                TagColumn::Size,
+                TagColumn::Modified,
+            ]
+            .iter()
+            .all(|c| column_state.width(*c) == TagColumnState::default().width(*c));
+
+        if sizes_are_default {
+            fit_request = Some(TagColumnFitRequest::All);
+        }
+    }
+
+    if let Some(fit_request) = fit_request {
+        let widths = compute_tag_column_widths(ui, i18n, &rows, &font_id);
+
+        match fit_request {
+            TagColumnFitRequest::All => {
+                for column in [
+                    TagColumn::Name,
+                    TagColumn::Type,
+                    TagColumn::Location,
+                    TagColumn::Size,
+                    TagColumn::Modified,
+                ] {
+                    column_state.set_width(column, widths[column.index()]);
+                }
+            }
+            TagColumnFitRequest::Column(column) => {
+                column_state.set_width(column, widths[column.index()]);
+            }
+        }
+
+        column_state.layout_generation = column_state.layout_generation.wrapping_add(1);
+    }
+
+    let order = column_state.order.clone();
+    let table_id_salt = egui::Id::new(("tag_view_table", group_id, column_state.layout_generation));
+
+    // Same left inset as the regular folder/recycle-bin table (see
+    // `left_margin` in itemviewer.rs), so the header/row content lines up
+    // consistently across every view.
+    const LEFT_MARGIN: f32 = 8.0;
+    let table_rect = ui.available_rect_before_wrap();
+    let table_rect = egui::Rect::from_min_max(
+        egui::pos2(table_rect.left() + LEFT_MARGIN, table_rect.top()),
+        table_rect.right_bottom(),
+    );
+
+    ui.scope_builder(egui::UiBuilder::new().max_rect(table_rect), |ui| {
+    ui.push_id(table_id_salt, |ui| {
+        let mut table = TableBuilder::new(ui)
+            .striped(false)
+            .resizable(true)
+            .vscroll(true)
+            .sense(egui::Sense::click());
+
+        for column in &order {
+            table = table.column(
+                Column::initial(tags_state.column_state.width(*column))
+                    .at_least(tag_column_min_width(*column))
+                    .resizable(true),
+            );
+        }
+
+        table
+            .header(header_height, |mut header| {
+                for column in order.clone() {
+                    header.col(|ui| {
+                        ui.add_space(TAG_HEADER_TOP_PADDING);
+                        let cell_id = ui.id().with(("tag_header_cell", column));
+                        let cell_resp = ui.interact(ui.max_rect(), cell_id, egui::Sense::click());
+
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(i18n.tr(column.i18n_key()))
+                                    .size(palette.text_size)
+                                    .color(palette.text_header_section),
+                            )
+                            .selectable(false),
+                        );
+
+                        if cell_resp.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
+                        }
+
+                        let order_index = order.iter().position(|c| *c == column);
+
+                        Popup::context_menu(&cell_resp)
+                            .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                            .show(|ui| {
+                                draw_tag_header_context_menu(
+                                    ui,
+                                    i18n,
+                                    column,
+                                    &mut tags_state.column_state,
+                                    order_index,
+                                    order.len(),
+                                );
+                            });
+                    });
+                }
+            })
+            .body(|body| {
+                body.rows(row_height, rows.len(), |mut row| {
+                    let item = &rows[row.index()];
+
+                    for column in &order {
+                        row.col(|ui| match column {
+                            TagColumn::Name => {
+                                ui.horizontal(|ui| {
+                                    if let Some(icon) = icon_cache.get(&item.path, item.is_dir) {
+                                        ui.add(
+                                            egui::Image::new(&icon)
+                                                .fit_to_exact_size(egui::vec2(16.0, 16.0)),
+                                        );
+                                    }
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(&item.name).size(palette.text_size),
+                                        )
+                                        .selectable(false),
+                                    );
+                                });
+                            }
+                            TagColumn::Type => {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(&item.type_name).size(palette.text_size),
+                                    )
+                                    .selectable(false),
+                                );
+                            }
+                            TagColumn::Location => {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(&item.location).size(palette.text_size),
+                                    )
+                                    .selectable(false),
+                                )
+                                .on_hover_text(&item.location);
+                            }
+                            TagColumn::Size => {
+                                let text = item.size.map(format_size).unwrap_or_default();
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(text).size(palette.text_size),
+                                    )
+                                    .selectable(false),
+                                );
+                            }
+                            TagColumn::Modified => {
+                                let text = item.modified.clone().unwrap_or_default();
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(text).size(palette.text_size),
+                                    )
+                                    .selectable(false),
+                                );
+                            }
+                        });
+                    }
+
+                    let resp = row.response();
+                    if resp.double_clicked() {
+                        action = Some(if item.is_dir {
+                            ItemViewerAction::Open(item.path.clone())
+                        } else {
+                            ItemViewerAction::OpenWithDefault(vec![item.path.clone()])
+                        });
+                    }
+
+                    let is_tagged = tags_state.is_tagged(&item.path);
+                    Popup::context_menu(&resp)
+                        .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                        .show(|ui| {
+                            let file_item = FileItem {
+                                name: item.name.clone(),
+                                path: item.path.clone(),
+                                is_dir: item.is_dir,
+                                is_hidden: false,
+                                recycle_bin_pidl: None,
+                                file_size: item.size,
+                                modified_time: item.modified.clone(),
+                                created_time: None,
+                                deleted_time: None,
+                                modified_time_raw: None,
+                                created_time_raw: None,
+                                deleted_time_raw: None,
+                                original_directory: Some(item.location.clone()),
+                                total_space: None,
+                                free_space: None,
+                            };
+                            handle_context_menu_actions_tags(
+                                ui,
+                                i18n,
+                                &file_item,
+                                &mut action,
+                                palette,
+                                is_tagged,
+                                Some(group_id),
+                            );
+                        });
+                });
+            });
+    });
+    });
+
+    action
 }
 
 pub fn draw_delete_confirmation_popup(
@@ -476,13 +989,13 @@ pub fn draw_delete_confirmation_popup(
             );
 
             ui.add_space(16.0);
-            ui.horizontal(|ui| {
-                if ui.button(i18n.tr("ok")).clicked() {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if primary_dialog_button(ui, palette, &i18n.tr("ok")).clicked() {
                     confirmed = true;
                     close_requested = true;
                 }
-
-                if ui.button(i18n.tr("close")).clicked() {
+                ui.add_space(6.0);
+                if ghost_dialog_button(ui, palette, &i18n.tr("close")).clicked() {
                     close_requested = true;
                 }
             });
@@ -496,6 +1009,10 @@ pub fn draw_delete_confirmation_popup(
         tags_state.delete_confirmation = None;
     } else {
         tags_state.delete_confirmation = Some(group_id);
+    }
+
+    if changed {
+        crate::core::indexer::save_tags(&tags_state.to_snapshot());
     }
 
     changed
@@ -578,20 +1095,31 @@ pub fn draw_tag_picker_popup(
                     ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
 
                     for (group_id, group_name, group_color, item_count) in &group_choices {
-                        let button_label = format!("{} ({})", group_name, item_count);
+                        let all_tagged = tags_state
+                            .groups
+                            .iter()
+                            .find(|group| group.id == *group_id)
+                            .is_some_and(|group| {
+                                picker.paths.iter().all(|p| group.items.contains(p))
+                            });
+
+                        let button_label = if all_tagged {
+                            format!("{} {} ({})", regular::CHECK, group_name, item_count)
+                        } else {
+                            format!("{} ({})", group_name, item_count)
+                        };
+                        let fill_amount = if all_tagged { 0.45 } else { 0.25 };
                         let button = egui::Button::new(button_label)
-                            .fill(group_color.gamma_multiply(0.25))
+                            .fill(group_color.gamma_multiply(fill_amount))
                             .stroke(egui::Stroke::new(1.0, group_color.gamma_multiply(0.6)));
 
                         if ui
                             .add(button)
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .clicked()
+                            && tags_state.toggle_group_for_paths(*group_id, &picker.paths)
                         {
-                            if tags_state.add_paths_to_group(*group_id, &picker.paths) {
-                                changed = true;
-                            }
-                            close_requested = true;
+                            changed = true;
                         }
                     }
                 });
@@ -634,13 +1162,11 @@ pub fn draw_tag_picker_popup(
 
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(
-                        !picker.new_group_name.trim().is_empty(),
-                        egui::Button::new(i18n.tr("tag_create_group")),
-                    )
-                    .clicked()
-                {
+                let can_create = !picker.new_group_name.trim().is_empty();
+                let create_resp = ui.add_enabled_ui(can_create, |ui| {
+                    primary_dialog_button(ui, palette, &i18n.tr("tag_create_group"))
+                });
+                if create_resp.inner.clicked() {
                     if tags_state.create_group_and_add(
                         picker.new_group_name.clone(),
                         picker.new_group_color,
@@ -648,10 +1174,10 @@ pub fn draw_tag_picker_popup(
                     ) {
                         changed = true;
                     }
-                    close_requested = true;
+                    picker.new_group_name.clear();
                 }
 
-                if ui.button(i18n.tr("close")).clicked() {
+                if ghost_dialog_button(ui, palette, &i18n.tr("close")).clicked() {
                     close_requested = true;
                 }
             });
@@ -722,54 +1248,6 @@ fn draw_insert_line(ui: &mut egui::Ui, palette: &ThemePalette, y: f32, left: f32
     );
 }
 
-pub fn draw_container_header(
-    i18n: &I18n,
-    ui: &mut egui::Ui,
-    palette: &ThemePalette,
-    hwnd: Option<HWND>,
-) {
-    let controls_width = 64.0;
-    let full_width = ui.available_width();
-    let tabs_width = (full_width - controls_width).max(0.0);
-
-    ui.allocate_ui_with_layout(
-        egui::vec2(ui.available_width(), 32.0),
-        egui::Layout::left_to_right(egui::Align::Center),
-        |ui| {
-            ui.allocate_ui_with_layout(
-                egui::vec2(tabs_width, 32.0),
-                egui::Layout::left_to_right(egui::Align::Min),
-                |ui| {
-                    let tabs_rect = ui.available_rect_before_wrap();
-                    let empty_left = tabs_rect.min.x;
-                    let drag_rect = egui::Rect::from_min_max(
-                        egui::pos2(empty_left, tabs_rect.min.y),
-                        tabs_rect.max,
-                    );
-                    if drag_rect.width() > 4.0 {
-                        let resp = ui.allocate_rect(drag_rect, egui::Sense::click_and_drag());
-                        if resp.drag_started() || resp.dragged() {
-                            ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
-                        }
-                        if resp.hovered() {
-                            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
-                        }
-                    }
-                },
-            );
-
-            // --- RIGHT SIDE ---
-            ui.allocate_ui_with_layout(
-                egui::vec2(controls_width, 32.0),
-                egui::Layout::right_to_left(egui::Align::Center),
-                |ui| {
-                    handle_draw_windows_buttons(i18n, ui, hwnd, palette);
-                },
-            );
-        },
-    );
-}
-
 fn handle_context_menu_actions_tags(
     ui: &mut egui::Ui,
     i18n: &I18n,
@@ -777,6 +1255,7 @@ fn handle_context_menu_actions_tags(
     action: &mut Option<ItemViewerAction>,
     _palette: &ThemePalette,
     is_tagged: bool,
+    current_group_id: Option<u64>,
 ) {
     // Apply context-menu-specific typography
     let mut style = (**ui.style()).clone();
@@ -837,6 +1316,17 @@ fn handle_context_menu_actions_tags(
         ui.close();
     }
 
+    // A tagged item's own folder is (unlike a normal listing's current
+    // directory) essentially never the tag view's own "current directory" -
+    // tag groups gather items from anywhere, so "open where this actually
+    // lives" is a meaningfully useful entry here.
+    if let Some(parent) = file.path.parent() {
+        if ui.button(i18n.tr("inputs_open_location")).clicked() {
+            *action = Some(ItemViewerAction::OpenInNewTab(parent.to_path_buf()));
+            ui.close();
+        }
+    }
+
     // Properties (multi-select aware)
     if ui.button(i18n.tr("properties")).clicked() {
         *action = Some(ItemViewerAction::Context(
@@ -853,7 +1343,13 @@ fn handle_context_menu_actions_tags(
 
     if ui.button(tag_label).clicked() {
         *action = Some(ItemViewerAction::Context(if is_tagged {
-            ItemViewerContextAction::RemoveTag(context_paths.clone())
+            match current_group_id {
+                Some(group_id) => ItemViewerContextAction::RemoveTagFromGroup(
+                    group_id,
+                    context_paths.clone(),
+                ),
+                None => ItemViewerContextAction::RemoveTag(context_paths.clone()),
+            }
         } else {
             ItemViewerContextAction::AddTag(context_paths.clone())
         }));

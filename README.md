@@ -85,9 +85,66 @@
   ⚙️ <b>NT-level filesystem access</b> — Maximum performance, minimal abstraction
 </p>
 
-<p align="center">
-  <img src="src/appcomparison.png" width="1536" />
-</p>
+<h1 align="center"> Comparison </h1>
+<div align="center">
+
+<table>
+  <thead>
+    <tr>
+      <th>Feature</th>
+      <th><b>EdenExplorer</b></th>
+      <th>FilePilot</th>
+      <th>Windows Explorer</th>
+      <th>Files.Community</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>Pricing</b></td>
+      <td><b>✅ Free</b></td>
+      <td>❌ Paid</td>
+      <td>❌ Your Data</td>
+      <td>✅ Free</td>
+    </tr>
+    <tr>
+      <td><b>Performance</b></td>
+      <td><b>⚡ Fast</b></td>
+      <td>⚡ Fast</td>
+      <td>🐢 Slow</td>
+      <td>🐢 Slow</td>
+    </tr>
+    <tr>
+      <td><b>Open Source</b></td>
+      <td><b>✅ Yes</b></td>
+      <td>❌ No</td>
+      <td>❌ No</td>
+      <td>✅ Yes</td>
+    </tr>
+    <tr>
+      <td><b>NT-level access</b></td>
+      <td><b>✅ Yes</b></td>
+      <td>✅ Yes</td>
+      <td>❌ No</td>
+      <td>❌ No</td>
+    </tr>
+    <tr>
+      <td><b>Resource Usage</b></td>
+      <td><b>🪶 Low</b></td>
+      <td>🪶 Low</td>
+      <td>🧱 Heavy</td>
+      <td>🧱 Medium</td>
+    </tr>
+    <tr>
+      <td><b>Core Technology</b></td>
+      <td><b>🦀 Rust</b></td>
+      <td>🦀 Rust</td>
+      <td>⚙️ C++*</td>
+      <td>💙 C# / WinUI</td>
+    </tr>
+  </tbody>
+</table>
+
+</div>
 
 <h2 align="center">🚀 Getting Started</h2>
 <h3 align="center">Download</h3>
@@ -101,47 +158,88 @@
   Just download and launch — no installation, no setup.
 </p>
 
-<p align="center">
-  <img src="src/featureslist.png" width="1536" />
-</p>
+
+
+
+<h2 align="center">✨ Features</h2>
+
+<table align="center" style="border: none; border-collapse: collapse;">
+<tr>
+<td width="50%" valign="top" style="border: none; padding: 12px;">
+
+<h3>Core Functionality</h3>
+<ul>
+  <li><b>Lightning-fast GUI</b> that starts at the <b>root of your computer</b>, displaying all drives with comprehensive storage types and detailed information</li>
+  <li><b>Asynchronous directory scanning</b> for ultra-fast file listing without blocking the UI</li>
+  <li><b>Intuitive navigation</b> with <b>Back / Forward / Up</b> controls for seamless browsing</li>
+  <li><b>Smart sidebar</b> with quick access to common folders and customizable favorites</li>
+</ul>
+
+<h3>Theme & Customization</h3>
+<ul>
+  <li><b>Dark/Light mode switching</b> with instant toggle</li>
+  <li><b>Advanced theme customization</b> with full color palette editor</li>
+  <li><b>Customizable startup directory</b></li>
+  <li><b>Persistent settings</b> across restarts</li>
+</ul>
+
+<h3>Search & Filtering</h3>
+<ul>
+  <li><b>Real-time file filtering</b> as you type</li>
+  <li><b>Fuzzy matching</b> for intelligent results</li>
+  <li><b>Performance-optimized filtering</b> with cached indices</li>
+</ul>
+
+</td>
+
+<td width="50%" valign="top" style="border: none; padding: 12px;">
+
+<h3>User Interface & Navigation</h3>
+<ul>
+  <li><b>Tabbed navigation</b> with independent loading states</li>
+  <li><b>Interactive breadcrumb navigation</b> with inline editing</li>
+  <li><b>Responsive design</b> across window sizes</li>
+  <li><b>Modern toolbar</b> with file and folder actions</li>
+  <li><b>Tag management system</b> for organizing files and folders</li>
+  <li><b>File Gallery/Thumbnail view</b> for better file organization</li>
+</ul>
+
+<h3>Advanced Features</h3>
+<ul>
+  <li><b>Favorites system</b> with drag-and-drop support</li>
+  <li><b>Background folder size calculation</b> with progress tracking</li>
+  <li><b>Context menu operations</b> (cut, copy, paste, rename, delete)</li>
+  <li><b>Drag and drop files/folders</b> within the viewer</li>
+  <li><b>Portable device support</b> (iPhone, Android, external devices)</li>
+  <li><b>Raw/unmounted drive detection</b> (ISO, Linux partitions)</li>
+  <li><b>Multi-language Support using i18n</li>
+</ul>
+
+<h3>System Integration</h3>
+<ul>
+  <li><b>Persistent settings</b> using efficient binary cache</li>
+  <li><b>Efficient drive space queries</b> with caching</li>
+  <li><b>Windows API integration</b></li>
+  <li><b>Custom executable icon</b> with file association</li>
+  <li><b>Improved window management</b></li>
+</ul>
+
+<h3>Performance Optimizations</h3>
+<ul>
+  <li><b>NT-level filesystem access</b> via direct API calls</li>
+  <li><b>Background scanning</b> prevents UI freezing</li>
+  <li><b>Efficient caching</b> for directories and metadata</li>
+  <li><b>Streaming directory enumeration</b></li>
+  <li><b>Low memory footprint</b></li>
+</ul>
+
+</td>
+</tr>
+</table>
 
 ## 🗺️ Roadmap
 
-### 🚀 Upcoming Alpha Features
-- [ ] Add multi-tagging of objects
-- [ ] Enhanced theme customization, such as custom layouts, mix/match UI elements, styles, etc
-- [ ] Support network devices
-
-## Star History
-
-<a href="https://www.star-history.com/?repos=mtucciarone%2Fedenexplorer&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=mtucciarone/edenexplorer&type=date&theme=dark&legend=top-left&sealed_token=NI5dBaKp_iac6WVxE46Q87Ri_obOUEGRld3AK0tm-wDI4Q-mCBlbqFcK5p1RpdylDEyaAME4_B-EyS3tCik9fMvdUFV5TfBCYtlmdNn1ivy4QWSSQXMGESzTxp438CEXvm1y49Mu2_r0YodXYa_oTaIMKkwsRKnAdRB1VCGBorGKIbqE63fU68LsK6bN" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=mtucciarone/edenexplorer&type=date&legend=top-left&sealed_token=NI5dBaKp_iac6WVxE46Q87Ri_obOUEGRld3AK0tm-wDI4Q-mCBlbqFcK5p1RpdylDEyaAME4_B-EyS3tCik9fMvdUFV5TfBCYtlmdNn1ivy4QWSSQXMGESzTxp438CEXvm1y49Mu2_r0YodXYa_oTaIMKkwsRKnAdRB1VCGBorGKIbqE63fU68LsK6bN" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=mtucciarone/edenexplorer&type=date&legend=top-left&sealed_token=NI5dBaKp_iac6WVxE46Q87Ri_obOUEGRld3AK0tm-wDI4Q-mCBlbqFcK5p1RpdylDEyaAME4_B-EyS3tCik9fMvdUFV5TfBCYtlmdNn1ivy4QWSSQXMGESzTxp438CEXvm1y49Mu2_r0YodXYa_oTaIMKkwsRKnAdRB1VCGBorGKIbqE63fU68LsK6bN" />
- </picture>
-</a>
-
-## Keyboard Shortcuts
-- F1 - Toggle fullscreen
-- Ctrl+Shift+C - Copy selected path
-- Ctrl+W - Close current Tab
-- Ctrl+T - New Tab
-- Ctrl+Tab - Next Tab
-- Ctrl+Shift+Tab - Previous Tab
-- Ctrl+Shift+N - Create new folder in current directory
-- Ctrl+R (F5) - Refresh current directory
-- Alt+D - Select the address bar / current directory path
-- F2 - Rename current selected file (if any is selected inside the explorer)
-- Alt-Enter - Open current properties of current selected file  (if any is selected inside the explorer)
-- Home/End - Scroll to the top or bottom of the current explorer directory and select the first/last object
-- Alt + Left Arrow (Backspace) - Navigate backwards
-- Alt + Right Arrow (Mouse Button 4) - Navigate forwards
-- Alt + Up Arrow (Mouse Button 5) - Navigate upwards
-- Enter - If a file is selected, runs the default program
-
-
-### ✅ Implemented Features Changelog
+### ✅ Implemented Features
 - [x] **Tabbed interface** with tab management, tab pinning (automatic restore on startup), and navigation
 - [x] **Search and filter engine** with real-time file indexing
 - [x] **Dark/Light theme switching** with toggle controls
@@ -155,11 +253,13 @@
 - [x] **Window size customization** with fullscreen, half-screen, and custom dimension modes
 - [x] **Portable device support** for iPhone, Android, and other connected devices
 - [x] **Raw/unmounted drive detection** for ISO sticks and Linux partitions
-- [x] **Performance benchmarking system** with real-time measurement and comparison tools
 - [x] **Drag and drop files/folders** - Move one or more items into folders shown in the item viewer
 - [x] **Window management improvements** with proper maximization bounds and minimum size constraints
 - [x] **File/Directory filtering** - typing characters automatically start filtering items in the item viewer
 - [x] **Windows environment variables PATH support** - Automatically expands Windows PATHs in breadcrumb input
+- [x] **`shell:` URI / CLSID support in the address bar** - typing `shell:ControlPanelFolder`, `shell:Desktop`, or a raw `::{GUID}` path resolves through the real Windows shell namespace; filesystem-backed locations open in-app, genuinely virtual ones (Control Panel, Printers, ...) open in their own native window
+- [x] **Undo/Redo (Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z)** for Rename, Bulk Rename, Move, and Copy - a shared, in-memory (never persisted) undo/redo stack. Move/Copy undo/redo works across cut-paste, drag-and-drop, and paste-conflict-resolved (Skip/Rename/Replace) operations alike. Choosing **Replace** on a same-name conflict is fully non-destructive: the existing item is recycled first (not overwritten) so it's always restorable, and undoing/redoing a Replace correctly restores/re-recycles it each time
+- [x] **Checksums** context-menu entry (single file) - computes CRC32/MD5/SHA-1/SHA-256 in one background pass, with a one-click copy button per hash and a "Compare" field that verifies a pasted checksum (from a download page, say) against all four algorithms at once, telling you which one matched
 - [x] Drag and drop files into breadcrumb folders and directory tabs
 - [x] Enable/Disable Windows shell integration. By enabling, the context menu will populate with default Windows registry context menu items
 - [x] New context menu command (Copy Path) with keyboard shortcut of Ctrl+Shift+C
@@ -180,6 +280,216 @@
 - [x] Lexicographic multi-column sorting using Shift+Click to add columns to sort rows or Ctrl+Click to remove column sorting
 - [x] Directory column sorting, sizing, and view changes persist across sessions
 
+- [x] Browse network shares - type a `\\SERVER` or `\\SERVER\Share` path in the address bar, or click **Network** in the sidebar, to list and open SMB shares
+- [x] **Shared Network** sidebar category that auto-detects computers advertising file shares on the local network - legacy SMB/NetBIOS browsing plus an active subnet sweep, **mDNS** (`_smb._tcp` service discovery), and **WS-Discovery**, so devices that don't announce over NetBIOS still show up - alongside a manual **Network** entry for typing a server name directly
+- [x] **Export/Import Settings** - back up or transfer general settings, favorites, tags, and both theme palettes as a single JSON file, from the Settings window
+- [x] **Tags sidebar section** with colored tag icons - click a tag to open (or reuse) a dedicated tab listing every tagged file/folder with Name/Type/Location/Size/Modified columns
+- [x] **Reorderable tags** - drag to reorder tags in Settings, reflected live in the sidebar
+- [x] **Favorites management page** in Settings - rename, delete, change icon, change target folder, and reorder favorites, all in one place
+- [x] **Custom favorite/context-menu icons from image files** - browse for an `.ico`/`.png`/`.jpg`/`.bmp`/`.gif`, automatically copied into the app's own data folder (so it keeps working after Export/Import Settings) and resized to fit the sidebar/context menu
+- [x] **Searchable icon picker** - choose from the full Phosphor icon set (1,500+ glyphs) with live search, used for both Custom Context Menu and Favorites icons
+- [x] **Auto-refresh after custom context menu commands** - the file list now updates automatically after a custom command finishes (e.g. a script that creates/moves files), no manual refresh needed
+- [x] Real Windows "This PC" shell icon in the sidebar and tab (instead of a generic drive icon)
+- [x] Standardized settings form styling - consistent field padding, background/text contrast, and readable selected-text color across every Settings page
+- [x] **Accent-driven color scheme** - picking an accent color (preset swatch or custom) automatically retints the sidebar, explorer, and file list backgrounds, inactive/active tabs, toolbar icons, and borders together, instead of only affecting buttons
+- [x] **Granular color overrides** - the Appearance settings page now exposes every themeable color (Text & Rows, Panels & Icons, Tabs, Drive Usage, Checkboxes & Buttons, Corner Radius), not just the core accent/border colors - including a few that used to be fixed regardless of theme (input field backgrounds, widget text states, selected-text color)
+- [x] **Custom layout options** - a "Layout" section in Appearance: Row Density presets (Compact/Comfortable/Spacious) and a persisted sidebar width (previously reset to the same default every restart)
+- [x] **Prebuilt themes** - a "Prebuilt Themes" row in Appearance with twelve named, two-color presets (Default/Midnight/Ocean/Forest/Sunset/Slate/Crimson/Magenta/Violet/Indigo/Skyline/Horizon), each an accent + a genuinely contrasting secondary color chosen for complementary hue, temperature, and value contrast - the accent retints backgrounds, buttons, and dialog borders while the secondary color takes over the toolbar's icon row plus the pinned-tab and favorite-folder accents, all in one click
+- [x] **Themed dialogs and Tags settings page** - the Checksums, Paste Conflict, and Bulk Rename dialogs share a consistent accent-tinted frame and icon-header style; the Settings > Tags page's groups now render as color-coded cards; the preview pane's find bar is fully themed instead of using plain unstyled buttons
+- [x] **Full color picker: hex, RGB, and HSL, all editable** - every Core Colors swatch now shows and accepts a hex code and HSL values alongside the existing RGB fields and visual picker, so a specific published color can be typed in directly instead of only dragged
+- [x] **Button colors are part of the theme** - background, border, and text color all tint from the theme's secondary color and apply consistently across Settings, dialogs, and confirmation popups (including destructive ones like "Clear All" and delete-group confirmations)
+- [x] **Consistent borders and bigger icon click targets** - the address bar no longer shows a different border while editing than while browsing, has a clearly visible border and gap at rest, and its border no longer clips when switching into search mode; the search box's scope toggle is fixed-width (no longer resizes the pane in a narrow split view or a longer-language translation); every icon button now has real padding around its glyph instead of a hitbox sized to the bare ink
+- [x] **Search toggle + toolbar grouping** - clicking the toolbar's search icon a second time now closes the search box and returns to the normal address bar (the icon highlights while active); small separators now divide the toolbar into its search / view-mode / terminal groups
+- [x] Thicker, accent-colored borders throughout the UI, including a visible outer border around the whole window
+- [x] **Tab close menu** - right-click a tab for Close, Close Other Tabs, Close Tabs to the Right, and Close Tabs to the Left (pinned tabs are always kept)
+- [x] **Window position memory** - the app reopens at the exact screen position it was last closed at, not just the last size
+- [x] **Delete Permanently** - a context-menu action that bypasses the Recycle Bin, with the native Windows "are you sure you want to permanently delete" confirmation
+- [x] **Click-to-rename gesture** - click an already-selected item, pause, then click again to rename in place (Explorer-style), with only the base filename selected and the extension left out
+- [x] **Selectable preview text** - select text in the Text or Markdown preview pane and right-click to copy it to the clipboard
+- [x] **Rendered Markdown preview** - headings, bold/italic, lists, code blocks, block quotes, rules, task lists, and simple tables, instead of raw source
+- [x] **Mermaid diagrams in Markdown preview** - fenced ` ```mermaid ` blocks render as real flowcharts and sequence diagrams (hand-rolled parsing + native egui rendering, no browser runtime), falling back to plain code display for unsupported/malformed diagrams
+- [x] **SVG preview** - vector files (including gzip-compressed `.svgz`) are rasterized and shown as an image, not just an icon
+- [x] **Syntax highlighting** - code files (and fenced code blocks inside rendered Markdown) get colored keywords/strings/numbers/comments, powered by `syntect`
+- [x] **EPUB text extraction** - reads a book's actual chapters in order instead of showing its raw internal zip file tree
+- [x] **7z archive listing** - previews a `.7z`'s contents the same way zip archives already are, indentation and all
+- [x] **Audio playback + waveform** - previewing an MP3/WAV/FLAC/AAC/M4A/WMA/OGG/OPUS/AIFF/ALAC file shows a waveform (decoded once in the background) with play/pause, a seek slider, and current/total time - the same transport controls video preview already has. Playback never starts on its own and never loops - press play, and it stops (rather than repeating) once it reaches the end; the same is true for video preview
+- [x] **Column controls on every table view** - "Size Column to Fit", "Size All Columns to Fit", and move left/right/to start/to end, now including the Recycle Bin and per-tag views
+- [x] **Consistent list padding** - standardized left inset, header top padding, and bottom padding below the last row across all views
+- [x] **"This PC" sorts by drive letter** regardless of the sort left over from browsing a regular folder
+- [x] **Paste and drag-and-drop conflict resolution** - pasting or dragging a file/folder onto a location that already has an item with the same name shows a Replace / Skip Existing / Rename dialog instead of silently overwriting anything; Rename safely keeps both copies, auto-numbering the new one (`name-001`, `name-002`, ...)
+- [x] **Compress to zip** - a "Compress (zip)" context-menu entry creates a new archive next to the selection: a single file/folder is named after itself, multiple selections are named after their shared parent folder; never overwrites an existing zip of the same name. Runs in the background so large folders don't freeze the UI
+- [x] **Recent locations** - a "Recent" sidebar section tracking the most-recently-visited real folders (capped at 20), skipping anything already pinned to Favorites; click to jump back, right-click an entry for Open in new tab / Remove from Recent, or right-click the "Recent" section header itself for Clear All
+- [x] **Global search** - a search icon (or Ctrl+F) in the navigation bar of any pane opens an inline query box with a "This folder" (recursive) / "Everywhere" scope toggle; results open as a normal tab that works in every view mode (Details, Gallery, Columns, Preview, and their split variants) and shows each match's actual folder location. Powered by [voidtools Everything](https://www.voidtools.com/) when it's installed and running (near-instant, index-backed), or a built-in filesystem search otherwise - selectable in Settings, with automatic fallback to Built-in if Everything isn't available. Both engines understand `*`/`?` wildcards (e.g. `*.png`), plain keyword matching, and `key:value` filter syntax - `ext:pdf`, `size:>10mb`/`size:<1kb`, `modified:today`/`modified:yesterday`/`modified:thisweek` - combinable with free text (e.g. `invoice ext:pdf size:>100kb`); an info icon next to the search box lists the exact syntax. Right-clicking a result (or an item in a tag's own view) offers "Open File Location" to jump straight to its containing folder in a new tab
+- [x] **Saved Searches** - a bookmark icon next to the search box (or "Save Search" from a search-results tab's own right-click menu) saves the current query and scope into its own "Saved Searches" sidebar section (a dedicated group, since a saved query isn't the same kind of thing as a favorited folder); click to reopen it as a normal search tab, right-click for Open in new tab / Rename / Delete. Capped at 50 saved searches
+- [x] **Content search** - a `content:<word>` filter alongside `ext:`/`size:`/`modified:`, restricted to a specific folder scope (not "Everywhere", to keep it fast). The built-in engine scans candidate text files line-by-line (skipping binaries and anything over 8MB); the Everything engine supports it natively via its own `content:` keyword, but only returns results if Content Indexing is enabled in Everything's own settings
+- [x] **Bulk rename** - selecting multiple items and choosing "Rename" opens a dialog with a live preview instead of the single-item rename gesture: plain find/replace (with a case-insensitive toggle) or full regex with `$1`/`$2` capture groups, plus `{name}`/`{ext}`/`{n}`/`{n:03}` placeholders. Every selected item's old name -> new name updates live as the pattern changes, with collision detection (against both other renamed items and untouched existing files) blocking the commit until resolved. Committed as one batched, undoable native operation
+- [x] **Multi-tagging** - an item can belong to more than one tag group at once; the tag picker is a multi-select toggle list (pick several, or create a new group, without the popup closing after the first). A **Tags column** shows every tag on a row as a colored chip, with a "+N" overflow indicator when there isn't room for all of them. Removing a tag while browsing inside one specific tag's own view removes it from that tag only, leaving its other tags intact
+
+### 🚀 Upcoming Alpha Features
+- [ ] Multi-tag AND/OR filtering in the tag view
+- [ ] Enhanced theme customization, such as custom layouts, mix/match UI elements, styles, etc
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=mtucciarone%2Fedenexplorer&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=mtucciarone/edenexplorer&type=date&theme=dark&legend=top-left&sealed_token=NI5dBaKp_iac6WVxE46Q87Ri_obOUEGRld3AK0tm-wDI4Q-mCBlbqFcK5p1RpdylDEyaAME4_B-EyS3tCik9fMvdUFV5TfBCYtlmdNn1ivy4QWSSQXMGESzTxp438CEXvm1y49Mu2_r0YodXYa_oTaIMKkwsRKnAdRB1VCGBorGKIbqE63fU68LsK6bN" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=mtucciarone/edenexplorer&type=date&legend=top-left&sealed_token=NI5dBaKp_iac6WVxE46Q87Ri_obOUEGRld3AK0tm-wDI4Q-mCBlbqFcK5p1RpdylDEyaAME4_B-EyS3tCik9fMvdUFV5TfBCYtlmdNn1ivy4QWSSQXMGESzTxp438CEXvm1y49Mu2_r0YodXYa_oTaIMKkwsRKnAdRB1VCGBorGKIbqE63fU68LsK6bN" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=mtucciarone/edenexplorer&type=date&legend=top-left&sealed_token=NI5dBaKp_iac6WVxE46Q87Ri_obOUEGRld3AK0tm-wDI4Q-mCBlbqFcK5p1RpdylDEyaAME4_B-EyS3tCik9fMvdUFV5TfBCYtlmdNn1ivy4QWSSQXMGESzTxp438CEXvm1y49Mu2_r0YodXYa_oTaIMKkwsRKnAdRB1VCGBorGKIbqE63fU68LsK6bN" />
+ </picture>
+</a>
+
+## 🛠️ Building, Testing & Debugging
+
+### Prerequisites
+- **Rust** (2024 edition toolchain) — install via [rustup](https://rustup.rs/)
+- **Windows 10/11** — this project depends heavily on Win32/NT APIs (`windows`, `ntapi` crates) and only targets Windows
+
+### Build
+```bash
+cargo build
+```
+Debug builds are placed in `target/debug/EdenExplorer.exe`.
+
+For an optimized release build:
+```bash
+cargo build --release
+```
+Release builds are placed in `target/release/EdenExplorer.exe`.
+
+To reproduce the CI release packaging locally (builds release + copies the binary, README, and LICENSE into `release/`):
+```powershell
+pwsh -File ./scripts/build-and-package.ps1
+```
+
+### Run
+```bash
+cargo run
+```
+Or run the release binary directly:
+```bash
+cargo run --release
+```
+
+### Test
+Unit tests live alongside their modules (e.g. `src/core/indexer.rs`, `src/core/launch.rs`, `src/core/utils/text.rs`):
+```bash
+cargo test
+```
+
+### Debug
+- Run with `cargo run` (unoptimized) to get full debug symbols and faster compile times while iterating.
+- Use `RUST_BACKTRACE=1 cargo run` to get full backtraces on panics:
+  ```bash
+  RUST_BACKTRACE=1 cargo run
+  ```
+- Attach a debugger (e.g. [CodeLLDB](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) in VS Code, or `windbg`/`x64dbg`) to `target/debug/EdenExplorer.exe` for breakpoint-level debugging of the native Windows API calls.
+- Since this app relies on NT-level filesystem access and Windows Shell APIs, test file operations (drag-and-drop, context menu, recycle bin, portable devices) on real hardware/drives — these code paths are not covered by unit tests.
+
+### Release process
+Releases are automated via [semantic-release](https://semantic-release.gitbook.io/) (`.releaserc.json`) triggered from `main`: it bumps the version in `Cargo.toml` (`scripts/update-version.ps1`), builds and packages the release binary (`scripts/build-and-package.ps1`), and publishes it to GitHub Releases.
+
+## Bulk Rename Guide
+
+Select two or more files/folders, then either right-click → **Rename** or
+press **F2** to open the Bulk Rename dialog. Every selected item's
+current name and its live-computed new name are shown side by side as you
+type; nothing is renamed on disk until you click **Rename All**, and that
+button stays disabled while any row has a naming conflict.
+
+### Simple mode
+
+Two plain-text fields, applied to every selected item's name (its
+extension is never touched by Find/Replace):
+
+| Field | Meaning |
+|---|---|
+| Find | Text to search for in each name. Every occurrence is replaced (not just the first). Leave empty to make no substitution. |
+| Replace with | Text that replaces each match. Can contain placeholders (below). |
+| Case-insensitive | Match `Find` regardless of letter case. |
+| Start number | The `{n}` value for the first item (in the order shown); each later item gets the next number. |
+
+Placeholders (usable in **Replace with**, in either mode):
+
+| Placeholder | Expands to |
+|---|---|
+| `{n}` | The item's number (1, 2, 3, ... from Start number) |
+| `{n:03}` | Zero-padded number (`001`, `002`, ...) - any 1-2 digit width works, e.g. `{n:04}` |
+| `{name}` | The item's *original* name (before this rename), extension excluded |
+| `{ext}` | The item's original extension, without the dot |
+
+**Example - tidy up a batch of photos:**
+
+| Original name | Find | Replace with | New name |
+|---|---|---|---|
+| `IMG_0001.jpg` | `IMG_` | `Vacation_` | `Vacation_0001.jpg` |
+| `IMG_0002.jpg` | `IMG_` | `Vacation_` | `Vacation_0002.jpg` |
+
+**Example - add a numbered suffix while keeping the original name:**
+
+Find: `.jpg` (matches every file's extension text - a plain substring,
+not a wildcard), Replace with: `_{n:03}.jpg`, Start number: `1`:
+
+| Original name | New name |
+|---|---|
+| `sunset.jpg` | `sunset_001.jpg` |
+| `beach.jpg` | `beach_002.jpg` |
+
+### Regex mode
+
+Toggle to **Regex** to use a full regular expression in Find, with
+`$1`, `$2`, ... in Replace with to reference capture groups (standard
+[Rust `regex` crate](https://docs.rs/regex) capture syntax). The
+`{n}`/`{n:03}`/`{name}`/`{ext}` placeholders above still work in Regex
+mode's Replace with text too, expanded *after* the regex substitution. An
+invalid pattern is reported inline and never partially applied.
+
+**Example - pull a number out of each name and reformat it:**
+
+Find: `track(\d+)`, Replace with: `song_$1`:
+
+| Original name | New name |
+|---|---|
+| `track7.mp3` | `song_7.mp3` |
+| `track42.mp3` | `song_42.mp3` |
+
+**Example - replace the entire original name** (the one thing Simple
+mode can't do on its own, since it only replaces matched text): set Find
+to `.*` (matches the whole name, whatever it is) and Replace with to your
+new template:
+
+Find: `.*`, Replace with: `photo_{n:03}`:
+
+| Original name | New name |
+|---|---|
+| `whatever_this_was_called.jpg` | `photo_001.jpg` |
+| `DSC00231.jpg` | `photo_002.jpg` |
+| `random_export.jpg` | `photo_003.jpg` |
+
+### Conflicts
+
+A row is flagged (and **Rename All** stays disabled) if its new name
+would collide with another selected item's new name, or with an existing
+file/folder that isn't part of this rename - adjust the pattern until no
+rows are flagged.
+
+## Keyboard Shortcuts
+- F1 - Toggle fullscreen
+- Ctrl+Shift+C - Copy selected path
+- Ctrl+W - Close current Tab
+- Ctrl+T - New Tab
+- Ctrl+Tab - Next Tab
+- Ctrl+Shift+Tab - Previous Tab
+- Ctrl+Shift+N - Create new folder in current directory
+- Ctrl+R (F5) - Refresh current directory
+- Alt+D - Select the address bar / current directory path
+- F2 - Rename the selected file/folder (or opens Bulk Rename if more than one is selected)
+- Alt-Enter - Open current properties of current selected file  (if any is selected inside the explorer)
+- Home/End - Scroll to the top or bottom of the current explorer directory and select the first/last object
+- Alt + Left Arrow (Backspace) - Navigate backwards
+- Alt + Right Arrow (Mouse Button 4) - Navigate forwards
+- Alt + Up Arrow (Mouse Button 5) - Navigate upwards
+- Enter - If a file is selected, runs the default program
 
 ## License
 This project is FOSS, released under the MIT License.

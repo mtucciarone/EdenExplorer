@@ -2,12 +2,15 @@ use crate::core::drives::{
     DriveInfo, consume_drive_list_dirty, get_drive_infos, is_raw_physical_drive_path,
 };
 use crate::core::fs::{MY_PC_PATH, MY_RECYCLE_BIN_PATH};
+use crate::core::network;
 use crate::core::utils::text::apply_eden_text_overrides;
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
-use crate::gui::utils::{draw_object_drag_ghost, drive_usage_color, truncate_item_text};
-use crate::gui::windows::containers::structs::SidebarAction;
+use crate::gui::utils::{draw_object_drag_ghost, drive_usage_color, eden_button, truncate_item_text};
+use crate::gui::windows::containers::structs::{
+    RecentLocationsState, SavedSearchRenameState, SavedSearchesState, SidebarAction, TagsState,
+};
 use crate::gui::windows::structs::SidebarState;
 use eframe::egui;
 use egui::containers::{Popup, PopupCloseBehavior};
@@ -15,6 +18,42 @@ use egui::{FontFamily, FontId, ScrollArea};
 use egui_phosphor::regular;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
+
+/// Draws a clickable section header (label + expand/collapse chevron) and
+/// toggles `expanded` when clicked. Callers wrap the section's own content in
+/// `if *expanded { ... }`.
+/// Returns `true` if the section was toggled this frame (so callers can
+/// persist the new state).
+fn draw_section_header(
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+    label: &str,
+    expanded: &mut bool,
+) -> (bool, egui::Response) {
+    let chevron = if *expanded {
+        regular::CARET_DOWN
+    } else {
+        regular::CARET_RIGHT
+    };
+    let resp = ui.add(
+        egui::Button::new(
+            egui::RichText::new(format!("{chevron}  {label}"))
+                .size(palette.text_size)
+                .color(palette.text_header_section)
+                .strong(),
+        )
+        .fill(egui::Color32::TRANSPARENT)
+        .stroke(egui::Stroke::NONE)
+        .frame(false),
+    );
+    let toggled = if resp.clicked() {
+        *expanded = !*expanded;
+        true
+    } else {
+        false
+    };
+    (toggled, resp)
+}
 
 /// Draw the sidebar, supporting favorites reordering
 pub fn draw_sidebar(
@@ -25,18 +64,28 @@ pub fn draw_sidebar(
     palette: &ThemePalette,
     drag_active: bool,
     drag_hover_target: Option<PathBuf>,
+    tags_state: &TagsState,
+    saved_searches_state: &mut SavedSearchesState,
+    recent_locations_state: &RecentLocationsState,
 ) -> SidebarAction {
     const DRIVE_CACHE_DURATION: Duration = Duration::from_secs(30);
     let mut action = SidebarAction::default();
+    let mut sections_changed = false;
+    let mut saved_search_rename_state = saved_searches_state.rename_state.take();
+    let mut saved_search_rename_committed: Option<(u64, String)> = None;
     let mut drop_index: Option<usize> = None;
     let pointer_pos = ui.ctx().input(|i| i.pointer.hover_pos());
     let pointer_released = ui.ctx().input(|i| i.pointer.primary_released());
     let mut tab_drop_target: Option<PathBuf> = None;
     let hovered_target_ref = drag_hover_target.as_ref();
 
+    const FOOTER_HEIGHT: f32 = 54.0;
+    let scroll_height = (ui.available_height() - FOOTER_HEIGHT).max(0.0);
+
     ScrollArea::vertical()
         .id_salt("sidebar_scroll")
         .auto_shrink([false; 2]) // don't shrink horizontally or vertically
+        .max_height(scroll_height)
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.add_space(12.0);
@@ -44,109 +93,180 @@ pub fn draw_sidebar(
                     ui.add_space(8.0);
                     ui.spacing_mut().item_spacing.y *= palette.sidebar_item_spacing_y;
 
-                    ui.add(egui::Label::new(
-                        egui::RichText::new(&i18n.tr("places"))
-                            .size(palette.text_size)
-                            .color(palette.text_header_section)
-                            .strong(),
-                    ));
-                    ui.add_space(8.0);
-
-                    let pc_icon_path = PathBuf::from("C:\\");
-                    let resp = draw_sidebar_item(
+                    let (changed, _resp) = draw_section_header(
                         ui,
-                        icon_cache,
-                        &pc_icon_path,
-                        &i18n.tr("thispc"),
-                        true,
-                        false,
                         palette,
-                        false,
-                        None,
+                        &i18n.tr("places"),
+                        &mut sidebar_state.places_expanded,
                     );
-                    if resp.clicked() {
-                        action.nav_to = Some(PathBuf::from(MY_PC_PATH));
-                    }
-                    if resp.middle_clicked() {
-                        action.open_new_tab = Some(PathBuf::from(MY_PC_PATH));
-                    }
+                    sections_changed |= changed;
+                    if sidebar_state.places_expanded {
+                        ui.add_space(8.0);
 
-                    Popup::context_menu(&resp)
-                        .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
-                        .show(|ui| {
-                            apply_eden_text_overrides(ui, palette);
-                            if ui.button(&i18n.tr("inputs_newtab")).clicked() {
-                                action.open_new_tab = Some(PathBuf::from(MY_PC_PATH));
-                                ui.close();
-                            }
-                        });
-
-                    if let Some(home) = dirs::home_dir() {
+                        let pc_icon_path = PathBuf::from(MY_PC_PATH);
                         let resp = draw_sidebar_item(
                             ui,
                             icon_cache,
-                            &home,
-                            &i18n.tr("my_user_home"),
+                            &pc_icon_path,
+                            &i18n.tr("thispc"),
                             true,
                             false,
                             palette,
                             false,
                             None,
                         );
-
                         if resp.clicked() {
-                            action.nav_to = Some(home.clone());
+                            action.nav_to = Some(PathBuf::from(MY_PC_PATH));
                         }
                         if resp.middle_clicked() {
-                            action.open_new_tab = Some(home.clone());
+                            action.open_new_tab = Some(PathBuf::from(MY_PC_PATH));
                         }
+
                         Popup::context_menu(&resp)
                             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                             .show(|ui| {
                                 apply_eden_text_overrides(ui, palette);
                                 if ui.button(&i18n.tr("inputs_newtab")).clicked() {
-                                    action.open_new_tab = Some(home.clone());
+                                    action.open_new_tab = Some(PathBuf::from(MY_PC_PATH));
+                                    ui.close();
+                                }
+                            });
+
+                        if let Some(home) = dirs::home_dir() {
+                            let resp = draw_sidebar_item(
+                                ui,
+                                icon_cache,
+                                &home,
+                                &i18n.tr("my_user_home"),
+                                true,
+                                false,
+                                palette,
+                                false,
+                                None,
+                            );
+
+                            if resp.clicked() {
+                                action.nav_to = Some(home.clone());
+                            }
+                            if resp.middle_clicked() {
+                                action.open_new_tab = Some(home.clone());
+                            }
+                            Popup::context_menu(&resp)
+                                .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                                .show(|ui| {
+                                    apply_eden_text_overrides(ui, palette);
+                                    if ui.button(&i18n.tr("inputs_newtab")).clicked() {
+                                        action.open_new_tab = Some(home.clone());
+                                        ui.close();
+                                    }
+                                });
+                        }
+
+                        let recycle_bin_path = PathBuf::from("C:\\$Recycle.Bin");
+                        let resp = draw_sidebar_item(
+                            ui,
+                            icon_cache,
+                            &recycle_bin_path,
+                            &i18n.tr("recycle_bin"),
+                            true,
+                            true,
+                            palette,
+                            false,
+                            None,
+                        );
+                        if resp.clicked() {
+                            action.nav_to = Some(PathBuf::from(MY_RECYCLE_BIN_PATH));
+                        }
+                        if resp.middle_clicked() {
+                            action.open_new_tab = Some(PathBuf::from(MY_RECYCLE_BIN_PATH));
+                        }
+
+                        Popup::context_menu(&resp)
+                            .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                            .show(|ui| {
+                                apply_eden_text_overrides(ui, palette);
+                                if ui.button(&i18n.tr("inputs_newtab")).clicked() {
+                                    action.open_new_tab = Some(PathBuf::from(MY_RECYCLE_BIN_PATH));
                                     ui.close();
                                 }
                             });
                     }
 
-                    let recycle_bin_path = PathBuf::from("C:\\$Recycle.Bin");
-                    let resp = draw_sidebar_item(
+                    ui.add_space(6.0);
+                    let (changed, _resp) = draw_section_header(
                         ui,
-                        icon_cache,
-                        &recycle_bin_path,
-                        &i18n.tr("recycle_bin"),
-                        true,
-                        true,
                         palette,
-                        false,
-                        None,
+                        &i18n.tr("storage"),
+                        &mut sidebar_state.storage_expanded,
                     );
-                    if resp.clicked() {
-                        action.nav_to = Some(PathBuf::from(MY_RECYCLE_BIN_PATH));
-                    }
-                    if resp.middle_clicked() {
-                        action.open_new_tab = Some(PathBuf::from(MY_RECYCLE_BIN_PATH));
+                    sections_changed |= changed;
+                    if sidebar_state.storage_expanded {
+                        ui.add_space(4.0);
+
+                        if sidebar_state.cached_drives.is_empty()
+                            || sidebar_state.last_drive_refresh.elapsed() > DRIVE_CACHE_DURATION
+                            || consume_drive_list_dirty()
+                        {
+                            sidebar_state.cached_drives = get_drive_infos();
+                            sidebar_state.last_drive_refresh = Instant::now();
+                        }
+
+                        for drive in sidebar_state.cached_drives.iter() {
+                            let is_selected = sidebar_state
+                                .item_clicked
+                                .as_ref()
+                                .map(|p| p == &drive.path)
+                                .unwrap_or(false);
+
+                            let resp =
+                                sidebar_drive_item(ui, icon_cache, &drive, palette, is_selected);
+                            if resp.clicked() {
+                                if is_raw_physical_drive_path(&drive.path) {
+                                    sidebar_state.non_ntfs_popup_path = Some(drive.path.clone());
+                                } else {
+                                    action.nav_to = Some(drive.path.clone());
+                                }
+                            }
+                            if resp.middle_clicked() {
+                                if is_raw_physical_drive_path(&drive.path) {
+                                    sidebar_state.non_ntfs_popup_path = Some(drive.path.clone());
+                                } else {
+                                    action.open_new_tab = Some(drive.path.clone());
+                                }
+                            }
+                        }
                     }
 
-                    Popup::context_menu(&resp)
-                        .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
-                        .show(|ui| {
-                            apply_eden_text_overrides(ui, palette);
-                            if ui.button(&i18n.tr("inputs_newtab")).clicked() {
-                                action.open_new_tab = Some(PathBuf::from(MY_RECYCLE_BIN_PATH));
-                                ui.close();
-                            }
-                        });
+                    if let Some(_path) = sidebar_state.non_ntfs_popup_path.clone() {
+                        let mut open = true;
+                        egui::Window::new(&i18n.tr("non_nftsdrive"))
+                            .collapsible(false)
+                            .resizable(false)
+                            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                            .open(&mut open)
+                            .show(ui.ctx(), |ui| {
+                                ui.label(&i18n.tr("non_nftsdrive_label1"));
+                                ui.label(&i18n.tr("non_nftsdrive_label2"));
+                                ui.label(&i18n.tr("non_nftsdrive_label3"));
+                                ui.add_space(8.0);
+                                if ui.button(&i18n.tr("ok")).clicked() {
+                                    sidebar_state.non_ntfs_popup_path = None;
+                                }
+                            });
+                        if !open {
+                            sidebar_state.non_ntfs_popup_path = None;
+                        }
+                    }
 
                     ui.add_space(6.0);
-                    ui.add(egui::Label::new(
-                        egui::RichText::new(&i18n.tr("favorites"))
-                            .size(palette.text_size)
-                            .color(palette.text_header_section)
-                            .strong(),
-                    ));
+                    let (changed, _resp) = draw_section_header(
+                        ui,
+                        palette,
+                        &i18n.tr("favorites"),
+                        &mut sidebar_state.favorites_expanded,
+                    );
+                    sections_changed |= changed;
+                    if sidebar_state.favorites_expanded {
                     ui.add_space(4.0);
 
                     let is_dragging = sidebar_state.dragging_favorite.is_some();
@@ -192,7 +312,12 @@ pub fn draw_sidebar(
 
                     for (i, favorite) in sidebar_state.favorites.iter().enumerate() {
                         let (rect, resp) = &item_layouts[i];
-                        draw_sidebar_item(
+                        let icon_override = if let Some(file) = &favorite.custom_icon_file {
+                            Some(SidebarIconOverride::File(file.as_path()))
+                        } else {
+                            favorite.custom_icon.as_deref().map(SidebarIconOverride::Glyph)
+                        };
+                        draw_sidebar_item_with_icon(
                             ui,
                             icon_cache,
                             &favorite.path,
@@ -202,6 +327,7 @@ pub fn draw_sidebar(
                             palette,
                             true,
                             Some((*rect, resp.clone())),
+                            icon_override,
                         );
 
                         if drag_active {
@@ -320,66 +446,299 @@ pub fn draw_sidebar(
                             }
                         }
                     }
+                    } // favorites_expanded
 
                     ui.add_space(6.0);
-                    ui.add(egui::Label::new(
-                        egui::RichText::new(&i18n.tr("storage"))
-                            .size(palette.text_size)
-                            .color(palette.text_header_section)
-                            .strong(),
-                    ));
-                    ui.add_space(4.0);
+                    let (changed, _resp) = draw_section_header(
+                        ui,
+                        palette,
+                        &i18n.tr("tags"),
+                        &mut sidebar_state.tags_expanded,
+                    );
+                    sections_changed |= changed;
+                    if sidebar_state.tags_expanded {
+                        ui.add_space(4.0);
 
-                    if sidebar_state.cached_drives.is_empty()
-                        || sidebar_state.last_drive_refresh.elapsed() > DRIVE_CACHE_DURATION
-                        || consume_drive_list_dirty()
-                    {
-                        sidebar_state.cached_drives = get_drive_infos();
-                        sidebar_state.last_drive_refresh = Instant::now();
-                    }
-
-                    for drive in sidebar_state.cached_drives.iter() {
-                        let is_selected = sidebar_state
-                            .item_clicked
-                            .as_ref()
-                            .map(|p| p == &drive.path)
-                            .unwrap_or(false);
-
-                        let resp = sidebar_drive_item(ui, icon_cache, &drive, palette, is_selected);
-                        if resp.clicked() {
-                            if is_raw_physical_drive_path(&drive.path) {
-                                sidebar_state.non_ntfs_popup_path = Some(drive.path.clone());
-                            } else {
-                                action.nav_to = Some(drive.path.clone());
+                        if tags_state.groups.is_empty() {
+                            ui.label(
+                                egui::RichText::new(i18n.tr("tag_empty_state"))
+                                    .size(palette.tooltip_text_size)
+                                    .color(palette.tooltip_text_color),
+                            );
+                        } else {
+                            for group in tags_state.groups.iter() {
+                                // `regular::TAG` and `fill::TAG` are the exact
+                                // same Unicode codepoint (egui_phosphor just
+                                // exposes both weights' code as separate
+                                // constants for convenience) - which glyph
+                                // actually renders depends entirely on which
+                                // *font family* is requested, since "Fill" is
+                                // registered under its own named family
+                                // (`fonts.rs`), not merged into `Proportional`.
+                                // Passing `fill::TAG` alone (as this used to)
+                                // silently rendered the outline glyph anyway.
+                                let resp = draw_sidebar_virtual_item(
+                                    ui,
+                                    &group.name,
+                                    egui_phosphor::fill::TAG,
+                                    group.color,
+                                    palette,
+                                    egui::FontFamily::Name("phosphor_fill".into()),
+                                    palette.sidebar_icon_size * 0.75,
+                                );
+                                if resp.clicked() {
+                                    action.open_tag_view = Some(group.id);
+                                }
                             }
                         }
-                        if resp.middle_clicked() {
-                            if is_raw_physical_drive_path(&drive.path) {
-                                sidebar_state.non_ntfs_popup_path = Some(drive.path.clone());
-                            } else {
-                                action.open_new_tab = Some(drive.path.clone());
+                    }
+
+                    ui.add_space(6.0);
+                    let (changed, _resp) = draw_section_header(
+                        ui,
+                        palette,
+                        &i18n.tr("saved_searches"),
+                        &mut sidebar_state.saved_searches_expanded,
+                    );
+                    sections_changed |= changed;
+                    if sidebar_state.saved_searches_expanded {
+                        ui.add_space(4.0);
+
+                        if saved_searches_state.items.is_empty() {
+                            ui.label(
+                                egui::RichText::new(i18n.tr("saved_search_empty_state"))
+                                    .size(palette.tooltip_text_size)
+                                    .color(palette.tooltip_text_color),
+                            );
+                        } else {
+                            for item in saved_searches_state.items.iter() {
+                                let editing = saved_search_rename_state
+                                    .as_ref()
+                                    .map(|state| state.id == item.id)
+                                    .unwrap_or(false);
+
+                                if editing {
+                                    let mut clear_rename = false;
+                                    let rename = saved_search_rename_state
+                                        .as_mut()
+                                        .expect("checked by `editing` above");
+                                    ui.horizontal(|ui| {
+                                        ui.add_space(4.0);
+                                        ui.label(
+                                            egui::RichText::new(regular::MAGNIFYING_GLASS)
+                                                .size(palette.sidebar_icon_size)
+                                                .color(palette.icon_color),
+                                        );
+                                        let edit_id =
+                                            ui.id().with("saved_search_rename").with(item.id);
+                                        let edit_response = ui.add(
+                                            egui::TextEdit::singleline(&mut rename.buffer)
+                                                .id(edit_id)
+                                                .desired_width(ui.available_width() - 8.0)
+                                                .font(FontId::new(
+                                                    palette.text_size,
+                                                    FontFamily::Proportional,
+                                                )),
+                                        );
+
+                                        if rename.should_focus {
+                                            ui.memory_mut(|mem| mem.request_focus(edit_id));
+                                            edit_response.request_focus();
+                                            if edit_response.has_focus() {
+                                                rename.should_focus = false;
+                                            }
+                                        }
+
+                                        let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
+                                        let escape =
+                                            ui.input(|i| i.key_pressed(egui::Key::Escape));
+
+                                        if enter || edit_response.lost_focus() {
+                                            let new_name = rename.buffer.trim().to_string();
+                                            if !new_name.is_empty() {
+                                                saved_search_rename_committed =
+                                                    Some((item.id, new_name));
+                                            }
+                                            clear_rename = true;
+                                        } else if escape {
+                                            clear_rename = true;
+                                        }
+                                    });
+                                    if clear_rename {
+                                        saved_search_rename_state = None;
+                                    }
+                                } else {
+                                    let resp = draw_sidebar_virtual_item(
+                                        ui,
+                                        &item.name,
+                                        regular::MAGNIFYING_GLASS,
+                                        palette.icon_color,
+                                        palette,
+                                        egui::FontFamily::Proportional,
+                                        palette.sidebar_icon_size,
+                                    );
+                                    if resp.clicked() {
+                                        action.open_saved_search = Some(item.id);
+                                    }
+
+                                    Popup::context_menu(&resp)
+                                        .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                                        .show(|ui| {
+                                            apply_eden_text_overrides(ui, palette);
+                                            if ui.button(&i18n.tr("inputs_newtab")).clicked() {
+                                                action.open_saved_search = Some(item.id);
+                                                ui.close();
+                                            }
+                                            if ui.button(&i18n.tr("inputs_rename")).clicked() {
+                                                saved_search_rename_state =
+                                                    Some(SavedSearchRenameState {
+                                                        id: item.id,
+                                                        buffer: item.name.clone(),
+                                                        should_focus: true,
+                                                    });
+                                                ui.close();
+                                            }
+                                            if ui.button(&i18n.tr("saved_search_delete")).clicked()
+                                            {
+                                                action.remove_saved_search = Some(item.id);
+                                                ui.close();
+                                            }
+                                        });
+                                }
                             }
                         }
                     }
 
-                    if let Some(_path) = sidebar_state.non_ntfs_popup_path.clone() {
-                        let mut open = true;
-                        egui::Window::new(&i18n.tr("non_nftsdrive"))
-                            .collapsible(false)
-                            .resizable(false)
-                            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-                            .open(&mut open)
-                            .show(ui.ctx(), |ui| {
-                                ui.label(&i18n.tr("non_nftsdrive_label1"));
-                                ui.label(&i18n.tr("non_nftsdrive_label2"));
-                                ui.label(&i18n.tr("non_nftsdrive_label3"));
-                                ui.add_space(8.0);
-                                if ui.button(&i18n.tr("ok")).clicked() {
-                                    sidebar_state.non_ntfs_popup_path = None;
+                    saved_searches_state.rename_state = saved_search_rename_state;
+                    if let Some((id, new_name)) = saved_search_rename_committed {
+                        if let Some(item) = saved_searches_state
+                            .items
+                            .iter_mut()
+                            .find(|item| item.id == id)
+                        {
+                            item.name = new_name;
+                        }
+                        crate::core::indexer::save_saved_searches(
+                            &saved_searches_state.to_snapshot(),
+                        );
+                    }
+
+                    ui.add_space(6.0);
+                    let (changed, recent_locations_header_resp) = draw_section_header(
+                        ui,
+                        palette,
+                        &i18n.tr("recent_locations"),
+                        &mut sidebar_state.recent_locations_expanded,
+                    );
+                    sections_changed |= changed;
+                    if !recent_locations_state.items.is_empty() {
+                        Popup::context_menu(&recent_locations_header_resp)
+                            .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                            .show(|ui| {
+                                apply_eden_text_overrides(ui, palette);
+                                if eden_button(ui, palette, &i18n.tr("clear_recent_locations")).clicked() {
+                                    action.clear_recent_locations = true;
+                                    ui.close();
                                 }
                             });
-                        if !open {
-                            sidebar_state.non_ntfs_popup_path = None;
+                    }
+                    if sidebar_state.recent_locations_expanded {
+                        ui.add_space(4.0);
+
+                        if recent_locations_state.items.is_empty() {
+                            ui.label(
+                                egui::RichText::new(i18n.tr("recent_locations_empty_state"))
+                                    .size(palette.tooltip_text_size)
+                                    .color(palette.tooltip_text_color),
+                            );
+                        } else {
+                            for path in recent_locations_state.items.iter() {
+                                let label = path
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| path.to_string_lossy().to_string());
+
+                                let resp = draw_sidebar_item(
+                                    ui,
+                                    icon_cache,
+                                    path,
+                                    &label,
+                                    true,
+                                    false,
+                                    palette,
+                                    false,
+                                    None,
+                                );
+                                if resp.clicked() {
+                                    action.nav_to = Some(path.clone());
+                                }
+                                if resp.middle_clicked() {
+                                    action.open_new_tab = Some(path.clone());
+                                }
+
+                                Popup::context_menu(&resp)
+                                    .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                                    .show(|ui| {
+                                        apply_eden_text_overrides(ui, palette);
+                                        if ui.button(&i18n.tr("inputs_newtab")).clicked() {
+                                            action.open_new_tab = Some(path.clone());
+                                            ui.close();
+                                        }
+                                        if ui.button(&i18n.tr("remove_recent_location")).clicked()
+                                        {
+                                            action.remove_recent_location = Some(path.clone());
+                                            ui.close();
+                                        }
+                                    });
+                            }
+                        }
+                    }
+
+                    ui.add_space(6.0);
+                    let (changed, _resp) = draw_section_header(
+                        ui,
+                        palette,
+                        &i18n.tr("shared_network"),
+                        &mut sidebar_state.shared_network_expanded,
+                    );
+                    sections_changed |= changed;
+                    if sidebar_state.shared_network_expanded {
+                        ui.add_space(4.0);
+
+                        let network_icon_path = PathBuf::from("Network");
+                        let resp = draw_sidebar_item(
+                            ui,
+                            icon_cache,
+                            &network_icon_path,
+                            &i18n.tr("network"),
+                            true,
+                            false,
+                            palette,
+                            false,
+                            None,
+                        );
+                        if resp.clicked() {
+                            action.open_network_browser = true;
+                        }
+
+                        for computer in network::get_network_computers_cached() {
+                            let resp = draw_sidebar_item(
+                                ui,
+                                icon_cache,
+                                &computer.path,
+                                &computer.name,
+                                true,
+                                false,
+                                palette,
+                                false,
+                                None,
+                            );
+                            if resp.clicked() {
+                                action.nav_to = Some(computer.path.clone());
+                            }
+                            if resp.middle_clicked() {
+                                action.open_new_tab = Some(computer.path.clone());
+                            }
                         }
                     }
 
@@ -390,8 +749,58 @@ pub fn draw_sidebar(
             });
         });
 
+    if sections_changed {
+        crate::core::indexer::save_sidebar_sections(&crate::core::indexer::SidebarSectionsSnapshot {
+            places: sidebar_state.places_expanded,
+            storage: sidebar_state.storage_expanded,
+            favorites: sidebar_state.favorites_expanded,
+            tags: sidebar_state.tags_expanded,
+            shared_network: sidebar_state.shared_network_expanded,
+            saved_searches: sidebar_state.saved_searches_expanded,
+            recent_locations: sidebar_state.recent_locations_expanded,
+            sidebar_width: sidebar_state.sidebar_default_width,
+        });
+    }
+
+    // Persistent footer (outside the scroll area): a Settings shortcut, pinned
+    // to the bottom of the sidebar so it's always reachable, laid out the same
+    // way as a regular list row (left-aligned with the same left padding,
+    // vertically centered) instead of centered horizontally.
+    ui.separator();
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        ui.add_space(12.0);
+        ui.vertical(|ui| {
+            let label = i18n.tr("settings");
+            let settings_icon_path = PathBuf::from("Settings");
+            let resp = draw_sidebar_item(
+                ui,
+                icon_cache,
+                &settings_icon_path,
+                &label,
+                true,
+                false,
+                palette,
+                false,
+                None,
+            );
+            if resp.clicked() {
+                action.open_settings = true;
+            }
+        });
+    });
+    ui.add_space(14.0);
+
     action.move_files_to_sidebar_dir = tab_drop_target;
     action
+}
+
+/// A custom icon overriding a sidebar row's real shell icon - either a
+/// Phosphor glyph, or a user-browsed image file's own pixel content (which
+/// takes priority when both would otherwise apply).
+pub enum SidebarIconOverride<'a> {
+    Glyph(&'a str),
+    File(&'a std::path::Path),
 }
 
 pub fn draw_sidebar_item(
@@ -404,6 +813,36 @@ pub fn draw_sidebar_item(
     palette: &ThemePalette,
     draggable: bool,
     rect_and_resp: Option<(egui::Rect, egui::Response)>,
+) -> egui::Response {
+    draw_sidebar_item_with_icon(
+        ui,
+        icon_cache,
+        path,
+        label,
+        is_dir,
+        is_recycle_bin,
+        palette,
+        draggable,
+        rect_and_resp,
+        None,
+    )
+}
+
+/// Like `draw_sidebar_item`, but `icon_override` replaces the real shell icon
+/// when set - used by favorites that have a custom icon assigned in
+/// Settings.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_sidebar_item_with_icon(
+    ui: &mut egui::Ui,
+    icon_cache: &IconCache,
+    path: &PathBuf,
+    label: &str,
+    is_dir: bool,
+    is_recycle_bin: bool,
+    palette: &ThemePalette,
+    draggable: bool,
+    rect_and_resp: Option<(egui::Rect, egui::Response)>,
+    icon_override: Option<SidebarIconOverride>,
 ) -> egui::Response {
     let height = if palette.sidebar_item_spacing_y > 1.0 {
         18.0 * palette.sidebar_item_spacing_y
@@ -463,7 +902,28 @@ pub fn draw_sidebar_item(
 
     let icon_pos = egui::pos2(rect.min.x + 4.0, rect.center().y - icon_size.y / 2.0);
 
-    let text_offset_x = if is_recycle_bin {
+    let text_offset_x = if let Some(SidebarIconOverride::File(icon_path)) = icon_override {
+        if let Some(icon) = icon_cache.get_custom_file_icon(icon_path) {
+            ui.painter().image(
+                (&icon).into(),
+                egui::Rect::from_min_size(icon_pos, icon_size),
+                egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+        }
+
+        palette.text_size + icon_size.x + icon_padding
+    } else if let Some(SidebarIconOverride::Glyph(glyph)) = icon_override {
+        ui.painter().text(
+            egui::pos2(icon_pos.x + icon_size.x * 0.5, rect.center().y),
+            egui::Align2::CENTER_CENTER,
+            glyph,
+            egui::FontId::new(icon_size.y, egui::FontFamily::Proportional),
+            palette.icon_color,
+        );
+
+        palette.text_size + icon_size.x + icon_padding
+    } else if is_recycle_bin {
         ui.painter().text(
             egui::pos2(icon_pos.x + icon_size.x * 0.5, rect.center().y),
             egui::Align2::CENTER_CENTER,
@@ -530,6 +990,74 @@ pub fn draw_sidebar_item(
                 .size(palette.tooltip_text_size)
                 .color(palette.tooltip_text_color),
         )
+    }
+}
+
+/// A sidebar row for one virtual (non-folder) item - a tag group or a saved
+/// search - using a caller-supplied glyph instead of a shell/folder icon,
+/// followed by its name.
+fn draw_sidebar_virtual_item(
+    ui: &mut egui::Ui,
+    label: &str,
+    icon: &str,
+    color: egui::Color32,
+    palette: &ThemePalette,
+    icon_font_family: egui::FontFamily,
+    icon_size: f32,
+) -> egui::Response {
+    let height = if palette.sidebar_item_spacing_y > 1.0 {
+        18.0 * palette.sidebar_item_spacing_y
+    } else {
+        18.0
+    };
+
+    let available_width = ui.available_width();
+    let (rect, resp) =
+        ui.allocate_exact_size(egui::vec2(available_width, height), egui::Sense::click());
+
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Default);
+        ui.painter().rect_filled(
+            rect,
+            egui::CornerRadius::same(palette.medium_radius),
+            palette.primary_hover,
+        );
+    }
+
+    let icon_center = egui::pos2(rect.min.x + 4.0 + icon_size / 2.0, rect.center().y);
+    ui.painter().text(
+        icon_center,
+        egui::Align2::CENTER_CENTER,
+        icon,
+        egui::FontId::new(icon_size, icon_font_family),
+        color,
+    );
+
+    let text_offset_x = palette.text_size + icon_size + 4.0;
+    let text_width = rect.width() - text_offset_x;
+    let font_id = egui::FontId::new(palette.text_size, egui::FontFamily::Proportional);
+    let text_color = ui.visuals().text_color();
+
+    let (display_name, truncated) = truncate_item_text(ui, label, text_width, &font_id, text_color);
+
+    ui.painter().text(
+        egui::pos2(rect.min.x + text_offset_x, rect.center().y - 2.0),
+        egui::Align2::LEFT_CENTER,
+        display_name,
+        font_id,
+        text_color,
+    );
+
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+
+    if truncated {
+        resp.on_hover_text(
+            egui::RichText::new(label)
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+    } else {
+        resp
     }
 }
 
