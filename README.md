@@ -324,10 +324,15 @@
 - [x] **Content search** - a `content:<word>` filter alongside `ext:`/`size:`/`modified:`, restricted to a specific folder scope (not "Everywhere", to keep it fast). The built-in engine scans candidate text files line-by-line (skipping binaries and anything over 8MB); the Everything engine supports it natively via its own `content:` keyword, but only returns results if Content Indexing is enabled in Everything's own settings
 - [x] **Bulk rename** - selecting multiple items and choosing "Rename" opens a dialog with a live preview instead of the single-item rename gesture: plain find/replace (with a case-insensitive toggle) or full regex with `$1`/`$2` capture groups, plus `{name}`/`{ext}`/`{n}`/`{n:03}` placeholders. Every selected item's old name -> new name updates live as the pattern changes, with collision detection (against both other renamed items and untouched existing files) blocking the commit until resolved. Committed as one batched, undoable native operation
 - [x] **Multi-tagging** - an item can belong to more than one tag group at once; the tag picker is a multi-select toggle list (pick several, or create a new group, without the popup closing after the first). A **Tags column** shows every tag on a row as a colored chip, with a "+N" overflow indicator when there isn't room for all of them. Removing a tag while browsing inside one specific tag's own view removes it from that tag only, leaving its other tags intact
+- [x] **Every UI surface is now genuinely themeable** - sidebar (background/text), status bar (background/text/icon), address bar background, search box (border/active-icon background), toolbar (background/disabled-icon), preview pane background, and notifications (border/background/header text) are all real, editable palette fields now, not ambient/hardcoded colors
+- [x] **Standard semantic notification colors** - completed/in-progress/failed operations in the notification panel and toast now show green/yellow-orange/red status colors (independently themeable), instead of every status sharing the same accent color
+- [x] **User-created custom themes** - save your own named theme (your current accent + secondary color pair) from Appearance, apply it with one click just like a built-in preset, edit and re-save it in place, or delete it - stored in its own file, separate from your regular theme settings
+- [x] **Full disabled-button and primary-button-text theming** - a dialog's highlighted "primary" button text color and a real disabled-button color pair are now themeable, instead of a hardcoded white/faded-only look
+- [x] **Custom Context Menu: export/import** - back up or share just your custom right-click commands as their own file, separate from a full settings export (which already includes them)
+- [x] **Custom Context Menu: unquoted-path placeholder (`%L`)** - alongside the existing always-quoted `%1`/`%V`, `%L` substitutes the raw selected path with no quotes added, for commands (`clip`, custom scripts, etc.) that want to add their own quoting or none at all
 
 ### 🚀 Upcoming Alpha Features
 - [ ] Multi-tag AND/OR filtering in the tag view
-- [ ] Enhanced theme customization, such as custom layouts, mix/match UI elements, styles, etc
 
 ## Star History
 
