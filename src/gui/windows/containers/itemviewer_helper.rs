@@ -1,5 +1,10 @@
+use crate::core::context_menu_settings::{CustomContextMenuEntry, CustomContextMenuIcon};
 use crate::core::drives::is_raw_physical_drive_path;
 use crate::core::fs::FileItem;
+use crate::core::indexer::{
+    default_item_viewer_drive_column_size, default_item_viewer_file_column_size,
+    default_recycle_bin_column_size,
+};
 use crate::core::utils::files::filename_has_valid_characters_realtime;
 use crate::core::utils::text::apply_eden_text_overrides;
 use crate::core::utils::widgets::{
@@ -20,8 +25,8 @@ use crate::gui::windows::containers::structs::{
     ItemViewerColumnState, ItemViewerColumnWidths, ItemViewerFolderSizeState, ItemViewerLayout,
     ItemViewerNavBarAction, RenameState, TagsState,
 };
-use crate::gui::windows::shell_context_menu::ShellContextMenu;
-use crate::gui::windows::structs::{SettingsWindow, ThemeCustomizer};
+use crate::gui::windows::shell_context_menu::{ShellContextMenu, ShellContextMenuItem};
+use crate::gui::windows::structs::SettingsWindow;
 use eframe::egui;
 use egui::ScrollArea;
 use egui::containers::{Popup, PopupCloseBehavior};
@@ -30,6 +35,18 @@ use egui_phosphor::regular;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use windows::Win32::Foundation::HWND;
+
+/// `egui::Context` memory key `MainWindow::ui` sets once per frame to
+/// whether a blocking modal (paste-conflict, bulk-rename, checksum) is
+/// currently open - checked by `itemviewer.rs`'s `modal_input_blocked` so
+/// this view's own keyboard shortcuts (Ctrl+A select-all, Delete, etc.)
+/// don't fire underneath a modal that's visually on top of it but doesn't
+/// otherwise suppress the view's own per-frame input handling. Using
+/// `egui::Context` memory (the same mechanism `global_shortcuts_disabled`'s
+/// `topbar_hamburger_menu` check already uses) avoids threading a new
+/// parameter through `draw_tab_content`/`draw_item_viewer` and their
+/// several call sites.
+pub const BLOCKING_MODAL_MEMORY_ID: &str = "blocking_modal_open";
 
 pub fn draw_external_to_internal_drag_overlay(
     ui: &mut egui::Ui,
@@ -55,10 +72,16 @@ pub fn draw_external_to_internal_drag_overlay(
     }
 }
 
+/// Extra space added above a column header's label/checkbox to visually
+/// balance the header cell (whose child `Ui` lays out top-down, so this must
+/// be added explicitly rather than relying on `header_height` alone).
+const HEADER_TOP_PADDING: f32 = 4.0;
+
 pub fn compute_layout(
     _ui: &egui::Ui,
     is_drive_view: bool,
     is_recycle_bin_view: bool,
+    show_selection_checkboxes: bool,
     palette: &ThemePalette,
 ) -> ItemViewerLayout {
     let row_padding = 2.0;
@@ -66,13 +89,217 @@ pub fn compute_layout(
     let content_height = palette.row_height;
     // Total height allocated to each table row.
     let row_height = content_height + row_padding * 2.0;
+    // The column header (Name/Type/Size/...) gets a bit more breathing room
+    // above and below its labels than a plain data row does.
+    let header_height = row_height + HEADER_TOP_PADDING * 2.0;
 
     ItemViewerLayout {
         row_height,
         icon_size: content_height,
-        header_height: row_height,
+        header_height,
         is_drive_view,
         is_recycle_bin_view,
+        show_checkboxes: !is_drive_view && show_selection_checkboxes,
+    }
+}
+
+/// A context-menu row with a leading Phosphor icon glyph next to the label.
+fn menu_item_button(ui: &mut egui::Ui, icon: &str, label: &str) -> egui::Response {
+    menu_item_button_enabled(ui, true, icon, label)
+}
+
+/// Best-effort icon for a Windows shell menu item that didn't provide its own bitmap
+/// (owner-drawn items - most third-party shell extensions use this). Matches on common
+/// English verb names; falls back to a generic icon for anything else, including shell
+/// items on a non-English Windows install.
+fn fallback_shell_icon(label: &str) -> &'static str {
+    let lower = label.to_ascii_lowercase();
+
+    let keyword_icon: &[(&str, &str)] = &[
+        ("cut", regular::SCISSORS),
+        ("copy", regular::COPY),
+        ("paste", regular::CLIPBOARD),
+        ("delete", regular::TRASH),
+        ("remove", regular::TRASH),
+        ("rename", regular::PENCIL_SIMPLE),
+        ("edit", regular::PENCIL_SIMPLE),
+        ("share", regular::SHARE_NETWORK),
+        ("send to", regular::PAPER_PLANE_TILT),
+        ("print", regular::PRINTER),
+        ("zip", regular::ARCHIVE),
+        ("compress", regular::ARCHIVE),
+        ("extract", regular::ARCHIVE),
+        ("archive", regular::ARCHIVE),
+        ("scan", regular::SHIELD_CHECK),
+        ("pin", regular::PUSH_PIN),
+        ("shortcut", regular::LINK),
+        ("restore", regular::ARROW_COUNTER_CLOCKWISE),
+        ("run as", regular::SHIELD),
+        ("properties", regular::INFO),
+        ("open", regular::FOLDER_OPEN),
+    ];
+
+    keyword_icon
+        .iter()
+        .find(|(keyword, _)| lower.contains(keyword))
+        .map(|(_, icon)| *icon)
+        .unwrap_or(regular::PUZZLE_PIECE)
+}
+
+fn menu_item_button_enabled(
+    ui: &mut egui::Ui,
+    enabled: bool,
+    icon: &str,
+    label: &str,
+) -> egui::Response {
+    ui.add_enabled(enabled, egui::Button::new(format!("{icon}  {label}")))
+}
+
+/// Draws the user's custom context menu entries (see
+/// `core::context_menu_settings`) applicable to this right-click, as their
+/// own separator-bounded group - a no-op if none apply. Shared by the
+/// per-item context menu (`handle_context_menu_actions`) and the
+/// folder-background menu drawn directly in `itemviewer.rs`.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_custom_context_menu_group(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    icon_cache: &IconCache,
+    entries: &[CustomContextMenuEntry],
+    has_file: bool,
+    has_folder: bool,
+    is_background: bool,
+    context_paths: &[PathBuf],
+    action: &mut Option<ItemViewerAction>,
+) {
+    let applicable: Vec<&CustomContextMenuEntry> = entries
+        .iter()
+        .filter(|e| e.applies_to(has_file, has_folder, is_background))
+        .collect();
+
+    if applicable.is_empty() {
+        return;
+    }
+
+    ui.separator();
+
+    for entry in applicable {
+        draw_custom_context_menu_entry(ui, i18n, icon_cache, entry, context_paths, action);
+    }
+}
+
+fn draw_custom_context_menu_entry(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    icon_cache: &IconCache,
+    entry: &CustomContextMenuEntry,
+    context_paths: &[PathBuf],
+    action: &mut Option<ItemViewerAction>,
+) {
+    let label = if entry.label.is_empty() {
+        i18n.tr("custom_context_menu_untitled")
+    } else {
+        entry.label.clone()
+    };
+
+    if entry.is_submenu {
+        let texture = custom_icon_texture(icon_cache, &entry.icon);
+        if let Some(texture) = texture {
+            let image = egui::Image::new(&texture).fit_to_exact_size(egui::vec2(16.0, 16.0));
+            ui.menu_image_text_button(image, label, |ui| {
+                for child in &entry.children {
+                    draw_custom_context_menu_entry(
+                        ui,
+                        i18n,
+                        icon_cache,
+                        child,
+                        context_paths,
+                        action,
+                    );
+                }
+            });
+        } else {
+            let glyph = custom_icon_glyph(&entry.icon, true);
+            ui.menu_button(format!("{glyph}  {label}"), |ui| {
+                for child in &entry.children {
+                    draw_custom_context_menu_entry(
+                        ui,
+                        i18n,
+                        icon_cache,
+                        child,
+                        context_paths,
+                        action,
+                    );
+                }
+            });
+        }
+        return;
+    }
+
+    let clicked = if let Some(texture) = custom_icon_texture(icon_cache, &entry.icon) {
+        ui.add(egui::Button::image_and_text(
+            egui::Image::new(&texture).fit_to_exact_size(egui::vec2(16.0, 16.0)),
+            &label,
+        ))
+        .clicked()
+    } else {
+        menu_item_button(ui, custom_icon_glyph(&entry.icon, false), &label).clicked()
+    };
+
+    if clicked {
+        *action = Some(ItemViewerAction::RunCustomCommand {
+            entry_id: entry.id,
+            paths: context_paths.to_vec(),
+        });
+        ui.close();
+    }
+}
+
+/// Extensions loaded as an image's own pixel content; anything else (an
+/// `.exe`/`.dll`, typically) falls back to asking the shell for that file's
+/// icon instead.
+const IMAGE_ICON_EXTENSIONS: &[&str] = &["ico", "png", "jpg", "jpeg", "bmp", "gif"];
+
+fn custom_icon_texture(
+    icon_cache: &IconCache,
+    icon: &CustomContextMenuIcon,
+) -> Option<egui::TextureHandle> {
+    match icon {
+        CustomContextMenuIcon::FileIcon(path) => {
+            let is_image = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|ext| IMAGE_ICON_EXTENSIONS.iter().any(|e| ext.eq_ignore_ascii_case(e)));
+
+            if is_image {
+                icon_cache.get_custom_file_icon(path)
+            } else {
+                icon_cache.get(path, false)
+            }
+        }
+        _ => None,
+    }
+}
+
+fn custom_icon_glyph(icon: &CustomContextMenuIcon, is_submenu: bool) -> &str {
+    match icon {
+        CustomContextMenuIcon::Glyph(g) => g.as_str(),
+        CustomContextMenuIcon::None => {
+            if is_submenu {
+                regular::LIST
+            } else {
+                regular::TERMINAL
+            }
+        }
+        // A file icon that hasn't finished loading yet - fall back to a
+        // generic glyph for this frame; it'll switch over once ready.
+        CustomContextMenuIcon::FileIcon(_) => {
+            if is_submenu {
+                regular::LIST
+            } else {
+                regular::APP_WINDOW
+            }
+        }
     }
 }
 
@@ -91,6 +318,8 @@ pub fn handle_context_menu_actions(
     tags_state: &mut TagsState,
     settings_window: &SettingsWindow,
     hwnd: Option<HWND>,
+    icon_cache: &IconCache,
+    is_search_view: bool,
 ) {
     // Apply context-menu-specific typography
     apply_eden_visual_overrides(ui, _palette);
@@ -110,7 +339,7 @@ pub fn handle_context_menu_actions(
     context_paths.dedup();
 
     if is_drive_view {
-        if ui.button(i18n.tr("properties")).clicked() {
+        if menu_item_button(ui, regular::INFO, &i18n.tr("properties")).clicked() {
             *action = Some(ItemViewerAction::Context(
                 ItemViewerContextAction::Properties(context_paths.clone()),
             ));
@@ -121,8 +350,7 @@ pub fn handle_context_menu_actions(
     }
 
     if is_recycle_bin_view {
-        if ui
-            .add_enabled(!is_cut, egui::Button::new(i18n.tr("inputs_cut")))
+        if menu_item_button_enabled(ui, !is_cut, regular::SCISSORS, &i18n.tr("inputs_cut"))
             .clicked()
         {
             *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Cut(
@@ -131,24 +359,34 @@ pub fn handle_context_menu_actions(
             ui.close();
         }
 
-        if ui.button(i18n.tr("recycle_bin_restore")).clicked() {
+        if menu_item_button(
+            ui,
+            regular::ARROW_COUNTER_CLOCKWISE,
+            &i18n.tr("recycle_bin_restore"),
+        )
+        .clicked()
+        {
             *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Restore(
                 context_paths.clone(),
             )));
             ui.close();
         }
 
-        if ui
-            .button(i18n.tr("recycle_bin_delete_permanently"))
-            .clicked()
+        if menu_item_button(
+            ui,
+            regular::TRASH,
+            &i18n.tr("recycle_bin_delete_permanently"),
+        )
+        .clicked()
         {
             *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
                 context_paths.clone(),
+                true,
             )));
             ui.close();
         }
 
-        if ui.button(i18n.tr("properties")).clicked() {
+        if menu_item_button(ui, regular::INFO, &i18n.tr("properties")).clicked() {
             *action = Some(ItemViewerAction::Context(
                 ItemViewerContextAction::Properties(context_paths.clone()),
             ));
@@ -164,12 +402,13 @@ pub fn handle_context_menu_actions(
     // Enable only if a single path is selected
     let enable_open_in_tab = context_paths.len() == 1;
 
-    if ui
-        .add_enabled(
-            enable_open_in_tab,
-            egui::Button::new(i18n.tr("inputs_newtab")),
-        )
-        .clicked()
+    if menu_item_button_enabled(
+        ui,
+        enable_open_in_tab,
+        regular::ARROW_SQUARE_OUT,
+        &i18n.tr("inputs_newtab"),
+    )
+    .clicked()
     {
         if let Some(path) = context_paths.first() {
             *action = Some(ItemViewerAction::OpenInNewTab(path.clone()));
@@ -177,17 +416,51 @@ pub fn handle_context_menu_actions(
         }
     }
 
-    if ui
-        .add_enabled(
-            enable_open_in_tab && context_paths.first().is_some_and(|p| p.is_dir()),
-            egui::Button::new(i18n.tr("inputs_opensplit")),
-        )
-        .clicked()
+    if menu_item_button_enabled(
+        ui,
+        enable_open_in_tab && context_paths.first().is_some_and(|p| p.is_dir()),
+        regular::COLUMNS,
+        &i18n.tr("inputs_opensplit"),
+    )
+    .clicked()
     {
         if let Some(path) = context_paths.first() {
             *action = Some(ItemViewerAction::OpenInSplitView(path.clone()));
             ui.close();
         }
+    }
+
+    // Search results span many different folders (unlike a normal listing,
+    // where the containing folder is just the tab's own current directory)
+    // - so "open the location this came from" is only meaningful here.
+    if is_search_view
+        && menu_item_button_enabled(
+            ui,
+            enable_open_in_tab && context_paths.first().and_then(|p| p.parent()).is_some(),
+            regular::FOLDER_OPEN,
+            &i18n.tr("inputs_open_location"),
+        )
+        .clicked()
+    {
+        if let Some(parent) = context_paths.first().and_then(|p| p.parent()) {
+            *action = Some(ItemViewerAction::OpenInNewTab(parent.to_path_buf()));
+            ui.close();
+        }
+    }
+
+    let favoritable_dirs: Vec<PathBuf> = context_paths
+        .iter()
+        .filter(|p| p.is_dir())
+        .cloned()
+        .collect();
+
+    if !favoritable_dirs.is_empty()
+        && menu_item_button(ui, regular::STAR, &i18n.tr("add_favorite")).clicked()
+    {
+        *action = Some(ItemViewerAction::Context(
+            ItemViewerContextAction::AddFavorite(favoritable_dirs),
+        ));
+        ui.close();
     }
 
     let label = if context_paths.len() == 1 {
@@ -203,7 +476,7 @@ pub fn handle_context_menu_actions(
         i18n.tr("tag_add")
     };
 
-    if ui.button(tag_label).clicked() {
+    if menu_item_button(ui, regular::TAG, &tag_label).clicked() {
         *action = Some(ItemViewerAction::Context(if has_tag {
             ItemViewerContextAction::RemoveTag(context_paths.clone())
         } else {
@@ -214,60 +487,118 @@ pub fn handle_context_menu_actions(
 
     let all_files = context_paths.iter().all(|path| !path.is_dir());
 
-    if ui
-        .add_enabled(all_files, egui::Button::new(label))
-        .clicked()
-    {
+    if menu_item_button_enabled(ui, all_files, regular::PLAY, &label).clicked() {
         let paths: Vec<PathBuf> = explorer_state.selected_paths.iter().cloned().collect();
         *action = Some(ItemViewerAction::OpenWithDefault(paths));
         ui.close();
     }
 
+    let has_file = context_paths.iter().any(|p| !p.is_dir());
+    let has_folder = context_paths.iter().any(|p| p.is_dir());
+    draw_custom_context_menu_group(
+        ui,
+        i18n,
+        icon_cache,
+        &settings_window.current_settings.custom_context_menu,
+        has_file,
+        has_folder,
+        false,
+        &context_paths,
+        action,
+    );
+
     ui.separator();
 
-    if ui
-        .add_enabled(!is_cut, egui::Button::new(i18n.tr("inputs_cut")))
-        .clicked()
-    {
+    if menu_item_button(ui, regular::FILE_ZIP, &i18n.tr("inputs_compress")).clicked() {
+        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Compress(
+            context_paths.clone(),
+        )));
+        ui.close();
+    }
+
+    ui.separator();
+
+    if menu_item_button_enabled(ui, !is_cut, regular::SCISSORS, &i18n.tr("inputs_cut")).clicked() {
         *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Cut(
             context_paths.clone(),
         )));
         ui.close();
     }
-    if ui.button(i18n.tr("inputs_copy")).clicked() {
+    if menu_item_button(ui, regular::COPY, &i18n.tr("inputs_copy")).clicked() {
         *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Copy(
             context_paths.clone(),
         )));
         ui.close();
     }
-    if ui.button(i18n.tr("inputs_copy_path")).clicked() {
+    if menu_item_button(ui, regular::LINK, &i18n.tr("inputs_copy_path")).clicked() {
         *action = Some(ItemViewerAction::Context(
             ItemViewerContextAction::CopyPath(context_paths.clone()),
         ));
         ui.close();
     }
-    if ui
-        .add_enabled(paste_enabled, egui::Button::new(i18n.tr("inputs_paste")))
-        .clicked()
+    if menu_item_button_enabled(
+        ui,
+        paste_enabled,
+        regular::CLIPBOARD,
+        &i18n.tr("inputs_paste"),
+    )
+    .clicked()
     {
         *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
         ui.close();
     }
 
-    if ui.button(i18n.tr("inputs_rename")).clicked() {
-        *action = Some(ItemViewerAction::StartEdit(file.path.clone()));
+    if menu_item_button(ui, regular::PENCIL_SIMPLE, &i18n.tr("inputs_rename")).clicked() {
+        *action = if context_paths.len() > 1 {
+            Some(ItemViewerAction::Context(ItemViewerContextAction::BulkRenameRequest(
+                context_paths.clone(),
+            )))
+        } else {
+            Some(ItemViewerAction::StartEdit(file.path.clone()))
+        };
         ui.close();
     }
 
-    if ui.button(i18n.tr("inputs_delete")).clicked() {
+    if menu_item_button(ui, regular::TRASH, &i18n.tr("inputs_delete")).clicked() {
         *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
             context_paths.clone(),
+            false,
+        )));
+        ui.close();
+    }
+
+    // Shift+Delete is unreliable to detect in some environments (the
+    // modifier state isn't always seen at the moment the Delete key event
+    // arrives), so this menu entry gives permanent delete a keyboard-free
+    // path as well.
+    if menu_item_button(
+        ui,
+        regular::TRASH,
+        &i18n.tr("recycle_bin_delete_permanently"),
+    )
+    .clicked()
+    {
+        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
+            context_paths.clone(),
+            true,
+        )));
+        ui.close();
+    }
+
+    // Checksums - single real file only (no meaningful "checksum of a
+    // folder"/"checksum of 3 files at once" UX).
+    if context_paths.len() == 1
+        && !context_paths[0].is_dir()
+        && menu_item_button(ui, regular::HASH, &i18n.tr("checksum_menu_label")).clicked()
+    {
+        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Checksum(
+            context_paths[0].clone(),
         )));
         ui.close();
     }
 
     // Properties (multi-select aware)
-    if ui.button(i18n.tr("properties")).clicked() {
+    if menu_item_button(ui, regular::INFO, &i18n.tr("properties")).clicked() {
         *action = Some(ItemViewerAction::Context(
             ItemViewerContextAction::Properties(context_paths.clone()),
         ));
@@ -280,71 +611,144 @@ pub fn handle_context_menu_actions(
     {
         ui.separator();
         let selected_paths = context_paths.clone();
-        let toggle_label = if explorer_state.windows_context_menu_cache.is_some() {
-            i18n.tr("contextmenu_hide_windows_menu_items")
-        } else {
-            i18n.tr("contextmenu_show_windows_menu_items")
-        };
+        draw_windows_context_submenu(
+            ui,
+            i18n,
+            _palette,
+            explorer_state,
+            hwnd,
+            selected_paths.clone(),
+            |hwnd| ShellContextMenu::for_paths(&selected_paths, hwnd),
+        );
+    }
+}
 
-        ui.menu_button(toggle_label, |ui| {
-            apply_eden_visual_overrides(ui, _palette);
-            apply_eden_visual_color_overrides(ui, _palette);
-            apply_eden_text_overrides(ui, _palette);
+/// Draws the "Windows menu" submenu button (toggle label + lazily-loaded,
+/// scrollable item list) shared by the per-item context menu (`for_paths`,
+/// via `handle_context_menu_actions`) and the folder-background context menu
+/// (`for_background`, drawn directly on right-clicking empty space in the
+/// item viewer). `cache_key` identifies what's currently being shown (the
+/// selected paths, or `[current_dir]` for the background menu) so the cached
+/// `ShellContextMenu` is only rebuilt when that changes.
+pub fn draw_windows_context_submenu(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    palette: &ThemePalette,
+    explorer_state: &mut ExplorerState,
+    hwnd: Option<HWND>,
+    cache_key: Vec<PathBuf>,
+    load_menu: impl FnOnce(HWND) -> windows::core::Result<ShellContextMenu>,
+) {
+    let toggle_label = if explorer_state.windows_context_menu_cache.is_some() {
+        i18n.tr("contextmenu_hide_windows_menu_items")
+    } else {
+        i18n.tr("contextmenu_show_windows_menu_items")
+    };
 
-            if let Some(hwnd) = hwnd {
-                let cache_miss = explorer_state
-                    .windows_context_menu_cache
-                    .as_ref()
-                    .map(|cache| cache.selection != selected_paths)
-                    .unwrap_or(true);
+    ui.menu_button(format!("{}  {toggle_label}", regular::WINDOWS_LOGO), |ui| {
+        apply_eden_visual_overrides(ui, palette);
+        apply_eden_visual_color_overrides(ui, palette);
+        apply_eden_text_overrides(ui, palette);
 
-                if cache_miss {
-                    explorer_state.windows_context_menu_cache =
-                        ShellContextMenu::for_paths(&selected_paths, hwnd)
-                            .map(|menu| {
-                                crate::gui::windows::containers::structs::WindowsContextMenuCache {
-                                    selection: selected_paths.clone(),
-                                    menu,
-                                }
-                            })
-                            .map(Some)
-                            .unwrap_or_else(|err| {
-                                eprintln!("Windows menu load failed: {}", err);
-                                None
-                            });
-                }
+        if let Some(hwnd) = hwnd {
+            let cache_miss = explorer_state
+                .windows_context_menu_cache
+                .as_ref()
+                .map(|cache| cache.selection != cache_key)
+                .unwrap_or(true);
 
-                if let Some(cache) = explorer_state.windows_context_menu_cache.as_ref() {
-                    if cache.menu.items().is_empty() {
-                        ui.label("No Windows menu items for this selection.");
-                    } else {
-                        let row_height = _palette.text_size + 6.0;
-                        let min_height = (row_height * 6.0) + (ui.spacing().item_spacing.y * 5.0);
-                        let max_height = ui.ctx().viewport_rect().height() * 0.8;
-                        ScrollArea::vertical()
-                            .max_height(max_height)
-                            .min_scrolled_height(min_height)
-                            .show(ui, |ui| {
-                                for item in cache.menu.items() {
-                                    if ui
-                                        .add_enabled(!item.disabled, egui::Button::new(&item.label))
-                                        .clicked()
-                                    {
-                                        if let Err(err) = cache.menu.invoke(hwnd, item.id) {
-                                            eprintln!("Windows menu invoke failed: {}", err);
-                                        }
-                                        ui.close();
-                                    }
-                                }
-                            });
-                    }
+            if cache_miss {
+                explorer_state.windows_context_menu_cache = load_menu(hwnd)
+                    .map(
+                        |menu| crate::gui::windows::containers::structs::WindowsContextMenuCache {
+                            selection: cache_key.clone(),
+                            menu,
+                        },
+                    )
+                    .map(Some)
+                    .unwrap_or_else(|err| {
+                        eprintln!("Windows menu load failed: {}", err);
+                        None
+                    });
+            }
+
+            if let Some(cache) = explorer_state.windows_context_menu_cache.as_ref() {
+                if cache.menu.items().is_empty() {
+                    ui.label("No Windows menu items for this selection.");
                 } else {
-                    ui.label(i18n.tr("contextmenu_windows_menu_unavailable"));
+                    let row_height = palette.text_size + 6.0;
+                    let min_height = (row_height * 6.0) + (ui.spacing().item_spacing.y * 5.0);
+                    let max_height = ui.ctx().viewport_rect().height() * 0.8;
+                    ScrollArea::vertical()
+                        .max_height(max_height)
+                        .min_scrolled_height(min_height)
+                        .show(ui, |ui| {
+                            draw_windows_menu_items(ui, cache.menu.items(), &cache.menu, hwnd);
+                        });
                 }
             } else {
-                ui.label(i18n.tr("contextmenu_windows_menu_available_missing"));
+                ui.label(i18n.tr("contextmenu_windows_menu_unavailable"));
             }
-        });
+        } else {
+            ui.label(i18n.tr("contextmenu_windows_menu_available_missing"));
+        }
+    });
+}
+
+/// Renders one level of a `ShellContextMenu`'s items, recursing into an
+/// actual nested `ui.menu_button` for each group (e.g. "7-Zip", "Send to")
+/// instead of flattening the group's entries into this level - matching how
+/// Explorer itself presents them.
+fn draw_windows_menu_items(
+    ui: &mut egui::Ui,
+    items: &[ShellContextMenuItem],
+    menu: &ShellContextMenu,
+    hwnd: HWND,
+) {
+    for item in items {
+        if let Some(sub_items) = &item.submenu {
+            ui.add_enabled_ui(!item.disabled, |ui| {
+                ui.menu_button(
+                    format!("{}  {}", fallback_shell_icon(&item.label), &item.label),
+                    |ui| {
+                        draw_windows_menu_items(ui, sub_items, menu, hwnd);
+                    },
+                );
+            });
+            continue;
+        }
+
+        let clicked = if let Some((rgba, w, h)) = &item.icon_rgba {
+            let texture = ui.ctx().load_texture(
+                format!("shellmenu_icon_{}", item.id),
+                egui::ColorImage::from_rgba_unmultiplied([*w as usize, *h as usize], rgba),
+                egui::TextureOptions::default(),
+            );
+
+            ui.add_enabled(
+                !item.disabled,
+                egui::Button::image_and_text(
+                    egui::Image::new(&texture).fit_to_exact_size(egui::vec2(16.0, 16.0)),
+                    &item.label,
+                ),
+            )
+            .clicked()
+        } else {
+            menu_item_button_enabled(
+                ui,
+                !item.disabled,
+                fallback_shell_icon(&item.label),
+                &item.label,
+            )
+            .clicked()
+        };
+
+        if clicked {
+            if let Err(err) = menu.invoke(hwnd, item.id) {
+                eprintln!("Windows menu invoke failed: {}", err);
+            }
+            ui.close();
+        }
     }
 }
 
@@ -663,6 +1067,119 @@ pub fn handle_draw_col_original_directory(
     );
 }
 
+/// Draws every tag a file belongs to as a small colored chip, in a single
+/// row clipped to the column's own width, with a trailing "+N" chip for
+/// whatever doesn't fit - the same overflow idiom the paste-conflict modal
+/// already uses. Chip styling (fill/stroke from the tag's own color) matches
+/// the toggle buttons in `draw_tag_picker_popup` for visual consistency.
+pub fn handle_draw_col_tags(
+    ui: &mut egui::Ui,
+    file: &FileItem,
+    layout: &ItemViewerLayout,
+    tags_state: &TagsState,
+    font_id: &egui::FontId,
+) {
+    let tags = tags_state.tags_for_path(&file.path);
+    let (rect, _response) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), layout.row_height),
+        egui::Sense::hover(),
+    );
+
+    if tags.is_empty() {
+        return;
+    }
+
+    // Chips use a smaller font than the row's own text - a badge/pill is
+    // meant to read as a compact label, and a smaller font also means each
+    // chip's own pill needs less width to fit a given tag name, which
+    // reduces how often a single long tag name has to be truncated below.
+    let chip_font_id = egui::FontId::new((font_id.size - 2.0).max(9.0), font_id.family.clone());
+    let chip_gap = 4.0;
+    let chip_pad_x = 6.0;
+    let chip_height = (layout.row_height - 6.0).max(14.0);
+    let mut cursor_x = rect.left();
+    let available_right = rect.right();
+    // A single chip is never allowed to claim more than this much width,
+    // truncated with an ellipsis via `truncate_item_text` otherwise - this
+    // is what actually prevents a long tag name from overflowing its own
+    // pill or the column itself, rather than relying on the column always
+    // being wide enough.
+    const MAX_CHIP_TEXT_WIDTH: f32 = 90.0;
+
+    for (visible_count, (_, name, color)) in tags.iter().enumerate() {
+        let remaining = tags.len() - visible_count;
+
+        // Reserve room for a trailing "+N" chip unless this is the very
+        // last tag (which never needs an overflow indicator after it).
+        let needs_overflow_room = remaining > 1;
+        let overflow_reserve = if needs_overflow_room { 34.0 } else { 0.0 };
+
+        let remaining_width = (available_right - overflow_reserve - cursor_x).max(0.0);
+        let text_budget = MAX_CHIP_TEXT_WIDTH.min((remaining_width - chip_pad_x * 2.0).max(0.0));
+
+        let (display_name, _truncated) =
+            truncate_item_text(ui, name, text_budget, &chip_font_id, egui::Color32::WHITE);
+
+        let painter = ui.painter_at(rect);
+        let text_width = painter
+            .layout_no_wrap(display_name.clone(), chip_font_id.clone(), egui::Color32::WHITE)
+            .size()
+            .x;
+        let chip_width = text_width + chip_pad_x * 2.0;
+
+        if (cursor_x + chip_width > available_right || text_budget <= 0.0) && visible_count > 0 {
+            let overflow_label = format!("+{}", remaining);
+            let overflow_text_width = painter
+                .layout_no_wrap(overflow_label.clone(), chip_font_id.clone(), egui::Color32::WHITE)
+                .size()
+                .x;
+            let overflow_width = overflow_text_width + chip_pad_x * 2.0;
+            let chip_rect = egui::Rect::from_min_size(
+                egui::pos2(cursor_x, rect.center().y - chip_height / 2.0),
+                egui::vec2(overflow_width, chip_height),
+            );
+            painter.rect_filled(
+                chip_rect,
+                egui::CornerRadius::same(6),
+                egui::Color32::GRAY.gamma_multiply(0.25),
+            );
+            painter.text(
+                chip_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                overflow_label,
+                chip_font_id.clone(),
+                egui::Color32::WHITE,
+            );
+            return;
+        }
+
+        let chip_rect = egui::Rect::from_min_size(
+            egui::pos2(cursor_x, rect.center().y - chip_height / 2.0),
+            egui::vec2(chip_width, chip_height),
+        );
+        painter.rect_filled(
+            chip_rect,
+            egui::CornerRadius::same(6),
+            color.gamma_multiply(0.25),
+        );
+        painter.rect_stroke(
+            chip_rect,
+            egui::CornerRadius::same(6),
+            egui::Stroke::new(1.0, color.gamma_multiply(0.6)),
+            egui::StrokeKind::Inside,
+        );
+        painter.text(
+            chip_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            display_name,
+            chip_font_id.clone(),
+            egui::Color32::WHITE,
+        );
+
+        cursor_x = chip_rect.right() + chip_gap;
+    }
+}
+
 pub fn get_text_color(is_selected: bool, is_cut: bool, palette: &ThemePalette) -> egui::Color32 {
     let base_color = get_row_color(is_selected, palette);
     if is_cut {
@@ -726,6 +1243,37 @@ pub fn handle_editing_file_name(
         // Store original length to detect changes
         let original_len = rename_state.new_name.len();
 
+        // Matching Windows Explorer: the base filename is pre-selected so
+        // typing immediately replaces it, but the ".ext" is left unselected
+        // (and out of the way) so a plain Enter doesn't clobber it. Folders
+        // have no extension concept, so their whole name is selected.
+        //
+        // Both the cursor range AND the focus request are set *before*
+        // `ui.add()` runs (rather than requesting focus afterward, which
+        // would only take effect starting next frame - a visible one-frame
+        // flash of the full, unselected name before the highlight caught
+        // up). Setting both here means the widget picks up already focused,
+        // with the right selection, on the very first frame it's drawn.
+        let just_requested_focus = rename_state.should_focus;
+        if just_requested_focus {
+            let select_end = if file.is_dir {
+                rename_state.new_name.chars().count()
+            } else {
+                std::path::Path::new(&rename_state.new_name)
+                    .file_stem()
+                    .map(|stem| stem.to_string_lossy().chars().count())
+                    .unwrap_or_else(|| rename_state.new_name.chars().count())
+            };
+            let mut state = egui::widgets::text_edit::TextEditState::load(ui.ctx(), edit_id)
+                .unwrap_or_default();
+            state.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+                egui::text::CCursor::new(0),
+                egui::text::CCursor::new(select_end),
+            )));
+            state.store(ui.ctx(), edit_id);
+            ui.memory_mut(|mem| mem.request_focus(edit_id));
+        }
+
         let edit_response = ui.add(
             egui::TextEdit::singleline(&mut rename_state.new_name)
                 .id(edit_id)
@@ -735,7 +1283,6 @@ pub fn handle_editing_file_name(
 
         // ✅ Focus once
         if rename_state.should_focus {
-            ui.memory_mut(|mem| mem.request_focus(edit_id));
             edit_response.request_focus();
             if edit_response.has_focus() {
                 rename_state.should_focus = false;
@@ -837,13 +1384,24 @@ pub fn handle_editing_file_name(
             action = Some(ItemViewerAction::Context(
                 ItemViewerContextAction::RenameCancel,
             ));
-        } else if edit_response.lost_focus() {
+        } else if edit_response.lost_focus() && !just_requested_focus {
             // Clear validation error on focus loss
             rename_state.validation_error_show = false;
 
-            // 👈 matches Windows: clicking away cancels rename
+            // Clicking away confirms the rename with whatever's currently
+            // typed (same as pressing Enter) - only Escape explicitly
+            // cancels.
+            //
+            // `!just_requested_focus` guards the very frame the rename box
+            // was created and asked for focus (e.g. right after clicking the
+            // "New Folder"/"New File" toolbar icon): the click that
+            // triggered creation can otherwise register as a same-frame
+            // "lost focus" against this brand-new widget, which would
+            // submit the un-typed placeholder name before the user ever
+            // gets to type.
+            let new_name = rename_state.new_name.trim().to_string();
             action = Some(ItemViewerAction::Context(
-                ItemViewerContextAction::RenameCancel,
+                ItemViewerContextAction::RenameRequest(file.path.clone(), new_name),
             ));
         }
     });
@@ -863,9 +1421,8 @@ pub fn handle_global_actions(
     is_cut_mode: bool,
     is_drive_view: bool,
     is_recycle_bin_view: bool,
-    theme_customizer_window: &mut ThemeCustomizer,
-    settings_windows: &mut SettingsWindow,
-    hwnd: Option<HWND>,
+    find_in_preview_active: bool,
+    _settings_windows: &mut SettingsWindow,
 ) -> Option<ItemViewerAction> {
     let filtered_indices = &filter_state.cached_indices;
     let mut action: Option<ItemViewerAction> = None;
@@ -874,23 +1431,32 @@ pub fn handle_global_actions(
         .as_ref()
         .is_some_and(|t| t.is_breadcrumb_path_edit_active);
 
-    if theme_customizer_window.open || settings_windows.open {
-        return None;
-    }
-
-    if rename_state.is_some() || is_text_edit_active {
+    // The preview pane's own Find bar (`itemviewer_preview.rs`) is drawn
+    // *after* this function each frame (this one runs first, at the top of
+    // `draw_item_viewer`), and it requests keyboard focus for its query
+    // field the same frame it opens - but `egui::Context::memory().focused()`
+    // is a snapshot from whatever last claimed it (typically the *previous*
+    // frame's draw), so relying on `ctx.egui_wants_keyboard_input()` alone
+    // to gate the type-to-filter capture below raced against exactly that:
+    // the very first keystroke after opening the Find bar could still land
+    // here instead, since this function's read of "is anything focused"
+    // happens before the Find bar has had a chance to (re)claim focus this
+    // frame. Checking the caller-supplied `find_in_preview_active` flag
+    // directly - true for the Find bar's entire active lifetime, not just
+    // a focus snapshot - closes that race outright rather than depending on
+    // frame-ordering being lucky.
+    if rename_state.is_some() || is_text_edit_active || find_in_preview_active {
         return None;
     }
 
     if is_cut_mode {
         let cancel_called = ui.input(|i| i.key_pressed(egui::Key::Escape));
         if cancel_called {
-            clear_clipboard_files(hwnd);
+            clear_clipboard_files();
         }
     }
 
     if drag_state.active && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-        println!("852 - clearing drag_state");
         drag_state.active = false;
         drag_state.source_items.clear();
         drag_state.start_pos = None;
@@ -922,15 +1488,61 @@ pub fn handle_global_actions(
 
         let text_edit_id = ui.id().with("filter_input");
 
-        let response = ui.add(
-            egui::TextEdit::singleline(&mut filter_state.query)
-                .id(text_edit_id)
-                .desired_width(200.0)
-                .font(FontId::new(
-                    palette.text_size,
-                    egui::FontFamily::Proportional,
-                )),
-        );
+        let response = egui::Frame::NONE
+            .fill(palette.input_field_bg)
+            // Full-strength, opaque `borders_active` rather than the
+            // low-alpha `borders_default` blend most other bordered
+            // surfaces use: this box's fill is `input_field_bg`, and a
+            // translucent accent blended over its own fill color reads as
+            // barely-there regardless of stroke width - confirmed by
+            // pixel-sampling a live screenshot, where even a 2.5px stroke
+            // at a doubled blend alpha was indistinguishable from the fill
+            // except right at the anti-aliased edge. An opaque, undiluted
+            // accent color plus a genuinely thicker stroke is what actually
+            // reads as a real border here.
+            .stroke(egui::Stroke::new(2.0, palette.borders_active))
+            .corner_radius(egui::CornerRadius::same(palette.medium_radius))
+            .inner_margin(egui::Margin {
+                left: 10,
+                right: 10,
+                top: 6,
+                bottom: 6,
+            })
+            // Space *outside* the box's own border - between the box and
+            // whatever's around it (the item viewer's edge above/left, the
+            // file list below) - as opposed to `inner_margin`, which is the
+            // padding between the border and the text inside it. Right is
+            // deliberately left at 0 - the box already reads as anchored to
+            // the top-left corner of the view, and adding space on its own
+            // open side would just look like an unexplained gap.
+            .outer_margin(egui::Margin {
+                left: 6,
+                right: 0,
+                top: 6,
+                bottom: 8,
+            })
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(regular::MAGNIFYING_GLASS)
+                            .size(palette.text_size + 1.0)
+                            .color(palette.icon_color),
+                    );
+                    ui.add_space(4.0);
+                    ui.add(
+                        egui::TextEdit::singleline(&mut filter_state.query)
+                            .id(text_edit_id)
+                            .frame(egui::Frame::NONE)
+                            .desired_width(200.0)
+                            .font(FontId::new(
+                                palette.text_size,
+                                egui::FontFamily::Proportional,
+                            )),
+                    )
+                })
+                .inner
+            })
+            .inner;
 
         if !filter_state.focus_requested {
             response.request_focus();
@@ -1066,13 +1678,27 @@ pub fn handle_global_actions(
                 return;
             };
 
+            // Shift+Delete skips the Recycle Bin and deletes permanently,
+            // matching native Explorer; a plain Delete always goes to the
+            // Recycle Bin (deleting while already inside the Recycle Bin is
+            // handled separately and is already permanent either way).
+            let permanent = i.modifiers.shift || is_recycle_bin_view;
             action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
-                paths,
+                paths, permanent,
             )));
         }
     });
 
     let mut start_filter = String::new();
+
+    // Typed-character events are broadcast to every reader of `ctx.input()`
+    // for the frame, not just whichever widget actually has focus - so
+    // without this check, typing into an unrelated text field elsewhere
+    // (e.g. a name field in a popup menu) would *also* start/append to this
+    // "type to filter" search.
+    if ui.ctx().egui_wants_keyboard_input() {
+        return action;
+    }
 
     ui.input(|i| {
         if i.modifiers.command || i.modifiers.ctrl || i.modifiers.alt {
@@ -1102,6 +1728,7 @@ pub fn draw_item_viewer_header(
     header: &mut egui_extras::TableRow<'_, '_>,
     is_drive_view: bool,
     is_recycle_bin_view: bool,
+    show_checkboxes: bool,
     ordered_columns: &[ItemViewerHeaderColumn],
     filtered_indices: &[usize],
     files: &[FileItem],
@@ -1113,8 +1740,12 @@ pub fn draw_item_viewer_header(
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let mut action: Option<ItemViewerAction> = None;
 
-    if !is_drive_view {
+    if show_checkboxes {
         header.col(|ui| {
+            // Match the top padding added to the header row's height in
+            // `compute_layout` (the cell's layout is top-down, so without
+            // this the extra height ends up below the content, not above).
+            ui.add_space(HEADER_TOP_PADDING);
             let mut all_selected = !filtered_indices.is_empty()
                 && filtered_indices
                     .iter()
@@ -1145,6 +1776,7 @@ pub fn draw_item_viewer_header(
             ItemViewerHeaderColumn::Created => i18n.tr("explorer_cols_created"),
             ItemViewerHeaderColumn::Usage => i18n.tr("explorer_cols_usage"),
             ItemViewerHeaderColumn::Deleted => i18n.tr("explorer_cols_deleted"),
+            ItemViewerHeaderColumn::Tags => i18n.tr("explorer_cols_tags"),
         };
         draw_header_cell(
             header,
@@ -1191,6 +1823,10 @@ fn draw_header_cell(
     };
 
     header.col(|ui| {
+        // Match the top padding added to the header row's height in
+        // `compute_layout` (the cell's layout is top-down, so without
+        // this the extra height ends up below the text, not above).
+        ui.add_space(HEADER_TOP_PADDING);
         let cell_id = ui.id().with(("itemviewer_header_cell", column));
         let cell_resp = ui.interact(ui.max_rect(), cell_id, egui::Sense::click());
         let arrow = column_action
@@ -1411,6 +2047,19 @@ fn draw_header_context_menu(
             ));
             ui.close();
         }
+
+        let tags_visible = column_state.is_column_visible(
+            is_drive_view,
+            is_recycle_bin_view,
+            ItemViewerHeaderColumn::Tags,
+        );
+
+        if draw_visibility_checkbox(ui, i18n.tr("explorer_cols_tags"), tags_visible) {
+            *action = Some(ItemViewerAction::ToggleColumnVisibility(
+                ItemViewerHeaderColumn::Tags,
+            ));
+            ui.close();
+        }
     }
 }
 
@@ -1619,6 +2268,11 @@ pub fn handle_keyboard_navigation(
     action
 }
 
+/// How long after a qualifying single click (see `handle_row_click`) to wait
+/// before committing to rename rather than open - matches the pause Windows
+/// Explorer gives you between the two clicks of its rename gesture.
+pub const CLICK_TO_RENAME_DELAY: f64 = 0.35;
+
 pub fn handle_row_click(
     row_idx: usize,
     file: &FileItem,
@@ -1628,10 +2282,19 @@ pub fn handle_row_click(
     drag_state: &DragState,
     explorer_state: &mut ExplorerState,
     is_recycle_bin_view: bool,
+    is_drive_view: bool,
+    is_double_click: bool,
+    now: f64,
 ) -> Option<ItemViewerAction> {
     if drag_state.active {
         return None;
     }
+
+    // Any click other than the qualifying "second click on an
+    // already-selected item" (handled below, which re-arms it itself)
+    // cancels a pending rename arm - e.g. clicking a different item, or
+    // shift/ctrl-extending the selection.
+    explorer_state.click_to_rename_arm = None;
 
     if modifiers.shift {
         if let Some(anchor_idx) = explorer_state.selection_anchor {
@@ -1678,11 +2341,27 @@ pub fn handle_row_click(
             if is_recycle_bin_view {
                 return Some(ItemViewerAction::ReplaceSelection(file.path.clone()));
             }
-            return Some(if file.is_dir {
-                ItemViewerAction::Open(file.path.clone())
-            } else {
-                ItemViewerAction::OpenWithDefault(vec![file.path.clone()])
-            });
+            if is_double_click {
+                return Some(if file.is_dir {
+                    ItemViewerAction::Open(file.path.clone())
+                } else {
+                    ItemViewerAction::OpenWithDefault(vec![file.path.clone()])
+                });
+            }
+            if is_drive_view {
+                // Drives don't support the click-to-rename gesture (renaming
+                // a volume label isn't wired up here) - a plain second click
+                // on an already-selected drive is just a no-op.
+                return None;
+            }
+            // A slow second click on an already-selected item - arm the
+            // rename gesture instead of opening immediately. A per-frame
+            // poll (see `poll_click_to_rename`) fires the actual rename
+            // once the delay elapses, unless this arm gets cancelled first
+            // (a genuine double-click is handled above; anything else is
+            // handled at the top of this function).
+            explorer_state.click_to_rename_arm = Some((file.path.clone(), now));
+            None
         } else {
             explorer_state.selection_anchor = Some(row_idx);
             explorer_state.selection_focus = Some(row_idx);
@@ -1690,6 +2369,49 @@ pub fn handle_row_click(
             Some(ItemViewerAction::ReplaceSelection(file.path.clone()))
         }
     }
+}
+
+/// Checks whether a rename arm from `handle_row_click` has waited out
+/// `CLICK_TO_RENAME_DELAY` and, if so, starts the actual rename - matching
+/// Windows Explorer's "click, pause, click again" gesture. Called once per
+/// frame from each view that supports it (Details/Detail Preview, Gallery,
+/// Preview - not Columns/Column Preview, which only rename via the
+/// right-click menu).
+pub fn poll_click_to_rename(
+    files: &[FileItem],
+    explorer_state: &mut ExplorerState,
+    rename_state: &mut Option<RenameState>,
+    now: f64,
+) {
+    let Some((path, armed_at)) = explorer_state.click_to_rename_arm.clone() else {
+        return;
+    };
+
+    if now - armed_at < CLICK_TO_RENAME_DELAY {
+        return;
+    }
+
+    explorer_state.click_to_rename_arm = None;
+
+    // Only fire if nothing else already started editing, and the armed
+    // item is still the sole selection (it could have changed in the
+    // meantime via e.g. a keyboard shortcut).
+    if rename_state.is_some() {
+        return;
+    }
+    if explorer_state.selected_paths.len() != 1 || !explorer_state.selected_paths.contains(&path) {
+        return;
+    }
+    let Some(file) = files.iter().find(|f| f.path == path) else {
+        return;
+    };
+
+    *rename_state = Some(RenameState {
+        path: file.path.clone(),
+        new_name: file.name.clone(),
+        should_focus: true,
+        validation_error_show: false,
+    });
 }
 
 pub fn draw_table_text(
@@ -1727,6 +2449,7 @@ pub fn compute_item_viewer_column_layout(
     folder_sizes: &HashMap<PathBuf, ItemViewerFolderSizeState>,
     is_drive_view: bool,
     is_recycle_bin_view: bool,
+    is_search_view: bool,
     show_item_viewer_icons: bool,
     palette: &ThemePalette,
     font_id: &FontId,
@@ -1736,8 +2459,85 @@ pub fn compute_item_viewer_column_layout(
     drive_size_text_cache: &mut HashMap<PathBuf, (u64, u64, String)>,
     viewport_width: f32,
 ) -> ItemViewerColumnLayout {
-    let fit_request = column_state.pending_fit_request.take();
-    let ordered_columns = column_state.visible_order(is_drive_view, is_recycle_bin_view);
+    // Search view has no persisted column-width storage of its own (see
+    // `visible_order`) - it reuses the *file* view's `is_drive_view=false,
+    // is_recycle_bin_view=false` storage slots, but under a different
+    // column set (it includes `OriginalDirectory`, which the file view's
+    // storage has no slot for, while lacking `Created`, whose slot the
+    // file view *does* have). Letting a "Size to Fit" request run through
+    // the normal `set_all_column_widths`/`set_column_width` path for a
+    // search tab was writing search-result-derived widths straight into
+    // the *file* view's persisted sizes (Type/Size/Modified do have slots
+    // there) - corrupting every normal folder tab's column widths the
+    // next time settings were saved. Bypassing the whole fit/persisted-
+    // width system for search view and computing fresh, unstored widths
+    // every frame instead avoids that class of bug entirely, at the cost
+    // of search columns not being manually resizable/rememberable between
+    // sessions - an acceptable tradeoff for what's a supplementary,
+    // non-customizable display.
+    if is_search_view {
+        column_state.pending_fit_request = None;
+        let ordered_columns = column_state.visible_order(is_drive_view, is_recycle_bin_view, true);
+        let widths = compute_item_viewer_column_widths(
+            ui,
+            i18n,
+            files,
+            &filter_state.cached_indices,
+            folder_sizes,
+            is_drive_view,
+            show_item_viewer_icons,
+            palette,
+            font_id,
+            file_type_cache,
+            file_size_text_cache,
+            folder_size_text_cache,
+            drive_size_text_cache,
+        );
+        return ItemViewerColumnLayout {
+            ordered_columns,
+            name_width: widths.name,
+            type_width: widths.type_width,
+            size_width: widths.size_width,
+            usage_width: 0.0,
+            modified_width: widths.modified_width,
+            created_width: 0.0,
+            deleted_width: 0.0,
+            original_directory_width: widths.original_directory_width,
+            tags_width: widths.tags_width,
+            column_sizes_changed: false,
+        };
+    }
+
+    let mut fit_request = column_state.pending_fit_request.take();
+
+    // A column state whose sizes are still sitting at the untouched generic
+    // defaults gets auto-fitted to its actual content the first time it's
+    // rendered with something in it - evaluated here, at render time, rather
+    // than hooked into navigation/loading events, so it fires reliably no
+    // matter how the view got loaded (first tab on startup, switching to an
+    // already-open tab, a brand new tab, a split pane, etc). `auto_fit_checked`
+    // makes sure this only happens once per navigation, not every frame,
+    // so it doesn't fight a manual resize made right after.
+    if fit_request.is_none()
+        && !column_state.auto_fit_checked
+        && !filter_state.cached_indices.is_empty()
+    {
+        column_state.auto_fit_checked = true;
+
+        let sizes_are_default = if is_drive_view {
+            column_state.drive_column_sizes == default_item_viewer_drive_column_size()
+        } else if is_recycle_bin_view {
+            column_state.recycle_bin_column_sizes == default_recycle_bin_column_size()
+        } else {
+            column_state.file_column_sizes == default_item_viewer_file_column_size()
+        };
+
+        if sizes_are_default {
+            fit_request = Some(ItemViewerColumnFitRequest::All);
+        }
+    }
+
+    let ordered_columns = column_state.visible_order(is_drive_view, is_recycle_bin_view, is_search_view);
 
     let mut column_sizes_changed = false;
     let current_width = viewport_width.max(1.0);
@@ -1778,6 +2578,7 @@ pub fn compute_item_viewer_column_layout(
                     ItemViewerHeaderColumn::Created => widths.created_width,
                     ItemViewerHeaderColumn::Deleted => widths.deleted_width,
                     ItemViewerHeaderColumn::Usage => widths.usage_width,
+                    ItemViewerHeaderColumn::Tags => widths.tags_width,
                 };
 
                 column_state.set_column_width(is_drive_view, is_recycle_bin_view, column, width);
@@ -1805,6 +2606,7 @@ pub fn compute_item_viewer_column_layout(
     let default_deleted_width = (current_width * 0.20).max(100.0);
     let default_usage_width = (current_width * 0.20).max(150.0);
     let default_original_directory_width = (current_width * 0.20).max(200.0);
+    let default_tags_width = (current_width * 0.20).max(140.0);
 
     let name_width = column_state
         .column_width(
@@ -1899,6 +2701,18 @@ pub fn compute_item_viewer_column_layout(
         0.0
     };
 
+    let tags_width = if ordered_columns.contains(&ItemViewerHeaderColumn::Tags) {
+        column_state
+            .column_width(
+                is_drive_view,
+                is_recycle_bin_view,
+                ItemViewerHeaderColumn::Tags,
+            )
+            .unwrap_or(default_tags_width)
+    } else {
+        0.0
+    };
+
     ItemViewerColumnLayout {
         ordered_columns,
         name_width,
@@ -1909,6 +2723,7 @@ pub fn compute_item_viewer_column_layout(
         created_width,
         deleted_width,
         original_directory_width,
+        tags_width,
         column_sizes_changed,
     }
 }
@@ -1977,6 +2792,13 @@ fn compute_item_viewer_column_widths(
             font_id,
             palette.text_header_section,
         ),
+        tags_width: measure_text_width(
+            ui,
+            &i18n.tr("explorer_cols_tags"),
+            font_id,
+            palette.text_header_section,
+        )
+        .max(140.0),
     };
 
     let icon_padding = if show_item_viewer_icons {
@@ -2042,6 +2864,19 @@ fn compute_item_viewer_column_widths(
                 font_id,
                 palette.text_normal,
             ));
+            widths.deleted_width = widths.deleted_width.max(measure_text_width(
+                ui,
+                file.deleted_time.as_deref().unwrap_or("—"),
+                font_id,
+                palette.text_normal,
+            ));
+            widths.original_directory_width =
+                widths.original_directory_width.max(measure_text_width(
+                    ui,
+                    file.original_directory.as_deref().unwrap_or("—"),
+                    font_id,
+                    palette.text_normal,
+                ));
         }
     }
 
@@ -2051,6 +2886,8 @@ fn compute_item_viewer_column_widths(
     widths.modified_width = widths.modified_width.max(120.0);
     widths.created_width = widths.created_width.max(120.0);
     widths.usage_width = widths.usage_width.max(150.0);
+    widths.deleted_width = widths.deleted_width.max(120.0);
+    widths.original_directory_width = widths.original_directory_width.max(150.0);
 
     widths
 }

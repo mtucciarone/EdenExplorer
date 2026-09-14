@@ -1,6 +1,6 @@
-use crate::core::fs::MY_PC_PATH;
+use crate::core::fs::{MY_PC_PATH, parse_search_view_path, parse_tag_view_path};
 use crate::gui::i18n::I18n;
-use crate::gui::windows::containers::structs::{TabInfo, TabState};
+use crate::gui::windows::containers::structs::{TabInfo, TabState, TagsState};
 use crate::gui::windows::structs::Navigation;
 use crate::gui::windows::structs::SettingsWindow;
 use std::path::PathBuf;
@@ -12,13 +12,14 @@ pub fn update_tab_infos_cache(
     tab_infos_dirty: &mut bool,
     settings_window: &SettingsWindow,
     i18n: &I18n,
+    tags_state: &TagsState,
 ) {
     if *tab_infos_dirty || tab_infos_cache.len() != tabs.len() {
         *tab_infos_cache = tabs
             .iter()
             .map(|tab| TabInfo {
                 id: tab.id,
-                title: tab_title_for(&tab.primary_view.nav, i18n),
+                title: tab_title_for(&tab.primary_view.nav, i18n, tags_state),
                 full_path: if tab.primary_view.nav.is_root() {
                     PathBuf::from(MY_PC_PATH)
                 } else {
@@ -35,13 +36,30 @@ pub fn update_tab_infos_cache(
     }
 }
 
-fn tab_title_for(nav: &Navigation, i18n: &I18n) -> String {
+fn tab_title_for(nav: &Navigation, i18n: &I18n, tags_state: &TagsState) -> String {
     if nav.is_root() {
         return i18n.tr("thispc");
     }
 
     if nav.is_recycle_bin() {
         return i18n.tr("recycle_bin");
+    }
+
+    if nav.is_settings() {
+        return i18n.tr("settings");
+    }
+
+    if let Some(group_id) = parse_tag_view_path(&nav.current) {
+        return tags_state
+            .groups
+            .iter()
+            .find(|g| g.id == group_id)
+            .map(|g| g.name.clone())
+            .unwrap_or_else(|| i18n.tr("tags"));
+    }
+
+    if let Some((query, _scope_folder)) = parse_search_view_path(&nav.current) {
+        return format!("{} {}", i18n.tr("search_tab_title_prefix"), query);
     }
 
     nav.current

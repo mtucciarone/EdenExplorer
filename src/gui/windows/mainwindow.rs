@@ -1,6 +1,8 @@
+use crate::core::fs::MY_PC_PATH;
 use crate::core::indexer::WindowSizeMode;
 use crate::core::indexer::{
-    load_app_settings, load_favorites, load_tags, load_theme_settings, save_app_settings,
+    SessionTabEntry, SessionTabsSnapshot, load_app_settings, load_favorites, load_session_tabs,
+    load_tags, load_theme_settings, save_app_settings, save_session_tabs,
 };
 use crate::core::launch::take_forwarded_paths;
 use crate::core::utils::tabs::update_tab_infos_cache;
@@ -12,19 +14,19 @@ use crate::gui::theme::{
 };
 use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::explorer::draw_tab_content;
+use crate::gui::windows::containers::notifications::{draw_notifications_button, draw_toast, NotificationsState};
 use crate::gui::windows::containers::sidebar::draw_sidebar;
 use crate::gui::windows::containers::structs::{
-    FavoriteItem, ItemViewerColumnState, ItemViewerFolderSizeState, ItemViewerNavBarAction,
-    RenameState, SidebarAction, SplitSide, TabInfo, TabState, TabsAction, TagsState,
+    ItemViewerColumnState, ItemViewerFolderSizeState, ItemViewerNavBarAction,
+    RenameState, SavedSearchesState, SidebarAction, SplitSide, TabInfo, TabState, TabView,
+    TabsAction, TagsState,
 };
-use crate::gui::windows::containers::tabs::draw_tabs;
-use crate::gui::windows::containers::tags::{
-    draw_delete_confirmation_popup, draw_tag_picker_popup, draw_tags,
-};
+use crate::gui::windows::containers::tabs::{TAB_HEIGHT, draw_tabs, tab_row_count};
+use crate::gui::windows::containers::tags::draw_tag_picker_popup;
 use crate::gui::windows::containers::topbar::draw_topbar;
 use crate::gui::windows::mainwindow_imp::{
-    apply_directory_settings_to_view, directory_settings_snapshot_for_view,
-    handle_draw_customizetheme_window, handle_pending_actions, persist_directory_settings_snapshot,
+    DisplayModeFallback, apply_directory_settings_to_view, directory_settings_snapshot_for_view,
+    handle_pending_actions, persist_directory_settings_snapshot,
 };
 use crate::gui::windows::structs::{
     AboutWindow, AppSettings, Navigation, SettingsWindow, SidebarState, ThemeCustomizer,
@@ -43,6 +45,13 @@ use windows::Win32::Foundation::{POINT, RECT};
 use windows::Win32::Graphics::Gdi::ClientToScreen;
 use windows::Win32::UI::WindowsAndMessaging::{GetClientRect, GetCursorPos};
 
+/// Thickness of the top-line indicator on the currently active pane in dual-
+/// pane mode. Kept as one named constant, not two independent literals -
+/// the primary and secondary pane each draw their own `hline`, and a past
+/// bump (2.0 -> 4.0) touched both call sites by hand, which is an easy way
+/// for the two to silently drift apart.
+const ACTIVE_PANE_INDICATOR_THICKNESS: f32 = 6.0;
+
 pub struct MainWindow {
     // MainWindow General Variables
     pub(crate) theme: ThemeMode,
@@ -57,16 +66,74 @@ pub struct MainWindow {
     pub(crate) shutdown: Arc<AtomicBool>,
     pub(crate) hwnd: Option<HWND>,
     pub(crate) last_window_size: Option<(f32, f32)>,
-    pub(crate) display_file_explorer: bool,
+    pub(crate) last_window_position: Option<(f32, f32)>,
     pub(crate) sidebar_collapsed: bool,
+    /// Whether the OS window had keyboard focus as of the last frame - used
+    /// to detect the window regaining focus (e.g. after running an external
+    /// script/program from a custom context menu command) so the current
+    /// folder can be refreshed automatically, since the app has no other way
+    /// to know that command finished changing files on disk.
+    pub(crate) was_window_focused: bool,
+    /// Times (queued after launching a custom context menu command) at
+    /// which the current folder gets refreshed automatically. The launched
+    /// program runs detached (fire-and-forget via `ShellExecuteW`), so this
+    /// is the only way to notice it finished changing files; several
+    /// staggered times are queued per launch since there's no way to know
+    /// how long it'll take, and window-focus regain (see
+    /// `was_window_focused`) is a second, independent trigger for the same
+    /// refresh in case the launched program never takes focus at all (e.g.
+    /// a script that finishes before its console window would even show).
+    pub(crate) pending_command_refreshes: Vec<std::time::Instant>,
+    /// Paste (or cut-move) operations currently running via the
+    /// robocopy-backed engine (`core::robocopy`), keyed by the notification
+    /// id `paste_clipboard_native` created for each - see `PendingPaste`'s
+    /// doc comment in `mainwindow_imp.rs`.
+    pub(crate) pending_robocopy_pastes:
+        HashMap<u64, crate::gui::windows::mainwindow_imp::PendingPaste>,
+    /// A paste held back for the user to resolve a name collision - see
+    /// `PasteConflictPrompt`'s doc comment in `mainwindow_imp.rs`. Drawn as
+    /// a modal from the update loop.
+    pub(crate) pending_paste_conflict:
+        Option<crate::gui::windows::mainwindow_imp::PasteConflictPrompt>,
+    /// A bulk-rename dialog open over a multi-item selection - see
+    /// `bulk_rename::BulkRenameState`'s doc comment. Drawn as a modal from
+    /// the update loop, alongside `pending_paste_conflict`.
+    pub(crate) pending_bulk_rename:
+        Option<crate::gui::windows::containers::bulk_rename::BulkRenameState>,
+    /// Compress (zip) jobs running on a background thread, keyed by the
+    /// notification id `handle_context_action`'s `Compress` arm created for
+    /// each - polled once per frame by `poll_pending_compress`.
+    pub(crate) pending_compress_jobs:
+        HashMap<u64, (crossbeam_channel::Receiver<Result<(), String>>, PathBuf)>,
+    /// The "Checksums" modal's state while it's open - see
+    /// `ChecksumDialogState`'s doc comment in `mainwindow_imp.rs`. Drawn as
+    /// a modal from the update loop, alongside `pending_paste_conflict`.
+    pub(crate) pending_checksum:
+        Option<crate::gui::windows::mainwindow_imp::ChecksumDialogState>,
+    /// Tracked copy/move/delete operations shown by the top-right
+    /// notification bell - see `containers::notifications`.
+    pub(crate) notifications_state: NotificationsState,
+    /// Completed, reversible Rename/BulkRename/Move/Copy operations, most
+    /// recent last - see `UndoableOperation`'s doc comment in
+    /// `mainwindow_imp.rs`. Deliberately in-memory only (never persisted),
+    /// capped at `MAX_UNDO_STACK`.
+    pub(crate) undo_stack:
+        std::collections::VecDeque<crate::gui::windows::mainwindow_imp::UndoableOperation>,
+    /// Operations undone via `MainWindow::undo`, available to redo via
+    /// Ctrl+Y/Ctrl+Shift+Z - cleared whenever a fresh Rename/BulkRename/
+    /// Move/Copy is pushed onto `undo_stack`.
+    pub(crate) redo_stack:
+        std::collections::VecDeque<crate::gui::windows::mainwindow_imp::UndoableOperation>,
 
     // File Explorer Variables (per-tab/per-view state lives on TabState/TabView)
     pub(crate) tabs: Vec<TabState>,
     pub(crate) active_tab: usize,
     pub(crate) tab_infos_cache: Vec<TabInfo>,
     pub(crate) tab_infos_dirty: bool,
-    pub(crate) tab_scroll_offset: f32,
     pub(crate) pending_tab_scroll_id: Option<u64>,
+    /// Index (into `tab_infos_cache`/`tabs`) of the tab currently being dragged to
+    /// reorder it, if any.
+    pub(crate) dragging_tab_index: Option<usize>,
     pub(crate) focused_split: SplitSide,
     pub(crate) next_tab_id: u64,
     pub(crate) folder_sizes: HashMap<PathBuf, ItemViewerFolderSizeState>,
@@ -74,6 +141,9 @@ pub struct MainWindow {
     pub(crate) dragdrop: Option<Box<dyn DragDropBackend>>,
     pub(crate) file_type_cache: HashMap<String, String>,
     pub(crate) tags_state: TagsState,
+    pub(crate) saved_searches_state: SavedSearchesState,
+    pub(crate) recent_locations_state:
+        crate::gui::windows::containers::structs::RecentLocationsState,
     pub(crate) clipboard_paths: Vec<PathBuf>,
     pub(crate) clipboard_set: HashSet<PathBuf>,
     pub(crate) clipboard_is_cut: bool,
@@ -109,6 +179,7 @@ impl Default for MainWindow {
             sort_ascending,
             language,
             date_style,
+            custom_date_format,
             item_viewer_file_column_order,
             item_viewer_drive_column_order,
             recycle_bin_column_order,
@@ -116,6 +187,13 @@ impl Default for MainWindow {
             item_viewer_drive_column_sizes,
             recycle_bin_column_sizes,
             directory_settings,
+            double_click_navigates_up,
+            show_selection_checkboxes,
+            middle_click_opens_new_tab,
+            restore_last_session_tabs,
+            default_display_mode,
+            default_search_scope,
+            search_engine,
         ) = load_app_settings();
         let loaded_settings = AppSettings {
             folder_scanning_enabled,
@@ -127,6 +205,7 @@ impl Default for MainWindow {
             pinned_tabs: pinned_tabs.clone(),
             time_format_24h,
             date_style,
+            custom_date_format,
             sort_column,
             sort_ascending,
             language,
@@ -137,6 +216,15 @@ impl Default for MainWindow {
             item_viewer_drive_column_sizes,
             recycle_bin_column_sizes,
             directory_settings,
+            double_click_navigates_up,
+            show_selection_checkboxes,
+            middle_click_opens_new_tab,
+            restore_last_session_tabs,
+            default_display_mode,
+            default_search_scope,
+            search_engine,
+            custom_context_menu: crate::core::context_menu_settings::load_custom_context_menu(),
+            tab_groups: crate::core::tab_groups::load_tab_groups(),
         };
 
         let system_locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
@@ -151,17 +239,53 @@ impl Default for MainWindow {
         };
 
         let pinned_tabs = pinned_tabs;
+
+        // Restoring the last session takes priority over pinned tabs/start path when
+        // enabled and a previous session was actually saved.
+        let restored_session = if loaded_settings.restore_last_session_tabs {
+            load_session_tabs().filter(|snapshot| !snapshot.tabs.is_empty())
+        } else {
+            None
+        };
+
+        let (tab_entries, initial_active_tab): (Vec<SessionTabEntry>, usize) = match restored_session
+        {
+            Some(snapshot) => {
+                let active = snapshot
+                    .active_index
+                    .min(snapshot.tabs.len().saturating_sub(1));
+                (snapshot.tabs, active)
+            }
+            None if pinned_tabs.is_empty() => (
+                vec![SessionTabEntry {
+                    path: start_path,
+                    split_path: None,
+                }],
+                0,
+            ),
+            None => (
+                pinned_tabs
+                    .iter()
+                    .map(|path| SessionTabEntry {
+                        path: path.clone(),
+                        split_path: None,
+                    })
+                    .collect(),
+                0,
+            ),
+        };
+
         let mut tabs = Vec::new();
         let mut next_tab_id = 1;
 
-        if pinned_tabs.is_empty() {
-            tabs.push(TabState::new(
+        for entry in &tab_entries {
+            let mut tab = TabState::new(
                 next_tab_id,
-                Navigation::new(start_path),
+                Navigation::new(entry.path.clone()),
                 loaded_settings.sort_column,
                 loaded_settings.sort_ascending,
-            ));
-            tabs.last_mut().unwrap().primary_view.column_state = ItemViewerColumnState::from_orders(
+            );
+            tab.primary_view.column_state = ItemViewerColumnState::from_orders(
                 loaded_settings.item_viewer_file_column_order.clone(),
                 loaded_settings.item_viewer_drive_column_order.clone(),
                 loaded_settings.recycle_bin_column_order.clone(),
@@ -169,49 +293,69 @@ impl Default for MainWindow {
                 loaded_settings.item_viewer_drive_column_sizes.clone(),
                 loaded_settings.recycle_bin_column_sizes.clone(),
             );
-            next_tab_id += 1;
-        } else {
-            for path in &pinned_tabs {
-                tabs.push(TabState::new(
-                    next_tab_id,
-                    Navigation::new(path.clone()),
+            if let Some(split_path) = &entry.split_path {
+                let mut split_view = TabView::new(
+                    Navigation::new(split_path.clone()),
                     loaded_settings.sort_column,
                     loaded_settings.sort_ascending,
-                ));
-                tabs.last_mut().unwrap().primary_view.column_state =
-                    ItemViewerColumnState::from_orders(
-                        loaded_settings.item_viewer_file_column_order.clone(),
-                        loaded_settings.item_viewer_drive_column_order.clone(),
-                        loaded_settings.recycle_bin_column_order.clone(),
-                        loaded_settings.item_viewer_file_column_sizes.clone(),
-                        loaded_settings.item_viewer_drive_column_sizes.clone(),
-                        loaded_settings.recycle_bin_column_sizes.clone(),
-                    );
-                next_tab_id += 1;
+                );
+                split_view.column_state = ItemViewerColumnState::from_orders(
+                    loaded_settings.item_viewer_file_column_order.clone(),
+                    loaded_settings.item_viewer_drive_column_order.clone(),
+                    loaded_settings.recycle_bin_column_order.clone(),
+                    loaded_settings.item_viewer_file_column_sizes.clone(),
+                    loaded_settings.item_viewer_drive_column_sizes.clone(),
+                    loaded_settings.recycle_bin_column_sizes.clone(),
+                );
+                tab.split_view = Some(split_view);
             }
+            tabs.push(tab);
+            next_tab_id += 1;
         }
 
         let mut app = Self {
             tabs,
-            active_tab: 0,
+            active_tab: initial_active_tab,
             tab_infos_cache: Vec::new(),
             tab_infos_dirty: true,
 
-            tab_scroll_offset: 0.0,
             pending_tab_scroll_id: None,
+            dragging_tab_index: None,
             focused_split: SplitSide::Primary,
             next_tab_id,
             folder_sizes: HashMap::new(),
 
-            sidebar_state: SidebarState::default(),
+            sidebar_state: {
+                let sections = crate::core::indexer::load_sidebar_sections();
+                SidebarState {
+                    places_expanded: sections.places,
+                    storage_expanded: sections.storage,
+                    favorites_expanded: sections.favorites,
+                    tags_expanded: sections.tags,
+                    shared_network_expanded: sections.shared_network,
+                    saved_searches_expanded: sections.saved_searches,
+                    recent_locations_expanded: sections.recent_locations,
+                    sidebar_default_width: sections.sidebar_width,
+                    ..SidebarState::default()
+                }
+            },
 
             rename_state: None,
             theme: match saved_theme.as_deref() {
                 Some("light") => ThemeMode::Light,
                 Some("dark") | _ => ThemeMode::Dark,
             },
-            display_file_explorer: true,
             sidebar_collapsed: false,
+            was_window_focused: true,
+            pending_command_refreshes: Vec::new(),
+            pending_robocopy_pastes: HashMap::new(),
+            pending_paste_conflict: None,
+            pending_bulk_rename: None,
+            pending_compress_jobs: HashMap::new(),
+            pending_checksum: None,
+            notifications_state: NotificationsState::default(),
+            undo_stack: std::collections::VecDeque::new(),
+            redo_stack: std::collections::VecDeque::new(),
             theme_dirty: true,
             window_override_set: false,
             dragdrop: None,
@@ -220,6 +364,14 @@ impl Default for MainWindow {
             file_type_cache: HashMap::new(),
             tags_state: load_tags()
                 .map(TagsState::from_snapshot)
+                .unwrap_or_default(),
+            saved_searches_state: crate::core::indexer::load_saved_searches()
+                .map(SavedSearchesState::from_snapshot)
+                .unwrap_or_default(),
+            recent_locations_state: crate::core::indexer::load_recent_locations()
+                .map(
+                    crate::gui::windows::containers::structs::RecentLocationsState::from_snapshot,
+                )
                 .unwrap_or_default(),
             theme_customizer: Default::default(),
             settings_window: Default::default(),
@@ -231,6 +383,7 @@ impl Default for MainWindow {
 
             hwnd: None,
             last_window_size: None,
+            last_window_position: None,
             clipboard_paths: Vec::new(),
             clipboard_set: HashSet::new(),
             clipboard_is_cut: false,
@@ -253,9 +406,17 @@ impl Default for MainWindow {
 
         let current_settings = app.settings_window.current_settings.clone();
         for tab in &mut app.tabs {
-            apply_directory_settings_to_view(&mut tab.primary_view, &current_settings);
+            apply_directory_settings_to_view(
+                &mut tab.primary_view,
+                &current_settings,
+                DisplayModeFallback::Default,
+            );
             if let Some(split) = tab.split_view.as_mut() {
-                apply_directory_settings_to_view(split, &current_settings);
+                apply_directory_settings_to_view(
+                    split,
+                    &current_settings,
+                    DisplayModeFallback::Default,
+                );
             }
         }
 
@@ -280,17 +441,7 @@ impl Default for MainWindow {
             app.sidebar_state.favorites = app.default_favorites();
             app.persist_favorites();
         } else {
-            app.sidebar_state.favorites = stored
-                .into_iter()
-                .map(|path| {
-                    let path = PathBuf::from(path);
-                    let label = path
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| path.display().to_string());
-                    FavoriteItem { path, label }
-                })
-                .collect();
+            app.sidebar_state.favorites = stored;
         }
         app.load_path();
         app
@@ -321,6 +472,27 @@ impl MainWindow {
 
 impl eframe::App for MainWindow {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        // Lets the item viewer's own keyboard handling (Ctrl+A, Delete, ...)
+        // know a blocking modal is on top of it this frame, so those
+        // shortcuts don't fire on the file list underneath a modal that's
+        // visually on top of it but doesn't otherwise suppress the view's
+        // own per-frame input handling - see `BLOCKING_MODAL_MEMORY_ID`'s
+        // doc comment. Reflects state from the *start* of this frame
+        // (before any modal's own Close button runs), which is exactly
+        // "was a modal open when this frame's keyboard input arrived."
+        {
+            let blocking_modal_open = self.pending_paste_conflict.is_some()
+                || self.pending_bulk_rename.is_some()
+                || self.pending_checksum.is_some();
+            ui.ctx().memory_mut(|mem| {
+                mem.data.insert_temp(
+                    egui::Id::new(
+                        crate::gui::windows::containers::itemviewer_helper::BLOCKING_MODAL_MEMORY_ID,
+                    ),
+                    blocking_modal_open,
+                );
+            });
+        }
         {
             let forwarded_paths = take_forwarded_paths();
             for path in &forwarded_paths {
@@ -330,6 +502,46 @@ impl eframe::App for MainWindow {
                 self.load_path();
             }
         }
+
+        // Refresh the active tab's folder(s) when the window regains focus -
+        // e.g. after running an external script/program from a custom
+        // context menu command that created/moved files. The app has no
+        // other way to notice a change like that made outside itself.
+        let is_focused = ui.input(|i| i.focused);
+        if is_focused && !self.was_window_focused {
+            self.load_view(SplitSide::Primary);
+            if self.active_tab().split_view.is_some() {
+                self.load_view(SplitSide::Secondary);
+            }
+        }
+        self.was_window_focused = is_focused;
+
+        // Second, independent trigger for the same refresh: a custom
+        // context menu command was launched recently. `ShellExecuteW` runs
+        // it detached, so these timers (rather than the launched program's
+        // exit or window focus, which it may never actually take) are what
+        // catch it finishing. Several are queued per launch, staggered, since
+        // there's no way to know how long the program will actually take.
+        if !self.pending_command_refreshes.is_empty() {
+            let now = std::time::Instant::now();
+            let (due, still_pending): (Vec<_>, Vec<_>) = self
+                .pending_command_refreshes
+                .drain(..)
+                .partition(|deadline| now >= *deadline);
+            self.pending_command_refreshes = still_pending;
+
+            if !due.is_empty() {
+                self.load_view(SplitSide::Primary);
+                if self.active_tab().split_view.is_some() {
+                    self.load_view(SplitSide::Secondary);
+                }
+            }
+            if let Some(next) = self.pending_command_refreshes.iter().min() {
+                ui.ctx()
+                    .request_repaint_after(next.saturating_duration_since(now));
+            }
+        }
+
         let palette = get_palette(self.theme);
 
         if self.hwnd.is_none() {
@@ -436,6 +648,7 @@ impl eframe::App for MainWindow {
                         self.settings_window.current_settings.sort_ascending,
                         &self.settings_window.current_settings.language,
                         self.settings_window.current_settings.date_style,
+                        &self.settings_window.current_settings.custom_date_format,
                         &self
                             .settings_window
                             .current_settings
@@ -461,6 +674,21 @@ impl eframe::App for MainWindow {
                             .current_settings
                             .recycle_bin_column_sizes,
                         &self.settings_window.current_settings.directory_settings,
+                        self.settings_window
+                            .current_settings
+                            .double_click_navigates_up,
+                        self.settings_window
+                            .current_settings
+                            .show_selection_checkboxes,
+                        self.settings_window
+                            .current_settings
+                            .middle_click_opens_new_tab,
+                        self.settings_window
+                            .current_settings
+                            .restore_last_session_tabs,
+                        self.settings_window.current_settings.default_display_mode,
+                        self.settings_window.current_settings.default_search_scope,
+                        self.settings_window.current_settings.search_engine,
                     );
 
                     self.last_window_size = Some(current_size);
@@ -471,24 +699,32 @@ impl eframe::App for MainWindow {
             }
         }
 
-        if consume_clipboard_dirty() {
-            match crate::gui::utils::read_clipboard_files() {
-                crate::gui::utils::ClipboardFileRead::Files(paths) => {
-                    self.clipboard_is_cut = crate::gui::utils::is_clipboard_cut();
-                    self.clipboard_has_files = !paths.is_empty();
-                    self.clipboard_set = paths.iter().cloned().collect();
-                    self.clipboard_paths = paths;
+        // Auto-save window position when it changes (including dragging the
+        // window to a new spot), the same way the size above is auto-saved.
+        if let Some(viewport_rect) = ui.ctx().input(|i| i.viewport().inner_rect) {
+            let current_position = (viewport_rect.min.x, viewport_rect.min.y);
+
+            if let Some(last_position) = self.last_window_position {
+                let moved = (current_position.0 - last_position.0).abs() > 1.0
+                    || (current_position.1 - last_position.1).abs() > 1.0;
+
+                if moved {
+                    crate::core::indexer::save_window_position(
+                        current_position.0,
+                        current_position.1,
+                    );
+                    self.last_window_position = Some(current_position);
                 }
-                crate::gui::utils::ClipboardFileRead::Empty => {
-                    self.clipboard_paths.clear();
-                    self.clipboard_set.clear();
-                    self.clipboard_is_cut = false;
-                    self.clipboard_has_files = false;
-                }
-                // Preserve the last known clipboard state when another process is temporarily
-                // using the clipboard. The next clipboard update will refresh it.
-                crate::gui::utils::ClipboardFileRead::Unavailable => {}
+            } else {
+                self.last_window_position = Some(current_position);
             }
+        }
+
+        if consume_clipboard_dirty() {
+            self.clipboard_paths = crate::gui::utils::get_clipboard_files().unwrap_or_default();
+            self.clipboard_is_cut = crate::gui::utils::is_clipboard_cut();
+            self.clipboard_has_files = !self.clipboard_paths.is_empty();
+            self.clipboard_set = self.clipboard_paths.iter().cloned().collect();
         }
 
         // Increase scroll speed for the explorer view.
@@ -546,10 +782,11 @@ impl eframe::App for MainWindow {
                         };
 
                         let sidebar_frame = egui::Frame::NONE
-                            .stroke(egui::Stroke::new(1.0, palette.borders_default));
+                            .fill(palette.sidebar_bg_color)
+                            .stroke(egui::Stroke::new(1.5, palette.borders_default));
 
                         ui.allocate_ui_with_layout(
-                            egui::vec2(sidebar_width, ui.available_height() + 15.5),
+                            egui::vec2(sidebar_width, ui.available_height()),
                             egui::Layout::top_down(egui::Align::Min),
                             |ui| {
                                 egui::Frame::NONE.show(ui, |ui| {
@@ -558,7 +795,6 @@ impl eframe::App for MainWindow {
                                         ui,
                                         &self.i18n,
                                         self.theme == ThemeMode::Dark,
-                                        self.display_file_explorer,
                                         self.sidebar_collapsed,
                                         self.hwnd,
                                         &palette,
@@ -566,16 +802,26 @@ impl eframe::App for MainWindow {
                                     ));
                                 });
                                 if !self.sidebar_collapsed {
+                                    let sidebar_box_size = ui.available_size();
                                     sidebar_frame.show(ui, |ui| {
-                                        sidebar_action = Some(draw_sidebar(
-                                            ui,
-                                            &self.i18n,
-                                            &icon_cache,
-                                            &mut self.sidebar_state,
-                                            &palette,
-                                            drag_active,
-                                            drag_hover_target.clone(),
-                                        ));
+                                        ui.allocate_ui_with_layout(
+                                            sidebar_box_size,
+                                            egui::Layout::top_down(egui::Align::Min),
+                                            |ui| {
+                                                sidebar_action = Some(draw_sidebar(
+                                                    ui,
+                                                    &self.i18n,
+                                                    &icon_cache,
+                                                    &mut self.sidebar_state,
+                                                    &palette,
+                                                    drag_active,
+                                                    drag_hover_target.clone(),
+                                                    &self.tags_state,
+                                                    &mut self.saved_searches_state,
+                                                    &self.recent_locations_state,
+                                                ));
+                                            },
+                                        );
                                     });
                                 }
                             },
@@ -607,7 +853,7 @@ impl eframe::App for MainWindow {
                                 ui.painter().rect_filled(
                                     handle_rect,
                                     handle_width / 2.0,
-                                    palette.button_seperator_handle_fill,
+                                    palette.resize_handle,
                                 );
                             }
 
@@ -618,16 +864,34 @@ impl eframe::App for MainWindow {
                                         .max(sidebar_width_min)
                                         .min(sidebar_width_max);
                             }
+
+                            if separator_response.drag_stopped() {
+                                crate::core::indexer::save_sidebar_sections(
+                                    &crate::core::indexer::SidebarSectionsSnapshot {
+                                        places: self.sidebar_state.places_expanded,
+                                        storage: self.sidebar_state.storage_expanded,
+                                        favorites: self.sidebar_state.favorites_expanded,
+                                        tags: self.sidebar_state.tags_expanded,
+                                        shared_network: self.sidebar_state.shared_network_expanded,
+                                        saved_searches: self.sidebar_state.saved_searches_expanded,
+                                        recent_locations: self
+                                            .sidebar_state
+                                            .recent_locations_expanded,
+                                        sidebar_width: self.sidebar_state.sidebar_default_width,
+                                    },
+                                );
+                            }
                         }
 
                         // --- Explorer column ---
-                        if self.display_file_explorer {
+                        {
                             update_tab_infos_cache(
                                 &self.tabs,
                                 &mut self.tab_infos_cache,
                                 &mut self.tab_infos_dirty,
                                 &self.settings_window,
                                 &self.i18n,
+                                &self.tags_state,
                             );
 
                             ui.allocate_ui_with_layout(
@@ -637,18 +901,52 @@ impl eframe::App for MainWindow {
                                     let active_id = self.tabs[self.active_tab].id;
 
                                     egui::Frame::NONE.show(ui, |ui| {
+                                        // Keeps the first tab from sitting flush against
+                                        // the sidebar/window edge.
+                                        let topbar_left_padding = 6.0;
+                                        // Tabs that don't fit on one row wrap onto extra
+                                        // rows below, so the topbar's height must grow
+                                        // to fit however many rows are needed.
+                                        let spacing = ui.spacing().item_spacing.x;
+                                        let tab_rows = tab_row_count(
+                                            self.tab_infos_cache.len(),
+                                            ui.available_width() - topbar_left_padding,
+                                            spacing,
+                                        ) as f32;
+                                        let tabs_content_height =
+                                            tab_rows * TAB_HEIGHT + (tab_rows - 1.0).max(0.0) * spacing;
+                                        // A bit more breathing room above the first tab
+                                        // row and the window control buttons than below,
+                                        // so neither sits flush against the app window's
+                                        // own top border.
+                                        let topbar_top_padding = 8.0;
+                                        let topbar_bottom_padding = 4.0;
+                                        let topbar_height =
+                                            topbar_top_padding + tabs_content_height + topbar_bottom_padding;
+
                                         let topbar_rect = ui.allocate_exact_size(
-                                            egui::vec2(ui.available_width(), 32.0),
+                                            egui::vec2(ui.available_width(), topbar_height),
                                             egui::Sense::hover(),
                                         ).0;
+
+                                        // Separates the tab strip from the file/folder view below it.
+                                        ui.painter().hline(
+                                            topbar_rect.x_range(),
+                                            topbar_rect.bottom(),
+                                            egui::Stroke::new(1.5, palette.borders_default),
+                                        );
 
                                         // -------------------------
                                         // Tabs
                                         // -------------------------
 
                                         let tabs_rect = egui::Rect::from_min_size(
-                                            topbar_rect.min + egui::vec2(0.0, 4.0),
-                                            egui::vec2(topbar_rect.width(), 24.0),
+                                            topbar_rect.min
+                                                + egui::vec2(topbar_left_padding, topbar_top_padding),
+                                            egui::vec2(
+                                                topbar_rect.width() - topbar_left_padding,
+                                                tabs_content_height,
+                                            ),
                                         );
 
                                         let scroll_to_id = self.pending_tab_scroll_id;
@@ -660,13 +958,18 @@ impl eframe::App for MainWindow {
                                                     ui,
                                                     &self.i18n,
                                                     &self.tab_infos_cache,
-                                                    self.tab_scroll_offset,
                                                     active_id,
                                                     &palette,
                                                     self.hwnd,
                                                     scroll_to_id,
                                                     drag_active,
                                                     drag_hover_target.clone(),
+                                                    &icon_cache,
+                                                    &mut self.dragging_tab_index,
+                                                    &self.settings_window.current_settings.tab_groups,
+                                                    &self.tags_state.groups,
+                                                    &self.sidebar_state.favorites,
+                                                    self.saved_searches_state.items.len(),
                                                 ));
                                             },
                                         );
@@ -686,9 +989,43 @@ impl eframe::App for MainWindow {
                                         let controls_rect = egui::Rect::from_min_size(
                                             egui::pos2(
                                                 viewport_rect.right() - controls_width,
-                                                topbar_rect.top(),
+                                                topbar_rect.top() + topbar_top_padding,
                                             ),
                                             egui::vec2(controls_width, 32.0),
+                                        );
+
+                                        // Notification bell - sits just left of the window
+                                        // controls, in the same row, so it's genuinely in the
+                                        // app's top-right corner rather than buried in the
+                                        // sidebar's own topbar. `bell_gap` keeps its own
+                                        // clickable area (and the in-progress badge, which
+                                        // extends a few px past the icon's own glyph) from
+                                        // overlapping the minimize button immediately to its
+                                        // right.
+                                        let bell_gap = 10.0;
+                                        let bell_width = 40.0;
+                                        let bell_rect = egui::Rect::from_min_size(
+                                            egui::pos2(
+                                                controls_rect.min.x - bell_width - bell_gap,
+                                                controls_rect.min.y,
+                                            ),
+                                            egui::vec2(bell_width, controls_rect.height()),
+                                        );
+                                        ui.scope_builder(
+                                            egui::UiBuilder::new().max_rect(bell_rect),
+                                            |ui| {
+                                                ui.with_layout(
+                                                    egui::Layout::right_to_left(egui::Align::Center),
+                                                    |ui| {
+                                                        draw_notifications_button(
+                                                            ui,
+                                                            &self.i18n,
+                                                            &palette,
+                                                            &mut self.notifications_state,
+                                                        );
+                                                    },
+                                                );
+                                            },
                                         );
 
                                         ui.scope_builder(
@@ -739,6 +1076,14 @@ impl eframe::App for MainWindow {
                                                 egui::vec2(secondary_width, split_height),
                                             );
 
+                                            // A subtle divider between the two split panes.
+                                            let divider_x = primary_rect.right() + SPLIT_GAP * 0.5;
+                                            ui.painter().vline(
+                                                divider_x,
+                                                split_rect.y_range(),
+                                                egui::Stroke::new(1.5, palette.borders_default),
+                                            );
+
                                             let (pointer_pos, primary_clicked) = ui.ctx().input(|i| {
                                                 (
                                                     i.pointer.interact_pos(),
@@ -778,7 +1123,7 @@ impl eframe::App for MainWindow {
                                                                     accent_rect.x_range(),
                                                                     accent_rect.top(),
                                                                     egui::Stroke::new(
-                                                                        2.0,
+                                                                        ACTIVE_PANE_INDICATOR_THICKNESS,
                                                                         palette.borders_active,
                                                                     ),
                                                                 );
@@ -800,7 +1145,7 @@ impl eframe::App for MainWindow {
                                                                 });
                                                             let (a, b) = draw_tab_content(
                                                                 ui,
-                                                                &self.i18n,
+                                                                &mut self.i18n,
                                                                 &icon_cache,
                                                                 &palette,
                                                                 self.hwnd,
@@ -830,8 +1175,11 @@ impl eframe::App for MainWindow {
                                                                 &mut self.tags_state,
                                                                 &mut self.theme_customizer,
                                                                 &mut self.settings_window,
+                                                                &mut self.sidebar_state.favorites,
                                                                 &mut drop_targets,
                                                                 primary_focused,
+                                                                true,
+                                                                self.saved_searches_state.items.len(),
                                                             );
                                                             tabbar_action = a;
                                                             pending_action = b;
@@ -869,7 +1217,7 @@ impl eframe::App for MainWindow {
                                                                     accent_rect.x_range(),
                                                                     accent_rect.top(),
                                                                     egui::Stroke::new(
-                                                                        2.0,
+                                                                        ACTIVE_PANE_INDICATOR_THICKNESS,
                                                                         palette.borders_active,
                                                                     ),
                                                                 );
@@ -893,7 +1241,7 @@ impl eframe::App for MainWindow {
                                                                 .unwrap_or(false);
                                                             let (a, b) = draw_tab_content(
                                                                 ui,
-                                                                &self.i18n,
+                                                                &mut self.i18n,
                                                                 &icon_cache,
                                                                 &palette,
                                                                 self.hwnd,
@@ -925,8 +1273,11 @@ impl eframe::App for MainWindow {
                                                                 &mut self.tags_state,
                                                                 &mut self.theme_customizer,
                                                                 &mut self.settings_window,
+                                                                &mut self.sidebar_state.favorites,
                                                                 &mut drop_targets,
                                                                 secondary_focused,
+                                                                true,
+                                                                self.saved_searches_state.items.len(),
                                                             );
                                                             secondary_tabbar_action = a;
                                                             secondary_pending_action = b;
@@ -961,7 +1312,7 @@ impl eframe::App for MainWindow {
                                                 });
                                             let (a, b) = draw_tab_content(
                                                 ui,
-                                                &self.i18n,
+                                                &mut self.i18n,
                                                 &icon_cache,
                                                 &palette,
                                                 self.hwnd,
@@ -990,8 +1341,11 @@ impl eframe::App for MainWindow {
                                                 &mut self.tags_state,
                                                 &mut self.theme_customizer,
                                                 &mut self.settings_window,
+                                                &mut self.sidebar_state.favorites,
                                                 &mut drop_targets,
                                                 true,
+                                                false,
+                                                self.saved_searches_state.items.len(),
                                             );
                                             tabbar_action = a;
                                             pending_action = b;
@@ -1010,28 +1364,6 @@ impl eframe::App for MainWindow {
                                     });
                                 },
                             );
-                        } else if draw_tags(
-                            ui,
-                            &self.i18n,
-                            &icon_cache,
-                            &palette,
-                            self.hwnd,
-                            &mut self.tags_state,
-                        ) {
-                            tags_changed = true;
-                        }
-
-                        if let Some(tags_action) = self.tags_state.pending_action.take() {
-                            pending_action = Some(tags_action);
-                        }
-
-                        if draw_delete_confirmation_popup(
-                            ui.ctx(),
-                            &self.i18n,
-                            &palette,
-                            &mut self.tags_state,
-                        ) {
-                            tags_changed = true;
                         }
                     },
                 );
@@ -1220,18 +1552,26 @@ impl eframe::App for MainWindow {
             handle_pending_actions(secondary_pending_action, self);
         }
         self.focused_split = restore_focus;
+        // If either call above just queued delayed post-command refreshes,
+        // make sure a frame actually runs to check them later - the app may
+        // otherwise sit fully idle (no input, nothing else asking to
+        // repaint) until the user happens to interact with it again.
+        if let Some(next) = self.pending_command_refreshes.iter().min() {
+            ui.ctx().request_repaint_after(
+                next.saturating_duration_since(std::time::Instant::now()),
+            );
+        }
         if draw_tag_picker_popup(ui.ctx(), &self.i18n, &palette, &mut self.tags_state) {
             tags_changed = true;
         }
-        handle_draw_customizetheme_window(
-            &mut self.i18n,
-            ui.ctx(),
-            &mut self.theme_customizer,
-            &palette,
-            self.theme,
-            &mut self.theme_dirty,
-        );
-        self.handle_draw_settings_window(ui.ctx(), &palette);
+        self.poll_pending_paste();
+        self.poll_pending_compress();
+        self.poll_pending_checksum();
+        self.draw_paste_conflict_modal(ui.ctx(), &palette);
+        self.draw_bulk_rename_modal(ui.ctx(), &palette);
+        self.draw_checksum_modal(ui.ctx(), &palette);
+        draw_toast(ui.ctx(), &self.i18n, &palette, &mut self.notifications_state);
+        self.handle_pending_settings_action(ui.ctx());
         self.handle_draw_about_window(ui.ctx(), &palette);
         self.handle_global_shortcuts(ui.ctx());
 
@@ -1245,6 +1585,51 @@ impl eframe::App for MainWindow {
             self.dropped_files_pending_ui_refresh = false;
         }
 
+        // Window decorations are disabled, so paint a border around the
+        // whole window to make it distinguishable from other open windows.
+        ui.painter().rect_stroke(
+            ui.ctx().viewport_rect().shrink(1.5),
+            egui::CornerRadius::ZERO,
+            egui::Stroke::new(3.0, palette.borders_default),
+            egui::StrokeKind::Inside,
+        );
+
         self.icon_cache = Some(icon_cache);
+    }
+
+    fn on_exit(&mut self) {
+        if !self
+            .settings_window
+            .current_settings
+            .restore_last_session_tabs
+        {
+            return;
+        }
+
+        let tab_path = |nav: &Navigation| {
+            if nav.is_root() {
+                PathBuf::from(MY_PC_PATH)
+            } else {
+                nav.current.clone()
+            }
+        };
+
+        let tabs: Vec<SessionTabEntry> = self
+            .tabs
+            .iter()
+            .map(|tab| SessionTabEntry {
+                path: tab_path(&tab.primary_view.nav),
+                split_path: tab.split_view.as_ref().map(|split| tab_path(&split.nav)),
+            })
+            .collect();
+
+        if tabs.is_empty() {
+            return;
+        }
+
+        save_session_tabs(&SessionTabsSnapshot {
+            tabs,
+            active_index: self.active_tab,
+        });
     }
 }

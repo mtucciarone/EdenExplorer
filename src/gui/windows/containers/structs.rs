@@ -30,6 +30,14 @@ pub struct ExplorerState {
     pub windows_context_menu_cache: Option<WindowsContextMenuCache>,
     pub navigation_history: HashMap<PathBuf, PathBuf>, // parent_dir -> last_visited_child
     pub navigation_selection: Option<PathBuf>,         // path to select after navigation loads
+    /// Armed when a single click lands on an item that was already the sole
+    /// selection - matching Windows Explorer's "click, pause, click again"
+    /// rename gesture. If a genuine double-click follows quickly, the arm is
+    /// cancelled and the item opens as usual; otherwise, once the pause
+    /// (`CLICK_TO_RENAME_DELAY`) elapses with the selection unchanged, rename
+    /// mode starts. Not armed in the Columns/Column Preview views, which
+    /// only rename via the right-click menu.
+    pub click_to_rename_arm: Option<(PathBuf, f64)>,
 }
 
 pub struct WindowsContextMenuCache {
@@ -49,12 +57,40 @@ pub struct TabInfo {
 pub struct TabsAction {
     pub activate: Option<u64>,
     pub close: Option<u64>,
+    /// Close every other tab, keeping this one (and any pinned tabs).
+    pub close_others: Option<u64>,
+    /// Close every tab to the right of this one (pinned tabs kept).
+    pub close_to_right: Option<u64>,
+    /// Close every tab to the left of this one (pinned tabs kept).
+    pub close_to_left: Option<u64>,
     pub open_new: bool,
+    pub duplicate: Option<PathBuf>,
     pub toggle_pin: Option<PathBuf>,
     pub move_files_to_tab_dir: Option<PathBuf>,
-    pub scroll_left: bool,
-    pub scroll_right: bool,
-    pub max_scroll_offset: f32,
+    /// (from_index, to_index) in the pre-move tab list, from dragging a tab to
+    /// reorder it.
+    pub reorder: Option<(usize, usize)>,
+    /// Open every path in a saved tab group as a new tab, alongside whatever
+    /// tabs are already open. Duplicated paths in the group intentionally
+    /// open as separate tabs.
+    pub open_group: Option<Vec<PathBuf>>,
+    /// Close every current tab and replace them with a saved tab group's
+    /// paths (one tab per entry, duplicates included).
+    pub replace_with_group: Option<Vec<PathBuf>>,
+    /// Create a brand-new tab group with this name, containing just this one
+    /// path (from right-clicking a tab and choosing "Add to New Group").
+    pub add_tab_to_new_group: Option<(String, PathBuf)>,
+    /// Append this path to an existing group (by id) - allowed to duplicate
+    /// a path already in that group.
+    pub add_tab_to_existing_group: Option<(u64, PathBuf)>,
+    /// Add or remove this tab's folder from the sidebar Favorites list
+    /// (from right-clicking a tab and choosing "Add to Favorites"/"Remove
+    /// from Favorites").
+    pub toggle_favorite: Option<PathBuf>,
+    /// "Save Search" chosen from a search-results tab's own right-click menu
+    /// - same `(query, scope)` shape as the navbar search box's own "save
+    /// this search" button, so both funnel into the same handler.
+    pub save_search: Option<(String, crate::core::everything::SearchScope)>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -92,6 +128,27 @@ pub struct TabView {
     pub pending_size_queue: VecDeque<PathBuf>,
     pub pending_size_set: HashSet<PathBuf>,
     pub size_threads: Vec<std::thread::JoinHandle<()>>,
+    /// State for `ItemViewerDisplayMode::Columns` (Finder-style column browser).
+    pub columns_view_state: ColumnsViewState,
+    /// Background loader/cache for `ItemViewerDisplayMode::Preview`'s preview pane.
+    pub preview_service: crate::core::preview::PreviewService,
+    /// Currently previewed file, for `ItemViewerDisplayMode::Preview`.
+    pub preview_selection: Option<PathBuf>,
+    /// Live video playback (Media Foundation) backing the preview pane when
+    /// the selected file is a video - kept separate from `preview_service`
+    /// since it's a continuously-updated resource, not a one-shot payload.
+    pub video_service: crate::core::video::VideoPreviewService,
+    /// Live audio playback + waveform, mirroring `video_service` for the
+    /// preview pane's audio-file case.
+    pub audio_service: crate::core::audio::AudioPreviewService,
+    /// Find-in-preview state for the Text/Markdown preview content pane.
+    pub find_in_preview: FindInPreviewState,
+    /// Whether the navbar's inline search box is currently being edited on
+    /// this pane (replaces the breadcrumb the same way address-bar editing
+    /// does).
+    pub search_box_editing: bool,
+    pub search_box_buffer: String,
+    pub search_box_scope: crate::core::everything::SearchScope,
 }
 
 impl TabView {
@@ -129,6 +186,15 @@ impl TabView {
             pending_size_queue: VecDeque::new(),
             pending_size_set: HashSet::new(),
             size_threads: Vec::new(),
+            columns_view_state: ColumnsViewState::default(),
+            preview_service: crate::core::preview::PreviewService::default(),
+            preview_selection: None,
+            video_service: crate::core::video::VideoPreviewService::default(),
+            audio_service: crate::core::audio::AudioPreviewService::default(),
+            find_in_preview: FindInPreviewState::default(),
+            search_box_editing: false,
+            search_box_buffer: String::new(),
+            search_box_scope: crate::core::everything::SearchScope::Everywhere,
         }
     }
 
@@ -148,12 +214,53 @@ impl TabView {
 pub enum ItemViewerDisplayMode {
     Details,
     Gallery,
+    /// macOS Finder-style column browser: each folder you click opens another
+    /// column to its right showing that folder's contents.
+    Columns,
+    /// The column browser, plus a preview pane on the right showing the content
+    /// of the selected file when it's previewable.
+    ColumnPreview,
+    /// A side-by-side layout: a file list next to a preview pane for the
+    /// selected file.
+    Preview,
+    /// The regular Details table, plus a preview pane on the right (equal
+    /// width) showing the content of the file selected with a single click.
+    DetailPreview,
 }
 
 impl Default for ItemViewerDisplayMode {
     fn default() -> Self {
         Self::Details
     }
+}
+
+#[derive(Default)]
+pub struct ColumnsViewState {
+    pub columns: Vec<ColumnEntry>,
+    /// The currently-selected file (not folder) in the deepest column, used by
+    /// `ItemViewerDisplayMode::ColumnPreview` to know what to preview.
+    pub selected_file: Option<PathBuf>,
+    /// Set whenever the view navigates/refreshes (see `load_view`) so the
+    /// column browser re-reads every currently-open column's contents from
+    /// disk instead of reusing its cache - otherwise Columns/ColumnPreview
+    /// never picks up files created, renamed, or deleted (by this app or
+    /// externally) since the chain of open columns doesn't change on a
+    /// same-directory refresh, which is the only thing that normally
+    /// triggers a reload.
+    pub needs_reload: bool,
+}
+
+pub struct ColumnEntry {
+    pub path: PathBuf,
+    pub items: Vec<ColumnItem>,
+}
+
+#[derive(Clone)]
+pub struct ColumnItem {
+    pub name: String,
+    pub path: PathBuf,
+    pub is_dir: bool,
+    pub is_hidden: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -248,6 +355,13 @@ pub struct ItemViewerColumnState {
 
     pub layout_generation: u64,
     pub pending_fit_request: Option<ItemViewerColumnFitRequest>,
+
+    /// Whether `compute_item_viewer_column_layout` has already checked this
+    /// (freshly loaded/navigated-to) column state for auto-fit. Render-time
+    /// driven instead of an event/navigation hook, so it fires reliably no
+    /// matter how the view ended up loaded (first tab on startup, switching
+    /// to an already-open tab, a new tab, a split pane, etc).
+    pub auto_fit_checked: bool,
 }
 
 impl Default for ItemViewerColumnState {
@@ -261,6 +375,7 @@ impl Default for ItemViewerColumnState {
             recycle_bin_column_sizes: default_recycle_bin_column_size(),
             layout_generation: 0,
             pending_fit_request: None,
+            auto_fit_checked: false,
         }
     }
 }
@@ -358,6 +473,7 @@ impl ItemViewerColumnState {
                 ItemViewerHeaderColumn::Size => 2,
                 ItemViewerHeaderColumn::Modified => 3,
                 ItemViewerHeaderColumn::Created => 4,
+                ItemViewerHeaderColumn::Tags => 5,
                 _ => return None,
             }
         };
@@ -404,6 +520,7 @@ impl ItemViewerColumnState {
                 ItemViewerHeaderColumn::Size => 2,
                 ItemViewerHeaderColumn::Modified => 3,
                 ItemViewerHeaderColumn::Created => 4,
+                ItemViewerHeaderColumn::Tags => 5,
                 _ => return,
             }
         };
@@ -473,6 +590,13 @@ impl ItemViewerColumnState {
             is_recycle_bin_view,
             ItemViewerHeaderColumn::Usage,
             widths.usage_width,
+        );
+
+        self.set_column_width(
+            is_drive_view,
+            is_recycle_bin_view,
+            ItemViewerHeaderColumn::Tags,
+            widths.tags_width,
         );
     }
     pub fn from_orders(
@@ -596,6 +720,7 @@ impl ItemViewerColumnState {
         &self,
         is_drive_view: bool,
         is_recycle_bin_view: bool,
+        is_search_view: bool,
     ) -> Vec<ItemViewerHeaderColumn> {
         let allowed: &[ItemViewerHeaderColumn] = if is_drive_view {
             &[
@@ -612,6 +737,21 @@ impl ItemViewerColumnState {
                 ItemViewerHeaderColumn::Deleted,
                 ItemViewerHeaderColumn::Created,
             ]
+        } else if is_search_view {
+            // Search results come from many different folders (unlike a
+            // normal listing, where every row shares the tab's own current
+            // directory) - reusing `OriginalDirectory` (the same column the
+            // Recycle Bin already shows "where this came from" in) surfaces
+            // each match's actual location instead of leaving that
+            // information only visible one file at a time via Properties.
+            &[
+                ItemViewerHeaderColumn::Name,
+                ItemViewerHeaderColumn::OriginalDirectory,
+                ItemViewerHeaderColumn::Type,
+                ItemViewerHeaderColumn::Size,
+                ItemViewerHeaderColumn::Modified,
+                ItemViewerHeaderColumn::Tags,
+            ]
         } else {
             &[
                 ItemViewerHeaderColumn::Name,
@@ -619,8 +759,18 @@ impl ItemViewerColumnState {
                 ItemViewerHeaderColumn::Size,
                 ItemViewerHeaderColumn::Modified,
                 ItemViewerHeaderColumn::Created,
+                ItemViewerHeaderColumn::Tags,
             ]
         };
+
+        // Search view's column set is fixed (not reordered/toggled by the
+        // user) - there's no dedicated persisted order for it, and its
+        // `allowed` set (above) includes `OriginalDirectory`, which the
+        // normal file view's own persisted order never contains, so
+        // intersecting with `self.order(...)` below would silently drop it.
+        if is_search_view {
+            return allowed.to_vec();
+        }
 
         let mut visible = Vec::with_capacity(allowed.len());
 
@@ -662,6 +812,7 @@ fn default_file_column_order() -> Vec<ItemViewerHeaderColumn> {
         ItemViewerHeaderColumn::Size,
         ItemViewerHeaderColumn::Modified,
         ItemViewerHeaderColumn::Created,
+        ItemViewerHeaderColumn::Tags,
     ]
 }
 
@@ -761,10 +912,22 @@ pub struct ItemViewerNavBarAction {
     pub remove_favorite: bool,
     pub nav_to: Option<PathBuf>,
     pub refresh_current_directory: bool,
-    pub toggle_gallery: bool,
+    pub set_display_mode: Option<ItemViewerDisplayMode>,
     pub is_breadcrumb_path_edit_active: bool,
     pub move_files_to_breadcrumb_dir: Option<PathBuf>,
     pub move_files_to_breadcrumb_dir_rect: Option<egui::Rect>,
+    /// Set when the user submits a query from the navbar's inline search
+    /// box (Enter key) - opens a new search-results tab for it.
+    pub open_search: Option<(String, crate::core::everything::SearchScope)>,
+    /// Set when the navbar's search icon (or its keyboard shortcut) is
+    /// pressed - the caller picks a default scope (from settings + whether
+    /// this tab is showing a real folder) and switches the breadcrumb row
+    /// into the inline search box.
+    pub activate_search_box: bool,
+    /// Set when the "save this search" button next to the search box is
+    /// clicked - the caller appends a `SavedSearch` (or shows the
+    /// limit-reached message if already at `MAX_SAVED_SEARCHES`).
+    pub save_search: Option<(String, crate::core::everything::SearchScope)>,
 }
 
 #[derive(Clone, Copy)]
@@ -796,10 +959,197 @@ pub struct RenameState {
     pub validation_error_show: bool,
 }
 
-#[derive(Clone)]
+/// Find-in-preview state for `ItemViewerDisplayMode::Preview`'s content pane
+/// (Text and Markdown payloads only - see `itemviewer_preview.rs`). Matches
+/// are byte ranges into the payload's own source string (the plain text, or
+/// the raw Markdown before rendering), computed by a case-insensitive
+/// substring search - kept here rather than in `itemviewer_preview.rs` since
+/// it's plain per-tab UI state, matching where `RenameState`/`GalleryState`
+/// and friends already live.
+#[derive(Default)]
+pub struct FindInPreviewState {
+    pub active: bool,
+    pub query: String,
+    /// Set the frame the bar is opened (by the toggle icon), cleared once
+    /// `draw_find_bar` has actually requested focus for the query field -
+    /// matches the same one-shot "focus once, not every frame" pattern the
+    /// item viewer's type-to-filter box (`FilterState::focus_requested`)
+    /// already uses.
+    pub focus_requested: bool,
+    current_path: Option<PathBuf>,
+    matches: Vec<(usize, usize)>,
+    current: usize,
+    /// Set for exactly one frame after the current match changes (a fresh
+    /// search, or Next/Prev) - `take_jump_target` clears it, so the
+    /// text/markdown renderer only scrolls once per change instead of
+    /// fighting the user's own manual scrolling every frame.
+    jump_requested: bool,
+}
+
+impl FindInPreviewState {
+    /// Resets all find state when the previewed file changes - a match
+    /// range from the previous file is meaningless for a new one. Call once
+    /// per frame before anything else touches this state.
+    pub fn ensure_current_path(&mut self, path: &Path) {
+        if self.current_path.as_deref() != Some(path) {
+            self.current_path = Some(path.to_path_buf());
+            self.active = false;
+            self.query.clear();
+            self.matches.clear();
+            self.current = 0;
+            self.jump_requested = false;
+            self.focus_requested = false;
+        }
+    }
+
+    pub fn match_count(&self) -> usize {
+        self.matches.len()
+    }
+
+    pub fn current_match_number(&self) -> usize {
+        self.current + 1
+    }
+
+    /// The current match's byte range, if there is one - unlike
+    /// `take_jump_target`, this doesn't consume anything, so the renderer
+    /// can call it every frame to keep the match highlighted (scrolling
+    /// only needs to happen once per change, but the highlight itself
+    /// should stay visible for as long as it's the active match).
+    pub fn current_match_range(&self) -> Option<(usize, usize)> {
+        self.matches.get(self.current).copied()
+    }
+
+    /// Re-runs the search against `haystack` (the previewed text, or the
+    /// raw Markdown source) and jumps to the first match.
+    pub fn recompute(&mut self, haystack: &str) {
+        self.matches.clear();
+        if !self.query.is_empty() {
+            let query_lower = self.query.to_lowercase();
+            let haystack_lower = haystack.to_lowercase();
+            let mut start = 0;
+            while let Some(found) = haystack_lower[start..].find(&query_lower) {
+                let match_start = start + found;
+                let match_end = match_start + query_lower.len();
+                self.matches.push((match_start, match_end));
+                start = match_end.max(match_start + 1);
+            }
+        }
+        self.current = 0;
+        self.jump_requested = !self.matches.is_empty();
+    }
+
+    pub fn next_match(&mut self) {
+        if !self.matches.is_empty() {
+            self.current = (self.current + 1) % self.matches.len();
+            self.jump_requested = true;
+        }
+    }
+
+    pub fn prev_match(&mut self) {
+        if !self.matches.is_empty() {
+            self.current = (self.current + self.matches.len() - 1) % self.matches.len();
+            self.jump_requested = true;
+        }
+    }
+
+    /// The current match's byte range, if a jump was requested this frame -
+    /// clears the request so it only fires once.
+    pub fn take_jump_target(&mut self) -> Option<(usize, usize)> {
+        if self.jump_requested {
+            self.jump_requested = false;
+            self.matches.get(self.current).copied()
+        } else {
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod find_in_preview_tests {
+    use super::FindInPreviewState;
+    use std::path::Path;
+
+    #[test]
+    fn recompute_finds_every_case_insensitive_occurrence() {
+        let mut state = FindInPreviewState::default();
+        state.query = "cat".to_string();
+        state.recompute("The cat sat on THE mat, next to another cat.");
+        assert_eq!(state.match_count(), 2);
+    }
+
+    #[test]
+    fn recompute_with_empty_query_clears_matches() {
+        let mut state = FindInPreviewState::default();
+        state.query = String::new();
+        state.recompute("anything at all");
+        assert_eq!(state.match_count(), 0);
+    }
+
+    #[test]
+    fn next_and_prev_wrap_around() {
+        let mut state = FindInPreviewState::default();
+        state.query = "a".to_string();
+        state.recompute("a b a b a");
+        assert_eq!(state.match_count(), 3);
+        assert_eq!(state.current_match_number(), 1);
+
+        state.next_match();
+        assert_eq!(state.current_match_number(), 2);
+        state.next_match();
+        state.next_match();
+        assert_eq!(state.current_match_number(), 1); // wrapped forward
+
+        state.prev_match();
+        assert_eq!(state.current_match_number(), 3); // wrapped backward
+    }
+
+    #[test]
+    fn take_jump_target_fires_once_per_change() {
+        let mut state = FindInPreviewState::default();
+        state.query = "b".to_string();
+        state.recompute("a b c");
+        assert_eq!(state.take_jump_target(), Some((2, 3)));
+        // Same match, no new change - shouldn't jump again on its own.
+        assert_eq!(state.take_jump_target(), None);
+
+        state.next_match();
+        assert!(state.take_jump_target().is_some());
+    }
+
+    #[test]
+    fn ensure_current_path_resets_state_on_file_change() {
+        let mut state = FindInPreviewState::default();
+        state.ensure_current_path(Path::new("C:/a.txt")); // first selection
+        state.query = "x".to_string();
+        state.recompute("x marks the spot");
+        state.active = true;
+
+        state.ensure_current_path(Path::new("C:/a.txt")); // re-selecting the same file
+        assert_eq!(state.match_count(), 1); // untouched
+
+        state.ensure_current_path(Path::new("C:/b.txt")); // switched to a different file
+        assert!(!state.active);
+        assert_eq!(state.query, "");
+        assert_eq!(state.match_count(), 0);
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct FavoriteItem {
     pub path: PathBuf,
     pub label: String,
+    /// A Phosphor glyph name overriding the real shell icon this favorite
+    /// would otherwise show (see `FAVORITE_ICON_CHOICES`). Ignored when
+    /// `custom_icon_file` is set. `None` (with `custom_icon_file` also
+    /// `None`) means use the folder's real icon, same as before this field
+    /// existed.
+    #[serde(default)]
+    pub custom_icon: Option<String>,
+    /// A user-browsed image file (.ico, .png, .jpg, ...) whose own pixel
+    /// content overrides the icon shown for this favorite, taking priority
+    /// over both `custom_icon` and the folder's real icon.
+    #[serde(default)]
+    pub custom_icon_file: Option<PathBuf>,
 }
 
 #[derive(Default)]
@@ -810,16 +1160,30 @@ pub struct SidebarAction {
     pub select_favorite: Option<PathBuf>,
     pub reorder: Option<(usize, usize)>, // from_idx, to_idx
     pub move_files_to_sidebar_dir: Option<PathBuf>,
+    pub open_network_browser: bool,
+    pub open_settings: bool,
+    /// A sidebar tag was clicked: open (or focus, if already open) the
+    /// dedicated tab showing that tag group's tagged items.
+    pub open_tag_view: Option<u64>,
+    /// A saved search was clicked (or "Open in new tab" chosen): reopen it
+    /// as a normal search tab, same as re-typing that query.
+    pub open_saved_search: Option<u64>,
+    pub remove_saved_search: Option<u64>,
+    /// "Remove from Recent" was chosen from a recent location's context
+    /// menu - navigating to one doesn't need its own action, it already
+    /// reuses `nav_to` (a recent location is just a real path).
+    pub remove_recent_location: Option<PathBuf>,
+    /// "Clear All" was chosen from the Recent Locations section header's
+    /// context menu.
+    pub clear_recent_locations: bool,
 }
 
 #[derive(Default)]
 pub struct TopbarAction {
     pub toggle_theme: bool,
-    pub customize_theme: bool,
     pub open_settings: bool,
     pub about: bool,
     pub exit: bool,
-    pub toggle_file_explorer: bool,
     pub toggle_sidebar: bool,
     pub toggle_active_tab_split: bool,
 }
@@ -831,6 +1195,7 @@ pub struct ItemViewerLayout {
     pub header_height: f32,
     pub is_drive_view: bool,
     pub is_recycle_bin_view: bool,
+    pub show_checkboxes: bool,
 }
 
 #[derive(Default)]
@@ -904,6 +1269,7 @@ pub struct TagsState {
     pub drag_state: Option<TagDragState>,
     pub delete_confirmation: Option<u64>,
     pub pending_action: Option<ItemViewerAction>,
+    pub column_state: TagColumnState,
 }
 
 impl Default for TagsState {
@@ -916,6 +1282,270 @@ impl Default for TagsState {
             drag_state: None,
             delete_confirmation: None,
             pending_action: None,
+            column_state: TagColumnState::default(),
+        }
+    }
+}
+
+/// A user-saved search: a name plus the exact query/scope needed to reopen
+/// it via `search_view_path`/`open_or_focus_search_tab` - the same sentinel-
+/// path mechanism a live search already uses, so reopening one is just
+/// re-running that search, not a separate code path.
+#[derive(Clone)]
+pub struct SavedSearch {
+    pub id: u64,
+    pub name: String,
+    pub query: String,
+    pub scope_folder: Option<PathBuf>,
+}
+
+pub struct SavedSearchRenameState {
+    pub id: u64,
+    pub buffer: String,
+    pub should_focus: bool,
+}
+
+/// Saved searches accumulate one click at a time (unlike Favorites, which
+/// requires deliberately dragging a folder in) - capped so the sidebar list
+/// can't grow unbounded from casual use.
+pub const MAX_SAVED_SEARCHES: usize = 50;
+
+pub struct SavedSearchesState {
+    pub items: Vec<SavedSearch>,
+    pub next_id: u64,
+    pub rename_state: Option<SavedSearchRenameState>,
+}
+
+impl Default for SavedSearchesState {
+    fn default() -> Self {
+        Self {
+            items: Vec::new(),
+            next_id: 1,
+            rename_state: None,
+        }
+    }
+}
+
+impl SavedSearchesState {
+    pub fn from_snapshot(snapshot: crate::core::indexer::SavedSearchesSnapshot) -> Self {
+        Self {
+            items: snapshot
+                .items
+                .into_iter()
+                .map(|item| SavedSearch {
+                    id: item.id,
+                    name: item.name,
+                    query: item.query,
+                    scope_folder: item.scope_folder,
+                })
+                .collect(),
+            next_id: snapshot.next_id.max(1),
+            rename_state: None,
+        }
+    }
+
+    pub fn to_snapshot(&self) -> crate::core::indexer::SavedSearchesSnapshot {
+        crate::core::indexer::SavedSearchesSnapshot {
+            version: 1,
+            next_id: self.next_id.max(1),
+            items: self
+                .items
+                .iter()
+                .map(|item| crate::core::indexer::SavedSearchSnapshot {
+                    id: item.id,
+                    name: item.name.clone(),
+                    query: item.query.clone(),
+                    scope_folder: item.scope_folder.clone(),
+                })
+                .collect(),
+        }
+    }
+
+    /// Adds a new saved search using the query text itself as the default
+    /// name (renamable afterward via the sidebar's context menu) - matching
+    /// Favorites' pattern of no name-prompt-on-add, just a sensible default.
+    /// Returns `false` (without adding anything) once at `MAX_SAVED_SEARCHES`.
+    pub fn add(&mut self, query: String, scope_folder: Option<PathBuf>) -> bool {
+        if self.items.len() >= MAX_SAVED_SEARCHES {
+            return false;
+        }
+        let id = self.next_id.max(1);
+        self.next_id = id.saturating_add(1);
+        self.items.push(SavedSearch {
+            id,
+            name: query.clone(),
+            query,
+            scope_folder,
+        });
+        true
+    }
+
+    pub fn remove(&mut self, id: u64) {
+        self.items.retain(|item| item.id != id);
+        if self.rename_state.as_ref().is_some_and(|r| r.id == id) {
+            self.rename_state = None;
+        }
+    }
+}
+
+/// Recent locations accumulate on every real-folder navigation (see
+/// `MainWindow::load_view_with_fallback`'s normal-folder branch in
+/// `mainwindow_imp.rs`) - capped so casual browsing can't grow the list
+/// unbounded. Unlike `SavedSearch`, an entry has no user-editable name or
+/// id: its identity and display label are both just its path.
+pub const MAX_RECENT_LOCATIONS: usize = 20;
+
+pub struct RecentLocationsState {
+    /// Most-recently-visited first. Re-visiting a path already in the list
+    /// moves it to the front instead of duplicating it.
+    pub items: Vec<PathBuf>,
+}
+
+impl Default for RecentLocationsState {
+    fn default() -> Self {
+        Self { items: Vec::new() }
+    }
+}
+
+impl RecentLocationsState {
+    pub fn from_snapshot(snapshot: crate::core::indexer::RecentLocationsSnapshot) -> Self {
+        Self {
+            items: snapshot.items,
+        }
+    }
+
+    pub fn to_snapshot(&self) -> crate::core::indexer::RecentLocationsSnapshot {
+        crate::core::indexer::RecentLocationsSnapshot {
+            version: 1,
+            items: self.items.clone(),
+        }
+    }
+
+    pub fn record_visit(&mut self, path: PathBuf) {
+        self.items.retain(|p| p != &path);
+        self.items.insert(0, path);
+        self.items.truncate(MAX_RECENT_LOCATIONS);
+    }
+
+    pub fn remove(&mut self, path: &Path) {
+        self.items.retain(|p| p != path);
+    }
+
+    pub fn clear(&mut self) {
+        self.items.clear();
+    }
+}
+
+/// Columns shown in the "tagged items" table for one tag group (see
+/// `draw_tag_view`). Kept separate from `ItemViewerHeaderColumn` since this
+/// table is a virtual list (not a real directory listing) with its own,
+/// smaller column set.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TagColumn {
+    Name,
+    Type,
+    Location,
+    Size,
+    Modified,
+}
+
+impl TagColumn {
+    pub fn index(self) -> usize {
+        match self {
+            TagColumn::Name => 0,
+            TagColumn::Type => 1,
+            TagColumn::Location => 2,
+            TagColumn::Size => 3,
+            TagColumn::Modified => 4,
+        }
+    }
+
+    pub fn i18n_key(self) -> &'static str {
+        match self {
+            TagColumn::Name => "explorer_cols_name",
+            TagColumn::Type => "explorer_cols_type",
+            TagColumn::Location => "explorer_cols_location",
+            TagColumn::Size => "explorer_cols_size",
+            TagColumn::Modified => "explorer_cols_modified",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TagColumnFitRequest {
+    Column(TagColumn),
+    All,
+}
+
+#[derive(Clone, Debug)]
+pub struct TagColumnState {
+    pub order: Vec<TagColumn>,
+    widths: [f32; 5],
+    pub pending_fit_request: Option<TagColumnFitRequest>,
+    /// Same render-time-driven "fit once, on first appearance" trick used by
+    /// the main item viewer's `ItemViewerColumnState` - see its doc comment.
+    pub auto_fit_checked: bool,
+    pub layout_generation: u64,
+}
+
+impl Default for TagColumnState {
+    fn default() -> Self {
+        Self {
+            order: vec![
+                TagColumn::Name,
+                TagColumn::Type,
+                TagColumn::Location,
+                TagColumn::Size,
+                TagColumn::Modified,
+            ],
+            widths: [260.0, 110.0, 150.0, 90.0, 150.0],
+            pending_fit_request: None,
+            auto_fit_checked: false,
+            layout_generation: 0,
+        }
+    }
+}
+
+impl TagColumnState {
+    pub fn width(&self, column: TagColumn) -> f32 {
+        self.widths[column.index()]
+    }
+
+    pub fn set_width(&mut self, column: TagColumn, width: f32) {
+        self.widths[column.index()] = width;
+    }
+
+    pub fn move_left(&mut self, column: TagColumn) {
+        if let Some(idx) = self.order.iter().position(|c| *c == column)
+            && idx > 0
+        {
+            self.order.swap(idx, idx - 1);
+        }
+    }
+
+    pub fn move_right(&mut self, column: TagColumn) {
+        if let Some(idx) = self.order.iter().position(|c| *c == column)
+            && idx + 1 < self.order.len()
+        {
+            self.order.swap(idx, idx + 1);
+        }
+    }
+
+    pub fn move_to_start(&mut self, column: TagColumn) {
+        if let Some(idx) = self.order.iter().position(|c| *c == column)
+            && idx > 0
+        {
+            let column = self.order.remove(idx);
+            self.order.insert(0, column);
+        }
+    }
+
+    pub fn move_to_end(&mut self, column: TagColumn) {
+        if let Some(idx) = self.order.iter().position(|c| *c == column)
+            && idx + 1 < self.order.len()
+        {
+            let column = self.order.remove(idx);
+            self.order.push(column);
         }
     }
 }
@@ -955,6 +1585,7 @@ impl TagsState {
             drag_state: None,
             delete_confirmation: None,
             pending_action: None,
+            column_state: TagColumnState::default(),
         }
     }
 
@@ -999,7 +1630,12 @@ impl TagsState {
             .map(|group| group.color)
     }
 
-    pub fn add_paths_to_group(&mut self, group_id: u64, paths: &[PathBuf]) -> bool {
+    /// Bulk toggle used by the multi-select tag picker: if every path in
+    /// `paths` is already in the group, removes them all; otherwise adds
+    /// whichever ones are missing. Treating a multi-selection as one unit
+    /// (rather than toggling each path independently) matches how
+    /// `create_group_and_add` already treats a multi-path selection.
+    pub fn toggle_group_for_paths(&mut self, group_id: u64, paths: &[PathBuf]) -> bool {
         let Some(target_index) = self.groups.iter().position(|group| group.id == group_id) else {
             return false;
         };
@@ -1007,21 +1643,51 @@ impl TagsState {
         let mut paths: Vec<PathBuf> = paths.iter().cloned().collect();
         paths.sort();
         paths.dedup();
-
-        let mut changed = false;
-        for path in &paths {
-            changed |= self.remove_path(path);
+        if paths.is_empty() {
+            return false;
         }
 
         let target_group = &mut self.groups[target_index];
-        for path in paths {
-            if !target_group.items.contains(&path) {
-                target_group.items.push(path);
-                changed = true;
-            }
-        }
+        let all_tagged = paths.iter().all(|p| target_group.items.contains(p));
 
-        changed
+        if all_tagged {
+            let remove: HashSet<PathBuf> = paths.into_iter().collect();
+            let before = target_group.items.len();
+            target_group.items.retain(|item| !remove.contains(item));
+            target_group.items.len() != before
+        } else {
+            let mut changed = false;
+            for path in paths {
+                if !target_group.items.contains(&path) {
+                    target_group.items.push(path);
+                    changed = true;
+                }
+            }
+            changed
+        }
+    }
+
+    /// All tags currently on `path`, in `self.groups` order - used by the
+    /// Tags column and the picker's "already tagged" checked-state.
+    pub fn tags_for_path(&self, path: &Path) -> Vec<(u64, String, egui::Color32)> {
+        self.groups
+            .iter()
+            .filter(|group| group.items.iter().any(|item| item == path))
+            .map(|group| (group.id, group.name.clone(), group.color))
+            .collect()
+    }
+
+    /// Removes `paths` from one specific group only, used by "Remove Tag"
+    /// invoked while browsing inside that group's own folder view - unlike
+    /// `remove_paths`, which clears every tag a path has.
+    pub fn remove_paths_from_group(&mut self, group_id: u64, paths: &[PathBuf]) -> bool {
+        let Some(group) = self.groups.iter_mut().find(|group| group.id == group_id) else {
+            return false;
+        };
+        let paths: HashSet<PathBuf> = paths.iter().cloned().collect();
+        let before = group.items.len();
+        group.items.retain(|item| !paths.contains(item));
+        group.items.len() != before
     }
 
     pub fn create_group_and_add(
@@ -1049,10 +1715,6 @@ impl TagsState {
         paths.sort();
         paths.dedup();
 
-        for path in &paths {
-            self.remove_path(path);
-        }
-
         for path in paths {
             if !group.items.contains(&path) {
                 group.items.push(path);
@@ -1061,18 +1723,6 @@ impl TagsState {
 
         self.groups.push(group);
         true
-    }
-
-    pub fn remove_path(&mut self, path: &Path) -> bool {
-        let mut changed = false;
-
-        for group in &mut self.groups {
-            let before = group.items.len();
-            group.items.retain(|item| item != path);
-            changed |= group.items.len() != before;
-        }
-
-        changed
     }
 
     pub fn remove_paths(&mut self, paths: &[PathBuf]) -> bool {
@@ -1141,6 +1791,7 @@ pub struct ItemViewerColumnLayout {
     pub created_width: f32,
     pub deleted_width: f32,
     pub original_directory_width: f32,
+    pub tags_width: f32,
     pub column_sizes_changed: bool,
 }
 
@@ -1154,4 +1805,257 @@ pub struct ItemViewerColumnWidths {
     pub usage_width: f32,
     pub deleted_width: f32,
     pub original_directory_width: f32,
+    pub tags_width: f32,
+}
+
+#[cfg(test)]
+mod saved_searches_tests {
+    use super::{SavedSearchesState, MAX_SAVED_SEARCHES};
+
+    #[test]
+    fn add_uses_query_as_default_name_and_assigns_increasing_ids() {
+        let mut state = SavedSearchesState::default();
+        assert!(state.add("*.png".to_string(), None));
+        assert!(state.add("report ext:pdf".to_string(), Some("D:\\Docs".into())));
+        assert_eq!(state.items.len(), 2);
+        assert_eq!(state.items[0].name, "*.png");
+        assert_eq!(state.items[0].query, "*.png");
+        assert_eq!(state.items[0].scope_folder, None);
+        assert_eq!(state.items[1].scope_folder, Some("D:\\Docs".into()));
+        assert_ne!(state.items[0].id, state.items[1].id);
+    }
+
+    #[test]
+    fn add_refuses_past_the_cap() {
+        let mut state = SavedSearchesState::default();
+        for i in 0..MAX_SAVED_SEARCHES {
+            assert!(state.add(format!("query{i}"), None));
+        }
+        assert_eq!(state.items.len(), MAX_SAVED_SEARCHES);
+        assert!(!state.add("one_too_many".to_string(), None));
+        assert_eq!(state.items.len(), MAX_SAVED_SEARCHES);
+    }
+
+    #[test]
+    fn remove_drops_the_item_and_clears_a_matching_rename_state() {
+        let mut state = SavedSearchesState::default();
+        state.add("a".to_string(), None);
+        state.add("b".to_string(), None);
+        let id_to_remove = state.items[0].id;
+        state.rename_state = Some(super::SavedSearchRenameState {
+            id: id_to_remove,
+            buffer: "a".to_string(),
+            should_focus: false,
+        });
+
+        state.remove(id_to_remove);
+
+        assert_eq!(state.items.len(), 1);
+        assert!(state.items.iter().all(|item| item.id != id_to_remove));
+        assert!(state.rename_state.is_none());
+    }
+
+    #[test]
+    fn snapshot_round_trip_preserves_items_and_next_id() {
+        let mut state = SavedSearchesState::default();
+        state.add("*.md".to_string(), Some("D:\\Notes".into()));
+        let snapshot = state.to_snapshot();
+
+        let restored = SavedSearchesState::from_snapshot(snapshot);
+
+        assert_eq!(restored.items.len(), 1);
+        assert_eq!(restored.items[0].query, "*.md");
+        assert_eq!(restored.items[0].scope_folder, Some("D:\\Notes".into()));
+        assert_eq!(restored.next_id, state.next_id);
+    }
+}
+
+#[cfg(test)]
+mod recent_locations_tests {
+    use super::RecentLocationsState;
+    use std::path::PathBuf;
+
+    #[test]
+    fn record_visit_puts_newest_first() {
+        let mut state = RecentLocationsState::default();
+        state.record_visit(PathBuf::from("C:/a"));
+        state.record_visit(PathBuf::from("C:/b"));
+        state.record_visit(PathBuf::from("C:/c"));
+
+        assert_eq!(
+            state.items,
+            vec![
+                PathBuf::from("C:/c"),
+                PathBuf::from("C:/b"),
+                PathBuf::from("C:/a"),
+            ]
+        );
+    }
+
+    #[test]
+    fn revisiting_a_path_moves_it_to_front_instead_of_duplicating() {
+        let mut state = RecentLocationsState::default();
+        state.record_visit(PathBuf::from("C:/a"));
+        state.record_visit(PathBuf::from("C:/b"));
+        state.record_visit(PathBuf::from("C:/a"));
+
+        assert_eq!(state.items, vec![PathBuf::from("C:/a"), PathBuf::from("C:/b")]);
+    }
+
+    #[test]
+    fn list_is_capped_at_max_recent_locations() {
+        let mut state = RecentLocationsState::default();
+        for i in 0..super::MAX_RECENT_LOCATIONS + 5 {
+            state.record_visit(PathBuf::from(format!("C:/dir{i}")));
+        }
+        assert_eq!(state.items.len(), super::MAX_RECENT_LOCATIONS);
+        // Most recent (highest i) should still be at the front.
+        assert_eq!(
+            state.items[0],
+            PathBuf::from(format!("C:/dir{}", super::MAX_RECENT_LOCATIONS + 4))
+        );
+    }
+
+    #[test]
+    fn remove_drops_the_matching_path_only() {
+        let mut state = RecentLocationsState::default();
+        state.record_visit(PathBuf::from("C:/a"));
+        state.record_visit(PathBuf::from("C:/b"));
+
+        state.remove(&PathBuf::from("C:/a"));
+
+        assert_eq!(state.items, vec![PathBuf::from("C:/b")]);
+    }
+
+    #[test]
+    fn snapshot_round_trip_preserves_order() {
+        let mut state = RecentLocationsState::default();
+        state.record_visit(PathBuf::from("C:/a"));
+        state.record_visit(PathBuf::from("C:/b"));
+
+        let restored = RecentLocationsState::from_snapshot(state.to_snapshot());
+        assert_eq!(restored.items, state.items);
+    }
+
+    #[test]
+    fn clear_empties_the_list() {
+        let mut state = RecentLocationsState::default();
+        state.record_visit(PathBuf::from("C:/a"));
+        state.record_visit(PathBuf::from("C:/b"));
+
+        state.clear();
+
+        assert!(state.items.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod tags_state_tests {
+    use super::TagsState;
+    use eframe::egui::Color32;
+    use std::path::PathBuf;
+
+    fn add_group(state: &mut TagsState, name: &str, color: Color32, paths: &[PathBuf]) -> u64 {
+        assert!(state.create_group_and_add(name.to_string(), color, paths));
+        state.groups.last().unwrap().id
+    }
+
+    #[test]
+    fn a_path_can_belong_to_more_than_one_group() {
+        let mut state = TagsState::default();
+        let path = PathBuf::from("C:/file.txt");
+        let group_a = add_group(&mut state, "A", Color32::RED, &[path.clone()]);
+        let group_b = add_group(&mut state, "B", Color32::BLUE, &[path.clone()]);
+
+        assert!(
+            state
+                .groups
+                .iter()
+                .find(|g| g.id == group_a)
+                .unwrap()
+                .items
+                .contains(&path)
+        );
+        assert!(
+            state
+                .groups
+                .iter()
+                .find(|g| g.id == group_b)
+                .unwrap()
+                .items
+                .contains(&path)
+        );
+    }
+
+    #[test]
+    fn toggle_group_for_paths_adds_when_not_all_tagged_and_removes_when_all_tagged() {
+        let mut state = TagsState::default();
+        let path = PathBuf::from("C:/file.txt");
+        let group_id = add_group(&mut state, "A", Color32::RED, &[]);
+
+        assert!(state.toggle_group_for_paths(group_id, &[path.clone()]));
+        assert!(
+            state
+                .groups
+                .iter()
+                .find(|g| g.id == group_id)
+                .unwrap()
+                .items
+                .contains(&path)
+        );
+
+        assert!(state.toggle_group_for_paths(group_id, &[path.clone()]));
+        assert!(
+            !state
+                .groups
+                .iter()
+                .find(|g| g.id == group_id)
+                .unwrap()
+                .items
+                .contains(&path)
+        );
+    }
+
+    #[test]
+    fn tags_for_path_returns_every_matching_group_in_order() {
+        let mut state = TagsState::default();
+        let path = PathBuf::from("C:/file.txt");
+        let group_a = add_group(&mut state, "A", Color32::RED, &[path.clone()]);
+        let group_b = add_group(&mut state, "B", Color32::BLUE, &[path.clone()]);
+
+        let tags = state.tags_for_path(&path);
+
+        assert_eq!(tags.len(), 2);
+        assert_eq!(tags[0].0, group_a);
+        assert_eq!(tags[1].0, group_b);
+    }
+
+    #[test]
+    fn remove_paths_from_group_only_affects_that_group() {
+        let mut state = TagsState::default();
+        let path = PathBuf::from("C:/file.txt");
+        let group_a = add_group(&mut state, "A", Color32::RED, &[path.clone()]);
+        let group_b = add_group(&mut state, "B", Color32::BLUE, &[path.clone()]);
+
+        assert!(state.remove_paths_from_group(group_a, &[path.clone()]));
+
+        assert!(
+            !state
+                .groups
+                .iter()
+                .find(|g| g.id == group_a)
+                .unwrap()
+                .items
+                .contains(&path)
+        );
+        assert!(
+            state
+                .groups
+                .iter()
+                .find(|g| g.id == group_b)
+                .unwrap()
+                .items
+                .contains(&path)
+        );
+    }
 }
