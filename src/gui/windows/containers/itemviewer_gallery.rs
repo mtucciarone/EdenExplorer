@@ -63,6 +63,7 @@ pub fn draw_gallery_view(
     active_tab_id: u64,
     current_dir: PathBuf,
 ) -> Option<ItemViewerAction> {
+    let is_search_view = crate::core::fs::parse_search_view_path(&current_dir).is_some();
     thumbnail_service.pump_completed(ui.ctx());
 
     let mut action = draw_gallery_toolbar(
@@ -111,12 +112,16 @@ pub fn draw_gallery_view(
     let mut current_hovered_drop_target: Option<PathBuf> = None;
     let mut current_hovered_drop_target_rect: Option<egui::Rect> = None;
     let gallery_rect = ui.available_rect_before_wrap();
+    // Bottom padding so the last row of tiles isn't flush against the pane
+    // border - reserved as real, unused rect space rather than relying on
+    // the scroll area's own virtual content-height bookkeeping.
+    const BOTTOM_PADDING: f32 = 12.0;
     let scroll_rect = egui::Rect::from_min_max(
         egui::pos2(
             gallery_rect.left(),
             gallery_rect.top() + GALLERY_TOOLBAR_GAP,
         ),
-        gallery_rect.right_bottom(),
+        gallery_rect.right_bottom() - egui::vec2(0.0, BOTTOM_PADDING),
     );
 
     ui.scope_builder(egui::UiBuilder::new().max_rect(scroll_rect), |ui| {
@@ -257,12 +262,18 @@ pub fn draw_gallery_view(
                                 drag_state,
                                 explorer_state,
                                 false,
+                                false,
+                                response.double_clicked(),
+                                response.ctx.input(|i| i.time),
                             ) {
                                 action = Some(a);
                             }
                         }
 
-                        if response.middle_clicked() && file.is_dir {
+                        if response.middle_clicked()
+                            && file.is_dir
+                            && settings_window.current_settings.middle_click_opens_new_tab
+                        {
                             action = Some(ItemViewerAction::OpenInNewTab(file.path.clone()));
                         }
 
@@ -284,6 +295,8 @@ pub fn draw_gallery_view(
                                     tags_state,
                                     settings_window,
                                     hwnd,
+                                    icon_cache,
+                                    is_search_view,
                                 );
                             });
                     }
@@ -307,6 +320,15 @@ pub fn draw_gallery_view(
                             target_dir,
                         });
                     }
+
+                    // See the matching fix/comment in itemviewer.rs - clearing
+                    // `active` alone isn't enough, since the per-tile re-arm
+                    // check above re-flips it true once the pointer drifts
+                    // >4px from a leftover `start_pos`. Clear `start_pos` and
+                    // `source_items` too.
+                    drag_state.active = false;
+                    drag_state.start_pos = None;
+                    drag_state.source_items.clear();
                 }
 
                 if !modal_input_blocked {
@@ -568,6 +590,20 @@ fn draw_gallery_tile(
                 egui::Color32::WHITE.linear_multiply(0.45)
             } else {
                 egui::Color32::WHITE
+            },
+        );
+    } else if let Some(glyph) = icon_cache.get_custom_folder_icon(&file.path, file.is_dir) {
+        let icon_size = (thumb_size * 0.35).clamp(24.0, 80.0);
+
+        preview_painter.text(
+            preview_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            glyph,
+            FontId::proportional(icon_size),
+            if is_cut {
+                palette.icon_colored_hover.linear_multiply(0.45)
+            } else {
+                palette.icon_colored_hover
             },
         );
     } else if let Some(icon) = icon_cache.get(&file.path, file.is_dir) {

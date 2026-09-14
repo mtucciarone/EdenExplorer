@@ -1,6 +1,6 @@
 [package]
 name = "EdenExplorer"
-version = "0.27.1"
+version = "0.27.0"
 edition = "2024"
 build = "src/build.rs"
 
@@ -16,6 +16,11 @@ OriginalFilename = "EdenExplorer.exe"
 LegalCopyright = "Copyright © 2026"
 
 [dependencies]
+crc32fast = "1.4"
+md-5 = "0.10"
+sha1 = "0.10"
+sha2 = "0.10"
+regex = "1.11.1"
 image = "0.25.10"
 eframe = "0.35.0"
 egui = { version = "0.35.0", features = ["serde"] }
@@ -46,11 +51,20 @@ windows = { version = "0.62.2", features = [
     "Win32_Devices_DeviceAndDriverInstallation",
     "Win32_Devices_PortableDevices",
     "Win32_NetworkManagement_NetManagement",
+    "Win32_NetworkManagement_WNet",
     "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_HiDpi",
     "Win32_Graphics_DirectWrite",
     "Win32_Globalization",
+    "Data_Pdf",
+    "Storage",
+    "Storage_Streams",
+    "Graphics_Imaging",
+    "Win32_Graphics_Imaging",
+    "Win32_Media_MediaFoundation",
 ] }
 windows-core = "0.62.2"
+windows-future = "0.3.2"
 crossbeam-channel = "0.5.15"
 dirs = "6.0"
 bincode = "1.3"
@@ -71,3 +85,15 @@ unic-langid = "0.9"
 rust-embed = "8"
 sys-locale = "0.3"
 rand = "0.9"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+quick-xml = "0.38"
+pdf-extract = "0.12"
+ab_glyph = "0.2"
+ttf-parser = "0.25"
+resvg = "0.45"
+fontdb = "0.23"
+flate2 = "1"
+syntect = { version = "5", default-features = false, features = ["parsing", "regex-fancy", "default-syntaxes", "default-themes"] }
+sevenz-rust2 = "0.22"
+pulldown-cmark = "0.12"
+everything-ipc = "0.1.4"

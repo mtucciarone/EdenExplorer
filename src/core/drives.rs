@@ -150,6 +150,58 @@ fn list_removable_devices() -> Vec<String> {
     devices
 }
 
+/// Resolves a lettered volume (e.g. `"C:\\"`) to the physical drive index
+/// Windows considers it to live on (the `N` in `\\.\PhysicalDriveN`), via
+/// `IOCTL_STORAGE_GET_DEVICE_NUMBER` - the standard way to answer "which
+/// physical disk does this drive letter's partition belong to", used here
+/// to correctly dedupe raw physical drives against already-lettered ones
+/// (see the doc comment on the raw-drives loop in
+/// `get_drive_infos_internal` for why this matters).
+fn physical_drive_number_for_volume(drive_letter_path: &str) -> Option<u32> {
+    let letter = drive_letter_path.chars().next()?;
+    let path = format!("\\\\.\\{letter}:");
+    let wide_path: Vec<u16> = OsString::from(&path)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    unsafe {
+        let handle = CreateFileW(
+            PCWSTR(wide_path.as_ptr()),
+            FILE_READ_ATTRIBUTES.0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            None,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            None,
+        )
+        .ok()?;
+
+        let mut device_number: STORAGE_DEVICE_NUMBER = std::mem::zeroed();
+        let mut bytes_returned: u32 = 0;
+        let result = DeviceIoControl(
+            handle,
+            IOCTL_STORAGE_GET_DEVICE_NUMBER,
+            None,
+            0,
+            Some(&mut device_number as *mut _ as *mut _),
+            size_of::<STORAGE_DEVICE_NUMBER>() as u32,
+            Some(&mut bytes_returned),
+            None,
+        );
+        let _ = CloseHandle(handle);
+
+        result.ok()?;
+        Some(device_number.DeviceNumber)
+    }
+}
+
+/// Parses the `N` out of a `\\.\PhysicalDriveN` path, the counterpart to
+/// `physical_drive_number_for_volume` above.
+fn physical_drive_index_from_path(device_path: &str) -> Option<u32> {
+    device_path.strip_prefix(r"\\.\PhysicalDrive")?.parse().ok()
+}
+
 /// Detect raw/unmounted drives (ISO sticks, Linux partitions, etc.)
 pub fn list_raw_drives() -> Vec<RawDriveInfo> {
     let mut drives = Vec::new();
@@ -331,6 +383,10 @@ fn get_drive_infos_internal() -> Vec<DriveInfo> {
     let mut drives = Vec::new();
     let mut drive_labels: Vec<String> = Vec::new();
     let removable_devices = list_removable_devices();
+    // Physical drive indices already represented by a lettered volume below -
+    // used to skip a raw physical drive from being listed a second time (see
+    // the raw-drives loop further down).
+    let mut covered_physical_drives: std::collections::HashSet<u32> = std::collections::HashSet::new();
 
     unsafe {
         let mask = GetLogicalDrives();
@@ -338,6 +394,9 @@ fn get_drive_infos_internal() -> Vec<DriveInfo> {
             if (mask >> i) & 1 == 1 {
                 let letter = (b'A' + i as u8) as char;
                 let drive_path = format!("{}:\\", letter);
+                if let Some(num) = physical_drive_number_for_volume(&drive_path) {
+                    covered_physical_drives.insert(num);
+                }
                 let wide_path: Vec<u16> = OsString::from(&drive_path)
                     .encode_wide()
                     .chain(std::iter::once(0))
@@ -433,11 +492,16 @@ fn get_drive_infos_internal() -> Vec<DriveInfo> {
             }),
     );
 
-    // Unmounted volumes (no drive letter), e.g. Linux/ext partitions on USB
+    // Unmounted volumes (no drive letter), e.g. Linux/ext partitions on USB.
+    // Only genuinely unrecognized/non-Windows filesystems belong here -
+    // NTFS/FAT32 were already excluded, but ReFS (Windows' own modern
+    // filesystem, used by Dev Drive and Storage Spaces) and exFAT (the
+    // default on most large USB drives/SD cards) are just as readable via
+    // normal file APIs and were being wrongly treated as unsupported too.
     drives.extend(list_unmounted_volumes().into_iter().filter_map(|raw| {
         let fs_name = volume_filesystem_name(&raw.device_path).unwrap_or_default();
         let fs_upper = fs_name.to_ascii_uppercase();
-        if fs_upper == "NTFS" || fs_upper == "FAT32" {
+        if matches!(fs_upper.as_str(), "NTFS" | "FAT32" | "EXFAT" | "REFS") {
             return None;
         }
 
@@ -452,18 +516,25 @@ fn get_drive_infos_internal() -> Vec<DriveInfo> {
         })
     }));
 
-    // Removable raw physical disks (e.g. USB devices with non-Windows partitions)
-    let mut existing_paths: std::collections::HashSet<String> = drives
-        .iter()
-        .map(|d| d.path.to_string_lossy().to_string().to_ascii_lowercase())
-        .collect();
-
+    // Removable raw physical disks (e.g. USB devices with non-Windows
+    // partitions) - only ones that AREN'T already showing up as a lettered
+    // volume above. A removable disk that already has a normal, readable
+    // NTFS/exFAT/FAT32/etc. partition and drive letter should never also
+    // get a second "Non-NTFS Drive" entry just because Windows also exposes
+    // it as `\\.\PhysicalDriveN` - every removable disk does, letter or not.
+    // Comparing `\\.\PhysicalDriveN` device paths against drive-letter path
+    // strings can never match (different formats entirely), so this used
+    // to compare a `HashSet` of drive-letter strings against physical-drive
+    // paths - which silently never deduped anything. Comparing the actual
+    // physical drive *index* both sides agree on (`covered_physical_drives`,
+    // built above from each lettered volume via
+    // `IOCTL_STORAGE_GET_DEVICE_NUMBER`) is the fix.
     for raw in list_raw_drives().into_iter().filter(|r| r.is_removable) {
-        let path_str = raw.device_path.to_ascii_lowercase();
-        if existing_paths.contains(&path_str) {
-            continue;
+        if let Some(index) = physical_drive_index_from_path(&raw.device_path) {
+            if covered_physical_drives.contains(&index) {
+                continue;
+            }
         }
-        existing_paths.insert(path_str);
 
         let display = format!("Non-NTFS Drive ({})", raw.device_path);
         drives.push(DriveInfo {
@@ -596,5 +667,24 @@ fn normalize_volume_name(volume_name: &str) -> String {
         volume_name.to_string()
     } else {
         format!("{volume_name}\\")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::physical_drive_index_from_path;
+
+    #[test]
+    fn parses_the_index_out_of_a_physical_drive_path() {
+        assert_eq!(physical_drive_index_from_path(r"\\.\PhysicalDrive0"), Some(0));
+        assert_eq!(physical_drive_index_from_path(r"\\.\PhysicalDrive12"), Some(12));
+    }
+
+    #[test]
+    fn rejects_anything_that_isnt_a_physical_drive_path() {
+        assert_eq!(physical_drive_index_from_path(r"C:\"), None);
+        assert_eq!(physical_drive_index_from_path(r"\\.\PhysicalDrive"), None);
+        assert_eq!(physical_drive_index_from_path(r"\\.\PhysicalDriveX"), None);
+        assert_eq!(physical_drive_index_from_path(""), None);
     }
 }

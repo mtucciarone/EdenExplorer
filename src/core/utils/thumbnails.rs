@@ -198,6 +198,17 @@ fn run_thumbnail_job(job: ThumbnailJob, tx: Sender<ThumbnailResult>) {
 }
 
 fn extract_thumbnail(path: &Path) -> Result<ThumbnailImage> {
+    extract_thumbnail_at_size(path, THUMBNAIL_SOURCE_SIZE)
+}
+
+/// Extracts a shell thumbnail at `size` pixels via `IThumbnailCache`, the same
+/// mechanism Explorer itself uses. For file types with a registered thumbnail
+/// provider that renders real content (Office documents via Office/WPS/
+/// LibreOffice's shell integration, images, PDFs, etc.), this produces an
+/// actual rendered preview - not just a generic file-type icon - so it also
+/// serves as a fallback preview source for formats this app has no dedicated
+/// renderer for.
+pub fn extract_thumbnail_at_size(path: &Path, size: u32) -> Result<ThumbnailImage> {
     let _com = ComGuard::init()?;
 
     let shell_item: IShellItem = unsafe {
@@ -207,17 +218,17 @@ fn extract_thumbnail(path: &Path) -> Result<ThumbnailImage> {
     let cache: IThumbnailCache =
         unsafe { CoCreateInstance(&LocalThumbnailCache, None, CLSCTX_INPROC_SERVER)? };
 
-    if let Ok(result) = get_thumbnail_with_flags(&cache, &shell_item, WTS_INCACHEONLY) {
+    if let Ok(result) = get_thumbnail_with_flags(&cache, &shell_item, size, WTS_INCACHEONLY) {
         if !result.low_quality {
             return Ok(result.image);
         }
     }
 
-    if let Ok(result) = get_thumbnail_with_flags(&cache, &shell_item, WTS_EXTRACT) {
-        return Ok(result.image);
-    }
-
-    Err(thumbnail_error("thumbnail unavailable"))
+    // Propagate the real error here instead of masking it behind a generic
+    // message - this is the call that actually invokes the file type's
+    // registered thumbnail handler (e.g. Office's), so its HRESULT is what
+    // tells us why a preview couldn't be generated.
+    get_thumbnail_with_flags(&cache, &shell_item, size, WTS_EXTRACT).map(|r| r.image)
 }
 
 struct ExtractedThumbnail {
@@ -228,6 +239,7 @@ struct ExtractedThumbnail {
 fn get_thumbnail_with_flags(
     cache: &IThumbnailCache,
     shell_item: &IShellItem,
+    size: u32,
     flags: WTS_FLAGS,
 ) -> Result<ExtractedThumbnail> {
     let mut bitmap: Option<ISharedBitmap> = None;
@@ -237,7 +249,7 @@ fn get_thumbnail_with_flags(
     unsafe {
         cache.GetThumbnail(
             shell_item,
-            THUMBNAIL_SOURCE_SIZE,
+            size,
             flags,
             Some(&mut bitmap),
             Some(&mut out_flags),
@@ -251,8 +263,7 @@ fn get_thumbnail_with_flags(
 
     let image = shared_bitmap_to_rgba(&bitmap)?;
 
-    let low_quality = image.size[0] < THUMBNAIL_SOURCE_SIZE as usize
-        || image.size[1] < THUMBNAIL_SOURCE_SIZE as usize;
+    let low_quality = image.size[0] < size as usize || image.size[1] < size as usize;
 
     Ok(ExtractedThumbnail { image, low_quality })
 }

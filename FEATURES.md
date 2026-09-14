@@ -13,7 +13,8 @@
   <li><b>Tabbed navigation</b> with independent loading states, tab pinning, and automatic tab restoration</li>
   <li><b>Split-pane Explorer view</b> for browsing multiple locations side-by-side</li>
   <li><b>Collapsible sidebar</b> with quick access to common folders and customizable favorites</li>
-  <li><b>Native Recycle Bin support</b> with dedicated Explorer integration</li>
+  <li><b>Native Recycle Bin support</b> with dedicated Explorer integration</li>  
+  <li><b>Smart sidebar</b> with quick access to common folders and customizable favorites</li>
 </ul>
 
 <h3>Search, Filtering & Sorting</h3>
@@ -24,6 +25,7 @@
   <li><b>Lexicographic multi-column sorting</b> with Shift+Click to add sort columns and Ctrl+Click to remove them</li>
   <li><b>Persistent column sorting</b> across sessions</li>
   <li><b>Persistent column sizing and view settings</b> across sessions</li>
+  <li><b>Performance-optimized filtering</b> with cached indices</li>
 </ul>
 
 <h3>Theme & Customization</h3>
@@ -38,6 +40,7 @@
 
 <h3>Tags & Organization</h3>
 <ul>
+  <li><b>Tag management system</b> for organizing files and folders</li>
   <li><b>Folder tagging system</b> for organizing files and directories</li>
   <li><b>Custom tag colors</b> with Explorer visualization</li>
   <li><b>Tag-aware Explorer views</b> that visually identify tagged objects</li>
@@ -61,6 +64,8 @@
   <li><b>Hidden object visibility toggle</b> for showing or hiding hidden files and directories</li>
   <li><b>Dedicated special-folder icons</b> for Desktop, Downloads, Home, Music, Videos, and Documents</li>
   <li><b>Media Gallery views</b> with small, medium, large, and extra-large thumbnail layouts</li>
+  <li><b>Tabbed navigation</b> with independent loading states</li>
+  <li><b>Tab Groups</b> - save a named set of folders and reopen them all at once</li>
 </ul>
 
 <h3>File Operations</h3>
@@ -92,6 +97,7 @@
   <li><b>Built-in performance benchmarking</b> with real-time measurements and comparison tools</li>
   <li><b>Windows API integration</b> for native operating system functionality</li>
   <li><b>Custom executable icon and file association</b></li>
+  <li><b>Persistent settings</b> using efficient binary cache</li>
 </ul>
 
 <h3>Localization</h3>

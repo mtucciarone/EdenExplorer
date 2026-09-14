@@ -20,6 +20,7 @@ use windows::Win32::System::DataExchange::{
     AddClipboardFormatListener, RemoveClipboardFormatListener,
 };
 use windows::Win32::UI::Controls::MARGINS;
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 const MIN_WIDTH: i32 = 600;
@@ -81,8 +82,24 @@ fn save_manual_window_size(hwnd: HWND) {
             return;
         }
 
-        let width = (rect.right - rect.left) as f32;
-        let height = (rect.bottom - rect.top) as f32;
+        // `GetClientRect` reports physical pixels, but every other reader of
+        // `WindowSizeMode::Custom` (the per-frame save in mainwindow.rs, and
+        // `.with_inner_size()` at startup in main.rs) works in egui's
+        // logical points - the same space `i.viewport().inner_rect` uses.
+        // Saving the raw physical value here silently inflated the
+        // remembered size by the display's scale factor on any monitor not
+        // running at 100% (125%/150% is a common Windows default), which
+        // then got clamped to the monitor by `.with_clamp_size_to_monitor_
+        // size(true)` on the next launch - looking like the window size
+        // (and, since the startup position math uses this same size, the
+        // position too) wasn't being remembered at all. Divide by the
+        // window's own DPI scale to convert back to logical points before
+        // saving, matching every other write to this field.
+        let dpi = GetDpiForWindow(hwnd).max(1);
+        let scale = dpi as f32 / 96.0;
+
+        let width = (rect.right - rect.left) as f32 / scale;
+        let height = (rect.bottom - rect.top) as f32 / scale;
 
         if width <= 0.0 || height <= 0.0 {
             return;
@@ -102,6 +119,7 @@ fn save_manual_window_size(hwnd: HWND) {
             sort_ascending,
             _language,
             date_style,
+            custom_date_format,
             item_viewer_file_column_order,
             item_viewer_drive_column_order,
             recycle_bin_column_order,
@@ -109,6 +127,13 @@ fn save_manual_window_size(hwnd: HWND) {
             item_viewer_drive_column_sizes,
             recycle_bin_column_sizes,
             directory_settings,
+            double_click_navigates_up,
+            show_selection_checkboxes,
+            middle_click_opens_new_tab,
+            restore_last_session_tabs,
+            default_display_mode,
+            default_search_scope,
+            search_engine,
         ) = load_app_settings();
         let window_size_mode = WindowSizeMode::Custom { width, height };
 
@@ -126,6 +151,7 @@ fn save_manual_window_size(hwnd: HWND) {
             sort_ascending,
             &_language,
             date_style,
+            &custom_date_format,
             &item_viewer_file_column_order,
             &item_viewer_drive_column_order,
             &recycle_bin_column_order,
@@ -133,6 +159,13 @@ fn save_manual_window_size(hwnd: HWND) {
             &item_viewer_drive_column_sizes,
             &recycle_bin_column_sizes,
             &directory_settings,
+            double_click_navigates_up,
+            show_selection_checkboxes,
+            middle_click_opens_new_tab,
+            restore_last_session_tabs,
+            default_display_mode,
+            default_search_scope,
+            search_engine,
         );
     }
 }
