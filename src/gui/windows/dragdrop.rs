@@ -17,7 +17,9 @@ use windows::Win32::System::Ole::{
     CF_HDROP, DoDragDrop, IDropSource, IDropSource_Impl, IDropTarget, IDropTarget_Impl,
     ReleaseStgMedium,
 };
-use windows::Win32::System::Ole::{DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_MOVE};
+use windows::Win32::System::Ole::{
+    DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_LINK, DROPEFFECT_MOVE,
+};
 use windows::Win32::System::Ole::{RegisterDragDrop, RevokeDragDrop};
 use windows::Win32::System::SystemServices::{MK_LBUTTON, MODIFIERKEYS_FLAGS};
 use windows::Win32::UI::Shell::DragQueryFileW;
@@ -385,7 +387,7 @@ impl DragDropBackend for WindowsDragDropBackend {
             DoDragDrop(
                 &data_object,
                 &drop_source,
-                DROPEFFECT_COPY | DROPEFFECT_MOVE,
+                DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK,
                 &mut effect,
             )
         };
