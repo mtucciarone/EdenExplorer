@@ -1127,16 +1127,14 @@ impl MainWindow {
         paths: Vec<PathBuf>,
         allow_undo: bool,
     ) -> windows::core::Result<()> {
-        use windows::core::HSTRING;
-        use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
+        use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
         use windows::Win32::UI::Shell::{
-            FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
-            FOF_ALLOWUNDO,
+            FOF_ALLOWUNDO, FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
         };
+        use windows::core::HSTRING;
 
         unsafe {
-            let file_op: IFileOperation =
-                CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
+            let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
 
             // Normal deletion:
             //   - send items to the Recycle Bin
@@ -1144,19 +1142,14 @@ impl MainWindow {
             //
             // Recycle Bin deletion:
             //   - permanently delete the items
-            let flags = if allow_undo {
-                FOF_ALLOWUNDO
-            } else {
-                0
-            };
+            let flags = if allow_undo { FOF_ALLOWUNDO } else { 0 };
 
             file_op.SetOperationFlags(flags)?;
 
             for path in paths {
                 let path = HSTRING::from(path.to_string_lossy().as_ref());
 
-                let item: IShellItem =
-                    SHCreateItemFromParsingName(&path, None)?;
+                let item: IShellItem = SHCreateItemFromParsingName(&path, None)?;
 
                 file_op.DeleteItem(&item, None)?;
             }
