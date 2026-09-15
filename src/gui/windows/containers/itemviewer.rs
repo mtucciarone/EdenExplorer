@@ -117,32 +117,6 @@ pub fn draw_item_viewer(
         explorer_state.selection_focus = None;
     }
 
-    if visible_items_empty && display_mode != ItemViewerDisplayMode::Gallery {
-        ui.centered_and_justified(|ui| {
-            if is_loading && files.is_empty() {
-                ui.add(egui::Spinner::new().size(28.0));
-            } else {
-                ui.label(i18n.tr("folder_is_empty"));
-            }
-        });
-    }
-
-    if drag_active {
-        let unknown_label = &i18n.tr("unknown");
-        let label = if drag_state.source_items.len() == 1 {
-            drag_state
-                .source_items
-                .first()
-                .and_then(|p| p.file_name())
-                .and_then(|n| n.to_str())
-                .unwrap_or(unknown_label)
-        } else {
-            &i18n.tr("drag_items")
-        };
-
-        draw_object_drag_ghost(ui, palette, label, false);
-    }
-
     if !modal_input_blocked && is_focused {
         if let Some(global_action) = handle_global_actions(
             ui,
@@ -162,6 +136,22 @@ pub fn draw_item_viewer(
         ) {
             action = Some(global_action);
         }
+    }
+
+    if drag_active {
+        let unknown_label = &i18n.tr("unknown");
+        let label = if drag_state.source_items.len() == 1 {
+            drag_state
+                .source_items
+                .first()
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str())
+                .unwrap_or(unknown_label)
+        } else {
+            &i18n.tr("drag_items")
+        };
+
+        draw_object_drag_ghost(ui, palette, label, false);
     }
 
     if display_mode == ItemViewerDisplayMode::Gallery && !is_drive_view && !is_recycle_bin_view {
@@ -196,6 +186,22 @@ pub fn draw_item_viewer(
             is_focused,
             active_tab_id,
             current_dir,
+        )
+        .or(action);
+    }
+
+    if visible_items_empty {
+        return draw_empty_item_viewer_area(
+            ui,
+            i18n,
+            palette,
+            paste_enabled,
+            is_drive_view,
+            is_recycle_bin_view,
+            &current_dir,
+            drag_state,
+            modal_input_blocked,
+            is_loading && files.is_empty(),
         )
         .or(action);
     }

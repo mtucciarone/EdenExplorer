@@ -2699,40 +2699,58 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 sources,
                 target_dir,
             } => {
-                unsafe {
-                    let file_op: IFileOperation =
-                        CoCreateInstance(&FileOperation, None, CLSCTX_ALL).unwrap();
-
-                    // Optional: show UI + allow TeraCopy hooks
-                    file_op
-                        .SetOperationFlags(
-                            FOF_SIMPLEPROGRESS | FOF_ALLOWUNDO | FOFX_SHOWELEVATIONPROMPT,
-                        )
-                        .ok();
-
-                    // Convert target dir to IShellItem
-                    let target_item: IShellItem = SHCreateItemFromParsingName(
-                        &HSTRING::from(target_dir.to_string_lossy().to_string()),
-                        None,
-                    )
-                    .unwrap();
-
-                    for source in &sources {
-                        let source_item: IShellItem = SHCreateItemFromParsingName(
-                            &HSTRING::from(source.to_string_lossy().to_string()),
-                            None,
-                        )
-                        .unwrap();
-
-                        file_op
-                            .MoveItem(&source_item, &target_item, None, None)
-                            .ok();
+                // The source rows can disappear immediately after a successful move. Clear every
+                // view's drag state before touching the file system so a stale release cannot
+                // enqueue the same paths a second time.
+                {
+                    let tab = explorer.active_tab_mut();
+                    tab.primary_view.drag_state.active = false;
+                    tab.primary_view.drag_state.start_pos = None;
+                    tab.primary_view.drag_state.source_items.clear();
+                    if let Some(split) = tab.split_view.as_mut() {
+                        split.drag_state.active = false;
+                        split.drag_state.start_pos = None;
+                        split.drag_state.source_items.clear();
                     }
-
-                    file_op.PerformOperations().ok();
                 }
 
-                if explorer.move_tagged_paths_to_dir(&sources, &target_dir) {
+                let existing_sources: Vec<PathBuf> = sources
+                    .into_iter()
+                    .filter(|source| source.exists())
+                    .collect();
+                let move_result = unsafe {
+                    (|| -> windows::core::Result<()> {
+                        let file_op: IFileOperation =
+                            CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
+
+                        file_op.SetOperationFlags(
+                            FOF_SIMPLEPROGRESS | FOF_ALLOWUNDO | FOFX_SHOWELEVATIONPROMPT,
+                        )?;
+
+                        let target_item: IShellItem = SHCreateItemFromParsingName(
+                            &HSTRING::from(target_dir.to_string_lossy().to_string()),
+                            None,
+                        )?;
+
+                        for source in &existing_sources {
+                            let source_item: IShellItem = SHCreateItemFromParsingName(
+                                &HSTRING::from(source.to_string_lossy().to_string()),
+                                None,
+                            )?;
+
+                            file_op.MoveItem(&source_item, &target_item, None, None)?;
+                        }
+
+                        file_op.PerformOperations()?;
+                        Ok(())
+                    })()
+                };
+
+                if existing_sources.is_empty() {
+                    eprintln!("Skipping move: all dragged sources have already disappeared");
+                } else if let Err(error) = move_result {
+                    eprintln!("Failed to move dragged items: {error}");
+                } else if explorer.move_tagged_paths_to_dir(&existing_sources, &target_dir) {
                     explorer.persist_tags();
                 }
 

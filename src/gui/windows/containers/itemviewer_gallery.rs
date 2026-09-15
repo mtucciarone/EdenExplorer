@@ -11,8 +11,8 @@ use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{SortColumn, truncate_item_text};
 use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
 use crate::gui::windows::containers::itemviewer_helper::{
-    handle_context_menu_actions, handle_editing_file_name, handle_keyboard_navigation,
-    handle_row_click,
+    draw_empty_item_viewer_area, handle_context_menu_actions, handle_editing_file_name,
+    handle_keyboard_navigation, handle_row_click,
 };
 use crate::gui::windows::containers::structs::{
     DragState, ExplorerState, GalleryState, GalleryThumbnailSize, RenameState, TagsState,
@@ -75,10 +75,19 @@ pub fn draw_gallery_view(
     );
 
     if filtered_indices.is_empty() {
-        ui.centered_and_justified(|ui| {
-            ui.label(i18n.tr("folder_is_empty"));
-        });
-        return action;
+        return draw_empty_item_viewer_area(
+            ui,
+            i18n,
+            palette,
+            paste_enabled,
+            false,
+            false,
+            &current_dir,
+            drag_state,
+            modal_input_blocked,
+            false,
+        )
+        .or(action);
     }
 
     let modifiers = ui.ctx().input(|i| i.modifiers);

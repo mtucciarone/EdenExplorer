@@ -908,6 +908,36 @@ pub fn handle_global_actions(
     };
 
     if filter_state.active {
+        let open_selected_items = || {
+            if is_recycle_bin_view {
+                return None;
+            }
+
+            let selected_files: Vec<PathBuf> = explorer_state
+                .selected_paths
+                .iter()
+                .filter_map(|path| {
+                    files
+                        .iter()
+                        .find(|file| &file.path == path && !file.is_dir)
+                        .map(|_| path.clone())
+                })
+                .collect();
+
+            let mut action = (!selected_files.is_empty())
+                .then(|| ItemViewerAction::OpenWithDefault(selected_files));
+
+            for directory in explorer_state
+                .selected_paths
+                .iter()
+                .filter(|path| files.iter().any(|file| &file.path == *path && file.is_dir))
+            {
+                action = Some(ItemViewerAction::Open(directory.clone()));
+            }
+
+            action
+        };
+
         let cancel = ui.input(|i| i.key_pressed(egui::Key::Escape));
 
         if cancel {
@@ -937,24 +967,32 @@ pub fn handle_global_actions(
             filter_state.focus_requested = true;
         }
 
-        if response.clicked_elsewhere() {
-            // Check if click is within the item viewer area (table)
-            let click_pos = ui.input(|i| i.pointer.interact_pos());
-            let should_clear_filter = if let Some(pos) = click_pos {
-                let item_viewer_rect = ui.available_rect_before_wrap();
-                // Don't clear filter if clicking within the item viewer area
-                !item_viewer_rect.contains(pos)
+        let enter = ui.input(|input| !input.modifiers.alt && input.key_pressed(egui::Key::Enter));
+        if enter {
+            return open_selected_items();
+        }
+
+        let cut = ui.input(|input| input.modifiers.command && input.key_pressed(egui::Key::X));
+        if cut && !is_drive_view && !explorer_state.selected_paths.is_empty() {
+            return Some(ItemViewerAction::Context(ItemViewerContextAction::Cut(
+                explorer_state.selected_paths.iter().cloned().collect(),
+            )));
+        }
+
+        let delete = ui.input(|input| input.key_pressed(egui::Key::Delete));
+        if delete && !is_drive_view {
+            let paths: Vec<PathBuf> = if !explorer_state.selected_paths.is_empty() {
+                explorer_state.selected_paths.iter().cloned().collect()
+            } else if let Some(&index) = filter_state.cached_indices.first() {
+                vec![files[index].path.clone()]
             } else {
-                // If no click position, clear filter (fallback behavior)
-                true
+                Vec::new()
             };
 
-            if should_clear_filter {
-                ui.memory_mut(|mem| {
-                    mem.data
-                        .remove::<egui::text_edit::TextEditState>(text_edit_id)
-                });
-                *filter_state = FilterState::default();
+            if !paths.is_empty() {
+                return Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
+                    paths,
+                )));
             }
         }
 
@@ -2136,4 +2174,104 @@ pub fn table_background_response(ui: &mut egui::Ui) -> egui::Response {
         ui.id().with("item_viewer_background"),
         egui::Sense::click(),
     )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn draw_empty_item_viewer_area(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    palette: &ThemePalette,
+    paste_enabled: bool,
+    is_drive_view: bool,
+    is_recycle_bin_view: bool,
+    current_dir: &PathBuf,
+    drag_state: &DragState,
+    modal_input_blocked: bool,
+    show_loading_spinner: bool,
+) -> Option<ItemViewerAction> {
+    let empty_rect = ui.available_rect_before_wrap();
+
+    ui.scope_builder(egui::UiBuilder::new().max_rect(empty_rect), |ui| {
+        ui.centered_and_justified(|ui| {
+            if show_loading_spinner {
+                ui.add(egui::Spinner::new().size(28.0));
+            } else {
+                ui.label(i18n.tr("folder_is_empty"));
+            }
+        });
+    });
+
+    // Register the interaction after rendering the empty-state container so the complete
+    // container, not just its label, receives the standard ItemViewer background actions.
+    let response = ui.interact(
+        empty_rect,
+        ui.id().with("item_viewer_empty_background"),
+        egui::Sense::click(),
+    );
+
+    let mut action = None;
+
+    if drag_state.active && ui.input(|input| input.pointer.primary_released()) && response.hovered()
+    {
+        action = Some(ItemViewerAction::MoveItems {
+            sources: drag_state.source_items.clone(),
+            target_dir: current_dir.clone(),
+        });
+    }
+
+    if modal_input_blocked {
+        return action;
+    }
+
+    if !is_drive_view && !is_recycle_bin_view {
+        Popup::context_menu(&response)
+            .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| {
+                apply_eden_text_overrides(ui, palette);
+                if ui.button("New Folder").clicked() {
+                    action = Some(ItemViewerAction::CreateFolder);
+                    ui.close();
+                }
+                if ui.button("New File").clicked() {
+                    action = Some(ItemViewerAction::CreateFile);
+                    ui.close();
+                }
+                if ui.button("Refresh").clicked() {
+                    action = Some(ItemViewerAction::RefreshCurrentDirectory);
+                    ui.close();
+                }
+                if ui.button("Open Terminal").clicked() {
+                    action = Some(ItemViewerAction::OpenTerminal);
+                    ui.close();
+                }
+
+                ui.separator();
+
+                if ui
+                    .add_enabled(paste_enabled, egui::Button::new("Paste"))
+                    .clicked()
+                {
+                    action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
+                    ui.close();
+                }
+                if ui.button("Properties").clicked() {
+                    action = Some(ItemViewerAction::Context(
+                        ItemViewerContextAction::Properties(vec![current_dir.clone()]),
+                    ));
+                    ui.close();
+                }
+            });
+    } else if is_recycle_bin_view {
+        Popup::context_menu(&response)
+            .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| {
+                apply_eden_text_overrides(ui, palette);
+                if ui.button("Refresh").clicked() {
+                    action = Some(ItemViewerAction::RefreshCurrentDirectory);
+                    ui.close();
+                }
+            });
+    }
+
+    action
 }
