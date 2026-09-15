@@ -989,13 +989,10 @@ impl MainWindow {
             }
             ItemViewerContextAction::Delete(paths) => {
                 let allow_undo = !self.current_nav().is_recycle_bin();
+
                 if let Err(e) = self.delete_paths_native(paths.clone(), allow_undo) {
                     eprintln!("Native delete failed: {:?}", e);
-
-                    // fallback (rare, but safe)
-                    for path in &paths {
-                        self.delete_path(path);
-                    }
+                    return;
                 }
 
                 let mut tags_changed = false;
@@ -1130,32 +1127,45 @@ impl MainWindow {
         paths: Vec<PathBuf>,
         allow_undo: bool,
     ) -> windows::core::Result<()> {
-        use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
-        use windows::Win32::UI::Shell::{
-            FOF_ALLOWUNDO, FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
-        };
         use windows::core::HSTRING;
+        use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_ALL};
+        use windows::Win32::UI::Shell::{
+            FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
+            FOF_ALLOWUNDO,
+        };
 
         unsafe {
-            let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
+            let file_op: IFileOperation =
+                CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
 
-            // Recycle-bin view needs permanent delete; normal view keeps undo.
+            // Normal deletion:
+            //   - send items to the Recycle Bin
+            //   - allow the operation to be undone
+            //
+            // Recycle Bin deletion:
+            //   - permanently delete the items
             let flags = if allow_undo {
-                FOF_ALLOWUNDO | FOF_WANTNUKEWARNING
+                FOF_ALLOWUNDO
             } else {
-                FOF_WANTNUKEWARNING
+                0
             };
+
             file_op.SetOperationFlags(flags)?;
 
             for path in paths {
-                let item: IShellItem = SHCreateItemFromParsingName(
-                    &HSTRING::from(path.to_string_lossy().to_string()),
-                    None,
-                )?;
+                let path = HSTRING::from(path.to_string_lossy().as_ref());
+
+                let item: IShellItem =
+                    SHCreateItemFromParsingName(&path, None)?;
 
                 file_op.DeleteItem(&item, None)?;
             }
 
+            // This is intentionally synchronous.
+            //
+            // Windows owns the progress UI while the operation is running,
+            // and we don't update ItemViewer state until the operation has
+            // completely finished.
             file_op.PerformOperations()?;
         }
 
