@@ -21,6 +21,9 @@ pub struct UiPrefs {
     pub persist_folder_sizes: bool,
     /// Show a thumbnail tooltip when hovering an image or video file.
     pub hover_previews: bool,
+    /// Space opens Quick Look (a large preview of the selected item); off =
+    /// Space starts type-to-filter like any other character.
+    pub quick_look: bool,
     /// Put the address bar on its own row above the toolbar (split panes
     /// always do); off = the toolbar and address bar share one row.
     pub address_bar_own_row: bool,
@@ -48,6 +51,7 @@ impl Default for UiPrefs {
             remember_folder_views: true,
             persist_folder_sizes: true,
             hover_previews: true,
+            quick_look: true,
             address_bar_own_row: true,
             disk_usage_ask_admin: true,
             templates_folder: None,

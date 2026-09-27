@@ -62,6 +62,8 @@ pub enum ItemViewerAction {
     StartEdit(PathBuf),
     FilesDropped(Vec<PathBuf>),
     ReplaceSelection(PathBuf),
+    /// Space: open (or close) Quick Look on the selection.
+    ToggleQuickLook,
     MoveItems {
         sources: Vec<PathBuf>,
         target_dir: PathBuf,

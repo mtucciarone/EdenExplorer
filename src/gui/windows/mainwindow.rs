@@ -132,6 +132,8 @@ pub struct MainWindow {
     /// a modal from the update loop, alongside `pending_paste_conflict`.
     /// The Select by Pattern dialog, while open.
     pub(crate) select_by_pattern: Option<crate::gui::windows::mainwindow_imp::SelectByPatternState>,
+    /// Quick Look (Space), when open.
+    pub(crate) quick_look: Option<crate::gui::windows::quick_look::QuickLookState>,
     /// The last pattern used, offered again the next time the dialog opens.
     pub(crate) last_select_pattern: String,
     /// `AppSettings::folder_views_revision` as of the last save, and when
@@ -412,6 +414,7 @@ impl Default for MainWindow {
             pending_compress_jobs: HashMap::new(),
             pending_checksum: None,
             select_by_pattern: None,
+            quick_look: None,
             last_select_pattern: String::new(),
             saved_folder_views_revision: 0,
             folder_views_changed_at: None,
@@ -1719,6 +1722,7 @@ impl eframe::App for MainWindow {
         self.draw_bulk_rename_modal(ui.ctx(), &palette);
         self.draw_checksum_modal(ui.ctx(), &palette);
         self.draw_select_by_pattern_modal(ui.ctx(), &palette);
+        self.draw_quick_look(ui.ctx(), &palette);
         if self.settings_window.current_settings.show_operation_toasts {
             draw_toast(ui.ctx(), &self.i18n, &palette, &mut self.notifications_state);
         }

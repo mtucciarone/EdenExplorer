@@ -45,7 +45,7 @@ Items marked [x] have been implemented (see the README changelog); the rest aren
 
 ## 2. Navigation and Layout
 
-- [ ] **Quick Look on Space** (Finder, Files App, QTTabBar): full-size preview pop-up using the existing preview engine, arrow keys move between files (S–M)
+- [x] **Quick Look on Space** (Finder, Files App, QTTabBar): full-size preview pop-up using the existing preview engine, arrow keys move between files (S–M)
 - [ ] **Command palette** on Ctrl+Shift+P (File Pilot, Files App, VS Code): every action and setting searchable (M)
 - [ ] **Go To Folder with fuzzy matching** on recently visited folders (Directory Opus, File Pilot, zoxide) (S)
 - [ ] **Tree view in the sidebar** (Dolphin, Directory Opus, Windows Explorer) (M)

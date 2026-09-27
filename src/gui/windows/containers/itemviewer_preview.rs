@@ -907,7 +907,7 @@ fn arm_markdown_copy_on_right_click(ui: &mut egui::Ui) {
     }
 }
 
-fn draw_preview_content(
+pub(crate) fn draw_preview_content(
     ui: &mut egui::Ui,
     i18n: &I18n,
     preview_service: &mut PreviewService,
@@ -1093,7 +1093,13 @@ fn draw_preview_content(
                 .id_salt("preview_pane_image")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    ui.add(egui::Image::new(&texture).max_size(avail).shrink_to_fit());
+                    // Centered in the space (Quick Look's is much wider
+                    // than most images).
+                    ui.allocate_ui_with_layout(
+                        avail,
+                        egui::Layout::centered_and_justified(egui::Direction::TopDown),
+                        |ui| ui.add(egui::Image::new(&texture).max_size(avail).shrink_to_fit()),
+                    );
                 });
         } else {
             ui.weak(i18n.tr("preview_loading"));
@@ -1111,10 +1117,11 @@ fn draw_preview_content(
             let avail = ui.available_size();
             let image_area_height = (avail.y - CONTROLS_HEIGHT - 6.0).max(0.0);
 
-            ui.allocate_ui(egui::vec2(avail.x, image_area_height), |ui| {
+            let image_area = egui::vec2(avail.x, image_area_height);
+            ui.allocate_ui_with_layout(image_area, egui::Layout::centered_and_justified(egui::Direction::TopDown), |ui| {
                 let resp = ui.add(
                     egui::Image::new(&texture)
-                        .max_size(ui.available_size())
+                        .max_size(image_area)
                         .shrink_to_fit()
                         .sense(egui::Sense::click()),
                 );

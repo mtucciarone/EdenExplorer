@@ -1139,6 +1139,16 @@ fn draw_behavior_section(
             "tooltip_settings_hover_previews",
             action,
         );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut prefs.quick_look,
+            "settings_quick_look",
+            "tooltip_settings_quick_look",
+            action,
+        );
     });
 
     settings_section(ui, palette, |ui| {

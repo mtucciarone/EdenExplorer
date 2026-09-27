@@ -6329,6 +6329,9 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     validation_error_show: false,
                 });
             }
+            ItemViewerAction::ToggleQuickLook => {
+                explorer.toggle_quick_look();
+            }
             ItemViewerAction::ReplaceSelection(path) => {
                 let idx = {
                     let view = explorer.active_tab().view(explorer.focused_split);

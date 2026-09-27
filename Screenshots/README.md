@@ -32,6 +32,12 @@ Playing, pausing, stepping forward and back a frame, dragging the seek bar, stop
 
 Select By Pattern (Ctrl+Shift+S) selecting `*.docx; *.txt`, Invert Selection (Ctrl+I), then right-click > New File > Excel Workbook (.xlsx), which goes straight into rename.
 
+## Quick Look
+
+![Quick Look](quick-look.gif)
+
+Selecting a photo and pressing Space opens Quick Look over the window; ↓ and → step through the folder (an animated GIF plays with its controls), Space closes it, then Quick Look on a folder shows its item count and Esc closes it.
+
 ## Features
 
 ### Details view - tagged folders are tinted by tag color, with a Tags column showing every tag as a chip
@@ -321,3 +327,7 @@ Select By Pattern (Ctrl+Shift+S) selecting `*.docx; *.txt`, Invert Selection (Ct
 ### Performance panel > Benchmark This Drive - sequential and random 4K read/write speed and IOPS (this run is under Wine, which can't bypass its cache, so the numbers are cache speed)
 
 ![Benchmark This Drive](70-drive-benchmark.png)
+
+### Quick Look (Space) - a large preview of the selected file, with its size, date, position in the folder, previous/next, and Open
+
+![Quick Look](73-quick-look.png)

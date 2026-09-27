@@ -1672,7 +1672,7 @@ pub fn handle_global_actions(
     is_drive_view: bool,
     is_recycle_bin_view: bool,
     find_in_preview_active: bool,
-    _settings_windows: &mut SettingsWindow,
+    settings_window: &mut SettingsWindow,
 ) -> Option<ItemViewerAction> {
     let filtered_indices = &filter_state.cached_indices;
     let mut action: Option<ItemViewerAction> = None;
@@ -1962,6 +1962,14 @@ pub fn handle_global_actions(
     // "type to filter" search.
     if ui.ctx().egui_wants_keyboard_input() {
         return action;
+    }
+
+    // Space opens Quick Look instead of starting a filter with a space
+    // (while a filter is being typed, the filter box has the key instead).
+    if settings_window.current_settings.ui_prefs.quick_look
+        && ui.input(|i| i.modifiers.is_none() && i.key_pressed(egui::Key::Space))
+    {
+        return action.or(Some(ItemViewerAction::ToggleQuickLook));
     }
 
     ui.input(|i| {
