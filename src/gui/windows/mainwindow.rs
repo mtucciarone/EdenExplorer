@@ -1,6 +1,5 @@
-use crate::core::indexer::WindowSizeMode;
 use crate::core::indexer::{
-    load_app_settings, load_favorites, load_tags, load_theme_settings, save_app_settings,
+    load_app_settings, load_favorites, load_tags, load_theme_settings
 };
 use crate::core::launch::take_forwarded_paths;
 use crate::core::utils::tabs::update_tab_infos_cache;
@@ -56,7 +55,6 @@ pub struct MainWindow {
     pub(crate) dropped_files_pending_ui_refresh: bool,
     pub(crate) shutdown: Arc<AtomicBool>,
     pub(crate) hwnd: Option<HWND>,
-    pub(crate) last_window_size: Option<(f32, f32)>,
     pub(crate) display_file_explorer: bool,
     pub(crate) sidebar_collapsed: bool,
 
@@ -230,7 +228,6 @@ impl Default for MainWindow {
             shutdown: Arc::new(AtomicBool::new(false)),
 
             hwnd: None,
-            last_window_size: None,
             clipboard_paths: Vec::new(),
             clipboard_set: HashSet::new(),
             clipboard_is_cut: false,
@@ -353,6 +350,14 @@ impl eframe::App for MainWindow {
         if !self.window_override_set {
             if let Some(hwnd) = self.hwnd {
                 apply_window_override(hwnd, &palette);
+
+                crate::gui::windows::windowsoverrides::set_window_mode(
+                    hwnd,
+                    &self.settings_window.current_settings.window_size_mode,
+                );
+
+                crate::gui::windows::windowsoverrides::clamp_window_to_monitor_work_area(hwnd);
+
                 self.window_override_set = true;
             }
         }
@@ -388,87 +393,6 @@ impl eframe::App for MainWindow {
                 apply_window_override(hwnd, &palette);
             }
             self.theme_dirty = false;
-        }
-
-        // Auto-save window size when it changes (including maximize/restore)
-        if let Some(viewport_rect) = ui.ctx().input(|i| i.viewport().inner_rect) {
-            let current_size = (viewport_rect.width(), viewport_rect.height());
-
-            // Check if window size changed from last recorded size
-            if let Some(last_size) = self.last_window_size {
-                let size_changed = (current_size.0 - last_size.0).abs() > 1.0
-                    || (current_size.1 - last_size.1).abs() > 1.0;
-
-                if size_changed {
-                    // Update the window size mode in settings
-                    match &mut self.settings_window.current_settings.window_size_mode {
-                        WindowSizeMode::Custom { width, height } => {
-                            *width = current_size.0;
-                            *height = current_size.1;
-                        }
-                        WindowSizeMode::FullScreen => {
-                            // Keep the mode as FullScreen.
-                            // Don't overwrite it just because the window was resized.
-                        }
-                    }
-
-                    // Save the updated settings
-                    save_app_settings(
-                        self.settings_window
-                            .current_settings
-                            .folder_scanning_enabled,
-                        self.settings_window
-                            .current_settings
-                            .show_hidden_files_folders,
-                        self.settings_window.current_settings.show_item_viewer_icons,
-                        self.settings_window
-                            .current_settings
-                            .windows_context_menu_enabled,
-                        &self.settings_window.current_settings.window_size_mode,
-                        &self.settings_window.current_settings.start_path,
-                        Some(match self.theme {
-                            crate::gui::theme::ThemeMode::Dark => "dark",
-                            crate::gui::theme::ThemeMode::Light => "light",
-                        }),
-                        &self.settings_window.current_settings.pinned_tabs,
-                        self.settings_window.current_settings.time_format_24h,
-                        self.settings_window.current_settings.sort_column,
-                        self.settings_window.current_settings.sort_ascending,
-                        &self.settings_window.current_settings.language,
-                        self.settings_window.current_settings.date_style,
-                        &self
-                            .settings_window
-                            .current_settings
-                            .item_viewer_file_column_order,
-                        &self
-                            .settings_window
-                            .current_settings
-                            .item_viewer_drive_column_order,
-                        &self
-                            .settings_window
-                            .current_settings
-                            .recycle_bin_column_order,
-                        &self
-                            .settings_window
-                            .current_settings
-                            .item_viewer_file_column_sizes,
-                        &self
-                            .settings_window
-                            .current_settings
-                            .item_viewer_drive_column_sizes,
-                        &self
-                            .settings_window
-                            .current_settings
-                            .recycle_bin_column_sizes,
-                        &self.settings_window.current_settings.directory_settings,
-                    );
-
-                    self.last_window_size = Some(current_size);
-                }
-            } else {
-                // First time, just record the size
-                self.last_window_size = Some(current_size);
-            }
         }
 
         if consume_clipboard_dirty() {

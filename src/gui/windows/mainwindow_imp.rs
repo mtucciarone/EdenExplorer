@@ -3,7 +3,7 @@ use crate::core::fs::{FileItem, get_shell_item_metadata};
 use crate::core::fs::{MY_RECYCLE_BIN_PATH, parallel_directory_scan, scan_dir_async};
 use crate::core::indexer::{
     DirectorySettingsSnapshot, load_app_settings, save_app_settings, save_favorites, save_tags,
-    save_theme_settings,
+    save_theme_settings, WindowSizeMode
 };
 use crate::gui::MainWindow;
 use crate::gui::i18n::I18n;
@@ -1142,10 +1142,23 @@ impl MainWindow {
                     self.save_app_settings_to_disk();
 
                     if let Some(hwnd) = self.hwnd {
-                        crate::gui::windows::windowsoverrides::set_window_mode(
-                            hwnd,
-                            &self.settings_window.current_settings.window_size_mode,
-                        );
+                        match &self.settings_window.current_settings.window_size_mode {
+                            WindowSizeMode::Custom { width, height } => {
+                                crate::gui::windows::windowsoverrides::set_window_size_keep_origin(
+                                    hwnd,
+                                    *width,
+                                    *height,
+                                );
+
+                                crate::gui::windows::windowsoverrides::clamp_window_to_monitor_work_area(hwnd);
+                            }
+                            WindowSizeMode::FullScreen => {
+                                crate::gui::windows::windowsoverrides::set_window_mode(
+                                    hwnd,
+                                    &self.settings_window.current_settings.window_size_mode,
+                                );
+                            }
+                        }
                     }
                 }
                 SettingsAction::ResetToDefaults => {
