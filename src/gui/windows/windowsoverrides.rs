@@ -20,14 +20,93 @@ use windows::Win32::System::DataExchange::{
     AddClipboardFormatListener, RemoveClipboardFormatListener,
 };
 use windows::Win32::UI::Controls::MARGINS;
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 const MIN_WIDTH: i32 = 600;
 const MIN_HEIGHT: i32 = 400;
-/// Width of the client-area region reserved for native window resizing.
-const RESIZE_BORDER: i32 = 2;
+/// Width, in logical (96-DPI) pixels, of the client-area region reserved for
+/// native window resizing. Scaled up per-monitor DPI at hit-test time so the
+/// grab area stays a consistent, comfortably-sized target regardless of
+/// display scaling - matching the ~8px border Windows uses for its own
+/// resizable windows instead of an easy-to-miss sliver.
+const RESIZE_BORDER: i32 = 8;
 
 static ORIGINAL_WNDPROC: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
+
+/// Stashed once the main window's real HWND is known (mirrors the
+/// `EGUI_CTX`/`set_egui_ctx` pattern just below) so any call site that needs
+/// to parent a native dialog to the main window - most of which live in
+/// `*_ui.rs` files that only ever see an `&mut egui::Ui`, never the HWND
+/// itself - can reach it without threading a new parameter through every
+/// settings page. See `dialog_owner`'s own doc comment for why this matters.
+static MAIN_HWND: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
+
+pub fn set_main_hwnd(hwnd: HWND) {
+    MAIN_HWND.store(hwnd.0, Ordering::SeqCst);
+}
+
+fn main_hwnd() -> Option<HWND> {
+    let ptr = MAIN_HWND.load(Ordering::SeqCst);
+    if ptr.is_null() {
+        None
+    } else {
+        Some(HWND(ptr))
+    }
+}
+
+/// A minimal `HasWindowHandle` wrapper around a raw HWND, so it can be passed
+/// to `rfd::FileDialog::set_parent`.
+struct Win32DialogOwner(HWND);
+
+impl HasWindowHandle for Win32DialogOwner {
+    fn window_handle(
+        &self,
+    ) -> Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError> {
+        let value = std::num::NonZeroIsize::new(self.0.0 as isize)
+            .ok_or(raw_window_handle::HandleError::Unavailable)?;
+        let handle = RawWindowHandle::Win32(raw_window_handle::Win32WindowHandle::new(value));
+        Ok(unsafe { raw_window_handle::WindowHandle::borrow_raw(handle) })
+    }
+}
+
+impl raw_window_handle::HasDisplayHandle for Win32DialogOwner {
+    fn display_handle(
+        &self,
+    ) -> Result<raw_window_handle::DisplayHandle<'_>, raw_window_handle::HandleError> {
+        let handle =
+            raw_window_handle::RawDisplayHandle::Windows(raw_window_handle::WindowsDisplayHandle::new());
+        Ok(unsafe { raw_window_handle::DisplayHandle::borrow_raw(handle) })
+    }
+}
+
+/// Starts a new native file/folder dialog already parented to the main
+/// window, if its HWND is known yet. Use this instead of
+/// `rfd::FileDialog::new()` directly everywhere in this app.
+///
+/// This app strips `WS_CAPTION` and paints its entire window chrome
+/// (title bar, min/max/close, border) itself every frame - there's no
+/// native non-client area for Windows to fall back on. An *ownerless*
+/// native common dialog (`rfd::FileDialog::new()` with no parent set) blocks
+/// this window's own message loop while it's open without ever properly
+/// marking this window as that dialog's owned/disabled parent - so if the
+/// window is redrawn by the OS for any reason while blocked (losing focus,
+/// a monitor/DPI change, Windows deciding the frozen message queue needs a
+/// "ghost" placeholder), it falls back to a minimal *native* frame in the
+/// corner (a bare system Close box, sometimes a context-help "?" glyph)
+/// since there's no real caption for Windows to render - reported directly
+/// as "weird border and control button" while an Export Settings dialog was
+/// open. Explicitly parenting every dialog to the main HWND (via
+/// `set_parent`, standard Win32 modal-ownership) fixes this the correct
+/// way: Windows properly treats the main window as disabled-but-owned while
+/// the dialog is up, instead of guessing.
+pub fn dialog() -> rfd::FileDialog {
+    let dialog = rfd::FileDialog::new();
+    match main_hwnd() {
+        Some(hwnd) => dialog.set_parent(&Win32DialogOwner(hwnd)),
+        None => dialog,
+    }
+}
 
 fn get_original_wndproc() -> Option<WNDPROC> {
     let ptr = ORIGINAL_WNDPROC.load(Ordering::SeqCst);
@@ -81,8 +160,24 @@ fn save_manual_window_size(hwnd: HWND) {
             return;
         }
 
-        let width = (rect.right - rect.left) as f32;
-        let height = (rect.bottom - rect.top) as f32;
+        // `GetClientRect` reports physical pixels, but every other reader of
+        // `WindowSizeMode::Custom` (the per-frame save in mainwindow.rs, and
+        // `.with_inner_size()` at startup in main.rs) works in egui's
+        // logical points - the same space `i.viewport().inner_rect` uses.
+        // Saving the raw physical value here silently inflated the
+        // remembered size by the display's scale factor on any monitor not
+        // running at 100% (125%/150% is a common Windows default), which
+        // then got clamped to the monitor by `.with_clamp_size_to_monitor_
+        // size(true)` on the next launch - looking like the window size
+        // (and, since the startup position math uses this same size, the
+        // position too) wasn't being remembered at all. Divide by the
+        // window's own DPI scale to convert back to logical points before
+        // saving, matching every other write to this field.
+        let dpi = GetDpiForWindow(hwnd).max(1);
+        let scale = dpi as f32 / 96.0;
+
+        let width = (rect.right - rect.left) as f32 / scale;
+        let height = (rect.bottom - rect.top) as f32 / scale;
 
         if width <= 0.0 || height <= 0.0 {
             return;
@@ -102,6 +197,7 @@ fn save_manual_window_size(hwnd: HWND) {
             sort_ascending,
             _language,
             date_style,
+            custom_date_format,
             item_viewer_file_column_order,
             item_viewer_drive_column_order,
             recycle_bin_column_order,
@@ -109,6 +205,15 @@ fn save_manual_window_size(hwnd: HWND) {
             item_viewer_drive_column_sizes,
             recycle_bin_column_sizes,
             directory_settings,
+            double_click_navigates_up,
+            show_selection_checkboxes,
+            middle_click_opens_new_tab,
+            restore_last_session_tabs,
+            default_display_mode,
+            default_search_scope,
+            search_engine,
+            auto_open_notification_panel,
+            show_operation_toasts,
         ) = load_app_settings();
         let window_size_mode = WindowSizeMode::Custom { width, height };
 
@@ -126,6 +231,7 @@ fn save_manual_window_size(hwnd: HWND) {
             sort_ascending,
             &_language,
             date_style,
+            &custom_date_format,
             &item_viewer_file_column_order,
             &item_viewer_drive_column_order,
             &recycle_bin_column_order,
@@ -133,6 +239,15 @@ fn save_manual_window_size(hwnd: HWND) {
             &item_viewer_drive_column_sizes,
             &recycle_bin_column_sizes,
             &directory_settings,
+            double_click_navigates_up,
+            show_selection_checkboxes,
+            middle_click_opens_new_tab,
+            restore_last_session_tabs,
+            default_display_mode,
+            default_search_scope,
+            search_engine,
+            auto_open_notification_panel,
+            show_operation_toasts,
         );
     }
 }
@@ -181,10 +296,22 @@ pub fn apply_window_override(hwnd: HWND, palette: &ThemePalette) {
             cyBottomHeight: 0,
         };
 
-        let border_color = color32_to_dwm(palette.borders_default);
         let caption_color = color32_to_dwm(palette.application_bg_color);
         let text_color = color32_to_dwm(palette.application_bg_color);
 
+        // `mainwindow.rs` already paints its own accent-colored 3px border
+        // around the whole viewport by hand every frame (the one place this
+        // app's border actually comes from) - setting DWMWA_BORDER_COLOR
+        // (attribute 34) to that same accent color additionally asked
+        // *Windows itself* to draw a second, native ~1px border on top of
+        // it. The two together read as a double border specifically along
+        // the top edge (where DWM's own border renders as a distinct thin
+        // outer line above the app's thicker painted one; left/right/bottom
+        // don't show the same visible gap between the two). Using
+        // `DWMWA_COLOR_NONE` here tells DWM not to draw a border of its own
+        // at all, leaving the app's single hand-painted border as the only
+        // one visible on every edge.
+        let border_color = DWMWA_COLOR_NONE;
         let _ = DwmSetWindowAttribute(
             hwnd,
             DWMWINDOWATTRIBUTE(34),
@@ -348,7 +475,8 @@ unsafe extern "system" fn custom_wndproc(
                 let right = bottom_right.x;
                 let bottom = bottom_right.y;
 
-                let resize = RESIZE_BORDER;
+                let dpi = GetDpiForWindow(hwnd).max(1);
+                let resize = (RESIZE_BORDER as f32 * dpi as f32 / 96.0).round() as i32;
 
                 // Top-left
                 if x >= left && x < left + resize && y >= top && y < top + resize {
@@ -394,6 +522,22 @@ unsafe extern "system" fn custom_wndproc(
             }
         }
 
+        WM_KEYDOWN | WM_SYSKEYDOWN => unsafe {
+            // Every key press records whether it was Shift+Delete, so a
+            // later, unrelated Cut (Ctrl+X) is never mistaken for it.
+            use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_DELETE, VK_SHIFT};
+            let shift_down = GetKeyState(VK_SHIFT.0 as i32) < 0;
+            SHIFT_DELETE_PRESSED.store(
+                shift_down && wparam.0 == VK_DELETE.0 as usize,
+                Ordering::SeqCst,
+            );
+            if let Some(orig) = get_original_wndproc() {
+                CallWindowProcW(orig, hwnd, msg, wparam, lparam)
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        },
+
         _ => unsafe {
             if let Some(orig) = get_original_wndproc() {
                 CallWindowProcW(orig, hwnd, msg, wparam, lparam)
@@ -402,6 +546,19 @@ unsafe extern "system" fn custom_wndproc(
             }
         },
     }
+}
+
+/// Set when the most recent key press was Shift+Delete. egui's Windows input
+/// layer turns Shift+Delete into a Cut command (the legacy Windows Cut
+/// shortcut) and never reports the Delete key itself, so without this the
+/// app could only see a Cut - Shift+Delete silently marked the selection for
+/// cutting instead of permanently deleting it.
+static SHIFT_DELETE_PRESSED: AtomicBool = AtomicBool::new(false);
+
+/// Whether the Cut command currently being handled actually came from
+/// Shift+Delete. Consumes the flag, so it's only honored once.
+pub fn take_shift_delete() -> bool {
+    SHIFT_DELETE_PRESSED.swap(false, Ordering::SeqCst)
 }
 
 fn get_x_lparam(lparam: LPARAM) -> i32 {

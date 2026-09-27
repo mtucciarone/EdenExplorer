@@ -11,8 +11,8 @@ use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{SortColumn, truncate_item_text};
 use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
 use crate::gui::windows::containers::itemviewer_helper::{
-    handle_context_menu_actions, handle_editing_file_name, handle_keyboard_navigation,
-    handle_row_click,
+    draw_empty_folder_context_menu, handle_context_menu_actions, handle_editing_file_name,
+    handle_keyboard_navigation, handle_row_click,
 };
 use crate::gui::windows::containers::structs::{
     DragState, ExplorerState, GalleryState, GalleryThumbnailSize, RenameState, TagsState,
@@ -62,8 +62,16 @@ pub fn draw_gallery_view(
     is_focused: bool,
     active_tab_id: u64,
     current_dir: PathBuf,
+    is_loading: bool,
 ) -> Option<ItemViewerAction> {
+    let is_search_view = crate::core::fs::parse_search_view_path(&current_dir).is_some();
     thumbnail_service.pump_completed(ui.ctx());
+
+    // Top padding so the Sort By/thumbnail-size row doesn't sit flush
+    // against the pane's own top edge - every other view's own toolbar/
+    // navbar row keeps a small margin from its container's top border,
+    // this one had none of its own.
+    ui.add_space(6.0);
 
     let mut action = draw_gallery_toolbar(
         ui,
@@ -74,10 +82,61 @@ pub fn draw_gallery_view(
         sort_ascending,
     );
 
+    // Gap between the toolbar row and the divider below it, so the two
+    // don't sit flush together - mirrors the gap added below the divider
+    // (see `ui.add_space` right after the `hline` call).
+    ui.add_space(6.0);
+
+    // Separates the sort/thumbnail-size toolbar from the file grid below
+    // it, matching the same technique already used to separate the tab
+    // strip from the item viewer (`mainwindow.rs`) and the navbar from the
+    // table (`explorer.rs`) - a plain `hline` at the row's own bottom edge
+    // rather than leaving the two visually blended together. This pane's
+    // own left/right bounds are the same ones `explorer.rs`'s own
+    // `content_border_rect` box border uses (`content_rect.right() -=
+    // 6.0`, left untouched - see that comment for why only the right side
+    // needs pulling in) - matching those same bounds here means the
+    // divider's ends align with that box border rather than either
+    // overshooting it (touching the sidebar/outer window border) or
+    // falling short of it (a gap of dead space past the divider's own
+    // end before the box border).
+    let divider_bounds = ui.available_rect_before_wrap();
+    ui.painter().hline(
+        egui::Rangef::new(divider_bounds.left(), divider_bounds.right() - 6.0),
+        ui.cursor().top(),
+        egui::Stroke::new(1.5, palette.borders_default),
+    );
+
+    // Bottom padding so the file grid doesn't sit flush against the
+    // divider line, mirroring the top padding added above it.
+    ui.add_space(6.0);
+
     if filtered_indices.is_empty() {
+        let empty_rect = ui.available_rect_before_wrap();
         ui.centered_and_justified(|ui| {
             ui.label(i18n.tr("folder_is_empty"));
         });
+
+        // See the matching comment in itemviewer.rs's own empty-folder
+        // handling - the populated-folder background context menu below
+        // never reaches an empty folder, since it's wired through a
+        // background `Response` only computed once there's an actual grid
+        // of tiles to lay out.
+        if !modal_input_blocked {
+            let empty_resp =
+                ui.interact(empty_rect, ui.id().with("empty_gallery_bg"), egui::Sense::click());
+            draw_empty_folder_context_menu(
+                i18n,
+                palette,
+                &empty_resp,
+                &current_dir,
+                paste_enabled,
+                settings_window,
+                explorer_state,
+                hwnd,
+                &mut action,
+            );
+        }
         return action;
     }
 
@@ -111,12 +170,16 @@ pub fn draw_gallery_view(
     let mut current_hovered_drop_target: Option<PathBuf> = None;
     let mut current_hovered_drop_target_rect: Option<egui::Rect> = None;
     let gallery_rect = ui.available_rect_before_wrap();
+    // Bottom padding so the last row of tiles isn't flush against the pane
+    // border - reserved as real, unused rect space rather than relying on
+    // the scroll area's own virtual content-height bookkeeping.
+    const BOTTOM_PADDING: f32 = 12.0;
     let scroll_rect = egui::Rect::from_min_max(
         egui::pos2(
             gallery_rect.left(),
             gallery_rect.top() + GALLERY_TOOLBAR_GAP,
         ),
-        gallery_rect.right_bottom(),
+        gallery_rect.right_bottom() - egui::vec2(0.0, BOTTOM_PADDING),
     );
 
     ui.scope_builder(egui::UiBuilder::new().max_rect(scroll_rect), |ui| {
@@ -148,6 +211,61 @@ pub fn draw_gallery_view(
                 }
 
                 let content_origin = ui.min_rect().min;
+
+                // A pending selection (set right after creating a new file/
+                // folder, so the user can immediately see and rename it -
+                // `create_new_folder`/`create_new_file` in `mainwindow_imp.
+                // rs`) only actually scrolled/selected in the Details table
+                // view, since that's the only place that read it - Gallery
+                // never consumed it at all, so a new item created while in
+                // Gallery mode could render far outside the current scroll
+                // position (or, worse, outside this virtualized view's
+                // "nearby rows" draw window entirely) with no indication
+                // anything happened. The target rect is computed directly
+                // from the item's index rather than waiting for it to
+                // actually render this frame, since `scroll_to_rect` only
+                // needs a valid rect to schedule the scroll - not one that
+                // was actually painted.
+                if let Some(pending_paths) = explorer_state.pending_selection_paths.clone() {
+                    if let (Some(target_path), true) =
+                        (pending_paths.first(), pending_paths.len() == 1)
+                    {
+                        if let Some(item_index) = filtered_indices
+                            .iter()
+                            .position(|&file_index| &files[file_index].path == target_path)
+                        {
+                            let row = item_index / columns;
+                            let col = item_index % columns;
+                            let target_rect = egui::Rect::from_min_size(
+                                content_origin
+                                    + egui::vec2(col as f32 * col_pitch, row as f32 * row_pitch),
+                                egui::vec2(tile_width, tile_height),
+                            );
+                            ui.scroll_to_rect(target_rect, Some(egui::Align::Center));
+
+                            explorer_state.selected_paths.clear();
+                            explorer_state.selected_paths.insert(target_path.clone());
+                            explorer_state.selection_anchor = Some(item_index);
+                            explorer_state.selection_focus = Some(item_index);
+                        }
+                    }
+                    // Only clear the pending marker once the directory scan
+                    // has actually finished (`!is_loading`) - a large folder
+                    // streams its contents in over many frames and re-sorts
+                    // after every batch, so clearing this the moment the
+                    // item is first found (the previous behavior) landed the
+                    // one-shot `scroll_to_rect` against a still-incomplete,
+                    // still-resorting list; worse, clearing it *unconditionally*
+                    // here even when the item hadn't been found yet meant a
+                    // large folder's new item was never scrolled to at all,
+                    // since this ran and gave up on literally the first
+                    // frame. Retrying every frame while loading is cheap and
+                    // self-correcting, and guarantees the *last* attempt
+                    // lands against the final, fully-settled sort order.
+                    if !is_loading {
+                        explorer_state.pending_selection_paths = None;
+                    }
+                }
 
                 let bg_rect = egui::Rect::from_min_size(
                     content_origin,
@@ -192,6 +310,49 @@ pub fn draw_gallery_view(
 
                         if let Some(a) = tile_action {
                             action = Some(a);
+                        }
+
+                        // Selection checkbox in the tile's corner (Settings >
+                        // Show Selection Checkboxes), like the Details view's
+                        // checkbox column: shown while hovering, on selected
+                        // tiles, and on every tile once anything is selected.
+                        if settings_window.current_settings.show_selection_checkboxes && !modal_input_blocked {
+                            let is_selected = explorer_state.selected_paths.contains(&file.path);
+                            let hovered = pointer_pos.is_some_and(|p| rect.contains(p));
+                            if hovered || is_selected || !explorer_state.selected_paths.is_empty() {
+                                let box_rect = egui::Rect::from_min_size(
+                                    rect.min + egui::vec2(8.0, 8.0),
+                                    egui::vec2(20.0, 20.0),
+                                );
+                                // A dark, outlined backdrop so the box reads
+                                // clearly over any thumbnail.
+                                ui.painter().rect(
+                                    box_rect,
+                                    egui::CornerRadius::same(6),
+                                    egui::Color32::from_black_alpha(160),
+                                    egui::Stroke::new(1.0, egui::Color32::from_white_alpha(140)),
+                                    egui::StrokeKind::Inside,
+                                );
+                                let mut checked = is_selected;
+                                let clicked = ui
+                                    .scope_builder(egui::UiBuilder::new().max_rect(box_rect), |ui| {
+                                        crate::core::utils::widgets::draw_checkbox(
+                                            ui,
+                                            palette,
+                                            &mut checked,
+                                            ("gallery_checkbox", &file.path),
+                                        )
+                                    })
+                                    .inner
+                                    .clicked();
+                                if clicked {
+                                    action = Some(if checked {
+                                        ItemViewerAction::Select(file.path.clone())
+                                    } else {
+                                        ItemViewerAction::Deselect(file.path.clone())
+                                    });
+                                }
+                            }
                         }
 
                         if drag_hover_active {
@@ -257,12 +418,18 @@ pub fn draw_gallery_view(
                                 drag_state,
                                 explorer_state,
                                 false,
+                                false,
+                                response.double_clicked(),
+                                response.ctx.input(|i| i.time),
                             ) {
                                 action = Some(a);
                             }
                         }
 
-                        if response.middle_clicked() && file.is_dir {
+                        if response.middle_clicked()
+                            && file.is_dir
+                            && settings_window.current_settings.middle_click_opens_new_tab
+                        {
                             action = Some(ItemViewerAction::OpenInNewTab(file.path.clone()));
                         }
 
@@ -284,6 +451,8 @@ pub fn draw_gallery_view(
                                     tags_state,
                                     settings_window,
                                     hwnd,
+                                    icon_cache,
+                                    is_search_view,
                                 );
                             });
                     }
@@ -307,6 +476,15 @@ pub fn draw_gallery_view(
                             target_dir,
                         });
                     }
+
+                    // See the matching fix/comment in itemviewer.rs - clearing
+                    // `active` alone isn't enough, since the per-tile re-arm
+                    // check above re-flips it true once the pointer drifts
+                    // >4px from a leftover `start_pos`. Clear `start_pos` and
+                    // `source_items` too.
+                    drag_state.active = false;
+                    drag_state.start_pos = None;
+                    drag_state.source_items.clear();
                 }
 
                 if !modal_input_blocked {
@@ -322,8 +500,15 @@ pub fn draw_gallery_view(
                                 action = Some(ItemViewerAction::CreateFolder);
                                 ui.close();
                             }
-                            if ui.button("New File").clicked() {
-                                action = Some(ItemViewerAction::CreateFile);
+                            crate::gui::windows::containers::itemviewer_helper::draw_new_file_menu(
+                                ui,
+                                i18n,
+                                palette,
+                                settings_window,
+                                &mut action,
+                            );
+                            if ui.button(i18n.tr("inputs_create_shortcut")).clicked() {
+                                action = Some(ItemViewerAction::CreateShortcutHere);
                                 ui.close();
                             }
                             if ui.button("Refresh").clicked() {
@@ -332,6 +517,21 @@ pub fn draw_gallery_view(
                             }
                             if ui.button("Open Terminal").clicked() {
                                 action = Some(ItemViewerAction::OpenTerminal);
+                                ui.close();
+                            }
+
+                            ui.separator();
+
+                            if ui.button(i18n.tr("select_all")).clicked() {
+                                action = Some(ItemViewerAction::SelectAll);
+                                ui.close();
+                            }
+                            if ui.button(i18n.tr("select_invert")).clicked() {
+                                action = Some(ItemViewerAction::InvertSelection);
+                                ui.close();
+                            }
+                            if ui.button(i18n.tr("select_by_pattern_menu")).clicked() {
+                                action = Some(ItemViewerAction::SelectByPattern);
                                 ui.close();
                             }
 
@@ -568,6 +768,20 @@ fn draw_gallery_tile(
                 egui::Color32::WHITE.linear_multiply(0.45)
             } else {
                 egui::Color32::WHITE
+            },
+        );
+    } else if let Some(glyph) = icon_cache.get_custom_folder_icon(&file.path, file.is_dir) {
+        let icon_size = (thumb_size * 0.35).clamp(24.0, 80.0);
+
+        preview_painter.text(
+            preview_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            glyph,
+            FontId::proportional(icon_size),
+            if is_cut {
+                palette.icon_colored_hover.linear_multiply(0.45)
+            } else {
+                palette.icon_colored_hover
             },
         );
     } else if let Some(icon) = icon_cache.get(&file.path, file.is_dir) {

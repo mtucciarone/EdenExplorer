@@ -11,7 +11,6 @@ pub fn draw_topbar(
     ui: &mut egui::Ui,
     i18n: &I18n,
     is_dark: bool,
-    is_file_explorer: bool,
     sidebar_collapsed: bool,
     hwnd: Option<HWND>,
     palette: &crate::gui::theme::ThemePalette,
@@ -27,7 +26,6 @@ pub fn draw_topbar(
                 ui,
                 i18n,
                 is_dark,
-                is_file_explorer,
                 sidebar_collapsed,
                 hwnd,
                 palette,
@@ -47,7 +45,6 @@ pub fn draw_topbar(
                     ui,
                     i18n,
                     is_dark,
-                    is_file_explorer,
                     sidebar_collapsed,
                     hwnd,
                     palette,
@@ -95,11 +92,6 @@ fn draw_hamburger_menu(
                 egui::containers::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.set_min_width(120.0);
 
-                    if menu_item(ui, regular::PALETTE, &i18n.tr("theme"), palette).clicked() {
-                        action.customize_theme = true;
-                        ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
-                    }
-
                     if menu_item(ui, regular::SLIDERS, &i18n.tr("settings"), palette).clicked() {
                         action.open_settings = true;
                         ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
@@ -128,7 +120,6 @@ fn draw_mode_icons(
     ui: &mut egui::Ui,
     i18n: &I18n,
     is_dark: bool,
-    is_file_explorer: bool,
     sidebar_collapsed: bool,
     _hwnd: Option<HWND>,
     palette: &crate::gui::theme::ThemePalette,
@@ -174,65 +165,21 @@ fn draw_mode_icons(
 
     ui.separator();
 
-    let file_explorer_icon = if is_file_explorer {
-        regular::TABS
+    let (icon, tooltip_key) = if has_split {
+        (regular::ARROWS_IN_LINE_HORIZONTAL, "tooltip_close_split")
     } else {
-        regular::TABS
+        (regular::SPLIT_HORIZONTAL, "tooltip_open_split")
     };
-
-    if clickable_active_icon(
-        ui,
-        file_explorer_icon,
-        ui.visuals().text_color(),
-        is_file_explorer,
-        palette,
-    )
-    .on_hover_text(
-        egui::RichText::new(&i18n.tr("tooltip_show_file_explorer"))
-            .size(palette.tooltip_text_size)
-            .color(palette.tooltip_text_color),
-    )
-    .on_hover_cursor(egui::CursorIcon::PointingHand)
-    .clicked()
+    if clickable_icon(ui, icon, palette)
+        .on_hover_text(
+            egui::RichText::new(i18n.tr(tooltip_key))
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
     {
-        action.toggle_file_explorer = true;
-    }
-
-    if clickable_active_icon(
-        ui,
-        regular::TAG,
-        ui.visuals().text_color(),
-        !is_file_explorer,
-        palette,
-    )
-    .on_hover_text(
-        egui::RichText::new(&i18n.tr("tooltip_show_tags"))
-            .size(palette.tooltip_text_size)
-            .color(palette.tooltip_text_color),
-    )
-    .on_hover_cursor(egui::CursorIcon::PointingHand)
-    .clicked()
-    {
-        action.toggle_file_explorer = true;
-    }
-
-    if is_file_explorer {
-        let (icon, tooltip_key) = if has_split {
-            (regular::ARROWS_IN_LINE_HORIZONTAL, "tooltip_close_split")
-        } else {
-            (regular::SPLIT_HORIZONTAL, "tooltip_open_split")
-        };
-        if clickable_icon(ui, icon, palette)
-            .on_hover_text(
-                egui::RichText::new(i18n.tr(tooltip_key))
-                    .size(palette.tooltip_text_size)
-                    .color(palette.tooltip_text_color),
-            )
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
-            .clicked()
-        {
-            action.toggle_active_tab_split = true;
-        }
+        action.toggle_active_tab_split = true;
     }
 }
 

@@ -237,6 +237,52 @@ pub fn apply_custom_font_definitions(fonts: &mut egui::FontDefinitions) {
         vec!["phosphor_fill".to_owned()],
     );
 
+    // 2b. Phosphor priority layer - on a system whose "Segoe UI" (or
+    // whichever font a user picked) has been replaced by a large merged/
+    // localized font build (e.g. the common "SyrianSegoe"-style registry
+    // redirect seen on some Arabic-locale Windows installs), that font can
+    // happen to define its own glyphs at the exact private-use codepoints
+    // (U+E000+) Phosphor's icon glyphs live at - and since `apply_font_to_
+    // context` (theme.rs) inserts the user's chosen font at index 0 of the
+    // Proportional/Monospace family *before* this function runs, egui's
+    // first-font-that-has-the-glyph resolution would pick that font's
+    // (wrong, unrelated CJK) glyph over Phosphor's for every codepoint the
+    // replacement font happens to cover - explaining reports of some icons
+    // rendering as random CJK characters while others (codepoints the
+    // replacement font doesn't define) render correctly.
+    //
+    // Fixed by inserting a font at index 0 of both families, ahead of
+    // whatever font the user's own selection put there - but this MUST be
+    // a private-use-only *subset*, not the full `egui_phosphor::Variant::
+    // Regular` font reused as-is: that was the first cut here, on the
+    // assumption a dedicated icon font could only ever define glyphs in
+    // its own reserved codepoint range. Verified false for this exact font
+    // by inspecting its cmap/glyf tables directly - `Phosphor.ttf` also
+    // maps real (non-empty, 1-contour) glyphs onto plain lowercase ASCII
+    // (e.g. codepoints for 'h'/'i'/'s'), and giving it blanket priority
+    // broke ordinary lowercase text app-wide ("This PC" rendering as
+    // "T PC", etc.) the instant it shipped - confirmed by live-testing,
+    // not just reasoning about it. `assets/PhosphorIconsOnly.ttf` is that
+    // same font run through `fonttools`' `pyftsubset` restricted to
+    // `U+E000-F8FF` (the private-use area Phosphor's ~1500 icons actually
+    // live in), so it structurally cannot contain a stray Latin glyph
+    // regardless of what upstream `egui_phosphor` ships. Needs manual
+    // regeneration (the same `pyftsubset` invocation, or equivalent) if a
+    // future `egui-phosphor` version changes Phosphor.ttf's own codepoint
+    // mapping - not automatic like reusing the crate's own accessor would
+    // have been, but reusing it demonstrably isn't safe for this font.
+    fonts.font_data.insert(
+        "phosphor_priority".to_owned(),
+        egui::FontData::from_static(include_bytes!("../../assets/PhosphorIconsOnly.ttf")).into(),
+    );
+    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+        fonts
+            .families
+            .entry(family)
+            .or_default()
+            .insert(0, "phosphor_priority".to_owned());
+    }
+
     // 3. Japanese Font (adds to ALL families as a fallback)
     let japanese_font = "japanese_font".to_owned();
     fonts.font_data.insert(

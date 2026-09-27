@@ -14,21 +14,19 @@ lazy_static! {
         RwLock::new(LruCache::new(NonZeroUsize::new(1024).unwrap()));
 }
 
-pub fn fuzzy_match(name: &str, query: &str) -> bool {
-    let mut query_chars = query.chars().map(|c| c.to_ascii_lowercase());
-    let mut current = query_chars.next();
-
-    for c in name.chars().map(|c| c.to_ascii_lowercase()) {
-        if let Some(q) = current {
-            if c == q {
-                current = query_chars.next();
-            }
-        } else {
-            return true;
-        }
-    }
-
-    current.is_none()
+/// Case-insensitive substring match, used by the item viewer's own type-to-
+/// filter box (`FilterState::query`) - typing "te" should only match a name
+/// that actually contains "te" together (`Test folder`, `Eclipse Temurin`),
+/// not any name whose letters happen to contain a 't' followed somewhere
+/// later by an 'e' (`Make The Doc`, `Fast Meet`). This used to be a
+/// character-order *subsequence* matcher (a fuzzy-finder algorithm, the kind
+/// VSCode's Quick Open uses) - reasonable for a command palette where you're
+/// hunting for a known item by initials, but not for a plain "filter this
+/// folder's file list" box, where a result that doesn't visibly contain what
+/// you typed just looks broken. Reported directly: typing "te" surfaced
+/// names with no "te" substring at all.
+pub fn filter_match(name: &str, query: &str) -> bool {
+    name.to_lowercase().contains(&query.to_lowercase())
 }
 
 /// Expands Windows environment variables in a path (e.g., %appdata% -> C:\Users\...\AppData\Roaming)
@@ -159,6 +157,30 @@ pub fn truncate_item_text(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn filter_match_requires_the_query_as_a_contiguous_substring() {
+        assert!(filter_match("Eclipse Temurin", "te"));
+        assert!(filter_match("Test folder", "te"));
+        assert!(filter_match("Paste Folder", "te"));
+
+        // Reported directly: these were matching under the old
+        // subsequence-based `fuzzy_match` (a 't' followed somewhere later by
+        // an 'e') despite containing no "te" substring at all.
+        assert!(!filter_match("Make The Doc", "te"));
+        assert!(!filter_match("Fast Meet", "te"));
+    }
+
+    #[test]
+    fn filter_match_is_case_insensitive() {
+        assert!(filter_match("TEST FOLDER", "test"));
+        assert!(filter_match("test folder", "TEST"));
+    }
+
+    #[test]
+    fn filter_match_empty_query_matches_everything() {
+        assert!(filter_match("anything at all", ""));
+    }
 
     #[test]
     fn test_expand_environment_variables() {

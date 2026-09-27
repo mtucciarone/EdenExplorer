@@ -387,6 +387,89 @@ pub fn is_virtual_path(path: &Path) -> bool {
     )
 }
 
+/// Whether `input` looks like a `shell:` moniker (e.g. `shell:ControlPanelFolder`)
+/// or a raw CLSID path (`::{GUID}`) rather than an ordinary filesystem path -
+/// the two forms Explorer's own address bar accepts beyond real paths/UNC.
+pub fn is_shell_uri(input: &str) -> bool {
+    let trimmed = input.trim();
+    let shell_prefix = trimmed.get(..6).is_some_and(|p| p.eq_ignore_ascii_case("shell:"));
+    shell_prefix || trimmed.starts_with("::{")
+}
+
+/// What a `shell:`/`::{GUID}` moniker resolved to via the shell namespace.
+pub enum ShellUriResolution {
+    /// Resolves to a real filesystem location - navigate there like any
+    /// other path.
+    FileSystemPath(PathBuf),
+    /// A genuinely virtual shell folder (Control Panel, Printers, etc.) with
+    /// no filesystem backing this app can render - hand off to Explorer/the
+    /// shell itself via `ShellExecuteW` instead.
+    Virtual,
+}
+
+/// Resolves a `shell:`/`::{GUID}` string through the Win32 shell namespace,
+/// the same resolution Explorer's own address bar performs. Returns `None`
+/// if `input` isn't shell-URI-shaped at all (use [`is_shell_uri`] to check
+/// first, or just inspect the `None` case).
+///
+/// This reuses `SHCreateItemFromParsingName` - already used elsewhere in
+/// this codebase for ordinary filesystem paths (`mainwindow_imp.rs`,
+/// `core/utils/dialogs.rs`, `core/utils/thumbnails.rs`) - since it parses a
+/// `shell:` moniker exactly the same way `SHParseDisplayName`/
+/// `IShellFolder::ParseDisplayName` do; no separate API is needed.
+pub fn resolve_shell_uri(input: &str) -> Option<ShellUriResolution> {
+    if !is_shell_uri(input) {
+        return None;
+    }
+
+    use windows::Win32::System::Com::CoTaskMemFree;
+    use windows::Win32::UI::Shell::{IShellItem, SHCreateItemFromParsingName, SIGDN_FILESYSPATH};
+    use windows::core::HSTRING;
+
+    unsafe {
+        let item: IShellItem = match SHCreateItemFromParsingName(&HSTRING::from(input), None) {
+            Ok(item) => item,
+            Err(_) => return Some(ShellUriResolution::Virtual),
+        };
+
+        match item.GetDisplayName(SIGDN_FILESYSPATH) {
+            Ok(name) => {
+                let path = name
+                    .to_string()
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|_| PathBuf::new());
+                CoTaskMemFree(Some(name.0 as _));
+                if path.as_os_str().is_empty() {
+                    Some(ShellUriResolution::Virtual)
+                } else {
+                    Some(ShellUriResolution::FileSystemPath(path))
+                }
+            }
+            Err(_) => Some(ShellUriResolution::Virtual),
+        }
+    }
+}
+
+/// Hands a virtual shell location off to the shell itself (Explorer opens
+/// its own window for things like Control Panel/Printers) since this app has
+/// no in-app rendering model for arbitrary virtual shell namespaces.
+pub fn launch_shell_uri_externally(input: &str) {
+    use windows::Win32::UI::Shell::ShellExecuteW;
+    use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    use windows::core::HSTRING;
+
+    unsafe {
+        ShellExecuteW(
+            None,
+            &HSTRING::from("open"),
+            &HSTRING::from(input),
+            None,
+            None,
+            SW_SHOWNORMAL,
+        );
+    }
+}
+
 #[cfg(not(windows))]
 pub fn take_forwarded_paths() -> Vec<PathBuf> {
     Vec::new()
