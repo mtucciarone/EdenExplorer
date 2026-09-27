@@ -1067,7 +1067,7 @@ impl MainWindow {
         }
     }
 
-    fn save_app_settings_to_disk(&self) {
+    pub(crate) fn save_app_settings_to_disk(&self) {
         save_app_settings(
             self.settings_window
                 .current_settings
@@ -5419,139 +5419,160 @@ impl MainWindow {
             return;
         }
 
-        let shortcuts = ctx.input(|input| {
-            (
-                pressed(input, ShortcutAction::PreviousTab),
-                pressed(input, ShortcutAction::NextTab),
-                pressed(input, ShortcutAction::NewTab),
-                pressed(input, ShortcutAction::CloseTab),
-                pressed(input, ShortcutAction::NewFolder),
-                pressed(input, ShortcutAction::Refresh),
-                false,
-                pressed(input, ShortcutAction::Fullscreen),
-                pressed(input, ShortcutAction::AddressBar),
-                pressed(input, ShortcutAction::Rename),
-                pressed(input, ShortcutAction::Properties),
-                pressed(input, ShortcutAction::Search),
-                pressed(input, ShortcutAction::Undo),
-                pressed(input, ShortcutAction::Redo),
-                false,
-            )
-        });
-
-        if shortcuts.0 {
-            self.activate_tab_relative(-1);
-            return;
+        // Ctrl+Z/Ctrl+Y/Ctrl+Shift+Z must not fire while any text field has
+        // keyboard focus (address bar, search, filter, Find in Preview,
+        // Settings fields): there they belong to the text box's own undo,
+        // and must not also undo the last file rename/move/copy behind the
+        // user's back. (`run_shortcut` itself also skips them while a
+        // rename is open.)
+        let text_focused = ctx.egui_wants_keyboard_input();
+        for action in [
+            ShortcutAction::PreviousTab,
+            ShortcutAction::NextTab,
+            ShortcutAction::NewTab,
+            ShortcutAction::CloseTab,
+            ShortcutAction::NewFolder,
+            ShortcutAction::Refresh,
+            ShortcutAction::Fullscreen,
+            ShortcutAction::AddressBar,
+            ShortcutAction::Rename,
+            ShortcutAction::Properties,
+            ShortcutAction::Search,
+            ShortcutAction::Undo,
+            ShortcutAction::Redo,
+            ShortcutAction::CommandPalette,
+        ] {
+            if matches!(action, ShortcutAction::Undo | ShortcutAction::Redo) && text_focused {
+                continue;
+            }
+            // While the command palette is open only its own key works.
+            if self.command_palette.is_some() && action != ShortcutAction::CommandPalette {
+                continue;
+            }
+            if ctx.input(|input| pressed(input, action)) {
+                self.run_shortcut(action);
+                // F1 (fullscreen) used to let the others be checked too;
+                // nothing else shares a key with it, so stopping is the same.
+                return;
+            }
         }
+    }
 
-        if shortcuts.1 {
-            self.activate_tab_relative(1);
-            return;
-        }
-
-        if shortcuts.2 {
-            let action = TabsAction {
-                open_new: true,
-                ..Default::default()
-            };
-            self.handle_tabs_action(Some(action), None);
-            return;
-        }
-
-        if shortcuts.3 {
-            let action = TabsAction {
-                close: Some(self.active_tab().id),
-                ..Default::default()
-            };
-            self.handle_tabs_action(Some(action), None);
-            return;
-        }
-
-        if shortcuts.4 {
-            self.create_new_folder();
-            return;
-        }
-
-        if shortcuts.5 || shortcuts.6 {
-            self.load_path();
-            return;
-        }
-
-        if shortcuts.7 {
-            self.toggle_fullscreen();
-        }
-
-        if shortcuts.8 {
-            self.enter_address_bar_edit_mode();
-            return;
-        }
-
-        if shortcuts.9 {
-            if self.rename_state.is_none()
-                && !self
-                    .active_tab()
-                    .view(self.focused_split)
-                    .breadcrumb_path_editing
-            {
-                let selected_count = self
-                    .active_tab()
-                    .view(self.focused_split)
-                    .explorer_state
-                    .selected_paths
-                    .len();
-
-                if selected_count > 1 {
-                    let mut paths: Vec<PathBuf> = self
+    /// Does what `action`'s keyboard shortcut does (also used by the
+    /// command palette). Actions the file list handles itself (Back,
+    /// Select All, ...) are forwarded to it.
+    pub(crate) fn run_shortcut(&mut self, action: crate::core::keymap::ShortcutAction) {
+        use crate::core::keymap::ShortcutAction;
+        match action {
+            ShortcutAction::PreviousTab => self.activate_tab_relative(-1),
+            ShortcutAction::NextTab => self.activate_tab_relative(1),
+            ShortcutAction::NewTab => {
+                let action = TabsAction {
+                    open_new: true,
+                    ..Default::default()
+                };
+                self.handle_tabs_action(Some(action), None);
+            }
+            ShortcutAction::CloseTab => {
+                let action = TabsAction {
+                    close: Some(self.active_tab().id),
+                    ..Default::default()
+                };
+                self.handle_tabs_action(Some(action), None);
+            }
+            ShortcutAction::NewFolder => self.create_new_folder(),
+            ShortcutAction::Refresh => self.load_path(),
+            ShortcutAction::Fullscreen => self.toggle_fullscreen(),
+            ShortcutAction::AddressBar => self.enter_address_bar_edit_mode(),
+            ShortcutAction::Rename => {
+                if self.rename_state.is_none()
+                    && !self
+                        .active_tab()
+                        .view(self.focused_split)
+                        .breadcrumb_path_editing
+                {
+                    let selected_count = self
                         .active_tab()
                         .view(self.focused_split)
                         .explorer_state
                         .selected_paths
-                        .iter()
-                        .cloned()
-                        .collect();
-                    paths.sort();
-                    self.handle_context_action(ItemViewerContextAction::BulkRenameRequest(paths));
-                } else if let Some(path) = self.selected_path_for_rename() {
-                    let action = ItemViewerAction::StartEdit(path);
-                    handle_pending_actions(Some(action), self);
+                        .len();
+
+                    if selected_count > 1 {
+                        let mut paths: Vec<PathBuf> = self
+                            .active_tab()
+                            .view(self.focused_split)
+                            .explorer_state
+                            .selected_paths
+                            .iter()
+                            .cloned()
+                            .collect();
+                        paths.sort();
+                        self.handle_context_action(ItemViewerContextAction::BulkRenameRequest(paths));
+                    } else if let Some(path) = self.selected_path_for_rename() {
+                        let action = ItemViewerAction::StartEdit(path);
+                        handle_pending_actions(Some(action), self);
+                    }
                 }
             }
-            return;
-        }
-
-        if shortcuts.10 {
-            if !self
-                .active_tab()
-                .view(self.focused_split)
-                .breadcrumb_path_editing
-                && let Some(paths) = self.selected_paths_for_properties()
-            {
-                self.open_properties_multi(&paths);
+            ShortcutAction::Properties => {
+                if !self
+                    .active_tab()
+                    .view(self.focused_split)
+                    .breadcrumb_path_editing
+                    && let Some(paths) = self.selected_paths_for_properties()
+                {
+                    self.open_properties_multi(&paths);
+                }
             }
-        }
-
-        if shortcuts.11 {
-            self.enter_search_box_edit_mode();
-        }
-
-        // Ctrl+Z/Ctrl+Y/Ctrl+Shift+Z must not also fire while a rename/
-        // bulk-rename dialog is actively open - same guard as F2 above.
-        // Also skip them while any text field has keyboard focus (address
-        // bar, search, filter, Find in Preview, Settings fields): there,
-        // Ctrl+Z/Ctrl+Y belong to the text box's own undo, and must not also
-        // undo the last file rename/move/copy behind the user's back.
-        let rename_ui_open = self.rename_state.is_some()
-            || self.pending_bulk_rename.is_some()
-            || ctx.egui_wants_keyboard_input();
-
-        if shortcuts.12 && !rename_ui_open {
-            self.undo();
-            return;
-        }
-
-        if (shortcuts.13 || shortcuts.14) && !rename_ui_open {
-            self.redo();
-            return;
+            ShortcutAction::Search => self.enter_search_box_edit_mode(),
+            // Not while a rename/bulk-rename dialog is open.
+            ShortcutAction::Undo | ShortcutAction::Redo => {
+                if self.rename_state.is_none() && self.pending_bulk_rename.is_none() {
+                    if action == ShortcutAction::Undo {
+                        self.undo();
+                    } else {
+                        self.redo();
+                    }
+                }
+            }
+            ShortcutAction::PerformancePanel => self.toggle_performance_panel(),
+            ShortcutAction::CommandPalette => self.toggle_command_palette(),
+            ShortcutAction::Back | ShortcutAction::Forward | ShortcutAction::Up => {
+                let nav = match action {
+                    ShortcutAction::Back => ItemViewerNavAction::Back,
+                    ShortcutAction::Forward => ItemViewerNavAction::Forward,
+                    _ => ItemViewerNavAction::Up,
+                };
+                self.handle_tabbar_action(
+                    Some(ItemViewerNavBarAction {
+                        nav: Some(nav),
+                        ..Default::default()
+                    }),
+                    None,
+                );
+            }
+            ShortcutAction::SelectAll => handle_pending_actions(Some(ItemViewerAction::SelectAll), self),
+            ShortcutAction::InvertSelection => {
+                handle_pending_actions(Some(ItemViewerAction::InvertSelection), self)
+            }
+            ShortcutAction::SelectByPattern => {
+                handle_pending_actions(Some(ItemViewerAction::SelectByPattern), self)
+            }
+            ShortcutAction::CopyPath => {
+                let mut paths: Vec<PathBuf> = self
+                    .active_tab()
+                    .view(self.focused_split)
+                    .explorer_state
+                    .selected_paths
+                    .iter()
+                    .cloned()
+                    .collect();
+                paths.sort();
+                if !paths.is_empty() {
+                    self.handle_context_action(ItemViewerContextAction::CopyPath(paths));
+                }
+            }
         }
     }
 

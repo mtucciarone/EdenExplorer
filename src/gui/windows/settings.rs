@@ -62,7 +62,7 @@ impl SettingsCategory {
         SettingsCategory::Advanced,
     ];
 
-    fn icon(self) -> &'static str {
+    pub(crate) fn icon(self) -> &'static str {
         match self {
             SettingsCategory::General => regular::GEAR,
             SettingsCategory::Behavior => regular::SLIDERS,
@@ -80,7 +80,7 @@ impl SettingsCategory {
         }
     }
 
-    fn label(self, i18n: &I18n) -> String {
+    pub(crate) fn label(self, i18n: &I18n) -> String {
         match self {
             SettingsCategory::General => i18n.tr("settings_category_general"),
             SettingsCategory::Behavior => i18n.tr("settings_category_behavior"),

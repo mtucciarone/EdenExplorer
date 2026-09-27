@@ -38,6 +38,12 @@ Select By Pattern (Ctrl+Shift+S) selecting `*.docx; *.txt`, Invert Selection (Ct
 
 Selecting a photo and pressing Space opens Quick Look over the window; ↓ and → step through the folder (an animated GIF plays with its controls), Space closes it, then Quick Look on a folder shows its item count and Esc closes it.
 
+## Command Palette
+
+![Command palette](command-palette.gif)
+
+Ctrl+Shift+P, then typing `pho` jumps to the Photos folder, `gal` switches to the Gallery view, `det` back to Details, and `setbeh` opens Settings on the Behavior page.
+
 ## Features
 
 ### Details view - tagged folders are tinted by tag color, with a Tags column showing every tag as a chip
@@ -331,3 +337,7 @@ Selecting a photo and pressing Space opens Quick Look over the window; ↓ and �
 ### Quick Look (Space) - a large preview of the selected file, with its size, date, position in the folder, previous/next, and Open
 
 ![Quick Look](73-quick-look.png)
+
+### Command palette (Ctrl+Shift+P) - typing `set` lists the Settings pages first; commands show their shortcuts, folders their paths
+
+![Command palette](74-command-palette.png)

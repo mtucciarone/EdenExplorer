@@ -123,7 +123,7 @@
 | ![Analyze Disk Usage](Screenshots/57-disk-usage.png) | ![Disk Usage - Largest Files](Screenshots/60-disk-usage-largest-files.png) |
 | ![Disk Usage - Treemap](Screenshots/65-disk-usage-treemap.png) | ![Disk Usage - Overview](Screenshots/71-disk-usage-overview.png) |
 
-See the [Screenshots folder](Screenshots/README.md) for all 73 feature screenshots, plus short GIFs of [Analyze Disk Usage](Screenshots/disk-usage.gif), the [Performance panel folder and drive benchmarks](Screenshots/performance-benchmark.gif), the [animated GIF preview controls](Screenshots/gif-preview-controls.gif), [selection tools and New File templates](Screenshots/selection-and-templates.gif), and [Quick Look](Screenshots/quick-look.gif).
+See the [Screenshots folder](Screenshots/README.md) for all 74 feature screenshots, plus short GIFs of [Analyze Disk Usage](Screenshots/disk-usage.gif), the [Performance panel folder and drive benchmarks](Screenshots/performance-benchmark.gif), the [animated GIF preview controls](Screenshots/gif-preview-controls.gif), [selection tools and New File templates](Screenshots/selection-and-templates.gif), [Quick Look](Screenshots/quick-look.gif), and the [command palette](Screenshots/command-palette.gif).
 
 ## Star History
 
@@ -162,6 +162,8 @@ The full list, including mouse shortcuts, is also available in the app under **S
 - Ctrl+K - Show/hide the Performance panel
 - Ctrl+I - Invert selection
 - Ctrl+Shift+S - Select by pattern (wildcards such as `*.jpg; *.png`)
+- Ctrl+Shift+P - Command palette: run any command, open a Settings page, or jump to a favorite or recent folder
+- Space - Quick Look: a large preview of the selected item (Space or Esc closes it)
 
 
 See [ROADMAP.md](ROADMAP.md) for planned and suggested features.
@@ -351,6 +353,7 @@ See [ROADMAP.md](ROADMAP.md) for planned and suggested features.
 - [x] **Clean Up in Disk Usage** - a Clean Up tab measures and cleans, Storage Sense-style: temporary files (older than an hour), the Windows Update download cache, Chrome/Edge/Brave/Vivaldi/Firefox caches, the Recycle Bin, and files in Downloads unchanged for 30-180 days. Temp and cache files are deleted permanently after a confirmation (files in use are skipped); old downloads go to the Recycle Bin through the usual delete
 - [x] **Drive benchmark** - the Performance panel's benchmark section switches between Benchmark This Folder and **Benchmark This Drive**: sequential read and write (1 MB blocks) and random 4K read and write (3 seconds each), like CrystalDiskMark, on a 64 MB, 256 MB, or 1 GB test file in the current folder, bypassing the Windows cache. Shows MB/s and IOPS with bars, has Cancel and Copy Results, and always deletes the test file
 - [x] **Quick Look** - select a file and press **Space** for a large preview over the window, using the same preview engine as the preview pane (images, animated GIFs with their controls, video, audio, Markdown with Mermaid, code, PDF and Office text, fonts, archives). The header shows the name, size, date, and position in the folder ("3 / 42") with previous/next and Open; ↑/↓ (and ←/→ in Details) move through the list with the preview following, Enter opens the file, and Space, Esc, or a click outside closes it. On a folder it shows how many items it holds. While typing a filter, Space still types a space; Settings > Behavior > Quick Look With Space turns it off. Images in the preview pane are now centered too
+- [x] **Command palette** - **Ctrl+Shift+P** opens a search box at the top of the window listing every command with its icon and current shortcut: all the keyboard shortcut actions (tabs, navigation, selection, rename, undo, ...), the six view layouts, show/hide hidden items, light/dark theme, sidebar, split view, Quick Look, Analyze Disk Usage, Add To Favorites, Open Terminal, every Settings page, and About - plus your favorite and recent folders to jump straight to. Typing filters with fuzzy matching (`setbeh` finds Settings: Behavior, `docpro` finds a folder by its path), ↑/↓ pick, Enter runs, Esc closes, and the last commands you ran are listed first. Its shortcut can be changed in Settings > Shortcuts, which now also lists Space for Quick Look
 - [x] **Consistent Title Case** - buttons, menu items, headings, setting labels, and short tooltips all use Title Case; longer explanations stay as normal sentences
 
 

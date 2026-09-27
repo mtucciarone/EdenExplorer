@@ -1,4 +1,5 @@
 pub mod containers; // small reusable components
+pub mod command_palette;
 
 pub mod about;
 pub mod context_menu_order_ui;

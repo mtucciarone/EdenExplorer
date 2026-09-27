@@ -77,6 +77,7 @@
   <li><b>New File templates</b> - Text, Markdown, Word, and Excel documents, plus your own templates folder</li>
   <li><b>Selection tools</b> - Invert Selection, Select By Pattern (wildcards), and checkboxes in Details and Gallery</li>
   <li><b>Hover previews</b> for images and videos in Details view</li>
+  <li><b>Command palette</b> (<code>Ctrl+Shift+P</code>) - every command, view, toggle, and Settings page, plus favorite and recent folders, with fuzzy search</li>
   <li><b>Quick Look</b> - press Space for a large preview of the selected file or folder; arrow keys move through the list, Enter opens, Space or Esc closes</li>
   <li><b>Customizable toolbar</b> - reorder, add, and remove buttons and separators</li>
   <li><b>Editable keyboard shortcuts</b> in Settings > Shortcuts</li>

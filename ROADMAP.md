@@ -9,7 +9,7 @@ Items marked [x] have been implemented (see the README changelog); the rest aren
 ## Suggested Priorities
 
 1. ~~**Disk Usage Analyzer**~~ - done: every item in section 1 is implemented.
-2. **Quick Look (Space)** and a **command palette**.
+2. ~~**Quick Look (Space)** and a **command palette**~~ - done.
 3. **Archive extraction** and **queued transfers with verify-after-copy**.
 4. **Folder compare/sync** and **editable shortcuts**.
 
@@ -46,7 +46,7 @@ Items marked [x] have been implemented (see the README changelog); the rest aren
 ## 2. Navigation and Layout
 
 - [x] **Quick Look on Space** (Finder, Files App, QTTabBar): full-size preview pop-up using the existing preview engine, arrow keys move between files (S–M)
-- [ ] **Command palette** on Ctrl+Shift+P (File Pilot, Files App, VS Code): every action and setting searchable (M)
+- [x] **Command palette** on Ctrl+Shift+P (File Pilot, Files App, VS Code): every action and setting searchable (M)
 - [ ] **Go To Folder with fuzzy matching** on recently visited folders (Directory Opus, File Pilot, zoxide) (S)
 - [ ] **Tree view in the sidebar** (Dolphin, Directory Opus, Windows Explorer) (M)
 - [ ] **Up to 4 panes**, plus a synchronized browsing mode for comparing two folders (Directory Opus, Total Commander) (M–L)

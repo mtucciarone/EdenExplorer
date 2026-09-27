@@ -13,6 +13,7 @@ pub mod drive_bench;
 pub mod drives;
 pub mod duplicates;
 pub mod everything;
+pub mod fuzzy;
 pub mod folder_size_cache;
 pub mod fs;
 pub mod indexer;

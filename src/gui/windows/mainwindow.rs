@@ -134,6 +134,10 @@ pub struct MainWindow {
     pub(crate) select_by_pattern: Option<crate::gui::windows::mainwindow_imp::SelectByPatternState>,
     /// Quick Look (Space), when open.
     pub(crate) quick_look: Option<crate::gui::windows::quick_look::QuickLookState>,
+    /// The command palette (Ctrl+Shift+P), when open.
+    pub(crate) command_palette: Option<crate::gui::windows::command_palette::CommandPaletteState>,
+    /// Commands run from the palette, most recent first (this session).
+    pub(crate) palette_recent: Vec<crate::gui::windows::command_palette::Command>,
     /// The last pattern used, offered again the next time the dialog opens.
     pub(crate) last_select_pattern: String,
     /// `AppSettings::folder_views_revision` as of the last save, and when
@@ -415,6 +419,8 @@ impl Default for MainWindow {
             pending_checksum: None,
             select_by_pattern: None,
             quick_look: None,
+            command_palette: None,
+            palette_recent: Vec::new(),
             last_select_pattern: String::new(),
             saved_folder_views_revision: 0,
             folder_views_changed_at: None,
@@ -552,6 +558,7 @@ impl eframe::App for MainWindow {
                 || self.pending_bulk_rename.is_some()
                 || self.pending_checksum.is_some()
                 || self.select_by_pattern.is_some()
+                || self.command_palette.is_some()
                 || self.disk_usage_state.is_open();
             ui.ctx().memory_mut(|mem| {
                 mem.data.insert_temp(
@@ -1216,6 +1223,7 @@ impl eframe::App for MainWindow {
                                                 || self.pending_bulk_rename.is_some()
                                                 || self.pending_checksum.is_some()
                 || self.select_by_pattern.is_some()
+                || self.command_palette.is_some()
                 || self.disk_usage_state.is_open();
 
                                             if primary_clicked && !blocking_modal_open {
@@ -1723,6 +1731,7 @@ impl eframe::App for MainWindow {
         self.draw_checksum_modal(ui.ctx(), &palette);
         self.draw_select_by_pattern_modal(ui.ctx(), &palette);
         self.draw_quick_look(ui.ctx(), &palette);
+        self.draw_command_palette(ui.ctx(), &palette);
         if self.settings_window.current_settings.show_operation_toasts {
             draw_toast(ui.ctx(), &self.i18n, &palette, &mut self.notifications_state);
         }
