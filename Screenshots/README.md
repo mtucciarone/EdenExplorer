@@ -269,3 +269,11 @@ Select By Pattern (Ctrl+Shift+S) selecting `*.docx; *.txt`, Invert Selection (Ct
 ### Analyze Disk Usage… in a folder's background right-click menu (it's also on folders, drives in This PC, and drives and favorites in the sidebar)
 
 ![Analyze Disk Usage menu](59-disk-usage-menu.png)
+
+### Disk Usage > Largest Files - the 100 biggest files in the analyzed folder, ranked, with their folder, share of the total, and size on disk; two files selected with Ctrl+Click
+
+![Disk Usage - Largest Files](60-disk-usage-largest-files.png)
+
+### Largest Files right-click menu - Show In Folder, Move To…, Delete, Delete Permanently, and Copy Path
+
+![Largest Files menu](61-disk-usage-largest-menu.png)

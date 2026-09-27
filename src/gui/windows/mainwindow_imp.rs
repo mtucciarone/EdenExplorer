@@ -5340,6 +5340,33 @@ impl MainWindow {
                 self.open_new_tab(path);
                 self.load_path();
             }
+            Some(DiskUsageAction::Reveal(file)) => {
+                let Some(folder) = file.parent().map(Path::to_path_buf) else {
+                    return;
+                };
+                self.disk_usage_state.hide();
+                self.open_new_tab(folder);
+                // Selected (and scrolled to) once the listing arrives.
+                self.active_tab_mut().primary_view.explorer_state.navigation_selection = Some(file);
+                self.load_path();
+            }
+            Some(DiskUsageAction::Delete { paths, permanent }) => {
+                // The usual delete: confirmation, notification, and Undo.
+                // It's finished (or declined) when this returns.
+                self.handle_context_action(ItemViewerContextAction::Delete(paths.clone(), permanent));
+                self.disk_usage_state.files_removed(&paths);
+            }
+            Some(DiskUsageAction::MoveTo(paths)) => {
+                let picked = crate::gui::windows::windowsoverrides::dialog()
+                    .set_title(self.i18n.tr("disk_usage_move_to"))
+                    .pick_folder();
+                if let Some(destination) = picked {
+                    // Same transfer as Send To > Move: conflict prompts,
+                    // progress notification, and Undo.
+                    self.send_to_folders(paths.clone(), vec![destination.clone()], true);
+                    self.disk_usage_state.files_moving(&paths, &destination);
+                }
+            }
             None => {}
         }
     }

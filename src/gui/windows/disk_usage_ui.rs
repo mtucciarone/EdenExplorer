@@ -7,7 +7,7 @@
 //! `core::disk_usage`.
 
 use crate::core::disk_usage::{
-    DirNode, FastScan, FastScanNote, FileEntry, ScanEvent, ScanHandle, ScanMethod, ScanProgress,
+    DirNode, LargeFile, largest_files, FastScan, FastScanNote, FileEntry, ScanEvent, ScanHandle, ScanMethod, ScanProgress,
     branch_components, drive_root_letter, start_scan,
 };
 use crate::core::utils::files::format_size;
@@ -20,7 +20,12 @@ use egui_extras::{Column, TableBuilder};
 use egui_phosphor::regular;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+/// How many files the Largest Files list shows.
+const LARGEST_COUNT: usize = 100;
+/// How long a moved file is watched for (see `files_moving`).
+const MOVE_WATCH_LIMIT: Duration = Duration::from_secs(600);
 
 /// Folders and files listed under one expanded folder before the rest
 /// are summed up in a "N more items" row.
@@ -30,6 +35,27 @@ const INDENT: f32 = 16.0;
 /// What the dashboard asks the main window to do.
 pub enum DiskUsageAction {
     OpenInNewTab(PathBuf),
+    /// Open the file's folder in a new tab with the file selected.
+    Reveal(PathBuf),
+    Delete { paths: Vec<PathBuf>, permanent: bool },
+    /// Ask for a folder and move these files there.
+    MoveTo(Vec<PathBuf>),
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum Tab {
+    #[default]
+    Tree,
+    Largest,
+}
+
+/// A file being moved from the Largest Files list: removed from the
+/// results once it's gone from `path`; `rescan` is its destination folder
+/// when that's inside the analyzed folder (so it shows up there).
+struct PendingMove {
+    path: PathBuf,
+    rescan: Option<PathBuf>,
+    since: Instant,
 }
 
 struct FinishedInfo {
@@ -67,6 +93,16 @@ pub struct DiskUsageState {
     /// (revision, selected path, whether it's a folder - `None` if it's
     /// no longer in the tree).
     selected_kind: Option<(u64, PathBuf, Option<bool>)>,
+    tab: Tab,
+    /// The Largest Files list, rebuilt when `revision` changes.
+    largest: Vec<LargeFile>,
+    largest_revision: Option<u64>,
+    largest_selected: HashSet<PathBuf>,
+    largest_anchor: Option<usize>,
+    pending_moves: Vec<PendingMove>,
+    last_move_check: Option<Instant>,
+    /// Destination folders waiting to be rescanned (one scan at a time).
+    rescan_queue: Vec<PathBuf>,
 }
 
 impl DiskUsageState {
@@ -90,6 +126,80 @@ impl DiskUsageState {
             ..Default::default()
         };
         self.start_full_scan();
+    }
+
+    /// Call after deleting `paths` (the delete has finished, or was
+    /// declined): the ones that are gone are dropped from the results.
+    pub fn files_removed(&mut self, paths: &[PathBuf]) {
+        for path in paths {
+            if std::fs::symlink_metadata(path).is_err() {
+                self.forget_file(path);
+            }
+        }
+    }
+
+    /// Call after starting to move `paths` into `destination`: each is
+    /// dropped from the results once the move takes it away, and the
+    /// destination is rescanned if it's inside the analyzed folder.
+    pub fn files_moving(&mut self, paths: &[PathBuf], destination: &Path) {
+        let rescan = branch_components(&self.root, destination).map(|_| destination.to_path_buf());
+        let since = Instant::now();
+        self.pending_moves.extend(paths.iter().map(|path| PendingMove {
+            path: path.clone(),
+            rescan: rescan.clone(),
+            since,
+        }));
+    }
+
+    fn forget_file(&mut self, path: &Path) {
+        let removed = match (self.tree.as_mut(), branch_components(&self.root, path)) {
+            (Some(tree), Some(components)) => tree.remove_file(&components).is_some(),
+            _ => false,
+        };
+        if removed {
+            self.revision += 1;
+        }
+        self.largest_selected.remove(path);
+        if self.selected.as_deref() == Some(path) {
+            self.selected = None;
+        }
+    }
+
+    /// Drops moved files that have left, every half second.
+    fn poll_moves(&mut self) {
+        if self.pending_moves.is_empty() && self.rescan_queue.is_empty() {
+            return;
+        }
+        if self
+            .last_move_check
+            .is_some_and(|at| at.elapsed() < Duration::from_millis(500))
+        {
+            return;
+        }
+        self.last_move_check = Some(Instant::now());
+        let mut still_pending = Vec::new();
+        for pending in std::mem::take(&mut self.pending_moves) {
+            if std::fs::symlink_metadata(&pending.path).is_err() {
+                self.forget_file(&pending.path);
+                if let Some(folder) = pending.rescan
+                    && !self.rescan_queue.contains(&folder)
+                {
+                    self.rescan_queue.push(folder);
+                }
+            } else if pending.since.elapsed() < MOVE_WATCH_LIMIT {
+                still_pending.push(pending);
+            }
+        }
+        self.pending_moves = still_pending;
+        // Rescan destinations once everything headed there has arrived.
+        if !self.scanning()
+            && let Some(index) = self.rescan_queue.iter().position(|folder| {
+                !self.pending_moves.iter().any(|p| p.rescan.as_ref() == Some(folder))
+            })
+        {
+            let folder = self.rescan_queue.remove(index);
+            self.start_branch_scan(folder);
+        }
     }
 
     /// Hides the dashboard but keeps its result (see `open_for`).
@@ -392,6 +502,7 @@ pub fn draw_disk_usage_window(
         return None;
     }
     state.poll();
+    state.poll_moves();
 
     let mut action = None;
     let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
@@ -418,7 +529,16 @@ pub fn draw_disk_usage_window(
                 draw_summary(ui, i18n, palette, state);
                 ui.add_space(8.0);
             }
-            draw_toolbar(ui, i18n, palette, state, &mut action);
+            if state.tree.is_some() && state.scan.is_none() {
+                draw_tabs(ui, i18n, palette, state);
+                ui.add_space(8.0);
+            }
+            match state.tab {
+                Tab::Largest if state.tree.is_some() && state.scan.is_none() => {
+                    draw_largest_toolbar(ui, i18n, palette, state, &mut action)
+                }
+                _ => draw_toolbar(ui, i18n, palette, state, &mut action),
+            }
             ui.add_space(6.0);
 
             if state.scan.is_some() {
@@ -428,7 +548,10 @@ pub fn draw_disk_usage_window(
                     draw_branch_progress(ui, i18n, palette, state);
                     ui.add_space(4.0);
                 }
-                draw_tree(ui, i18n, palette, state, &mut action);
+                match state.tab {
+                    Tab::Tree => draw_tree(ui, i18n, palette, state, &mut action),
+                    Tab::Largest => draw_largest(ui, i18n, palette, state, &mut action),
+                }
             } else if state.cancelled {
                 ui.add_space(40.0);
                 ui.vertical_centered(|ui| {
@@ -651,13 +774,7 @@ fn draw_toolbar(
             state.start_branch_scan(branch);
         }
 
-        let open_target = selected.as_ref().map(|(path, is_dir)| {
-            if *is_dir {
-                path.clone()
-            } else {
-                path.parent().map(Path::to_path_buf).unwrap_or_else(|| path.clone())
-            }
-        });
+        let open_target = selected.clone();
         let open_label = match &selected {
             Some((_, false)) => i18n.tr("disk_usage_show_in_folder"),
             _ => i18n.tr("disk_usage_open_in_tab"),
@@ -668,9 +785,13 @@ fn draw_toolbar(
             })
             .inner;
         if open.clicked()
-            && let Some(target) = open_target
+            && let Some((target, is_dir)) = open_target
         {
-            *action = Some(DiskUsageAction::OpenInNewTab(target));
+            *action = Some(if is_dir {
+                DiskUsageAction::OpenInNewTab(target)
+            } else {
+                DiskUsageAction::Reveal(target)
+            });
         }
 
         let copy = ui
@@ -1006,21 +1127,20 @@ fn draw_tree(
                         rescan_branch = Some(row.path.clone());
                         ui.close();
                     }
-                    let (label, target) = if is_dir {
-                        (i18n.tr("disk_usage_open_in_tab"), Some(row.path.clone()))
+                    let label = if is_dir {
+                        i18n.tr("disk_usage_open_in_tab")
                     } else {
-                        (
-                            i18n.tr("disk_usage_show_in_folder"),
-                            row.path.parent().map(Path::to_path_buf),
-                        )
+                        i18n.tr("disk_usage_show_in_folder")
                     };
                     if ui
                         .button(format!("{}  {label}", regular::ARROW_SQUARE_OUT))
                         .clicked()
                     {
-                        if let Some(target) = target {
-                            *action = Some(DiskUsageAction::OpenInNewTab(target));
-                        }
+                        *action = Some(if is_dir {
+                            DiskUsageAction::OpenInNewTab(row.path.clone())
+                        } else {
+                            DiskUsageAction::Reveal(row.path.clone())
+                        });
                         ui.close();
                     }
                     if ui
@@ -1047,6 +1167,358 @@ fn draw_tree(
     if let Some(path) = rescan_branch {
         state.start_branch_scan(path);
     }
+}
+
+fn draw_tabs(ui: &mut egui::Ui, i18n: &I18n, palette: &ThemePalette, state: &mut DiskUsageState) {
+    ui.horizontal(|ui| {
+        for (tab, icon, key) in [
+            (Tab::Tree, regular::TREE_STRUCTURE, "disk_usage_tab_tree"),
+            (Tab::Largest, regular::SORT_DESCENDING, "disk_usage_tab_largest"),
+        ] {
+            let selected = state.tab == tab;
+            let text = egui::RichText::new(format!("{icon} {}", i18n.tr(key)))
+                .size(palette.text_size)
+                .color(if selected {
+                    palette.item_viewer_row_text_selected
+                } else {
+                    palette.text_normal
+                });
+            let response = ui.add(egui::Button::selectable(selected, text));
+            if response.clicked() {
+                state.tab = tab;
+            }
+        }
+    });
+}
+
+/// The Largest Files list, rebuilt only after the results changed.
+fn largest(state: &mut DiskUsageState) -> &[LargeFile] {
+    if state.largest_revision != Some(state.revision) {
+        state.largest = state
+            .tree
+            .as_ref()
+            .map(|tree| largest_files(tree, &state.root, LARGEST_COUNT))
+            .unwrap_or_default();
+        state.largest_revision = Some(state.revision);
+        let still_listed: HashSet<&PathBuf> = state.largest.iter().map(|f| &f.path).collect();
+        state.largest_selected.retain(|p| still_listed.contains(p));
+        state.largest_anchor = None;
+    }
+    &state.largest
+}
+
+/// The selected files in list order.
+fn largest_selection(state: &DiskUsageState) -> Vec<PathBuf> {
+    state
+        .largest
+        .iter()
+        .filter(|f| state.largest_selected.contains(&f.path))
+        .map(|f| f.path.clone())
+        .collect()
+}
+
+fn copy_paths(paths: &[PathBuf]) {
+    let text: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
+    crate::core::utils::clipboard::copy_text_to_clipboard(&text.join("\r\n"));
+}
+
+fn draw_largest_toolbar(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    palette: &ThemePalette,
+    state: &mut DiskUsageState,
+    action: &mut Option<DiskUsageAction>,
+) {
+    let busy = state.scanning();
+    let selection = largest_selection(state);
+    ui.horizontal(|ui| {
+        let rescan = ui
+            .add_enabled_ui(!busy, |ui| {
+                eden_button(ui, palette, &format!("{} {}", regular::ARROW_CLOCKWISE, i18n.tr("disk_usage_rescan")))
+            })
+            .inner;
+        if rescan.on_hover_text(i18n.tr("tooltip_disk_usage_rescan")).clicked() {
+            state.start_full_scan();
+        }
+
+        let reveal = ui
+            .add_enabled_ui(selection.len() == 1, |ui| {
+                eden_button(
+                    ui,
+                    palette,
+                    &format!("{} {}", regular::ARROW_SQUARE_OUT, i18n.tr("disk_usage_show_in_folder")),
+                )
+            })
+            .inner;
+        if reveal.clicked() {
+            *action = Some(DiskUsageAction::Reveal(selection[0].clone()));
+        }
+
+        let any = !selection.is_empty();
+        let move_to = ui
+            .add_enabled_ui(any, |ui| {
+                eden_button(ui, palette, &format!("{} {}", regular::FOLDER_SIMPLE_DASHED, i18n.tr("disk_usage_move_to")))
+            })
+            .inner;
+        if move_to.on_hover_text(i18n.tr("tooltip_disk_usage_move_to")).clicked() {
+            *action = Some(DiskUsageAction::MoveTo(selection.clone()));
+        }
+
+        let delete = ui
+            .add_enabled_ui(any, |ui| {
+                eden_button(ui, palette, &format!("{} {}", regular::TRASH, i18n.tr("disk_usage_delete")))
+            })
+            .inner;
+        if delete.on_hover_text(i18n.tr("tooltip_disk_usage_delete")).clicked() {
+            *action = Some(DiskUsageAction::Delete {
+                paths: selection.clone(),
+                permanent: ui.input(|i| i.modifiers.shift),
+            });
+        }
+
+        let copy = ui
+            .add_enabled_ui(any, |ui| {
+                eden_button(ui, palette, &format!("{} {}", regular::LINK, i18n.tr("disk_usage_copy_path")))
+            })
+            .inner;
+        if copy.clicked() {
+            copy_paths(&selection);
+        }
+
+        if any {
+            ui.add_space(6.0);
+            ui.label(muted(
+                palette,
+                format!("{} {}", format_count(selection.len() as u64), i18n.tr("disk_usage_selected")),
+            ));
+        }
+    });
+}
+
+fn draw_largest(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    palette: &ThemePalette,
+    state: &mut DiskUsageState,
+    action: &mut Option<DiskUsageAction>,
+) {
+    let total_files = state.tree.as_ref().map(|t| t.file_count).unwrap_or(0);
+    let total_size = state.tree.as_ref().map(|t| t.size).unwrap_or(0);
+    let files = largest(state).to_vec();
+    if files.is_empty() {
+        ui.add_space(30.0);
+        ui.vertical_centered(|ui| ui.label(muted(palette, i18n.tr("disk_usage_no_files"))));
+        return;
+    }
+    ui.label(muted(
+        palette,
+        format!(
+            "{} {} {} {} {}",
+            i18n.tr("disk_usage_showing"),
+            format_count(files.len() as u64),
+            i18n.tr("disk_usage_of"),
+            format_count(total_files),
+            i18n.tr("disk_usage_files"),
+        ),
+    ));
+    ui.add_space(4.0);
+
+    let mut clicked: Option<(usize, egui::Modifiers)> = None;
+    let mut reveal: Option<PathBuf> = None;
+    let mut menu_action: Option<DiskUsageAction> = None;
+    let mut copy: Option<Vec<PathBuf>> = None;
+    let row_height = (palette.text_size + 10.0).max(22.0);
+    let header_color = palette.text_normal.gamma_multiply(0.75);
+    ui.style_mut().interaction.selectable_labels = false;
+
+    TableBuilder::new(ui)
+        .id_salt("disk_usage_largest_table")
+        .striped(false)
+        .resizable(true)
+        .sense(egui::Sense::click())
+        .auto_shrink([false, false])
+        .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+        .column(Column::exact(44.0))
+        .column(Column::initial(240.0).at_least(140.0).clip(true))
+        .column(Column::remainder().at_least(160.0).clip(true))
+        .column(Column::initial(96.0).at_least(70.0))
+        .column(Column::initial(170.0).at_least(110.0))
+        .column(Column::initial(96.0).at_least(70.0))
+        .header(row_height, |mut header| {
+            for key in [
+                "disk_usage_col_rank",
+                "disk_usage_col_name",
+                "disk_usage_col_folder",
+                "disk_usage_col_size",
+                "disk_usage_col_share_total",
+                "disk_usage_col_on_disk",
+            ] {
+                header.col(|ui| {
+                    ui.label(
+                        egui::RichText::new(i18n.tr(key))
+                            .strong()
+                            .size(palette.text_size - 1.0)
+                            .color(header_color),
+                    );
+                });
+            }
+        })
+        .body(|body| {
+            body.rows(row_height, files.len(), |mut row| {
+                let index = row.index();
+                let file = &files[index];
+                let is_selected = state.largest_selected.contains(&file.path);
+                row.set_selected(is_selected);
+                let color = if is_selected {
+                    palette.item_viewer_row_text_selected
+                } else {
+                    palette.text_normal
+                };
+                let text = |s: String| egui::RichText::new(s).size(palette.text_size).color(color);
+                let mono = |s: String| {
+                    egui::RichText::new(s)
+                        .family(egui::FontFamily::Monospace)
+                        .size(palette.text_size - 1.0)
+                        .color(color)
+                };
+
+                row.col(|ui| {
+                    ui.label(mono(format!("{}", index + 1)).color(color.gamma_multiply(0.7)));
+                });
+                let name = file
+                    .path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                row.col(|ui| {
+                    ui.label(text(format!("{} {name}", regular::FILE)));
+                });
+                row.col(|ui| {
+                    let folder = file.path.parent().map(|p| p.display().to_string()).unwrap_or_default();
+                    ui.label(
+                        egui::RichText::new(folder)
+                            .size(palette.text_size - 1.0)
+                            .color(color.gamma_multiply(0.75)),
+                    );
+                });
+                row.col(|ui| {
+                    ui.label(mono(format_size(file.size)));
+                });
+                row.col(|ui| {
+                    share_bar(ui, palette, share(file.size, total_size), palette.primary);
+                });
+                row.col(|ui| {
+                    ui.label(mono(format_size(file.allocated)).color(color.gamma_multiply(0.85)));
+                });
+
+                let response = row.response();
+                if response.clicked() {
+                    clicked = Some((index, ui_modifiers(&response)));
+                }
+                if response.double_clicked() {
+                    reveal = Some(file.path.clone());
+                }
+                response.context_menu(|ui| {
+                    // Right-clicking outside the selection selects just
+                    // that file, like the file list.
+                    if !is_selected {
+                        clicked = Some((index, egui::Modifiers::NONE));
+                    }
+                    let targets: Vec<PathBuf> = if is_selected {
+                        largest_selection(state)
+                    } else {
+                        vec![file.path.clone()]
+                    };
+                    if targets.len() == 1
+                        && ui
+                            .button(format!("{}  {}", regular::ARROW_SQUARE_OUT, i18n.tr("disk_usage_show_in_folder")))
+                            .clicked()
+                    {
+                        reveal = Some(targets[0].clone());
+                        ui.close();
+                    }
+                    if ui
+                        .button(format!("{}  {}", regular::FOLDER_SIMPLE_DASHED, i18n.tr("disk_usage_move_to")))
+                        .clicked()
+                    {
+                        menu_action = Some(DiskUsageAction::MoveTo(targets.clone()));
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui
+                        .button(format!("{}  {}", regular::TRASH, i18n.tr("disk_usage_delete")))
+                        .clicked()
+                    {
+                        menu_action = Some(DiskUsageAction::Delete {
+                            paths: targets.clone(),
+                            permanent: false,
+                        });
+                        ui.close();
+                    }
+                    if ui
+                        .button(format!("{}  {}", regular::TRASH, i18n.tr("recycle_bin_delete_permanently")))
+                        .clicked()
+                    {
+                        menu_action = Some(DiskUsageAction::Delete {
+                            paths: targets.clone(),
+                            permanent: true,
+                        });
+                        ui.close();
+                    }
+                    ui.separator();
+                    if ui
+                        .button(format!("{}  {}", regular::LINK, i18n.tr("disk_usage_copy_path")))
+                        .clicked()
+                    {
+                        copy = Some(targets.clone());
+                        ui.close();
+                    }
+                });
+            });
+        });
+
+    if let Some((index, modifiers)) = clicked {
+        select_largest(state, &files, index, modifiers);
+    }
+    if let Some(paths) = copy {
+        copy_paths(&paths);
+    }
+    if let Some(path) = reveal {
+        *action = Some(DiskUsageAction::Reveal(path));
+    } else if let Some(menu_action) = menu_action {
+        *action = Some(menu_action);
+    }
+}
+
+fn ui_modifiers(response: &egui::Response) -> egui::Modifiers {
+    response.ctx.input(|i| i.modifiers)
+}
+
+/// Click = select only this row, Ctrl+Click = toggle it, Shift+Click =
+/// select the range from the last clicked row.
+fn select_largest(state: &mut DiskUsageState, files: &[LargeFile], index: usize, modifiers: egui::Modifiers) {
+    let path = files[index].path.clone();
+    if modifiers.shift
+        && let Some(anchor) = state.largest_anchor.filter(|a| *a < files.len())
+    {
+        let (from, to) = if anchor <= index { (anchor, index) } else { (index, anchor) };
+        if !modifiers.command {
+            state.largest_selected.clear();
+        }
+        state
+            .largest_selected
+            .extend(files[from..=to].iter().map(|f| f.path.clone()));
+        return;
+    }
+    if modifiers.command {
+        if !state.largest_selected.remove(&path) {
+            state.largest_selected.insert(path);
+        }
+    } else {
+        state.largest_selected.clear();
+        state.largest_selected.insert(path);
+    }
+    state.largest_anchor = Some(index);
 }
 
 #[cfg(test)]
@@ -1125,6 +1597,69 @@ mod tests {
         let last = rows.last().unwrap();
         assert!(matches!(last.kind, RowKind::More { count: 5 }));
         assert_eq!(last.size, 50);
+    }
+
+    #[test]
+    fn largest_list_selection_follows_click_modifiers() {
+        let files: Vec<LargeFile> = (0..5)
+            .map(|i| LargeFile {
+                path: PathBuf::from(format!(r"C:\f{i}")),
+                size: 100 - i,
+                allocated: 0,
+            })
+            .collect();
+        let mut state = DiskUsageState::default();
+        let ctrl = egui::Modifiers::COMMAND;
+        let shift = egui::Modifiers::SHIFT;
+        select_largest(&mut state, &files, 1, egui::Modifiers::NONE);
+        select_largest(&mut state, &files, 3, shift);
+        state.largest = files.clone();
+        let names = |s: &DiskUsageState| largest_selection(s);
+        assert_eq!(names(&state), files[1..=3].iter().map(|f| f.path.clone()).collect::<Vec<_>>());
+        select_largest(&mut state, &files, 2, ctrl);
+        assert_eq!(names(&state), vec![files[1].path.clone(), files[3].path.clone()]);
+        select_largest(&mut state, &files, 0, egui::Modifiers::NONE);
+        assert_eq!(names(&state), vec![files[0].path.clone()]);
+    }
+
+    #[test]
+    fn deleted_and_moved_files_leave_the_results() {
+        let dir = std::env::temp_dir().join(format!("eden_du_ui_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        let root = node(
+            &dir.display().to_string(),
+            0,
+            vec![node("sub", 0, vec![], vec![("gone.bin", 700), ("kept.bin", 300)])],
+            vec![("moved.bin", 500)],
+        );
+        std::fs::write(dir.join("sub").join("kept.bin"), b"x").unwrap();
+        std::fs::write(dir.join("moved.bin"), b"x").unwrap();
+        let mut state = DiskUsageState {
+            root: dir.clone(),
+            tree: Some(root),
+            ..Default::default()
+        };
+        assert_eq!(largest(&mut state).len(), 3);
+
+        // `gone.bin` doesn't exist on disk: a finished delete drops it;
+        // `kept.bin` (declined) stays.
+        state.files_removed(&[dir.join("sub").join("gone.bin"), dir.join("sub").join("kept.bin")]);
+        assert_eq!(state.tree.as_ref().unwrap().size, 800);
+        assert_eq!(largest(&mut state).len(), 2);
+
+        // A move is watched until the file has left.
+        let outside = std::env::temp_dir();
+        state.files_moving(&[dir.join("moved.bin")], &outside);
+        state.poll_moves();
+        assert_eq!(state.pending_moves.len(), 1, "still there");
+        std::fs::remove_file(dir.join("moved.bin")).unwrap();
+        state.last_move_check = None;
+        state.poll_moves();
+        assert!(state.pending_moves.is_empty());
+        assert_eq!(state.tree.as_ref().unwrap().size, 300);
+        assert!(state.rescan_queue.is_empty(), "destination is outside the results");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

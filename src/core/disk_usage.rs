@@ -130,6 +130,87 @@ impl DirNode {
     }
 }
 
+impl DirNode {
+    /// Removes the file at `components` (folder names, then the file's
+    /// name) and updates the totals and order of every folder above it -
+    /// for a file deleted or moved away after the scan. Returns the
+    /// removed entry, or `None` if there's no such file.
+    pub fn remove_file(&mut self, components: &[String]) -> Option<FileEntry> {
+        let removed = match components {
+            [] => return None,
+            [name] => {
+                let index = self
+                    .files
+                    .iter()
+                    .position(|f| &*f.name == name)
+                    .or_else(|| self.files.iter().position(|f| f.name.eq_ignore_ascii_case(name)))?;
+                self.files.remove(index)
+            }
+            [first, rest @ ..] => {
+                let index = self.child_index(first)?;
+                self.dirs[index].remove_file(rest)?
+            }
+        };
+        self.recompute_totals();
+        self.sort_children();
+        Some(removed)
+    }
+}
+
+/// One entry of the Largest Files list.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LargeFile {
+    pub path: PathBuf,
+    pub size: u64,
+    pub allocated: u64,
+}
+
+/// The `n` largest files anywhere under `root` (the folder at
+/// `root_path`), largest first. One pass over the tree keeping only the
+/// best `n` so far, so it stays quick for millions of files.
+pub fn largest_files(root: &DirNode, root_path: &Path, n: usize) -> Vec<LargeFile> {
+    use std::cmp::Reverse;
+    use std::collections::BinaryHeap;
+    if n == 0 {
+        return Vec::new();
+    }
+    // Smallest of the best `n` on top. The path is only built for files
+    // that make it in.
+    let mut best: BinaryHeap<Reverse<(u64, u64, PathBuf)>> = BinaryHeap::with_capacity(n + 1);
+    let mut stack: Vec<(&DirNode, PathBuf)> = vec![(root, root_path.to_path_buf())];
+    while let Some((dir, path)) = stack.pop() {
+        for file in &dir.files {
+            let beats_smallest = best.len() < n || best.peek().is_some_and(|Reverse(min)| file.size > min.0);
+            if !beats_smallest {
+                // Files are sorted largest first, so the rest can't either.
+                break;
+            }
+            best.push(Reverse((file.size, file.allocated, path.join(&*file.name))));
+            if best.len() > n {
+                best.pop();
+            }
+        }
+        for child in &dir.dirs {
+            // A folder smaller than the smallest kept file can't hold a
+            // file that beats it.
+            if best.len() == n && best.peek().is_some_and(|Reverse(min)| child.size <= min.0) {
+                continue;
+            }
+            stack.push((child, path.join(&*child.name)));
+        }
+    }
+    let mut files: Vec<LargeFile> = best
+        .into_iter()
+        .map(|Reverse((size, allocated, path))| LargeFile {
+            path,
+            size,
+            allocated,
+        })
+        .collect();
+    files.sort_by(|a, b| b.size.cmp(&a.size).then_with(|| a.path.cmp(&b.path)));
+    files
+}
+
 /// The folder names leading from `root` down to `branch` (empty when
 /// they're the same folder), or `None` if `branch` isn't inside `root`.
 pub fn branch_components(root: &Path, branch: &Path) -> Option<Vec<String>> {
@@ -713,6 +794,53 @@ mod tests {
         // Folder names match regardless of case.
         assert!(root.find(&["big".to_string()]).is_some());
         assert!(!root.replace_branch(&["missing".to_string()], DirNode::default()));
+    }
+
+    #[test]
+    fn largest_files_come_from_every_level_largest_first() {
+        let root = sample();
+        let top = largest_files(&root, Path::new(r"C:\data"), 3);
+        let names: Vec<String> = top.iter().map(|f| f.path.display().to_string()).collect();
+        assert_eq!(names, vec![r"C:\data\Big\inner\x", r"C:\data\Big\b", r"C:\data\small\a"]);
+        assert_eq!(top[0].size, 5000);
+        assert_eq!(largest_files(&root, Path::new(r"C:\data"), 100).len(), 4, "fewer files than asked for");
+        assert!(largest_files(&root, Path::new(r"C:\data"), 0).is_empty());
+    }
+
+    #[test]
+    fn largest_files_matches_a_full_sort() {
+        // Many folders and ties, checked against sorting every file.
+        let dirs: Vec<DirNode> = (0..40)
+            .map(|d| {
+                let files = (0..60).map(|f| file(&format!("f{f}"), ((f * 37 + d * 11) % 500) as u64)).collect();
+                dir(&format!("d{d}"), vec![], files)
+            })
+            .collect();
+        let root = dir(r"C:\r", dirs, vec![file("top", 499)]);
+        let mut all: Vec<u64> = root.files.iter().map(|f| f.size).collect();
+        for d in &root.dirs {
+            all.extend(d.files.iter().map(|f| f.size));
+        }
+        all.sort_unstable_by(|a, b| b.cmp(a));
+        let top: Vec<u64> = largest_files(&root, Path::new(r"C:\r"), 100).iter().map(|f| f.size).collect();
+        assert_eq!(top, all[..100].to_vec());
+    }
+
+    #[test]
+    fn removing_a_file_updates_every_folder_above_it() {
+        let mut root = sample();
+        let removed = root
+            .remove_file(&["Big".to_string(), "inner".to_string(), "X".to_string()])
+            .expect("found regardless of case");
+        assert_eq!(removed.size, 5000);
+        assert_eq!(root.size, 111);
+        assert_eq!(root.file_count, 3);
+        assert_eq!(root.dirs[0].size, 100);
+        assert_eq!(&*root.dirs[0].name, "Big");
+        assert_eq!(root.remove_file(&["top.txt".to_string()]).map(|f| f.size), Some(1));
+        assert_eq!(root.size, 110);
+        assert!(root.remove_file(&["nope".to_string()]).is_none());
+        assert!(root.remove_file(&[]).is_none());
     }
 
     #[test]
