@@ -84,6 +84,8 @@ pub enum SettingsAction {
     /// Data), after the user confirmed it.
     ResetData(ResetTarget),
     ApplySettings,
+    /// Open the New File templates folder in a new tab.
+    OpenTemplatesFolder,
     ExportSettings,
     ImportSettings,
     /// Export/import *just* the custom context menu list (see

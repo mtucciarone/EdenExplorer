@@ -1106,6 +1106,43 @@ fn draw_behavior_section(
     });
 
     settings_section(ui, palette, |ui| {
+        setting_label(
+            ui,
+            &i18n.tr("settings_templates_folder"),
+            Some((&i18n.tr("tooltip_settings_templates_folder"), palette)),
+            palette,
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        let prefs = &mut settings.current_settings.ui_prefs;
+        let dir = crate::core::templates::templates_dir(prefs.templates_folder.as_deref());
+        if let Some(dir) = &dir {
+            ui.label(
+                RichText::new(dir.display().to_string())
+                    .size(palette.text_size - 1.0)
+                    .color(palette.text_normal.gamma_multiply(0.75)),
+            );
+        }
+        ui.add_space(SETTINGS_FIELD_GAP);
+        ui.horizontal(|ui| {
+            if eden_button(ui, palette, &i18n.tr("settings_templates_browse")).clicked()
+                && let Some(folder) = crate::gui::windows::windowsoverrides::dialog().pick_folder()
+            {
+                prefs.templates_folder = Some(folder);
+                *action = Some(SettingsAction::ApplySettings);
+            }
+            if eden_button(ui, palette, &i18n.tr("settings_templates_open")).clicked() {
+                *action = Some(SettingsAction::OpenTemplatesFolder);
+            }
+            if prefs.templates_folder.is_some()
+                && eden_button(ui, palette, &i18n.tr("settings_templates_reset")).clicked()
+            {
+                prefs.templates_folder = None;
+                *action = Some(SettingsAction::ApplySettings);
+            }
+        });
+    });
+
+    settings_section(ui, palette, |ui| {
         ui.horizontal(|ui| {
             if setting_checkbox(
                 ui,

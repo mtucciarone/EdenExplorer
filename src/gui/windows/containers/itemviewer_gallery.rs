@@ -496,10 +496,13 @@ pub fn draw_gallery_view(
                                 action = Some(ItemViewerAction::CreateFolder);
                                 ui.close();
                             }
-                            if ui.button("New File").clicked() {
-                                action = Some(ItemViewerAction::CreateFile);
-                                ui.close();
-                            }
+                            crate::gui::windows::containers::itemviewer_helper::draw_new_file_menu(
+                                ui,
+                                i18n,
+                                palette,
+                                settings_window,
+                                &mut action,
+                            );
                             if ui.button(i18n.tr("inputs_create_shortcut")).clicked() {
                                 action = Some(ItemViewerAction::CreateShortcutHere);
                                 ui.close();
@@ -510,6 +513,21 @@ pub fn draw_gallery_view(
                             }
                             if ui.button("Open Terminal").clicked() {
                                 action = Some(ItemViewerAction::OpenTerminal);
+                                ui.close();
+                            }
+
+                            ui.separator();
+
+                            if ui.button(i18n.tr("select_all")).clicked() {
+                                action = Some(ItemViewerAction::SelectAll);
+                                ui.close();
+                            }
+                            if ui.button(i18n.tr("select_invert")).clicked() {
+                                action = Some(ItemViewerAction::InvertSelection);
+                                ui.close();
+                            }
+                            if ui.button(i18n.tr("select_by_pattern_menu")).clicked() {
+                                action = Some(ItemViewerAction::SelectByPattern);
                                 ui.close();
                             }
 

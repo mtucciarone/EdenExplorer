@@ -756,3 +756,15 @@ select_by_pattern_add = Add To Selection
 select_by_pattern_deselect = Deselect
 shortcut_invert_selection = Invert Selection
 shortcut_select_by_pattern = Select By Pattern
+
+# New File templates
+new_file_menu = New File
+template_text = Text Document (.txt)
+template_markdown = Markdown File (.md)
+template_word = Word Document (.docx)
+new_file_open_templates_folder = Open Templates Folder
+settings_templates_folder = New File Templates Folder
+tooltip_settings_templates_folder = Every file in this folder appears under right-click > New File; choosing one creates a copy in the current folder. The built-in Text, Markdown, and Word templates are always listed too.
+settings_templates_browse = Browse…
+settings_templates_open = Open
+settings_templates_reset = Reset To Default

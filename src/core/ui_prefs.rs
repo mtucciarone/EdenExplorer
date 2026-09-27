@@ -21,9 +21,6 @@ pub struct UiPrefs {
     pub persist_folder_sizes: bool,
     /// Show a thumbnail tooltip when hovering an image or video file.
     pub hover_previews: bool,
-    /// Show a checkbox on every row/tile; clicking it adds or removes that
-    /// item from the selection without Ctrl.
-    pub checkbox_selection: bool,
     /// Extra folder listed under New (besides the built-in templates) whose
     /// files are offered as templates. `None` = the default
     /// `Templates` folder inside the data folder.
@@ -36,7 +33,6 @@ impl Default for UiPrefs {
             remember_folder_views: true,
             persist_folder_sizes: true,
             hover_previews: true,
-            checkbox_selection: false,
             templates_folder: None,
         }
     }
@@ -75,7 +71,6 @@ mod tests {
         assert!(!prefs.hover_previews);
         assert!(prefs.remember_folder_views);
         assert!(prefs.persist_folder_sizes);
-        assert!(!prefs.checkbox_selection);
     }
 
     #[test]

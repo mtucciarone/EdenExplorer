@@ -31,7 +31,10 @@ pub enum ItemViewerAction {
     FitColumn(ItemViewerHeaderColumn),
     FitAllColumns,
     CreateFolder,
-    CreateFile,
+    /// New File > a template (built-in or from the templates folder).
+    CreateFileFromTemplate(crate::core::templates::Template),
+    /// New File > Open Templates Folder (created if missing).
+    OpenTemplatesFolder,
     /// Background "Create Shortcut" - prompts for a target file, then
     /// creates a `.lnk` pointing to it in the current directory (matches
     /// Windows' own "New > Shortcut" from an empty-space right-click).

@@ -3231,6 +3231,50 @@ pub fn table_background_response(ui: &mut egui::Ui) -> egui::Response {
 /// `bg_response` should come from `ui.interact(rect, id, Sense::click())`
 /// over the empty-state area, mirroring how each view already senses that
 /// area for the navigate-up double-click.
+/// The background menu's "New File" submenu: the built-in templates, every
+/// file in the templates folder, and a shortcut to that folder.
+pub fn draw_new_file_menu(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    palette: &ThemePalette,
+    settings_window: &SettingsWindow,
+    action: &mut Option<ItemViewerAction>,
+) {
+    use crate::core::templates::{BuiltinTemplate, Template};
+    ui.menu_button(i18n.tr("new_file_menu"), |ui| {
+        apply_eden_text_overrides(ui, palette);
+        for builtin in BuiltinTemplate::ALL {
+            if ui.button(i18n.tr(builtin.i18n_key())).clicked() {
+                *action = Some(ItemViewerAction::CreateFileFromTemplate(Template::Builtin(builtin)));
+                ui.close();
+            }
+        }
+
+        let dir = crate::core::templates::templates_dir(
+            settings_window.current_settings.ui_prefs.templates_folder.as_deref(),
+        );
+        let user = dir
+            .as_deref()
+            .map(crate::core::templates::user_templates)
+            .unwrap_or_default();
+        if !user.is_empty() {
+            ui.separator();
+            for path in user {
+                if ui.button(Template::file_label(&path)).clicked() {
+                    *action = Some(ItemViewerAction::CreateFileFromTemplate(Template::File(path)));
+                    ui.close();
+                }
+            }
+        }
+
+        ui.separator();
+        if ui.button(i18n.tr("new_file_open_templates_folder")).clicked() {
+            *action = Some(ItemViewerAction::OpenTemplatesFolder);
+            ui.close();
+        }
+    });
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn draw_empty_folder_context_menu(
     i18n: &I18n,
@@ -3251,10 +3295,7 @@ pub fn draw_empty_folder_context_menu(
                 *action = Some(ItemViewerAction::CreateFolder);
                 ui.close();
             }
-            if ui.button("New File").clicked() {
-                *action = Some(ItemViewerAction::CreateFile);
-                ui.close();
-            }
+            draw_new_file_menu(ui, i18n, palette, settings_window, action);
             if ui.button(i18n.tr("inputs_create_shortcut")).clicked() {
                 *action = Some(ItemViewerAction::CreateShortcutHere);
                 ui.close();

@@ -1529,6 +1529,60 @@ impl MainWindow {
         }
     }
 
+    /// New File > template: creates the file, reloads, selects it, and
+    /// starts renaming it (same as the plain New File).
+    pub fn create_file_from_template(&mut self, template: &crate::core::templates::Template) {
+        if self.current_nav().is_root()
+            || self.current_nav().is_recycle_bin()
+            || self.current_nav().is_tag_view()
+        {
+            return;
+        }
+        let dir = self.current_nav().current.clone();
+        match crate::core::templates::create_from_template(&dir, template) {
+            Ok(path) => {
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                self.load_path();
+                self.rename_state = Some(RenameState {
+                    path: path.clone(),
+                    new_name: name,
+                    should_focus: true,
+                    validation_error_show: false,
+                });
+                let side = self.focused_split;
+                self.active_tab_mut()
+                    .view_mut(side)
+                    .explorer_state
+                    .pending_selection_paths = Some(vec![path]);
+            }
+            Err(err) => {
+                eprintln!("Couldn't create file from template: {err}");
+                let auto_open = self.settings_window.current_settings.auto_open_notification_panel;
+                self.notifications_state.record_finished(
+                    crate::gui::windows::containers::notifications::FileOpKind::Copy,
+                    1,
+                    path_display_label(&dir),
+                    crate::gui::windows::containers::notifications::FileOpStatus::Failed,
+                    auto_open,
+                );
+            }
+        }
+    }
+
+    /// Opens the templates folder in a new tab, creating it first.
+    pub fn open_templates_folder(&mut self) {
+        let custom = self.settings_window.current_settings.ui_prefs.templates_folder.clone();
+        let Some(dir) = crate::core::templates::templates_dir(custom.as_deref()) else {
+            return;
+        };
+        let _ = std::fs::create_dir_all(&dir);
+        self.open_new_tab(dir);
+        self.load_path();
+    }
+
     pub fn create_new_file(&mut self) {
         if self.current_nav().is_root()
             || self.current_nav().is_recycle_bin()
@@ -3976,6 +4030,7 @@ impl MainWindow {
                         );
                     }
                 }
+                SettingsAction::OpenTemplatesFolder => self.open_templates_folder(),
                 SettingsAction::ResetData(target) => {
                     use crate::gui::windows::enums::ResetTarget;
                     let settings = &mut self.settings_window.current_settings;
@@ -5690,7 +5745,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
         if is_recycle_bin_view {
             match &action {
                 ItemViewerAction::CreateFolder
-                | ItemViewerAction::CreateFile
+                | ItemViewerAction::CreateFileFromTemplate(_)
                 | ItemViewerAction::CreateShortcutHere
                 | ItemViewerAction::Context(ItemViewerContextAction::CreateShortcut(_))
                 | ItemViewerAction::OpenTerminal
@@ -5773,7 +5828,10 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     view.column_state.layout_generation.wrapping_add(1);
             }
             ItemViewerAction::CreateFolder => explorer.create_new_folder(),
-            ItemViewerAction::CreateFile => explorer.create_new_file(),
+            ItemViewerAction::CreateFileFromTemplate(template) => {
+                explorer.create_file_from_template(&template)
+            }
+            ItemViewerAction::OpenTemplatesFolder => explorer.open_templates_folder(),
             ItemViewerAction::CreateShortcutHere => explorer.create_shortcut_here(),
             ItemViewerAction::RefreshCurrentDirectory => {
                 clear_clipboard_files();

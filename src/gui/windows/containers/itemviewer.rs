@@ -1118,10 +1118,13 @@ pub fn draw_item_viewer(
                                     action = Some(ItemViewerAction::CreateFolder);
                                     ui.close();
                                 }
-                                if ui.button("New File").clicked() {
-                                    action = Some(ItemViewerAction::CreateFile);
-                                    ui.close();
-                                }
+                                crate::gui::windows::containers::itemviewer_helper::draw_new_file_menu(
+                                    ui,
+                                    i18n,
+                                    palette,
+                                    settings_window,
+                                    &mut action,
+                                );
                                 if ui.button(i18n.tr("inputs_create_shortcut")).clicked() {
                                     action = Some(ItemViewerAction::CreateShortcutHere);
                                     ui.close();
