@@ -98,6 +98,8 @@ pub fn draw_item_viewer(
     let audio_service = &mut view.audio_service;
     let find_in_preview = &mut view.find_in_preview;
     let preview_selection = &mut view.preview_selection;
+    let thumbnail_service = &mut view.thumbnail_service;
+    let hover_previews = settings_window.current_settings.ui_prefs.hover_previews;
     let current_dir = view.nav.current.clone();
     let is_loading = view.is_loading;
     let network_share_error = *view.network_share_error.lock().unwrap();
@@ -375,7 +377,7 @@ pub fn draw_item_viewer(
             explorer_state,
             rename_state,
             drag_state,
-            &mut view.thumbnail_service,
+            thumbnail_service,
             &mut view.gallery_state,
             paste_enabled,
             clipboard_set,
@@ -792,6 +794,34 @@ pub fn draw_item_viewer(
                             }
 
                             let row_resp = row.response();
+
+                            // Hover preview (Settings > Behavior > Hover
+                            // Previews): a thumbnail tooltip for images and
+                            // videos, from the same shell thumbnails the
+                            // Gallery uses.
+                            if hover_previews
+                                && !file.is_dir
+                                && row_resp.hovered()
+                                && crate::core::utils::thumbnails::is_image_or_video(&file.path)
+                            {
+                                let ctx = row_resp.ctx.clone();
+                                thumbnail_service.pump_completed(&ctx);
+                                thumbnail_service.request(
+                                    file,
+                                    crate::core::utils::thumbnails::ThumbnailPriority::Visible,
+                                );
+                                if let Some(texture) = thumbnail_service.texture_for(&ctx, file) {
+                                    row_resp.clone().on_hover_ui_at_pointer(|ui| {
+                                        ui.add(
+                                            egui::Image::new(&texture)
+                                                .max_size(egui::vec2(256.0, 256.0))
+                                                .shrink_to_fit(),
+                                        );
+                                    });
+                                } else {
+                                    ctx.request_repaint_after(std::time::Duration::from_millis(100));
+                                }
+                            }
 
                             draw_tag_row_background(
                                 row_resp.rect,

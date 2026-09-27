@@ -768,3 +768,7 @@ tooltip_settings_templates_folder = Every file in this folder appears under righ
 settings_templates_browse = Browse…
 settings_templates_open = Open
 settings_templates_reset = Reset To Default
+
+# Hover previews
+settings_hover_previews = Hover Previews For Images And Videos
+tooltip_settings_hover_previews = In Details view, hovering an image or video file for a moment shows a larger thumbnail of it.

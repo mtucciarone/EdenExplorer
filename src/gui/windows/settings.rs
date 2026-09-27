@@ -1103,6 +1103,16 @@ fn draw_behavior_section(
             "tooltip_settings_persist_folder_sizes",
             action,
         );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut prefs.hover_previews,
+            "settings_hover_previews",
+            "tooltip_settings_hover_previews",
+            action,
+        );
     });
 
     settings_section(ui, palette, |ui| {
