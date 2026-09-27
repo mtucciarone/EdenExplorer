@@ -4882,7 +4882,7 @@ impl MainWindow {
         Some(paths)
     }
 
-    /// Shows/hides the Performance panel (Ctrl+Shift+P, or its close
+    /// Shows/hides the Performance panel (Ctrl+K, or its close
     /// button) and remembers the choice, same as the Settings checkbox.
     pub(crate) fn toggle_performance_panel(&mut self) {
         let settings = &mut self.settings_window.current_settings;
@@ -4930,7 +4930,10 @@ impl MainWindow {
 
         if !ctx.egui_wants_keyboard_input()
             && ctx.input(|input| {
-                input.modifiers.ctrl && input.modifiers.shift && input.key_pressed(egui::Key::P)
+                input.modifiers.ctrl
+                    && !input.modifiers.shift
+                    && !input.modifiers.alt
+                    && input.key_pressed(egui::Key::K)
             })
         {
             self.toggle_performance_panel();

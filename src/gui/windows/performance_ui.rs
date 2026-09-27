@@ -2,7 +2,7 @@
 //! long the current folder took to list and size, frame time/FPS, memory)
 //! and a "Benchmark This Folder" tool comparing the app's own
 //! `NtQueryDirectoryFile` listing with Rust's standard `read_dir`. Toggled
-//! from Settings > Advanced or with Ctrl+Shift+P. The measuring itself lives
+//! from Settings > Advanced or with Ctrl+K. The measuring itself lives
 //! in `core::perf`; the listing/size timings are recorded by
 //! `MainWindow::handle_directory_batch_recieve_for` and
 //! `finish_size_scan_metric_if_done`.
@@ -185,7 +185,7 @@ pub fn draw_performance_panel(
                         close = true;
                     }
                     ui.label(
-                        egui::RichText::new("Ctrl+Shift+P")
+                        egui::RichText::new("Ctrl+K")
                             .size(palette.text_size - 1.0)
                             .color(palette.text_normal.gamma_multiply(0.6)),
                     );

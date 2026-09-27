@@ -704,5 +704,5 @@ perf_copy_results = Copy Results
 perf_copied = Copied
 perf_cache_note = Each method gets one warm-up run first, so the timings mostly reflect cached listings.
 settings_show_performance_panel = Show Performance Panel
-tooltip_settings_show_performance_panel = Shows a floating panel with live folder load, folder size scan, frame time, and memory metrics, plus a folder benchmark. Also toggled with Ctrl+Shift+P.
+tooltip_settings_show_performance_panel = Shows a floating panel with live folder load, folder size scan, frame time, and memory metrics, plus a folder benchmark. Also toggled with Ctrl+K.
 shortcut_performance_panel = Show/Hide Performance Panel

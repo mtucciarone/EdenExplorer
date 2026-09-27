@@ -103,7 +103,7 @@
   <li><b>Optimized icon caching</b> using metadata-based cache keys and background loading</li>
   <li><b>Efficient metadata caching</b> to minimize repeated filesystem operations</li>
   <li><b>Low memory footprint</b> designed for responsive long-running use</li>
-  <li><b>Performance panel</b> (Settings &gt; Advanced or <code>Ctrl+Shift+P</code>) with live folder load time and items/sec, folder size scan time, frame time/FPS, and memory use</li>
+  <li><b>Performance panel</b> (Settings &gt; Advanced or <code>Ctrl+K</code>) with live folder load time and items/sec, folder size scan time, frame time/FPS, and memory use</li>
   <li><b>Benchmark This Folder</b> - times the app's <code>NtQueryDirectoryFile</code> listing against Rust's <code>read_dir</code> and <code>read_dir</code> + per-file metadata over 3/5/10 runs, with min/avg/max, items/sec, and Copy Results</li>
   <li><b>Windows API integration</b> for native operating system functionality</li>
   <li><b>Custom executable icon and file association</b></li>

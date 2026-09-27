@@ -12,7 +12,7 @@ Browsing Photos in Gallery and Details + Preview, previewing a Markdown file wit
 
 ![Performance panel benchmark](performance-benchmark.gif)
 
-Choosing 10 runs and clicking Benchmark This Folder: a progress bar (with Cancel) runs while each listing method is timed, then the min/avg/max and items/sec table appears with the fastest method highlighted.
+Pressing Ctrl+K to open the panel, then choosing 10 runs and clicking Benchmark This Folder: a progress bar (with Cancel) runs while each listing method is timed, then the min/avg/max and items/sec table appears with the fastest method highlighted.
 
 ## Features
 
@@ -188,7 +188,7 @@ Choosing 10 runs and clicking Benchmark This Folder: a progress bar (with Cancel
 
 ![Delete cancelled and completed in the notification panel](43-delete-cancelled-notifications.png)
 
-### Performance panel (Ctrl+Shift+P) - live folder load time and items/sec, folder size scan time, frame time, FPS, and memory for the current folder
+### Performance panel (Ctrl+K) - live folder load time and items/sec, folder size scan time, frame time, FPS, and memory for the current folder
 
 ![Performance panel](44-performance-panel.png)
 
