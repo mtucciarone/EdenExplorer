@@ -62,6 +62,11 @@ const SHORTCUT_GROUPS: &[ShortcutGroup] = &[
         shortcuts: &[
             Shortcut { action_key: "shortcut_open", combos: &[&["Enter"]] },
             Shortcut { action_key: "shortcut_select_all", combos: &[&["Ctrl", "A"]] },
+            Shortcut { action_key: "shortcut_invert_selection", combos: &[&["Ctrl", "I"]] },
+            Shortcut {
+                action_key: "shortcut_select_by_pattern",
+                combos: &[&["Ctrl", "Shift", "S"]],
+            },
             Shortcut {
                 action_key: "shortcut_select_first_last",
                 combos: &[&["Home"], &["End"]],

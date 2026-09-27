@@ -1137,6 +1137,21 @@ pub fn draw_item_viewer(
 
                                 ui.separator();
 
+                                if ui.button(i18n.tr("select_all")).clicked() {
+                                    action = Some(ItemViewerAction::SelectAll);
+                                    ui.close();
+                                }
+                                if ui.button(i18n.tr("select_invert")).clicked() {
+                                    action = Some(ItemViewerAction::InvertSelection);
+                                    ui.close();
+                                }
+                                if ui.button(i18n.tr("select_by_pattern_menu")).clicked() {
+                                    action = Some(ItemViewerAction::SelectByPattern);
+                                    ui.close();
+                                }
+
+                                ui.separator();
+
                                 ui.menu_button(i18n.tr("view_menu"), |ui| {
                                     apply_eden_text_overrides(ui, palette);
                                     for (mode, label_key) in [

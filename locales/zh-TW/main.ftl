@@ -746,3 +746,17 @@ status_free_space_tooltip = Free space on this drive
 status_filter = Filter
 status_of = of
 status_clear_filter = Clear Filter (Esc)
+
+# Selection tools
+select_all = Select All
+select_invert = Invert Selection
+select_by_pattern_menu = Select By Pattern…
+select_by_pattern_title = Select By Pattern
+select_by_pattern_hint = Wildcards * and ?; separate patterns with ; (text without wildcards matches any name containing it)
+select_by_pattern_include_folders = Include Folders
+select_by_pattern_matching = matching items in this folder
+select_by_pattern_select = Select
+select_by_pattern_add = Add To Selection
+select_by_pattern_deselect = Deselect
+shortcut_invert_selection = Invert Selection
+shortcut_select_by_pattern = Select By Pattern

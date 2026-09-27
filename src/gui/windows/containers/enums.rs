@@ -46,6 +46,10 @@ pub enum ItemViewerAction {
     Deselect(PathBuf),
     SelectAll,
     DeselectAll,
+    /// Select every visible item that isn't selected, and deselect the rest.
+    InvertSelection,
+    /// Open the Select by Pattern dialog for this view.
+    SelectByPattern,
     RangeSelect(Vec<PathBuf>),
     Open(PathBuf),
     OpenWithDefault(Vec<PathBuf>),

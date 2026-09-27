@@ -14,6 +14,7 @@ pub mod mermaid;
 pub mod network;
 pub mod network_mdns;
 pub mod network_wsd;
+pub mod pattern;
 pub mod perf;
 pub mod portable;
 pub mod preview;

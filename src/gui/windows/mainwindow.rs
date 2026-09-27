@@ -130,6 +130,10 @@ pub struct MainWindow {
     /// The "Checksums" modal's state while it's open - see
     /// `ChecksumDialogState`'s doc comment in `mainwindow_imp.rs`. Drawn as
     /// a modal from the update loop, alongside `pending_paste_conflict`.
+    /// The Select by Pattern dialog, while open.
+    pub(crate) select_by_pattern: Option<crate::gui::windows::mainwindow_imp::SelectByPatternState>,
+    /// The last pattern used, offered again the next time the dialog opens.
+    pub(crate) last_select_pattern: String,
     pub(crate) pending_checksum:
         Option<crate::gui::windows::mainwindow_imp::ChecksumDialogState>,
     /// Tracked copy/move/delete operations shown by the top-right
@@ -399,6 +403,8 @@ impl Default for MainWindow {
             pending_bulk_rename: None,
             pending_compress_jobs: HashMap::new(),
             pending_checksum: None,
+            select_by_pattern: None,
+            last_select_pattern: String::new(),
             notifications_state: NotificationsState::default(),
             performance_state: Default::default(),
             undo_stack: std::collections::VecDeque::new(),
@@ -530,7 +536,8 @@ impl eframe::App for MainWindow {
         {
             let blocking_modal_open = self.pending_paste_conflict.is_some()
                 || self.pending_bulk_rename.is_some()
-                || self.pending_checksum.is_some();
+                || self.pending_checksum.is_some()
+                || self.select_by_pattern.is_some();
             ui.ctx().memory_mut(|mem| {
                 mem.data.insert_temp(
                     egui::Id::new(
@@ -1192,7 +1199,8 @@ impl eframe::App for MainWindow {
                                             // the paste itself correctly targeted the second one.
                                             let blocking_modal_open = self.pending_paste_conflict.is_some()
                                                 || self.pending_bulk_rename.is_some()
-                                                || self.pending_checksum.is_some();
+                                                || self.pending_checksum.is_some()
+                || self.select_by_pattern.is_some();
 
                                             if primary_clicked && !blocking_modal_open {
                                                 if let Some(pos) = pointer_pos {
@@ -1695,6 +1703,7 @@ impl eframe::App for MainWindow {
         self.draw_paste_conflict_modal(ui.ctx(), &palette);
         self.draw_bulk_rename_modal(ui.ctx(), &palette);
         self.draw_checksum_modal(ui.ctx(), &palette);
+        self.draw_select_by_pattern_modal(ui.ctx(), &palette);
         if self.settings_window.current_settings.show_operation_toasts {
             draw_toast(ui.ctx(), &self.i18n, &palette, &mut self.notifications_state);
         }

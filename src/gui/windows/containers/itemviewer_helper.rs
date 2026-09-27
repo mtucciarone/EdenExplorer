@@ -1884,6 +1884,12 @@ pub fn handle_global_actions(
         if i.modifiers.command && i.key_pressed(egui::Key::A) {
             action = Some(ItemViewerAction::SelectAll);
         }
+        if i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::I) {
+            action = Some(ItemViewerAction::InvertSelection);
+        }
+        if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::S) {
+            action = Some(ItemViewerAction::SelectByPattern);
+        }
         if i.modifiers.command
             && i.key_released(egui::Key::V)
             && !is_recycle_bin_view

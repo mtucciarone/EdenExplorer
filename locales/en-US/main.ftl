@@ -111,7 +111,7 @@ tooltip_settings_timeformat = When enabled, times will be displayed in 24-hour f
 settings_double_click_navigates_up = Double-Click Empty Space To Go Up A Folder
 tooltip_settings_double_click_navigates_up = When enabled, double-clicking an empty area of the file list navigates to the parent folder.
 settings_show_selection_checkboxes = Show Selection Checkboxes
-tooltip_settings_show_selection_checkboxes = When disabled, the checkbox column is hidden from the file list. You can still select items by clicking, Ctrl+clicking, or Shift+clicking.
+tooltip_settings_show_selection_checkboxes = Shows a checkbox on every row in Details view and on Gallery tiles (while hovering, or once anything is selected); clicking one adds or removes that item without Ctrl. When disabled, you can still select items by clicking, Ctrl+clicking, or Shift+clicking.
 settings_middle_click_opens_new_tab = Middle-Click A Folder To Open It In A New Tab
 tooltip_settings_middle_click_opens_new_tab = When enabled, middle-clicking a folder in the file list opens it in a new tab instead of doing nothing.
 settings_restore_last_session_tabs = Restore Previously Opened Tabs On Startup
@@ -742,3 +742,17 @@ status_free_space_tooltip = Free space on this drive
 status_filter = Filter
 status_of = of
 status_clear_filter = Clear Filter (Esc)
+
+# Selection tools
+select_all = Select All
+select_invert = Invert Selection
+select_by_pattern_menu = Select By Pattern…
+select_by_pattern_title = Select By Pattern
+select_by_pattern_hint = Wildcards * and ?; separate patterns with ; (text without wildcards matches any name containing it)
+select_by_pattern_include_folders = Include Folders
+select_by_pattern_matching = matching items in this folder
+select_by_pattern_select = Select
+select_by_pattern_add = Add To Selection
+select_by_pattern_deselect = Deselect
+shortcut_invert_selection = Invert Selection
+shortcut_select_by_pattern = Select By Pattern

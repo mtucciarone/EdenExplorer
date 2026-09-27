@@ -312,6 +312,45 @@ pub fn draw_gallery_view(
                             action = Some(a);
                         }
 
+                        // Selection checkbox in the tile's corner (Settings >
+                        // Show Selection Checkboxes), like the Details view's
+                        // checkbox column: shown while hovering, on selected
+                        // tiles, and on every tile once anything is selected.
+                        if settings_window.current_settings.show_selection_checkboxes && !modal_input_blocked {
+                            let is_selected = explorer_state.selected_paths.contains(&file.path);
+                            let hovered = pointer_pos.is_some_and(|p| rect.contains(p));
+                            if hovered || is_selected || !explorer_state.selected_paths.is_empty() {
+                                let box_rect = egui::Rect::from_min_size(
+                                    rect.min + egui::vec2(6.0, 6.0),
+                                    egui::vec2(18.0, 18.0),
+                                );
+                                ui.painter().rect_filled(
+                                    box_rect,
+                                    egui::CornerRadius::same(5),
+                                    palette.row_bg.gamma_multiply(0.85),
+                                );
+                                let mut checked = is_selected;
+                                let clicked = ui
+                                    .scope_builder(egui::UiBuilder::new().max_rect(box_rect), |ui| {
+                                        crate::core::utils::widgets::draw_checkbox(
+                                            ui,
+                                            palette,
+                                            &mut checked,
+                                            ("gallery_checkbox", &file.path),
+                                        )
+                                    })
+                                    .inner
+                                    .clicked();
+                                if clicked {
+                                    action = Some(if checked {
+                                        ItemViewerAction::Select(file.path.clone())
+                                    } else {
+                                        ItemViewerAction::Deselect(file.path.clone())
+                                    });
+                                }
+                            }
+                        }
+
                         if drag_hover_active {
                             if let Some(target) = hovered_target_ref {
                                 if &file.path == target && file.is_dir {

@@ -171,6 +171,21 @@ pub(crate) fn apply_directory_settings_to_view(
     }
 }
 
+/// Open Select by Pattern dialog (see `MainWindow::draw_select_by_pattern_modal`).
+pub(crate) struct SelectByPatternState {
+    pub side: SplitSide,
+    pub pattern: String,
+    pub include_folders: bool,
+    pub focus_requested: bool,
+}
+
+#[derive(Clone, Copy)]
+enum SelectByPatternMode {
+    Replace,
+    Add,
+    Remove,
+}
+
 /// Most folders whose view is remembered; the least recently changed are
 /// forgotten first.
 const MAX_REMEMBERED_FOLDER_VIEWS: usize = 5000;
@@ -2770,6 +2785,174 @@ impl MainWindow {
     /// structure exactly (see that function's doc comment for why - not
     /// `egui::Window`, which has a remembered-size bug this app already hit
     /// once).
+    /// The Select by Pattern dialog: wildcard patterns matched against the
+    /// names of the items currently shown in one view.
+    pub fn draw_select_by_pattern_modal(
+        &mut self,
+        ctx: &egui::Context,
+        palette: &crate::gui::theme::ThemePalette,
+    ) {
+        use crate::core::utils::widgets::{
+            eden_button, modal_frame, modal_icon_header, primary_dialog_button,
+        };
+        use egui_phosphor::regular;
+
+        let Some(mut state) = self.select_by_pattern.take() else {
+            return;
+        };
+
+        // Names of the items the view is showing (filters and hidden-file
+        // settings already applied), with their paths.
+        let visible: Vec<(PathBuf, String, bool)> = {
+            let view = self.active_tab().view(state.side);
+            view.item_viewer_filter_state
+                .cached_indices
+                .iter()
+                .map(|&idx| {
+                    let file = &view.files[idx];
+                    (file.path.clone(), file.name.clone(), file.is_dir)
+                })
+                .collect()
+        };
+        let matches: Vec<PathBuf> = visible
+            .iter()
+            .filter(|(_, name, is_dir)| {
+                (state.include_folders || !is_dir)
+                    && crate::core::pattern::matches_any(&state.pattern, name)
+            })
+            .map(|(path, _, _)| path.clone())
+            .collect();
+
+        let mut outcome: Option<SelectByPatternMode> = None;
+        let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+
+        egui::Area::new(egui::Id::new("select_by_pattern_scrim"))
+            .order(egui::Order::Middle)
+            .interactable(true)
+            .show(ctx, |ui| {
+                let rect = ctx.content_rect();
+                ui.painter()
+                    .rect_filled(rect, 0.0, palette.modal_background_effect_color);
+                if ui
+                    .interact(rect, ui.id().with("click"), egui::Sense::click())
+                    .clicked()
+                {
+                    close = true;
+                }
+            });
+
+        egui::Area::new(egui::Id::new("select_by_pattern_area"))
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                modal_frame(&ctx.style_of(ctx.theme()), palette).show(ui, |ui| {
+                    ui.set_width(420.0);
+                    modal_icon_header(
+                        ui,
+                        palette,
+                        regular::ASTERISK,
+                        palette.primary,
+                        &self.i18n.tr("select_by_pattern_title"),
+                        Some(&self.i18n.tr("select_by_pattern_hint")),
+                    );
+                    ui.add_space(14.0);
+
+                    let edit = ui.add(
+                        egui::TextEdit::singleline(&mut state.pattern)
+                            .hint_text("*.jpg; *.png")
+                            .desired_width(f32::INFINITY),
+                    );
+                    if state.focus_requested {
+                        edit.request_focus();
+                        state.focus_requested = false;
+                    }
+                    if edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        outcome = Some(SelectByPatternMode::Replace);
+                    }
+                    ui.add_space(8.0);
+                    ui.checkbox(
+                        &mut state.include_folders,
+                        self.i18n.tr("select_by_pattern_include_folders"),
+                    );
+                    ui.add_space(6.0);
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{} {}",
+                            matches.len(),
+                            self.i18n.tr("select_by_pattern_matching")
+                        ))
+                        .size(palette.text_size - 1.0)
+                        .color(palette.text_normal.gamma_multiply(0.75)),
+                    );
+                    ui.add_space(14.0);
+
+                    ui.horizontal(|ui| {
+                        let any = !matches.is_empty();
+                        if ui
+                            .add_enabled_ui(any, |ui| {
+                                primary_dialog_button(ui, palette, &self.i18n.tr("select_by_pattern_select"))
+                            })
+                            .inner
+                            .clicked()
+                        {
+                            outcome = Some(SelectByPatternMode::Replace);
+                        }
+                        if ui
+                            .add_enabled_ui(any, |ui| {
+                                eden_button(ui, palette, &self.i18n.tr("select_by_pattern_add"))
+                            })
+                            .inner
+                            .clicked()
+                        {
+                            outcome = Some(SelectByPatternMode::Add);
+                        }
+                        if ui
+                            .add_enabled_ui(any, |ui| {
+                                eden_button(ui, palette, &self.i18n.tr("select_by_pattern_deselect"))
+                            })
+                            .inner
+                            .clicked()
+                        {
+                            outcome = Some(SelectByPatternMode::Remove);
+                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if eden_button(ui, palette, &self.i18n.tr("close")).clicked() {
+                                close = true;
+                            }
+                        });
+                    });
+                });
+            });
+
+        if let Some(mode) = outcome
+            && !matches.is_empty()
+        {
+            let side = state.side;
+            let view = self.active_tab_mut().view_mut(side);
+            let selected = &mut view.explorer_state.selected_paths;
+            match mode {
+                SelectByPatternMode::Replace => {
+                    selected.clear();
+                    selected.extend(matches);
+                }
+                SelectByPatternMode::Add => selected.extend(matches),
+                SelectByPatternMode::Remove => {
+                    for path in &matches {
+                        selected.remove(path);
+                    }
+                }
+            }
+            view.explorer_state.selection_anchor = None;
+            view.explorer_state.selection_focus = None;
+            self.last_select_pattern = state.pattern.clone();
+            close = true;
+        }
+
+        if !close {
+            self.select_by_pattern = Some(state);
+        }
+    }
+
     pub fn draw_checksum_modal(&mut self, ctx: &egui::Context, palette: &crate::gui::theme::ThemePalette) {
         use crate::core::utils::widgets::{ghost_dialog_button, modal_frame, modal_icon_header};
         use egui_phosphor::regular;
@@ -5744,6 +5927,30 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 let view = explorer.active_tab_mut().view_mut(side);
                 view.explorer_state.selected_paths.clear();
                 view.explorer_state.selected_paths.extend(selected);
+            }
+            ItemViewerAction::InvertSelection => {
+                let side = explorer.focused_split;
+                let view = explorer.active_tab_mut().view_mut(side);
+                let visible: Vec<PathBuf> = view
+                    .item_viewer_filter_state
+                    .cached_indices
+                    .iter()
+                    .map(|&idx| view.files[idx].path.clone())
+                    .collect();
+                let selected = &mut view.explorer_state.selected_paths;
+                let inverted: HashSet<PathBuf> =
+                    visible.into_iter().filter(|path| !selected.contains(path)).collect();
+                *selected = inverted;
+                view.explorer_state.selection_anchor = None;
+                view.explorer_state.selection_focus = None;
+            }
+            ItemViewerAction::SelectByPattern => {
+                explorer.select_by_pattern = Some(SelectByPatternState {
+                    side: explorer.focused_split,
+                    pattern: explorer.last_select_pattern.clone(),
+                    include_folders: false,
+                    focus_requested: true,
+                });
             }
             ItemViewerAction::DeselectAll => {
                 let side = explorer.focused_split;
