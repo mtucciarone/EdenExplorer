@@ -25,7 +25,24 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 const MIN_WIDTH: i32 = 600;
 const MIN_HEIGHT: i32 = 400;
 /// Width of the client-area region reserved for native window resizing.
-const RESIZE_BORDER: i32 = 2;
+const RESIZE_BORDER_FALLBACK: i32 = 8;
+
+/// Thickness of the invisible drag-to-resize border. Matches the native
+/// window frame width (SM_CXFRAME + SM_CXPADDEDBORDER) so the grab area
+/// feels identical to a normal decorated window. The old hard-coded 2px
+/// zone was practically impossible to hit with the mouse.
+fn resize_border_thickness() -> i32 {
+    unsafe {
+        let frame = GetSystemMetrics(SM_CXFRAME);
+        let padded = GetSystemMetrics(SM_CXPADDEDBORDER);
+        let thickness = frame + padded;
+        if thickness > 0 {
+            thickness
+        } else {
+            RESIZE_BORDER_FALLBACK
+        }
+    }
+}
 
 static ORIGINAL_WNDPROC: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
 
@@ -76,6 +93,13 @@ pub fn mark_clipboard_dirty() {
 
 fn save_manual_window_size(hwnd: HWND) {
     unsafe {
+        // Never persist while maximized: the screen-filling dimensions must
+        // not replace the user's restore size, and a stored "fullscreen" mode
+        // must survive a close-from-maximized.
+        if IsZoomed(hwnd).as_bool() {
+            return;
+        }
+
         let mut rect = RECT::default();
         if GetClientRect(hwnd, &mut rect).is_err() {
             return;
@@ -93,6 +117,7 @@ fn save_manual_window_size(hwnd: HWND) {
             show_hidden_files_folders,
             show_item_viewer_icons,
             windows_context_menu_enabled,
+            restore_tabs_on_startup,
             _window_size_mode,
             start_path,
             saved_theme,
@@ -117,6 +142,7 @@ fn save_manual_window_size(hwnd: HWND) {
             show_hidden_files_folders,
             show_item_viewer_icons,
             windows_context_menu_enabled,
+            restore_tabs_on_startup,
             &window_size_mode,
             &Some(start_path),
             saved_theme.as_deref(),
@@ -274,6 +300,27 @@ unsafe extern "system" fn custom_wndproc(
             }
         },
 
+        // 拖拽跨屏时保持物理尺寸不变:吞掉 WM_DPICHANGED,不让 winit 按
+        // "建议矩形"重设窗口大小。多显示器 DPI 不同时,winit 的自动缩放
+        // 会在拖拽进行中改变窗口尺寸,导致跨屏拖拽被打断/界面突然缩放。
+        // 缩放系数保持当前值,界面保持用户选择的物理大小,指针映射依然自洽。
+        WM_DPICHANGED => LRESULT(0),
+
+        WM_CLOSE => {
+            // Persist the final size before closing: this is the single
+            // authoritative save, in physical pixels, that the next launch
+            // restores via set_window_mode.
+            save_manual_window_size(hwnd);
+
+            unsafe {
+                if let Some(orig) = get_original_wndproc() {
+                    CallWindowProcW(orig, hwnd, msg, wparam, lparam)
+                } else {
+                    DefWindowProcW(hwnd, msg, wparam, lparam)
+                }
+            }
+        }
+
         WM_EXITSIZEMOVE => {
             save_manual_window_size(hwnd);
 
@@ -348,7 +395,7 @@ unsafe extern "system" fn custom_wndproc(
                 let right = bottom_right.x;
                 let bottom = bottom_right.y;
 
-                let resize = RESIZE_BORDER;
+                let resize = resize_border_thickness();
 
                 // Top-left
                 if x >= left && x < left + resize && y >= top && y < top + resize {
@@ -547,6 +594,71 @@ fn resize_and_center_window(hwnd: HWND, width: i32, height: i32) {
     }
 }
 
+/// Multi-monitor safety net: a size remembered on one monitor can overflow
+/// the monitor the window actually opens on (e.g. 3360x2100 remembered,
+/// 2560x1600 primary). An oversized borderless window pushes ALL its resize
+/// edges off-screen, making it impossible to grab. Clamp once at startup so
+/// the window is fully inside its monitor's work area and always resizable.
+pub fn clamp_window_to_monitor_work_area(hwnd: HWND) {
+    unsafe {
+        let mut rect = RECT::default();
+        if GetWindowRect(hwnd, &mut rect).is_err() {
+            return;
+        }
+
+        let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        if monitor.is_invalid() {
+            return;
+        }
+
+        let mut info = MONITORINFO::default();
+        info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        if !GetMonitorInfoW(monitor, &mut info).as_bool() {
+            return;
+        }
+
+        let work = info.rcWork;
+        let max_w = work.right - work.left;
+        let max_h = work.bottom - work.top;
+        let mut width = rect.right - rect.left;
+        let mut height = rect.bottom - rect.top;
+        if width <= 0 || height <= 0 || max_w <= 0 || max_h <= 0 {
+            return;
+        }
+        if width > max_w {
+            width = max_w;
+        }
+        if height > max_h {
+            height = max_h;
+        }
+
+        let mut x = rect.left;
+        let mut y = rect.top;
+        if x < work.left {
+            x = work.left;
+        }
+        if y < work.top {
+            y = work.top;
+        }
+        if x + width > work.right {
+            x = work.right - width;
+        }
+        if y + height > work.bottom {
+            y = work.bottom - height;
+        }
+
+        let _ = SetWindowPos(
+            hwnd,
+            None,
+            x,
+            y,
+            width,
+            height,
+            SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+    }
+}
+
 pub fn set_window_mode(hwnd: HWND, mode: &WindowSizeMode) {
     match mode {
         WindowSizeMode::FullScreen => unsafe {
@@ -556,5 +668,33 @@ pub fn set_window_mode(hwnd: HWND, mode: &WindowSizeMode) {
         WindowSizeMode::Custom { width, height } => {
             resize_and_center_window(hwnd, width.round() as i32, height.round() as i32);
         }
+    }
+}
+
+/// Resize the window while keeping its current top-left corner. Used for
+/// live width/height edits from the settings dialog: re-centering on every
+/// DragValue tick made the window visibly jump around the screen.
+pub fn set_window_size_keep_origin(hwnd: HWND, width: f32, height: f32) {
+    unsafe {
+        // Ignore the request while maximized: SetWindowPos with a different
+        // size would un-maximize the window.
+        if IsZoomed(hwnd).as_bool() {
+            return;
+        }
+
+        let mut rect = RECT::default();
+        if GetWindowRect(hwnd, &mut rect).is_err() {
+            return;
+        }
+
+        let _ = SetWindowPos(
+            hwnd,
+            None,
+            rect.left,
+            rect.top,
+            width.round() as i32,
+            height.round() as i32,
+            SWP_NOZORDER | SWP_NOACTIVATE,
+        );
     }
 }
