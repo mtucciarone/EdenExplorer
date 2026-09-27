@@ -375,7 +375,10 @@ fn run_scan(
         std::thread::Builder::new()
             .name("disk-usage-walk".into())
             .stack_size(64 * 1024 * 1024)
-            .spawn(move || scan_tree(&root, fast, mode, owner, &counters, &cancel))
+            .spawn(move || {
+                lower_thread_priority();
+                scan_tree(&root, fast, mode, owner, &counters, &cancel)
+            })
     };
     let Ok(worker) = worker else {
         let _ = tx.send(ScanEvent::Finished(ScanOutcome {
@@ -495,6 +498,18 @@ fn scan_tree(
     (tree, ScanMethod::Standard, note)
 }
 
+/// Runs the calling thread at below-normal CPU priority: a scan can keep
+/// every core busy for a while, and the window (and the app's own folder
+/// listing and size scans) should stay responsive meanwhile.
+fn lower_thread_priority() {
+    use windows::Win32::System::Threading::{
+        GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL,
+    };
+    unsafe {
+        let _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+    }
+}
+
 /// Scans `root` folder by folder on a thread pool. `None` if cancelled.
 fn scan_standard(root: &Path, counters: &Counters, cancel: &AtomicBool) -> Option<DirNode> {
     let threads = num_cpus::get().clamp(2, 8);
@@ -502,6 +517,7 @@ fn scan_standard(root: &Path, counters: &Counters, cancel: &AtomicBool) -> Optio
         .num_threads(threads)
         .stack_size(16 * 1024 * 1024)
         .thread_name(|i| format!("disk-usage-{i}"))
+        .start_handler(|_| lower_thread_priority())
         .build()
         .ok()?;
     let name: Box<str> = root.to_string_lossy().into();

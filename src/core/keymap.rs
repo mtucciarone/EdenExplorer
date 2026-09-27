@@ -251,7 +251,15 @@ pub fn combos_in(overrides: &ShortcutOverrides, action: ShortcutAction) -> Vec<K
 /// Whether one of `action`'s combos was pressed this frame. Always false
 /// while the Shortcuts page is recording a new combination.
 pub fn pressed(input: &egui::InputState, action: ShortcutAction) -> bool {
-    !is_recording() && combos(action).iter().any(|combo| combo.matches(input))
+    // Checked for every shortcut on every frame; most frames have no key
+    // press at all, so skip the lookup (a lock and a copy) for those.
+    let any_key_pressed = input
+        .events
+        .iter()
+        .any(|e| matches!(e, egui::Event::Key { pressed: true, .. }));
+    any_key_pressed
+        && !is_recording()
+        && combos(action).iter().any(|combo| combo.matches(input))
 }
 
 /// Which other action already uses `combo`, if any.

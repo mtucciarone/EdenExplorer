@@ -57,6 +57,16 @@ pub struct DiskUsageState {
     /// Ask for administrator permission for the fast scan
     /// (Settings > Advanced).
     ask_admin: bool,
+    /// Bumped whenever the tree or the expanded folders change, so the
+    /// flattened rows (and the selected item's kind) are rebuilt only then
+    /// rather than on every frame - a fully expanded drive can mean
+    /// thousands of rows.
+    revision: u64,
+    rows: Vec<Row>,
+    rows_revision: Option<u64>,
+    /// (revision, selected path, whether it's a folder - `None` if it's
+    /// no longer in the tree).
+    selected_kind: Option<(u64, PathBuf, Option<bool>)>,
 }
 
 impl DiskUsageState {
@@ -164,6 +174,7 @@ impl DiskUsageState {
                             Some(tree) => {
                                 self.tree = Some(tree);
                                 self.expanded.insert(self.root.clone());
+                                self.revision += 1;
                             }
                             None => self.cancelled = true,
                         }
@@ -198,6 +209,7 @@ impl DiskUsageState {
                     branch_components(&self.root, &branch),
                 ) {
                     tree.replace_branch(&components, new_tree);
+                    self.revision += 1;
                 }
             }
         }
@@ -577,21 +589,29 @@ fn draw_summary(ui: &mut egui::Ui, i18n: &I18n, palette: &ThemePalette, state: &
 }
 
 /// The selected row's path and whether it's a folder, if it's still in
-/// the tree.
-fn selected_item(state: &DiskUsageState) -> Option<(PathBuf, bool)> {
+/// the tree (cached until the selection or the tree changes).
+fn selected_item(state: &mut DiskUsageState) -> Option<(PathBuf, bool)> {
     let selected = state.selected.clone()?;
+    if let Some((revision, path, kind)) = &state.selected_kind
+        && *revision == state.revision
+        && *path == selected
+    {
+        return kind.map(|is_dir| (selected, is_dir));
+    }
+    let kind = find_selected_kind(state, &selected);
+    state.selected_kind = Some((state.revision, selected.clone(), kind));
+    kind.map(|is_dir| (selected, is_dir))
+}
+
+fn find_selected_kind(state: &DiskUsageState, selected: &Path) -> Option<bool> {
     let tree = state.tree.as_ref()?;
-    let components = branch_components(&state.root, &selected)?;
+    let components = branch_components(&state.root, selected)?;
     if tree.find(&components).is_some() {
-        return Some((selected, true));
+        return Some(true);
     }
     let (name, parent) = components.split_last()?;
     let parent = tree.find(parent)?;
-    parent
-        .files
-        .iter()
-        .any(|f| &*f.name == name)
-        .then_some((selected, false))
+    parent.files.iter().any(|f| &*f.name == name).then_some(false)
 }
 
 fn draw_toolbar(
@@ -778,16 +798,22 @@ fn draw_tree(
     let Some(tree) = &state.tree else {
         return;
     };
-    let mut rows = Vec::new();
-    push_rows(
-        tree,
-        state.root.clone(),
-        state.root.display().to_string(),
-        0,
-        tree.size,
-        &state.expanded,
-        &mut rows,
-    );
+    if state.rows_revision != Some(state.revision) {
+        let mut rows = std::mem::take(&mut state.rows);
+        rows.clear();
+        push_rows(
+            tree,
+            state.root.clone(),
+            state.root.display().to_string(),
+            0,
+            tree.size,
+            &state.expanded,
+            &mut rows,
+        );
+        state.rows = rows;
+        state.rows_revision = Some(state.revision);
+    }
+    let rows = std::mem::take(&mut state.rows);
 
     let branch_in_progress = state.branch_scan.as_ref().map(|(p, _)| p.clone());
     let busy = state.scanning();
@@ -1008,10 +1034,12 @@ fn draw_tree(
             });
         });
 
-    if let Some(path) = toggle
-        && !state.expanded.remove(&path)
-    {
-        state.expanded.insert(path);
+    state.rows = rows;
+    if let Some(path) = toggle {
+        if !state.expanded.remove(&path) {
+            state.expanded.insert(path);
+        }
+        state.revision += 1;
     }
     if let Some(path) = select {
         state.selected = Some(path);

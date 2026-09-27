@@ -818,7 +818,10 @@ pub fn draw_item_viewer(
                                                 .shrink_to_fit(),
                                         );
                                     });
-                                } else {
+                                } else if thumbnail_service.is_pending(file) {
+                                    // Check back until it's ready - but not for a
+                                    // file that has no thumbnail, which would keep
+                                    // redrawing the window while the pointer rests.
                                     ctx.request_repaint_after(std::time::Duration::from_millis(100));
                                 }
                             }

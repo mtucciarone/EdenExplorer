@@ -253,11 +253,8 @@ impl PreviewService {
         let mut advanced = std::mem::take(&mut playback.dirty);
         if playback.paused {
             let frame_index = playback.frame_index;
-            let color_image = egui::ColorImage::from_rgba_unmultiplied(
-                *size,
-                frames[frame_index].rgba.as_slice(),
-            );
-            return Some(self.upload_animation_texture(ctx, path, color_image, advanced));
+            let size = *size;
+            return Some(self.upload_animation_texture(ctx, path, size, frame_index, advanced));
         }
 
         // Advance however many frames have elapsed (bounded by frame count so
@@ -279,30 +276,39 @@ impl PreviewService {
         let next_frame_at = playback.next_frame_at;
         ctx.request_repaint_after(next_frame_at.saturating_duration_since(now));
 
-        let color_image =
-            egui::ColorImage::from_rgba_unmultiplied(*size, frames[frame_index].rgba.as_slice());
-        Some(self.upload_animation_texture(ctx, path, color_image, advanced))
+        let size = *size;
+        Some(self.upload_animation_texture(ctx, path, size, frame_index, advanced))
     }
 
     /// Updates (or first creates) the single texture an animated preview
-    /// reuses for every frame.
+    /// reuses for every frame. The frame's pixels are only converted when
+    /// the texture actually changes - not on every repaint, which would
+    /// copy the whole frame each time the mouse moves over a paused GIF.
     fn upload_animation_texture(
         &mut self,
         ctx: &egui::Context,
         path: &Path,
-        color_image: egui::ColorImage,
+        size: [usize; 2],
+        frame_index: usize,
         changed: bool,
     ) -> egui::TextureHandle {
+        let cache = &self.cache;
+        let frame_image = || match cache.peek(path) {
+            Some(PreviewPayload::Animated { frames, .. }) if frame_index < frames.len() => {
+                egui::ColorImage::from_rgba_unmultiplied(size, frames[frame_index].rgba.as_slice())
+            }
+            _ => egui::ColorImage::new(size, vec![egui::Color32::TRANSPARENT; size[0] * size[1]]),
+        };
         if let Some(texture) = self.textures.get_mut(path) {
-            if changed || texture.size() != color_image.size {
-                texture.set(color_image, egui::TextureOptions::LINEAR);
+            if changed || texture.size() != size {
+                texture.set(frame_image(), egui::TextureOptions::LINEAR);
             }
             return texture.clone();
         }
 
         let texture = ctx.load_texture(
             format!("preview-anim:{}", path.display()),
-            color_image,
+            frame_image(),
             egui::TextureOptions::LINEAR,
         );
         self.textures.insert(path.to_path_buf(), texture.clone());

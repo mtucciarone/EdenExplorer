@@ -177,6 +177,12 @@ pub(crate) struct SelectByPatternState {
     pub pattern: String,
     pub include_folders: bool,
     pub focus_requested: bool,
+    /// Indices (into the view's `files`) of the items the pattern matches,
+    /// and what they were computed for: (pattern, include folders, number
+    /// of files, number of visible items). Matching a big folder every
+    /// frame would make typing in the dialog lag.
+    pub matches: Vec<usize>,
+    pub matches_for: Option<(String, bool, usize, usize)>,
 }
 
 #[derive(Clone, Copy)]
@@ -193,8 +199,8 @@ const MAX_REMEMBERED_FOLDER_VIEWS: usize = 5000;
 /// Whether two folder paths are the same folder: Windows paths are
 /// case-insensitive and may or may not end in a separator.
 pub(crate) fn same_folder(a: &Path, b: &Path) -> bool {
-    // Runs every frame against every remembered folder, so avoid
-    // allocating for the usual all-ASCII paths.
+    // Runs against every remembered folder each time a folder is opened,
+    // so avoid allocating for the usual all-ASCII paths.
     let a = a.to_string_lossy();
     let b = b.to_string_lossy();
     let a = a.trim_end_matches(['\\', '/']);
@@ -2909,27 +2915,32 @@ impl MainWindow {
             return;
         };
 
-        // Names of the items the view is showing (filters and hidden-file
-        // settings already applied), with their paths.
-        let visible: Vec<(PathBuf, String, bool)> = {
+        // The items the view is showing (filters and hidden-file settings
+        // already applied) that match - recomputed only when the pattern,
+        // the Include Folders option, or the listing changes.
+        {
             let view = self.active_tab().view(state.side);
-            view.item_viewer_filter_state
-                .cached_indices
-                .iter()
-                .map(|&idx| {
-                    let file = &view.files[idx];
-                    (file.path.clone(), file.name.clone(), file.is_dir)
-                })
-                .collect()
-        };
-        let matches: Vec<PathBuf> = visible
-            .iter()
-            .filter(|(_, name, is_dir)| {
-                (state.include_folders || !is_dir)
-                    && crate::core::pattern::matches_any(&state.pattern, name)
-            })
-            .map(|(path, _, _)| path.clone())
-            .collect();
+            let visible = &view.item_viewer_filter_state.cached_indices;
+            let key = (
+                state.pattern.clone(),
+                state.include_folders,
+                view.files.len(),
+                visible.len(),
+            );
+            if state.matches_for.as_ref() != Some(&key) {
+                state.matches = visible
+                    .iter()
+                    .copied()
+                    .filter(|&idx| {
+                        let file = &view.files[idx];
+                        (state.include_folders || !file.is_dir)
+                            && crate::core::pattern::matches_any(&state.pattern, &file.name)
+                    })
+                    .collect();
+                state.matches_for = Some(key);
+            }
+        }
+        let match_count = state.matches.len();
 
         let mut outcome: Option<SelectByPatternMode> = None;
         let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
@@ -2986,7 +2997,7 @@ impl MainWindow {
                     ui.label(
                         egui::RichText::new(format!(
                             "{} {}",
-                            matches.len(),
+                            match_count,
                             self.i18n.tr("select_by_pattern_matching")
                         ))
                         .size(palette.text_size - 1.0)
@@ -2995,7 +3006,7 @@ impl MainWindow {
                     ui.add_space(14.0);
 
                     ui.horizontal(|ui| {
-                        let any = !matches.is_empty();
+                        let any = match_count > 0;
                         if ui
                             .add_enabled_ui(any, |ui| {
                                 primary_dialog_button(ui, palette, &self.i18n.tr("select_by_pattern_select"))
@@ -3033,10 +3044,15 @@ impl MainWindow {
             });
 
         if let Some(mode) = outcome
-            && !matches.is_empty()
+            && !state.matches.is_empty()
         {
             let side = state.side;
             let view = self.active_tab_mut().view_mut(side);
+            let matches: Vec<PathBuf> = state
+                .matches
+                .iter()
+                .filter_map(|&idx| view.files.get(idx).map(|f| f.path.clone()))
+                .collect();
             let selected = &mut view.explorer_state.selected_paths;
             match mode {
                 SelectByPatternMode::Replace => {
@@ -6111,6 +6127,8 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     pattern: explorer.last_select_pattern.clone(),
                     include_folders: false,
                     focus_requested: true,
+                    matches: Vec::new(),
+                    matches_for: None,
                 });
             }
             ItemViewerAction::DeselectAll => {

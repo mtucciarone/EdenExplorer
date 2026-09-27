@@ -1616,6 +1616,7 @@ impl eframe::App for MainWindow {
             .and_then(|a| a.move_files_to_breadcrumb_dir.as_ref())
             .is_some();
 
+        self.folder_size_cache.poll_loaded();
         self.handle_directory_batch_recieve(ui.ctx());
         self.handle_directory_size_updates(ui.ctx());
         self.folder_size_cache.save_if_due();

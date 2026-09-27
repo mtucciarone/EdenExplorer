@@ -125,6 +125,13 @@ pub fn run_helper_from_args() -> Option<i32> {
 }
 
 fn helper_main(letter: char, pipe: &str) -> i32 {
+    // Stay out of the way of whatever the user is doing meanwhile.
+    unsafe {
+        use windows::Win32::System::Threading::{
+            BELOW_NORMAL_PRIORITY_CLASS, GetCurrentProcess, SetPriorityClass,
+        };
+        let _ = SetPriorityClass(GetCurrentProcess(), BELOW_NORMAL_PRIORITY_CLASS);
+    }
     let Ok(out) = std::fs::OpenOptions::new().write(true).open(pipe) else {
         return EXIT_FAILED;
     };

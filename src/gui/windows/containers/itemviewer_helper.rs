@@ -3275,7 +3275,7 @@ pub fn draw_new_file_menu(
         );
         let user = dir
             .as_deref()
-            .map(crate::core::templates::user_templates)
+            .map(crate::core::templates::user_templates_cached)
             .unwrap_or_default();
         if !user.is_empty() {
             ui.separator();

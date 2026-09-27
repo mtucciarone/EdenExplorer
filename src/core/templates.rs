@@ -87,6 +87,29 @@ pub fn templates_dir(custom: Option<&Path>) -> Option<PathBuf> {
     }
 }
 
+/// `user_templates`, re-read at most every two seconds per folder. The
+/// New File menu is drawn every frame while it's open, and listing a
+/// folder each time would make the open menu stutter.
+pub fn user_templates_cached(dir: &Path) -> Vec<PathBuf> {
+    use std::cell::RefCell;
+    use std::time::{Duration, Instant};
+    thread_local! {
+        static CACHE: RefCell<Option<(PathBuf, Instant, Vec<PathBuf>)>> = const { RefCell::new(None) };
+    }
+    CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some((cached_dir, at, files)) = cache.as_ref()
+            && cached_dir == dir
+            && at.elapsed() < Duration::from_secs(2)
+        {
+            return files.clone();
+        }
+        let files = user_templates(dir);
+        *cache = Some((dir.to_path_buf(), Instant::now(), files.clone()));
+        files
+    })
+}
+
 /// Files in the templates folder, sorted by name (hidden files and
 /// subfolders skipped). Empty if the folder doesn't exist yet.
 pub fn user_templates(dir: &Path) -> Vec<PathBuf> {

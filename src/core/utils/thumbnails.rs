@@ -132,6 +132,12 @@ impl ThumbnailService {
         }
     }
 
+    /// Whether `file`'s thumbnail is still being made (as opposed to done,
+    /// failed, or never requested).
+    pub fn is_pending(&self, file: &FileItem) -> bool {
+        self.pending.contains(&ThumbnailCacheKey::from_file(file))
+    }
+
     pub fn request(&mut self, file: &FileItem, priority: ThumbnailPriority) {
         let key = ThumbnailCacheKey::from_file(file);
 

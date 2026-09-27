@@ -18,11 +18,17 @@ pub const PORTABLE_DIR_NAME: &str = "EdenExplorerData";
 /// portable mode is switched on or off at runtime.
 static DATA_DIR: RwLock<Option<PathBuf>> = RwLock::new(None);
 
-/// The folder `EdenExplorer.exe` is in.
+/// The folder `EdenExplorer.exe` is in (looked up once; the Settings page
+/// asks every frame whether the app is portable).
 fn exe_dir() -> Option<PathBuf> {
-    std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(Path::to_path_buf))
+    static EXE_DIR: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    EXE_DIR
+        .get_or_init(|| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().map(Path::to_path_buf))
+        })
+        .clone()
 }
 
 /// `EdenExplorerData` next to the exe, whether or not it exists.
