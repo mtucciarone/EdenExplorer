@@ -354,6 +354,7 @@ mod tests {
                 name: "pagefile.sys".into(),
                 size: 4096,
                 allocated: 4096,
+                modified: 1,
             }],
             dirs: vec![DirNode {
                 name: "Windows".into(),

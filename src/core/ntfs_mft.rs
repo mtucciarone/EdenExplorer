@@ -20,6 +20,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 const ROOT_RECORD: u64 = 5;
 const REF_MASK: u64 = 0x0000_FFFF_FFFF_FFFF;
 
+const ATTR_STANDARD_INFORMATION: u32 = 0x10;
 const ATTR_FILE_NAME: u32 = 0x30;
 const ATTR_DATA: u32 = 0x80;
 const ATTR_END: u32 = 0xFFFF_FFFF;
@@ -250,6 +251,8 @@ struct Rec {
     parent: u64,
     size: u64,
     allocated: u64,
+    /// Last modified (FILETIME), from $STANDARD_INFORMATION.
+    modified: i64,
     name_offset: u32,
     name_len: u16,
     parent_seq: u16,
@@ -331,6 +334,13 @@ impl MftTable {
         }
 
         for attr in attributes(record) {
+            if attr.kind == ATTR_STANDARD_INFORMATION {
+                // Created at 0x00, last modified at 0x08.
+                if let Some(modified) = attr.resident_value().and_then(|v| u64_at(v, 0x08)) {
+                    self.recs[target as usize].modified = modified as i64;
+                }
+                continue;
+            }
             if let Some((size, allocated)) = data_sizes(&attr) {
                 let rec = &mut self.recs[target as usize];
                 rec.size = size;
@@ -438,6 +448,7 @@ impl MftTable {
                     name: child_name,
                     size: rec.size,
                     allocated: rec.allocated,
+                    modified: rec.modified,
                 });
             }
         }
@@ -642,6 +653,12 @@ pub(crate) mod tests {
         a
     }
 
+    pub fn standard_info(modified: i64) -> Vec<u8> {
+        let mut v = vec![0u8; 0x30];
+        v[0x08..0x10].copy_from_slice(&modified.to_le_bytes());
+        v
+    }
+
     pub fn file_name_attr(parent: u64, parent_seq: u16, namespace: u8, name: &str) -> Vec<u8> {
         let units: Vec<u16> = name.encode_utf16().collect();
         let mut v = vec![0u8; 0x42];
@@ -733,6 +750,7 @@ pub(crate) mod tests {
         records[5] = record(5, DIR, 0, &[file_name_attr(5, 5, 3, ".")]);
         records[16] = record(2, DIR, 0, &[file_name_attr(5, 5, 1, "docs")]);
         records[17] = record(1, FILE, 0, &[
+            resident(ATTR_STANDARD_INFORMATION, &standard_info(133_000_000_000_000_000), 0),
             file_name_attr(16, 2, 1, "a.txt"),
             resident(ATTR_DATA, b"hello", 0),
         ]);
@@ -779,6 +797,8 @@ pub(crate) mod tests {
         assert_eq!(docs.files[0].size, 10_000);
         assert_eq!(docs.files[0].allocated, 12_288);
         assert_eq!(docs.size, 10_005);
+        assert_eq!(docs.files[1].modified, 133_000_000_000_000_000, "from $STANDARD_INFORMATION");
+        assert_eq!(docs.files[0].modified, 0, "no $STANDARD_INFORMATION");
 
         let root_files: Vec<&str> = root.files.iter().map(|f| &*f.name).collect();
         assert_eq!(root_files, vec!["c.log", "ads.txt"], "long name wins, deleted/orphans skipped");

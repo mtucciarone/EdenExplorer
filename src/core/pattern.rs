@@ -55,8 +55,24 @@ pub fn matches_any(patterns: &str, name: &str) -> bool {
     })
 }
 
+/// Like `matches_any`, but a pattern without wildcards must match the
+/// whole name (case-insensitively) - for lists of folder names to skip,
+/// where `bin` shouldn't also skip `Cabinet`.
+pub fn matches_any_exact(patterns: &str, name: &str) -> bool {
+    split_patterns(patterns)
+        .into_iter()
+        .any(|pattern| wildcard_match(pattern, name))
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn exact_matching_needs_the_whole_name() {
+        assert!(super::matches_any_exact("node_modules; .git", "Node_Modules"));
+        assert!(!super::matches_any_exact("bin", "Cabinet"));
+        assert!(super::matches_any_exact("*cache*", "WebCache"));
+    }
+
     use super::*;
 
     #[test]

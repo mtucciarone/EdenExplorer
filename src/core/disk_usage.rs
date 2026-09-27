@@ -37,6 +37,9 @@ pub struct FileEntry {
     /// smaller for compressed/sparse files, 0 for tiny files NTFS keeps
     /// inside the MFT.
     pub allocated: u64,
+    /// Last modified, as a Windows FILETIME (100 ns ticks since 1601;
+    /// 0 = unknown).
+    pub modified: i64,
 }
 
 /// A scanned folder with its totals. `dirs` and `files` are kept sorted
@@ -180,6 +183,7 @@ impl DirNode {
     }
 
     /// Size of the files directly in this folder (not in subfolders).
+    #[cfg(test)]
     pub fn own_size(&self) -> u64 {
         self.files.iter().map(|f| f.size).sum()
     }
@@ -201,7 +205,12 @@ pub struct LargeFolder {
 /// most data in their own files - not counting subfolders, so a parent
 /// doesn't simply outrank everything inside it. Largest first; folders
 /// with no file data are left out.
-pub fn largest_folders(root: &DirNode, root_path: &Path, n: usize) -> Vec<LargeFolder> {
+pub fn largest_folders(
+    root: &DirNode,
+    root_path: &Path,
+    n: usize,
+    filter: &crate::core::disk_usage_stats::ViewFilter,
+) -> Vec<LargeFolder> {
     use std::cmp::Reverse;
     use std::collections::BinaryHeap;
     if n == 0 {
@@ -210,17 +219,23 @@ pub fn largest_folders(root: &DirNode, root_path: &Path, n: usize) -> Vec<LargeF
     let mut best: BinaryHeap<Reverse<(u64, PathBuf, u64, u64, u64)>> = BinaryHeap::with_capacity(n + 1);
     let mut stack: Vec<(&DirNode, PathBuf)> = vec![(root, root_path.to_path_buf())];
     while let Some((dir, path)) = stack.pop() {
-        let own = dir.own_size();
+        let (mut own, mut allocated, mut count) = (0u64, 0u64, 0u64);
+        for file in dir.files.iter().filter(|f| filter.includes_file(f)) {
+            own += file.size;
+            allocated += file.allocated;
+            count += 1;
+        }
         if own > 0 && (best.len() < n || best.peek().is_some_and(|Reverse(min)| own > min.0)) {
-            let allocated = dir.files.iter().map(|f| f.allocated).sum();
-            best.push(Reverse((own, path.clone(), allocated, dir.files.len() as u64, dir.size)));
+            best.push(Reverse((own, path.clone(), allocated, count, dir.size)));
             if best.len() > n {
                 best.pop();
             }
         }
         for child in &dir.dirs {
             // No folder inside can own more than the whole subtree holds.
-            if best.len() == n && best.peek().is_some_and(|Reverse(min)| child.size <= min.0) {
+            if !filter.includes_folder(&child.name)
+                || best.len() == n && best.peek().is_some_and(|Reverse(min)| child.size <= min.0)
+            {
                 continue;
             }
             stack.push((child, path.join(&*child.name)));
@@ -251,7 +266,12 @@ pub struct LargeFile {
 /// The `n` largest files anywhere under `root` (the folder at
 /// `root_path`), largest first. One pass over the tree keeping only the
 /// best `n` so far, so it stays quick for millions of files.
-pub fn largest_files(root: &DirNode, root_path: &Path, n: usize) -> Vec<LargeFile> {
+pub fn largest_files(
+    root: &DirNode,
+    root_path: &Path,
+    n: usize,
+    filter: &crate::core::disk_usage_stats::ViewFilter,
+) -> Vec<LargeFile> {
     use std::cmp::Reverse;
     use std::collections::BinaryHeap;
     if n == 0 {
@@ -268,6 +288,9 @@ pub fn largest_files(root: &DirNode, root_path: &Path, n: usize) -> Vec<LargeFil
                 // Files are sorted largest first, so the rest can't either.
                 break;
             }
+            if !filter.includes_file(file) {
+                continue;
+            }
             best.push(Reverse((file.size, file.allocated, path.join(&*file.name))));
             if best.len() > n {
                 best.pop();
@@ -276,7 +299,9 @@ pub fn largest_files(root: &DirNode, root_path: &Path, n: usize) -> Vec<LargeFil
         for child in &dir.dirs {
             // A folder smaller than the smallest kept file can't hold a
             // file that beats it.
-            if best.len() == n && best.peek().is_some_and(|Reverse(min)| child.size <= min.0) {
+            if !filter.includes_folder(&child.name)
+                || best.len() == n && best.peek().is_some_and(|Reverse(min)| child.size <= min.0)
+            {
                 continue;
             }
             stack.push((child, path.join(&*child.name)));
@@ -695,6 +720,7 @@ struct RawEntry {
     is_link: bool,
     size: u64,
     allocated: u64,
+    modified: i64,
 }
 
 fn scan_dir(path: &Path, name: Box<str>, counters: &Counters, cancel: &AtomicBool) -> DirNode {
@@ -734,6 +760,7 @@ fn scan_dir(path: &Path, name: Box<str>, counters: &Counters, cancel: &AtomicBoo
                 name: entry.name,
                 size: entry.size,
                 allocated: entry.allocated,
+                modified: entry.modified,
             });
         }
     }
@@ -801,6 +828,7 @@ fn list_dir(path: &Path) -> Option<Vec<RawEntry>> {
                         is_link: attrs & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0,
                         size: (*entry.EndOfFile.QuadPart()).max(0) as u64,
                         allocated: (*entry.AllocationSize.QuadPart()).max(0) as u64,
+                        modified: *entry.LastWriteTime.QuadPart(),
                     });
                 }
                 if entry.NextEntryOffset == 0 {
@@ -820,6 +848,7 @@ mod tests {
 
     fn file(name: &str, size: u64) -> FileEntry {
         FileEntry {
+            modified: 0,
             name: name.into(),
             size,
             allocated: size.div_ceil(4096) * 4096,
@@ -882,12 +911,12 @@ mod tests {
     #[test]
     fn largest_files_come_from_every_level_largest_first() {
         let root = sample();
-        let top = largest_files(&root, Path::new(r"C:\data"), 3);
+        let top = largest_files(&root, Path::new(r"C:\data"), 3, &Default::default());
         let names: Vec<String> = top.iter().map(|f| f.path.display().to_string()).collect();
         assert_eq!(names, vec![r"C:\data\Big\inner\x", r"C:\data\Big\b", r"C:\data\small\a"]);
         assert_eq!(top[0].size, 5000);
-        assert_eq!(largest_files(&root, Path::new(r"C:\data"), 100).len(), 4, "fewer files than asked for");
-        assert!(largest_files(&root, Path::new(r"C:\data"), 0).is_empty());
+        assert_eq!(largest_files(&root, Path::new(r"C:\data"), 100, &Default::default()).len(), 4, "fewer files than asked for");
+        assert!(largest_files(&root, Path::new(r"C:\data"), 0, &Default::default()).is_empty());
     }
 
     #[test]
@@ -905,14 +934,14 @@ mod tests {
             all.extend(d.files.iter().map(|f| f.size));
         }
         all.sort_unstable_by(|a, b| b.cmp(a));
-        let top: Vec<u64> = largest_files(&root, Path::new(r"C:\r"), 100).iter().map(|f| f.size).collect();
+        let top: Vec<u64> = largest_files(&root, Path::new(r"C:\r"), 100, &Default::default()).iter().map(|f| f.size).collect();
         assert_eq!(top, all[..100].to_vec());
     }
 
     #[test]
     fn largest_folders_rank_by_their_own_files() {
         let root = sample();
-        let top = largest_folders(&root, Path::new(r"C:\data"), 10);
+        let top = largest_folders(&root, Path::new(r"C:\data"), 10, &Default::default());
         let got: Vec<(String, u64, u64)> = top
             .iter()
             .map(|f| (f.path.display().to_string(), f.own_size, f.total_size))
@@ -928,7 +957,26 @@ mod tests {
             ]
         );
         assert_eq!(top[0].own_files, 1);
-        assert_eq!(largest_folders(&root, Path::new(r"C:\data"), 2).len(), 2);
+        assert_eq!(largest_folders(&root, Path::new(r"C:\data"), 2, &Default::default()).len(), 2);
+    }
+
+    #[test]
+    fn largest_lists_follow_the_filter() {
+        use crate::core::disk_usage_stats::ViewFilter;
+        let root = sample();
+        let skip_big = ViewFilter {
+            excluded_folders: "big".into(),
+            ..Default::default()
+        };
+        let files = largest_files(&root, Path::new(r"C:\data"), 10, &skip_big);
+        assert_eq!(files.len(), 2, "only small\\a and top.txt");
+        let min = ViewFilter {
+            min_size: 50,
+            ..Default::default()
+        };
+        let folders = largest_folders(&root, Path::new(r"C:\data"), 10, &min);
+        let own: Vec<u64> = folders.iter().map(|f| f.own_size).collect();
+        assert_eq!(own, vec![5000, 100]);
     }
 
     #[test]
@@ -947,7 +995,7 @@ mod tests {
         }
         all.retain(|s| *s > 0);
         all.sort_unstable_by(|a, b| b.cmp(a));
-        let top: Vec<u64> = largest_folders(&root, Path::new(r"C:\r"), 30).iter().map(|f| f.own_size).collect();
+        let top: Vec<u64> = largest_folders(&root, Path::new(r"C:\r"), 30, &Default::default()).iter().map(|f| f.own_size).collect();
         assert_eq!(top, all[..30].to_vec());
     }
 

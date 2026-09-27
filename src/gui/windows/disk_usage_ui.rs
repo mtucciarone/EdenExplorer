@@ -43,9 +43,11 @@ pub enum DiskUsageAction {
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
-enum Tab {
+pub(crate) enum Tab {
     #[default]
+    Overview,
     Tree,
+    Types,
     Largest,
     LargestFolders,
 }
@@ -53,13 +55,13 @@ enum Tab {
 /// A file or folder being moved from a Largest list: removed from the
 /// results once it's gone from `path`; `rescan` is its destination folder
 /// when that's inside the analyzed folder (so it shows up there).
-struct PendingMove {
+pub(crate) struct PendingMove {
     path: PathBuf,
     rescan: Option<PathBuf>,
     since: Instant,
 }
 
-struct FinishedInfo {
+pub(crate) struct FinishedInfo {
     method: ScanMethod,
     note: Option<FastScanNote>,
     elapsed: Duration,
@@ -67,48 +69,61 @@ struct FinishedInfo {
 
 #[derive(Default)]
 pub struct DiskUsageState {
-    open: bool,
-    root: PathBuf,
-    scan: Option<ScanHandle>,
-    progress: ScanProgress,
-    tree: Option<DirNode>,
-    info: Option<FinishedInfo>,
-    cancelled: bool,
+    pub(crate) open: bool,
+    pub(crate) root: PathBuf,
+    pub(crate) scan: Option<ScanHandle>,
+    pub(crate) progress: ScanProgress,
+    pub(crate) tree: Option<DirNode>,
+    pub(crate) info: Option<FinishedInfo>,
+    pub(crate) cancelled: bool,
     /// A "Rescan This Branch" in progress: the folder and its scan.
-    branch_scan: Option<(PathBuf, ScanHandle)>,
-    branch_progress: ScanProgress,
-    expanded: HashSet<PathBuf>,
-    selected: Option<PathBuf>,
+    pub(crate) branch_scan: Option<(PathBuf, ScanHandle)>,
+    pub(crate) branch_progress: ScanProgress,
+    pub(crate) expanded: HashSet<PathBuf>,
+    pub(crate) selected: Option<PathBuf>,
     /// (total, free) bytes when the root is a whole drive.
-    drive_space: Option<(u64, u64)>,
+    pub(crate) drive_space: Option<(u64, u64)>,
     /// Ask for administrator permission for the fast scan
     /// (Settings > Advanced).
-    ask_admin: bool,
+    pub(crate) ask_admin: bool,
     /// Bumped whenever the tree or the expanded folders change, so the
     /// flattened rows (and the selected item's kind) are rebuilt only then
     /// rather than on every frame - a fully expanded drive can mean
     /// thousands of rows.
-    revision: u64,
-    rows: Vec<Row>,
-    rows_revision: Option<u64>,
+    pub(crate) revision: u64,
+    pub(crate) rows: Vec<Row>,
+    pub(crate) rows_revision: Option<u64>,
     /// (revision, selected path, whether it's a folder - `None` if it's
     /// no longer in the tree).
-    selected_kind: Option<(u64, PathBuf, Option<bool>)>,
-    tab: Tab,
+    pub(crate) selected_kind: Option<(u64, PathBuf, Option<bool>)>,
+    pub(crate) tab: Tab,
     /// The Largest Files list, rebuilt when `revision` changes.
-    largest: Vec<LargeFile>,
-    largest_revision: Option<u64>,
-    largest_selected: HashSet<PathBuf>,
-    largest_anchor: Option<usize>,
+    pub(crate) largest: Vec<LargeFile>,
+    pub(crate) largest_revision: Option<u64>,
+    pub(crate) largest_selected: HashSet<PathBuf>,
+    pub(crate) largest_anchor: Option<usize>,
     /// The Largest Folders list, likewise.
-    folders: Vec<LargeFolder>,
-    folders_revision: Option<u64>,
-    folders_selected: HashSet<PathBuf>,
-    folders_anchor: Option<usize>,
-    pending_moves: Vec<PendingMove>,
-    last_move_check: Option<Instant>,
+    pub(crate) folders: Vec<LargeFolder>,
+    pub(crate) folders_revision: Option<u64>,
+    pub(crate) folders_selected: HashSet<PathBuf>,
+    pub(crate) folders_anchor: Option<usize>,
+    pub(crate) pending_moves: Vec<PendingMove>,
+    pub(crate) last_move_check: Option<Instant>,
     /// Destination folders waiting to be rescanned (one scan at a time).
-    rescan_queue: Vec<PathBuf>,
+    pub(crate) rescan_queue: Vec<PathBuf>,
+    /// What the lists, File Types, and Overview include.
+    pub(crate) filter: crate::core::disk_usage_stats::ViewFilter,
+    pub(crate) filter_open: bool,
+    /// The File Types list (filtered) and every type's color (from the
+    /// unfiltered list, so colors don't change with the filters).
+    pub(crate) types: Vec<crate::core::disk_usage_stats::TypeStat>,
+    pub(crate) type_colors: std::collections::HashMap<String, egui::Color32>,
+    pub(crate) types_revision: Option<u64>,
+    /// The extension selected in File Types ("" = no extension).
+    pub(crate) type_selected: Option<String>,
+    pub(crate) ages: Vec<(crate::core::disk_usage_stats::AgeBucket, u64, u64)>,
+    pub(crate) ages_revision: Option<u64>,
+    pub(crate) drive_info: Option<crate::core::disk_usage_stats::DriveInfo>,
 }
 
 impl DiskUsageState {
@@ -223,7 +238,7 @@ impl DiskUsageState {
         *self = Self::default();
     }
 
-    fn start_full_scan(&mut self) {
+    pub(crate) fn start_full_scan(&mut self) {
         // The previous result (if any) stays until the new one arrives, so
         // cancelling a rescan keeps it.
         self.branch_scan = None;
@@ -231,6 +246,7 @@ impl DiskUsageState {
         self.progress = ScanProgress::default();
         self.drive_space = drive_root_letter(&self.root)
             .and_then(|_| crate::core::fs::get_drive_space(&self.root));
+        self.drive_info = crate::core::disk_usage_stats::drive_info(&self.root);
         let fast = if self.ask_admin {
             FastScan::AskForAdmin
         } else {
@@ -239,7 +255,7 @@ impl DiskUsageState {
         self.scan = Some(start_scan(self.root.clone(), fast));
     }
 
-    fn start_branch_scan(&mut self, branch: PathBuf) {
+    pub(crate) fn start_branch_scan(&mut self, branch: PathBuf) {
         if self.scan.is_some() || self.tree.is_none() {
             return;
         }
@@ -261,7 +277,7 @@ impl DiskUsageState {
         }
     }
 
-    fn scanning(&self) -> bool {
+    pub(crate) fn scanning(&self) -> bool {
         self.scan.is_some() || self.branch_scan.is_some()
     }
 
@@ -337,7 +353,7 @@ impl DiskUsageState {
     }
 }
 
-fn format_count(n: u64) -> String {
+pub(crate) fn format_count(n: u64) -> String {
     let digits = n.to_string();
     let mut out = String::with_capacity(digits.len() + digits.len() / 3);
     for (i, c) in digits.chars().enumerate() {
@@ -358,7 +374,7 @@ fn format_elapsed(d: Duration) -> String {
     }
 }
 
-enum RowKind {
+pub(crate) enum RowKind {
     Dir {
         has_children: bool,
         expanded: bool,
@@ -372,7 +388,7 @@ enum RowKind {
     More { count: usize },
 }
 
-struct Row {
+pub(crate) struct Row {
     kind: RowKind,
     depth: usize,
     path: PathBuf,
@@ -418,7 +434,7 @@ fn children_by_size(node: &DirNode) -> Vec<Child<'_>> {
     out
 }
 
-fn share(size: u64, parent: u64) -> f32 {
+pub(crate) fn share(size: u64, parent: u64) -> f32 {
     if parent == 0 {
         0.0
     } else {
@@ -496,7 +512,7 @@ fn push_rows(
     }
 }
 
-fn muted(palette: &ThemePalette, text: impl Into<String>) -> egui::RichText {
+pub(crate) fn muted(palette: &ThemePalette, text: impl Into<String>) -> egui::RichText {
     egui::RichText::new(text.into())
         .size(palette.text_size - 1.0)
         .color(palette.text_normal.gamma_multiply(0.7))
@@ -544,7 +560,17 @@ pub fn draw_disk_usage_window(
                 draw_tabs(ui, i18n, palette, state);
                 ui.add_space(8.0);
             }
+            let results_shown = state.tree.is_some() && state.scan.is_none();
+            if results_shown && state.tab != Tab::Tree {
+                crate::gui::windows::disk_usage_views::draw_filter_bar(ui, i18n, palette, state);
+            }
             match state.tab {
+                Tab::Overview if results_shown => {
+                    crate::gui::windows::disk_usage_views::draw_overview_toolbar(ui, i18n, palette, state)
+                }
+                Tab::Types if results_shown => {
+                    crate::gui::windows::disk_usage_views::draw_types_toolbar(ui, i18n, palette, state)
+                }
                 Tab::Largest if state.tree.is_some() && state.scan.is_none() => {
                     draw_largest_toolbar(ui, i18n, palette, state, &mut action)
                 }
@@ -563,6 +589,8 @@ pub fn draw_disk_usage_window(
                     ui.add_space(4.0);
                 }
                 match state.tab {
+                    Tab::Overview => crate::gui::windows::disk_usage_views::draw_overview(ui, i18n, palette, state),
+                    Tab::Types => crate::gui::windows::disk_usage_views::draw_types(ui, i18n, palette, state),
                     Tab::Tree => draw_tree(ui, i18n, palette, state, &mut action),
                     Tab::Largest => draw_largest(ui, i18n, palette, state, &mut action),
                     Tab::LargestFolders => draw_folders(ui, i18n, palette, state, &mut action),
@@ -905,7 +933,7 @@ fn draw_branch_progress(ui: &mut egui::Ui, i18n: &I18n, palette: &ThemePalette, 
 }
 
 /// A bar filled to `share` of its width, with the percentage beside it.
-fn share_bar(ui: &mut egui::Ui, palette: &ThemePalette, share: f32, color: egui::Color32) {
+pub(crate) fn share_bar(ui: &mut egui::Ui, palette: &ThemePalette, share: f32, color: egui::Color32) {
     let height = 10.0;
     let width = (ui.available_width() - 52.0).max(30.0);
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
@@ -1187,7 +1215,9 @@ fn draw_tree(
 fn draw_tabs(ui: &mut egui::Ui, i18n: &I18n, palette: &ThemePalette, state: &mut DiskUsageState) {
     ui.horizontal(|ui| {
         for (tab, icon, key) in [
+            (Tab::Overview, regular::GAUGE, "disk_usage_tab_overview"),
             (Tab::Tree, regular::TREE_STRUCTURE, "disk_usage_tab_tree"),
+            (Tab::Types, regular::SHAPES, "disk_usage_tab_types"),
             (Tab::Largest, regular::SORT_DESCENDING, "disk_usage_tab_largest"),
             (Tab::LargestFolders, regular::FOLDERS, "disk_usage_tab_largest_folders"),
         ] {
@@ -1204,6 +1234,9 @@ fn draw_tabs(ui: &mut egui::Ui, i18n: &I18n, palette: &ThemePalette, state: &mut
                 state.tab = tab;
             }
         }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            crate::gui::windows::disk_usage_views::draw_filter_toggle(ui, i18n, palette, state);
+        });
     });
 }
 
@@ -1213,7 +1246,7 @@ fn largest(state: &mut DiskUsageState) -> &[LargeFile] {
         state.largest = state
             .tree
             .as_ref()
-            .map(|tree| largest_files(tree, &state.root, LARGEST_COUNT))
+            .map(|tree| largest_files(tree, &state.root, LARGEST_COUNT, &state.filter))
             .unwrap_or_default();
         state.largest_revision = Some(state.revision);
         let still_listed: HashSet<&PathBuf> = state.largest.iter().map(|f| &f.path).collect();
@@ -1233,7 +1266,7 @@ fn largest_selection(state: &DiskUsageState) -> Vec<PathBuf> {
         .collect()
 }
 
-fn copy_paths(paths: &[PathBuf]) {
+pub(crate) fn copy_paths(paths: &[PathBuf]) {
     let text: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
     crate::core::utils::clipboard::copy_text_to_clipboard(&text.join("\r\n"));
 }
@@ -1506,7 +1539,7 @@ fn draw_largest(
     }
 }
 
-fn ui_modifiers(response: &egui::Response) -> egui::Modifiers {
+pub(crate) fn ui_modifiers(response: &egui::Response) -> egui::Modifiers {
     response.ctx.input(|i| i.modifiers)
 }
 
@@ -1517,7 +1550,7 @@ fn select_largest(state: &mut DiskUsageState, files: &[LargeFile], index: usize,
 
 /// Click = select only this row, Ctrl+Click = toggle it, Shift+Click =
 /// select the range from the last clicked row.
-fn select_row(
+pub(crate) fn select_row(
     selected: &mut HashSet<PathBuf>,
     anchor: &mut Option<usize>,
     paths: &[&PathBuf],
@@ -1552,7 +1585,7 @@ fn folders(state: &mut DiskUsageState) -> &[LargeFolder] {
         state.folders = state
             .tree
             .as_ref()
-            .map(|tree| largest_folders(tree, &state.root, LARGEST_COUNT))
+            .map(|tree| largest_folders(tree, &state.root, LARGEST_COUNT, &state.filter))
             .unwrap_or_default();
         state.folders_revision = Some(state.revision);
         let still_listed: HashSet<&PathBuf> = state.folders.iter().map(|f| &f.path).collect();
@@ -1865,6 +1898,7 @@ mod tests {
                     name: name.into(),
                     size,
                     allocated: size,
+                    modified: 0,
                 })
                 .collect(),
             ..Default::default()
