@@ -47,6 +47,8 @@ pub(crate) enum Tab {
     #[default]
     Overview,
     Tree,
+    Treemap,
+    Sunburst,
     Types,
     Largest,
     LargestFolders,
@@ -124,6 +126,10 @@ pub struct DiskUsageState {
     pub(crate) ages: Vec<(crate::core::disk_usage_stats::AgeBucket, u64, u64)>,
     pub(crate) ages_revision: Option<u64>,
     pub(crate) drive_info: Option<crate::core::disk_usage_stats::DriveInfo>,
+    /// The folder the Treemap and Sunburst show (names below `root`).
+    pub(crate) chart_zoom: Vec<String>,
+    pub(crate) treemap: Option<crate::gui::windows::disk_usage_charts::TreemapCache>,
+    pub(crate) sunburst: Option<crate::gui::windows::disk_usage_charts::SunburstCache>,
 }
 
 impl DiskUsageState {
@@ -561,7 +567,7 @@ pub fn draw_disk_usage_window(
                 ui.add_space(8.0);
             }
             let results_shown = state.tree.is_some() && state.scan.is_none();
-            if results_shown && state.tab != Tab::Tree {
+            if results_shown && !matches!(state.tab, Tab::Tree | Tab::Treemap | Tab::Sunburst) {
                 crate::gui::windows::disk_usage_views::draw_filter_bar(ui, i18n, palette, state);
             }
             match state.tab {
@@ -592,6 +598,8 @@ pub fn draw_disk_usage_window(
                     Tab::Overview => crate::gui::windows::disk_usage_views::draw_overview(ui, i18n, palette, state),
                     Tab::Types => crate::gui::windows::disk_usage_views::draw_types(ui, i18n, palette, state),
                     Tab::Tree => draw_tree(ui, i18n, palette, state, &mut action),
+                    Tab::Treemap => crate::gui::windows::disk_usage_charts::draw_treemap(ui, i18n, palette, state, &mut action),
+                    Tab::Sunburst => crate::gui::windows::disk_usage_charts::draw_sunburst(ui, i18n, palette, state, &mut action),
                     Tab::Largest => draw_largest(ui, i18n, palette, state, &mut action),
                     Tab::LargestFolders => draw_folders(ui, i18n, palette, state, &mut action),
                 }
@@ -1217,6 +1225,8 @@ fn draw_tabs(ui: &mut egui::Ui, i18n: &I18n, palette: &ThemePalette, state: &mut
         for (tab, icon, key) in [
             (Tab::Overview, regular::GAUGE, "disk_usage_tab_overview"),
             (Tab::Tree, regular::TREE_STRUCTURE, "disk_usage_tab_tree"),
+            (Tab::Treemap, regular::SQUARES_FOUR, "disk_usage_tab_treemap"),
+            (Tab::Sunburst, regular::CHART_DONUT, "disk_usage_tab_sunburst"),
             (Tab::Types, regular::SHAPES, "disk_usage_tab_types"),
             (Tab::Largest, regular::SORT_DESCENDING, "disk_usage_tab_largest"),
             (Tab::LargestFolders, regular::FOLDERS, "disk_usage_tab_largest_folders"),

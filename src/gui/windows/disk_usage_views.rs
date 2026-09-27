@@ -119,7 +119,7 @@ pub(crate) fn extension_label(i18n: &I18n, ext: &str) -> String {
 
 /// The "Filters" button at the end of the tab row.
 pub(crate) fn draw_filter_toggle(ui: &mut egui::Ui, i18n: &I18n, palette: &ThemePalette, state: &mut DiskUsageState) {
-    if state.tab == Tab::Tree {
+    if matches!(state.tab, Tab::Tree | Tab::Treemap | Tab::Sunburst) {
         return;
     }
     let active = state.filter.is_active();

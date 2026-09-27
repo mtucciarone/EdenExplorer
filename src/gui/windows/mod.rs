@@ -4,6 +4,7 @@ pub mod about;
 pub mod context_menu_order_ui;
 pub mod context_menu_settings_ui;
 pub mod customizetheme;
+pub mod disk_usage_charts;
 pub mod disk_usage_ui;
 pub mod disk_usage_views;
 pub mod dragdrop;
