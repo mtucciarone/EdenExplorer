@@ -1,4 +1,4 @@
-//! New File templates: the built-in Text / Markdown / Word document
+//! New File templates: the built-in Text / Markdown / Word / Excel
 //! templates plus every file in the user's templates folder (by default
 //! `Templates` inside the data folder, or the folder chosen in Settings).
 //! Choosing one creates a new, uniquely named file from it in the current
@@ -12,13 +12,15 @@ pub enum BuiltinTemplate {
     Text,
     Markdown,
     Word,
+    Excel,
 }
 
 impl BuiltinTemplate {
-    pub const ALL: [BuiltinTemplate; 3] = [
+    pub const ALL: [BuiltinTemplate; 4] = [
         BuiltinTemplate::Text,
         BuiltinTemplate::Markdown,
         BuiltinTemplate::Word,
+        BuiltinTemplate::Excel,
     ];
 
     pub fn i18n_key(self) -> &'static str {
@@ -26,6 +28,7 @@ impl BuiltinTemplate {
             BuiltinTemplate::Text => "template_text",
             BuiltinTemplate::Markdown => "template_markdown",
             BuiltinTemplate::Word => "template_word",
+            BuiltinTemplate::Excel => "template_excel",
         }
     }
 
@@ -35,6 +38,7 @@ impl BuiltinTemplate {
             BuiltinTemplate::Text => "New Text Document",
             BuiltinTemplate::Markdown => "New Markdown File",
             BuiltinTemplate::Word => "New Word Document",
+            BuiltinTemplate::Excel => "New Excel Workbook",
         }
     }
 
@@ -43,6 +47,7 @@ impl BuiltinTemplate {
             BuiltinTemplate::Text => "txt",
             BuiltinTemplate::Markdown => "md",
             BuiltinTemplate::Word => "docx",
+            BuiltinTemplate::Excel => "xlsx",
         }
     }
 
@@ -51,6 +56,7 @@ impl BuiltinTemplate {
             BuiltinTemplate::Text => Ok(Vec::new()),
             BuiltinTemplate::Markdown => Ok(b"# Title\n\n".to_vec()),
             BuiltinTemplate::Word => minimal_docx(),
+            BuiltinTemplate::Excel => minimal_xlsx(),
         }
     }
 }
@@ -160,13 +166,22 @@ pub fn create_from_template(dir: &Path, template: &Template) -> std::io::Result<
     }
 }
 
-/// The smallest .docx Word opens without complaint: one empty paragraph.
-fn minimal_docx() -> std::io::Result<Vec<u8>> {
+/// Zips `parts` (path, XML) into an Office Open XML package.
+fn office_package(parts: &[(&str, &str)]) -> std::io::Result<Vec<u8>> {
     use zip::write::SimpleFileOptions;
     let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     let options =
         SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-    let parts: [(&str, &str); 3] = [
+    for (name, xml) in parts {
+        writer.start_file(*name, options).map_err(std::io::Error::other)?;
+        writer.write_all(xml.as_bytes())?;
+    }
+    Ok(writer.finish().map_err(std::io::Error::other)?.into_inner())
+}
+
+/// The smallest .docx Word opens without complaint: one empty paragraph.
+fn minimal_docx() -> std::io::Result<Vec<u8>> {
+    office_package(&[
         (
             "[Content_Types].xml",
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
@@ -179,12 +194,33 @@ fn minimal_docx() -> std::io::Result<Vec<u8>> {
             "word/document.xml",
             r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p/></w:body></w:document>"#,
         ),
-    ];
-    for (name, xml) in parts {
-        writer.start_file(name, options).map_err(std::io::Error::other)?;
-        writer.write_all(xml.as_bytes())?;
-    }
-    Ok(writer.finish().map_err(std::io::Error::other)?.into_inner())
+    ])
+}
+
+/// The smallest .xlsx Excel opens without complaint: one empty "Sheet1".
+fn minimal_xlsx() -> std::io::Result<Vec<u8>> {
+    office_package(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/workbook.xml",
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+        ),
+        (
+            "xl/worksheets/sheet1.xml",
+            r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>"#,
+        ),
+    ])
 }
 
 #[cfg(test)]
@@ -222,6 +258,25 @@ mod tests {
         for name in ["[Content_Types].xml", "_rels/.rels", "word/document.xml"] {
             assert!(archive.by_name(name).is_ok(), "{name} missing");
         }
+    }
+
+    #[test]
+    fn xlsx_is_a_valid_excel_package() {
+        let bytes = minimal_xlsx().unwrap();
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+        for name in [
+            "[Content_Types].xml",
+            "_rels/.rels",
+            "xl/workbook.xml",
+            "xl/_rels/workbook.xml.rels",
+            "xl/worksheets/sheet1.xml",
+        ] {
+            assert!(archive.by_name(name).is_ok(), "{name} missing");
+        }
+        let dir = temp_dir("xlsx");
+        let path = create_from_template(&dir, &Template::Builtin(BuiltinTemplate::Excel)).unwrap();
+        assert_eq!(path.file_name().unwrap(), "New Excel Workbook.xlsx");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

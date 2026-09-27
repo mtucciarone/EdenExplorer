@@ -159,16 +159,20 @@ pub fn draw_shortcuts_settings(
     settings.shortcuts_page_last_pass = pass;
 
     let mut changed = false;
+    let mut captured = false;
 
     if let Some(action) = settings.recording_shortcut {
         if let Some(outcome) = capture_combo(ui.ctx()) {
             settings.recording_shortcut = None;
+            captured = true;
             if let Some(combo) = outcome {
                 changed |= assign_combo(i18n, settings, action, combo);
             }
         }
     }
-    keymap::set_recording(settings.recording_shortcut.is_some(), pass);
+    // Stay paused for the rest of the frame a combination was captured in,
+    // so the same key press doesn't also trigger the action just assigned.
+    keymap::set_recording(settings.recording_shortcut.is_some() || captured, pass);
 
     setting_label(
         ui,
