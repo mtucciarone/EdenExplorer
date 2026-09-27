@@ -1,6 +1,7 @@
 pub mod app_data;
 pub mod audio;
 pub mod checksum;
+pub mod cleanup;
 pub mod compress;
 pub mod context_menu_order;
 pub mod context_menu_settings;
@@ -9,6 +10,7 @@ pub mod disk_usage_export;
 pub mod disk_usage_snapshot;
 pub mod disk_usage_stats;
 pub mod drives;
+pub mod duplicates;
 pub mod everything;
 pub mod folder_size_cache;
 pub mod fs;

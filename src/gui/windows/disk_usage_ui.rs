@@ -54,6 +54,8 @@ pub(crate) enum Tab {
     Types,
     Largest,
     LargestFolders,
+    Duplicates,
+    Cleanup,
     /// Only while comparing with a snapshot.
     Changes,
 }
@@ -135,6 +137,8 @@ pub struct DiskUsageState {
     pub(crate) treemap: Option<crate::gui::windows::disk_usage_charts::TreemapCache>,
     pub(crate) sunburst: Option<crate::gui::windows::disk_usage_charts::SunburstCache>,
     pub(crate) tools: crate::gui::windows::disk_usage_tools::ToolsState,
+    pub(crate) dups: crate::gui::windows::disk_usage_cleanup::DupState,
+    pub(crate) cleanup: crate::gui::windows::disk_usage_cleanup::CleanupState,
 }
 
 impl DiskUsageState {
@@ -163,6 +167,7 @@ impl DiskUsageState {
     /// Call after deleting `paths` (the delete has finished, or was
     /// declined): the ones that are gone are dropped from the results.
     pub fn files_removed(&mut self, paths: &[PathBuf]) {
+        self.cleanup.files_removed(paths);
         for path in paths {
             if std::fs::symlink_metadata(path).is_err() {
                 self.forget_file(path);
@@ -206,6 +211,7 @@ impl DiskUsageState {
         if removed {
             self.revision += 1;
         }
+        self.dups.forget(path);
         self.largest_selected.retain(|p| !p.starts_with(path));
         self.folders_selected.retain(|p| !p.starts_with(path));
         self.expanded.retain(|p| !p.starts_with(path));
@@ -554,6 +560,7 @@ pub fn draw_disk_usage_window(
     state.poll();
     state.poll_moves();
     crate::gui::windows::disk_usage_tools::poll_tools(i18n, state);
+    crate::gui::windows::disk_usage_cleanup::poll_cleanup(state);
 
     let mut action = None;
     let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
@@ -585,7 +592,7 @@ pub fn draw_disk_usage_window(
                 ui.add_space(8.0);
             }
             let results_shown = state.tree.is_some() && state.scan.is_none();
-            if results_shown && !matches!(state.tab, Tab::Tree | Tab::Treemap | Tab::Sunburst | Tab::Changes) {
+            if results_shown && !matches!(state.tab, Tab::Tree | Tab::Treemap | Tab::Sunburst | Tab::Changes | Tab::Cleanup) {
                 crate::gui::windows::disk_usage_views::draw_filter_bar(ui, i18n, palette, state);
             }
             match state.tab {
@@ -600,6 +607,12 @@ pub fn draw_disk_usage_window(
                 }
                 Tab::LargestFolders if state.tree.is_some() && state.scan.is_none() => {
                     draw_folders_toolbar(ui, i18n, palette, state, &mut action)
+                }
+                Tab::Duplicates if results_shown => {
+                    crate::gui::windows::disk_usage_cleanup::draw_duplicates_toolbar(ui, i18n, palette, state, &mut action)
+                }
+                Tab::Cleanup if results_shown => {
+                    crate::gui::windows::disk_usage_cleanup::draw_cleanup_toolbar(ui, i18n, palette, state)
                 }
                 Tab::Changes if results_shown => {
                     crate::gui::windows::disk_usage_tools::draw_changes_toolbar(ui, i18n, palette, state, &mut action)
@@ -624,6 +637,8 @@ pub fn draw_disk_usage_window(
                     Tab::Largest => draw_largest(ui, i18n, palette, state, &mut action),
                     Tab::LargestFolders => draw_folders(ui, i18n, palette, state, &mut action),
                     Tab::Changes => crate::gui::windows::disk_usage_tools::draw_changes(ui, i18n, palette, state, &mut action),
+                    Tab::Duplicates => crate::gui::windows::disk_usage_cleanup::draw_duplicates(ui, i18n, palette, state, &mut action),
+                    Tab::Cleanup => crate::gui::windows::disk_usage_cleanup::draw_cleanup(ui, i18n, palette, state, &mut action),
                 }
             } else if state.cancelled {
                 ui.add_space(40.0);
@@ -645,7 +660,7 @@ pub fn draw_disk_usage_window(
 
     if close {
         state.close();
-    } else if state.scanning() || state.tools.busy() || !state.rescan_queue.is_empty() {
+    } else if state.scanning() || state.tools.busy() || state.dups.busy() || state.cleanup.busy() || !state.rescan_queue.is_empty() {
         ctx.request_repaint_after(Duration::from_millis(100));
     }
     action
@@ -1289,6 +1304,8 @@ fn draw_tabs(ui: &mut egui::Ui, i18n: &I18n, palette: &ThemePalette, state: &mut
             (Tab::Types, regular::SHAPES, "disk_usage_tab_types"),
             (Tab::Largest, regular::SORT_DESCENDING, "disk_usage_tab_largest"),
             (Tab::LargestFolders, regular::FOLDERS, "disk_usage_tab_largest_folders"),
+            (Tab::Duplicates, regular::COPY_SIMPLE, "disk_usage_tab_duplicates"),
+            (Tab::Cleanup, regular::BROOM, "disk_usage_tab_cleanup"),
             (Tab::Changes, regular::GIT_DIFF, "disk_usage_tab_changes"),
         ] {
             if tab == Tab::Changes && state.tools.compare.is_none() {

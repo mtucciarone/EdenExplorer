@@ -690,7 +690,7 @@ fn scan_tree(
 /// Runs the calling thread at below-normal CPU priority: a scan can keep
 /// every core busy for a while, and the window (and the app's own folder
 /// listing and size scans) should stay responsive meanwhile.
-fn lower_thread_priority() {
+pub(crate) fn lower_thread_priority() {
     use windows::Win32::System::Threading::{
         GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL,
     };

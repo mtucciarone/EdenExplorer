@@ -61,6 +61,56 @@ pub fn compute_checksums_async(path: PathBuf, tx: Sender<Result<ChecksumResults,
     });
 }
 
+/// SHA-256 of an open file's contents, read in the same 1 MB chunks as
+/// `compute_checksums`: the whole file, or with `sample` set, just its
+/// first and last `sample` bytes (the duplicate finder's quick first pass).
+/// `on_read` is told how many bytes each chunk was; returning false from it
+/// stops early (cancelled) with `None`.
+pub fn sha256_of(
+    file: &mut std::fs::File,
+    len: u64,
+    sample: Option<u64>,
+    mut on_read: impl FnMut(u64) -> bool,
+) -> std::io::Result<Option<[u8; 32]>> {
+    use std::io::{Seek, SeekFrom};
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0u8; CHUNK_SIZE];
+    let mut feed = |file: &mut std::fs::File, mut remaining: u64| -> std::io::Result<bool> {
+        while remaining > 0 {
+            let want = remaining.min(CHUNK_SIZE as u64) as usize;
+            let read = file.read(&mut buffer[..want])?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..read]);
+            remaining -= read as u64;
+            if !on_read(read as u64) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    };
+    match sample {
+        Some(sample) if len > sample * 2 => {
+            file.seek(SeekFrom::Start(0))?;
+            if !feed(file, sample)? {
+                return Ok(None);
+            }
+            file.seek(SeekFrom::Start(len - sample))?;
+            if !feed(file, sample)? {
+                return Ok(None);
+            }
+        }
+        _ => {
+            file.seek(SeekFrom::Start(0))?;
+            if !feed(file, len)? {
+                return Ok(None);
+            }
+        }
+    }
+    Ok(Some(hasher.finalize().into()))
+}
+
 fn hex_lower(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
