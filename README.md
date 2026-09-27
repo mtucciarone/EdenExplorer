@@ -123,7 +123,7 @@
 | ![Analyze Disk Usage](Screenshots/57-disk-usage.png) | ![Disk Usage - Largest Files](Screenshots/60-disk-usage-largest-files.png) |
 | ![Disk Usage - Treemap](Screenshots/65-disk-usage-treemap.png) | ![Disk Usage - Overview](Screenshots/71-disk-usage-overview.png) |
 
-See the [Screenshots folder](Screenshots/README.md) for all 72 feature screenshots, plus short GIFs of [Analyze Disk Usage](Screenshots/disk-usage.gif), the [Performance panel benchmark](Screenshots/performance-benchmark.gif), the [animated GIF preview controls](Screenshots/gif-preview-controls.gif), and [selection tools and New File templates](Screenshots/selection-and-templates.gif).
+See the [Screenshots folder](Screenshots/README.md) for all 72 feature screenshots, plus short GIFs of [Analyze Disk Usage](Screenshots/disk-usage.gif), the [Performance panel folder and drive benchmarks](Screenshots/performance-benchmark.gif), the [animated GIF preview controls](Screenshots/gif-preview-controls.gif), and [selection tools and New File templates](Screenshots/selection-and-templates.gif).
 
 ## Star History
 

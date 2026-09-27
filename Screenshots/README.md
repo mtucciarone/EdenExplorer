@@ -12,13 +12,13 @@ Opening the website project in Details + Preview and previewing a Markdown file 
 
 ![Analyze Disk Usage](disk-usage.gif)
 
-Right-click the background of a folder > Analyze Disk Usage…, the background scan with live progress, expanding Videos and Vacation 2025 (folders and files mixed, largest first, each with its share of the parent folder), then Rescan This Branch on Videos.
+Right-click the background of a folder > Analyze Disk Usage…, then a tour of the dashboard's tabs: Overview, the Folder Tree with share-of-parent bars, the cushion-shaded Treemap (hovering a block shows its path and size), the Sunburst, File Types, then Duplicates (Find Duplicates, then Keep Oldest marks the extra copies) and Clean Up measuring temp files, caches, the Recycle Bin, and old Downloads.
 
-## Performance Panel Benchmark
+## Performance Panel Benchmarks
 
 ![Performance panel benchmark](performance-benchmark.gif)
 
-Pressing Ctrl+K to open the panel, then choosing 10 runs and clicking Benchmark This Folder: a progress bar (with Cancel) runs while each listing method is timed, then the min/avg/max and items/sec table appears with the fastest method highlighted.
+Pressing Ctrl+K to open the panel, choosing 3 runs and clicking Benchmark This Folder (each listing method timed, the fastest highlighted), then switching to Benchmark This Drive and running it with a 64 MB test file: sequential and random 4K read/write, phase by phase, ending in MB/s and IOPS bars (recorded under Wine, which can't bypass its cache, so the numbers are cache speed).
 
 ## Animated GIF Preview Controls
 
