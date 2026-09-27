@@ -151,8 +151,8 @@ impl Default for ContextMenuOrderSnapshot {
 }
 
 fn cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("context_menu_order.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("context_menu_order.bin"))
 }
 
 pub fn load_context_menu_order() -> Vec<ContextMenuSection> {

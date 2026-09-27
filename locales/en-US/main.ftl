@@ -712,3 +712,11 @@ preview_anim_previous_frame = Previous Frame
 preview_anim_next_frame = Next Frame
 preview_anim_frame = Frame
 preview_anim_seek = Drag To Seek
+
+# Portable mode
+settings_portable_mode = Portable Mode
+tooltip_settings_portable_mode = Keeps settings and data in an EdenExplorerData folder next to EdenExplorer.exe instead of in your user profile, so the app can run from a USB stick or a synced folder. Turning it on copies your current data there; turning it off copies it back and removes that folder.
+settings_data_folder = Data Folder:
+settings_portable_mode_enabled = Portable Mode is on. Settings are now saved next to EdenExplorer.exe.
+settings_portable_mode_disabled = Portable Mode is off. Settings are saved in your user profile again.
+settings_portable_mode_failed = Couldn't switch Portable Mode:

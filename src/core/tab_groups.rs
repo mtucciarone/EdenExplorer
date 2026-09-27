@@ -166,8 +166,8 @@ impl From<TabGroupsSnapshotLegacy> for TabGroupsSnapshot {
 }
 
 fn cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("tab_groups.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("tab_groups.bin"))
 }
 
 pub fn load_tab_groups() -> Vec<TabGroup> {

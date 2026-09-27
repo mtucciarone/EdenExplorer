@@ -1,3 +1,4 @@
+pub mod app_data;
 pub mod audio;
 pub mod checksum;
 pub mod compress;

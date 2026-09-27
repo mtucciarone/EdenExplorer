@@ -265,8 +265,7 @@ pub fn process_memory() -> Option<(u64, u64)> {
 
 fn performance_panel_path() -> Option<PathBuf> {
     Some(
-        dirs::data_local_dir()?
-            .join("ExplorerEden")
+        crate::core::app_data::data_dir()?
             .join("performance_panel.bin"),
     )
 }

@@ -128,8 +128,8 @@ pub struct ContextMenuExportBundle {
 pub const CONTEXT_MENU_EXPORT_FORMAT_VERSION: u32 = 1;
 
 fn cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("context_menu.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("context_menu.bin"))
 }
 
 pub fn load_custom_context_menu() -> (Vec<CustomContextMenuEntry>, bool) {

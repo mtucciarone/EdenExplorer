@@ -120,8 +120,8 @@ struct SendToSnapshotLegacy {
 }
 
 fn cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("send_to.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("send_to.bin"))
 }
 
 /// Returns `(groups, context_menu_enabled)`. Tries the current shape first;

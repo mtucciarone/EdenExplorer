@@ -499,42 +499,41 @@ fn default_next_tag_group_id() -> u64 {
 }
 
 fn favorites_cache_path(drive: char) -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
+    let base = crate::core::app_data::data_dir()?;
     Some(
-        base.join("ExplorerEden")
-            .join("favorites")
+        base.join("favorites")
             .join(format!("drive_{}.bin", drive)),
     )
 }
 
 fn settings_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("settings.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("settings.bin"))
 }
 
 fn theme_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("theme.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("theme.bin"))
 }
 
 fn tags_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("tags.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("tags.bin"))
 }
 
 fn saved_searches_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("saved_searches.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("saved_searches.bin"))
 }
 
 fn recent_locations_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("recent_locations.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("recent_locations.bin"))
 }
 
 fn custom_themes_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("custom_themes.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("custom_themes.bin"))
 }
 
 /// Which collapsible sidebar sections (Places, Storage, Favorites, Tags,
@@ -585,8 +584,8 @@ impl Default for SidebarSectionsSnapshot {
 }
 
 fn sidebar_sections_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("sidebar_sections.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("sidebar_sections.bin"))
 }
 
 pub fn load_sidebar_sections() -> SidebarSectionsSnapshot {
@@ -661,8 +660,8 @@ impl Default for TabLayoutSnapshot {
 }
 
 fn tab_layout_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("tab_layout.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("tab_layout.bin"))
 }
 
 pub fn load_tab_layout() -> TabLayoutSnapshot {
@@ -719,8 +718,8 @@ pub struct TagIconStyleSnapshot {
 }
 
 fn tag_icon_style_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("tag_icon_style.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("tag_icon_style.bin"))
 }
 
 pub fn load_tag_icon_style() -> TagIconStyle {
@@ -775,8 +774,8 @@ impl Default for SidebarSectionVisibility {
 }
 
 fn sidebar_visibility_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("sidebar_visibility.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("sidebar_visibility.bin"))
 }
 
 pub fn load_sidebar_visibility() -> SidebarSectionVisibility {
@@ -819,8 +818,8 @@ pub struct SelectedCustomThemeSnapshot {
 }
 
 fn selected_custom_theme_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("selected_custom_theme.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("selected_custom_theme.bin"))
 }
 
 pub fn load_selected_custom_theme() -> SelectedCustomThemeSnapshot {
@@ -849,8 +848,8 @@ pub fn save_selected_custom_theme(snapshot: &SelectedCustomThemeSnapshot) {
 }
 
 fn window_position_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("window_position.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("window_position.bin"))
 }
 
 /// Last on-screen top-left corner of the app window, in physical pixels.
@@ -875,8 +874,8 @@ pub fn save_window_position(x: f32, y: f32) {
 /// Where user-browsed custom icons (for a custom context menu command, a
 /// favorite, ...) get copied to.
 pub fn custom_icons_dir() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("custom_icons"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("custom_icons"))
 }
 
 /// Copies a user-browsed icon/image file into the app's own data folder, so
@@ -1144,8 +1143,8 @@ pub struct SessionTabsSnapshot {
 }
 
 fn session_tabs_cache_path() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?;
-    Some(base.join("ExplorerEden").join("session_tabs.bin"))
+    let base = crate::core::app_data::data_dir()?;
+    Some(base.join("session_tabs.bin"))
 }
 
 pub fn load_session_tabs() -> Option<SessionTabsSnapshot> {

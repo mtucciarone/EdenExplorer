@@ -1556,6 +1556,51 @@ fn draw_advanced_section(
     });
 
     settings_section(ui, palette, |ui| {
+        let mut portable = crate::core::app_data::is_portable();
+        ui.horizontal(|ui| {
+            if setting_checkbox(
+                ui,
+                palette,
+                &mut portable,
+                RichText::new(i18n.tr("settings_portable_mode")).color(palette.text_normal),
+                "settings_portable_mode",
+            ) {
+                let result = if portable {
+                    crate::core::app_data::enable_portable_mode()
+                } else {
+                    crate::core::app_data::disable_portable_mode()
+                };
+                settings.portable_mode_status = Some(match result {
+                    Ok(_) => (true, i18n.tr(if portable {
+                        "settings_portable_mode_enabled"
+                    } else {
+                        "settings_portable_mode_disabled"
+                    })),
+                    Err(err) => (false, format!("{} {err}", i18n.tr("settings_portable_mode_failed"))),
+                });
+            }
+            info_icon(ui, &i18n.tr("tooltip_settings_portable_mode"), palette);
+        });
+        ui.add_space(SETTINGS_FIELD_GAP);
+        if let Some(dir) = crate::core::app_data::data_dir() {
+            ui.label(
+                RichText::new(format!("{} {}", i18n.tr("settings_data_folder"), dir.display()))
+                    .size(palette.text_size - 1.0)
+                    .color(palette.text_normal.gamma_multiply(0.75)),
+            );
+        }
+        if let Some((ok, message)) = &settings.portable_mode_status {
+            ui.add_space(4.0);
+            let color = if *ok {
+                palette.notification_status_success
+            } else {
+                palette.notification_status_error
+            };
+            ui.label(RichText::new(message).size(palette.text_size - 1.0).color(color));
+        }
+    });
+
+    settings_section(ui, palette, |ui| {
         ui.horizontal(|ui| {
             if setting_checkbox(
                 ui,

@@ -207,6 +207,9 @@ pub struct SettingsWindow {
     pub selected_tab_group_id: Option<u64>,
     pub selected_tag_group_id: Option<u64>,
     pub selected_send_to_id: Option<u64>,
+    /// Result of the last Portable Mode switch (Settings > Advanced):
+    /// `(succeeded, message)`, shown under the checkbox.
+    pub portable_mode_status: Option<(bool, String)>,
 }
 
 pub struct SidebarState {
