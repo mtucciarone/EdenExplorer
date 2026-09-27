@@ -12,6 +12,7 @@ pub mod fs;
 pub mod indexer;
 pub mod keymap;
 pub mod launch;
+pub mod mft_helper;
 pub mod mermaid;
 pub mod network;
 pub mod network_mdns;

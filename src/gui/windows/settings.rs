@@ -1737,4 +1737,16 @@ fn draw_advanced_section(
             info_icon(ui, &i18n.tr("tooltip_settings_show_performance_panel"), palette);
         });
     });
+
+    settings_section(ui, palette, |ui| {
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut settings.current_settings.ui_prefs.disk_usage_ask_admin,
+            "settings_disk_usage_ask_admin",
+            "tooltip_settings_disk_usage_ask_admin",
+            action,
+        );
+    });
 }

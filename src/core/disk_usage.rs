@@ -3,9 +3,11 @@
 //! whole drive on a background thread, with live progress and Cancel.
 //!
 //! Two ways to scan:
-//! - **Fast MFT scan** (`core::ntfs_mft`) for a whole NTFS drive when the
-//!   app runs as administrator: reads the drive's Master File Table in one
-//!   pass, like WizTree.
+//! - **Fast MFT scan** (`core::ntfs_mft`) for a whole NTFS drive: reads the
+//!   drive's Master File Table in one pass, like WizTree. That needs
+//!   administrator rights, so unless the app already has them it asks
+//!   Windows once (UAC) and runs just the MFT read in an elevated helper
+//!   (`core::mft_helper`).
 //! - **Standard scan** everywhere else (a folder, a non-NTFS drive, no
 //!   admin rights, or the fast scan failed): lists every folder with the
 //!   same `NtQueryDirectoryFile` call the file list uses, many folders at a
@@ -26,7 +28,7 @@ use std::time::{Duration, Instant};
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
 
 /// A file inside a scanned folder.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FileEntry {
     pub name: Box<str>,
     /// Logical size (what Explorer shows as "Size").
@@ -39,7 +41,7 @@ pub struct FileEntry {
 
 /// A scanned folder with its totals. `dirs` and `files` are kept sorted
 /// largest first.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DirNode {
     /// The folder's name (the full path for the scan's root).
     pub name: Box<str>,
@@ -161,11 +163,25 @@ pub enum ScanMethod {
     Standard,
 }
 
+/// Whether a whole-drive scan may use the fast MFT scan.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FastScan {
+    /// Always list folder by folder (branch rescans).
+    Off,
+    /// Only when the app already runs as administrator.
+    IfElevated,
+    /// Also when it doesn't: ask Windows for permission and run the MFT
+    /// read in an elevated helper.
+    AskForAdmin,
+}
+
 /// Why a drive scan didn't use the fast MFT scan.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FastScanNote {
-    /// The app isn't running as administrator.
+    /// The app isn't running as administrator and asking is turned off.
     NeedsAdmin,
+    /// Windows asked for administrator permission and it was refused.
+    Declined,
     /// The drive isn't NTFS (FAT32, exFAT, a network drive, ...).
     NotNtfs,
     /// It was tried and failed; the message says why.
@@ -183,6 +199,8 @@ pub struct ScanProgress {
     /// A folder being listed right now (standard scan only).
     pub current: Option<PathBuf>,
     pub method: Option<ScanMethod>,
+    /// Windows is asking for administrator permission for the fast scan.
+    pub waiting_for_permission: bool,
 }
 
 #[derive(Debug)]
@@ -230,6 +248,7 @@ struct Counters {
     /// Set once the standard scan starts (right away, or after the MFT
     /// scan fell back).
     standard: AtomicBool,
+    waiting_for_permission: AtomicBool,
     current: Mutex<Option<PathBuf>>,
 }
 
@@ -292,21 +311,21 @@ fn file_system_name(root: &Path) -> Option<String> {
     Some(String::from_utf16_lossy(&name[..len]))
 }
 
-/// Whether a scan of `root` can use the fast MFT scan, and if not, why.
+/// The drive letter if `root` is a whole NTFS drive (the fast scan's
+/// only requirement besides administrator rights).
 pub fn fast_scan_availability(root: &Path) -> Result<char, FastScanNote> {
     let letter = drive_root_letter(root).ok_or(FastScanNote::NotNtfs)?;
     if !file_system_name(root).is_some_and(|fs| fs.eq_ignore_ascii_case("NTFS")) {
         return Err(FastScanNote::NotNtfs);
     }
-    if !is_elevated() {
-        return Err(FastScanNote::NeedsAdmin);
-    }
     Ok(letter)
 }
 
-/// Starts scanning `root` in the background. `allow_fast` lets a whole
-/// NTFS drive use the MFT scan (a branch rescan passes `false`).
-pub fn start_scan(root: PathBuf, allow_fast: bool) -> ScanHandle {
+/// Starts scanning `root` in the background; `fast` says whether a whole
+/// NTFS drive may use the MFT scan. Call it from the UI thread: the window
+/// in front at that moment owns the permission prompt, if there is one.
+pub fn start_scan(root: PathBuf, fast: FastScan) -> ScanHandle {
+    let owner = unsafe { windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow() }.0 as isize;
     let (tx, rx) = unbounded();
     let cancel = Arc::new(AtomicBool::new(false));
     let handle = ScanHandle {
@@ -315,22 +334,25 @@ pub fn start_scan(root: PathBuf, allow_fast: bool) -> ScanHandle {
     };
     let spawned = std::thread::Builder::new()
         .name("disk-usage-scan".into())
-        .spawn(move || run_scan(root, allow_fast, tx, cancel));
+        .spawn(move || run_scan(root, fast, owner, tx, cancel));
     if spawned.is_err() {
         handle.cancel();
     }
     handle
 }
 
-fn run_scan(root: PathBuf, allow_fast: bool, tx: Sender<ScanEvent>, cancel: Arc<AtomicBool>) {
+fn run_scan(
+    root: PathBuf,
+    mode: FastScan,
+    owner: isize,
+    tx: Sender<ScanEvent>,
+    cancel: Arc<AtomicBool>,
+) {
     let started = Instant::now();
     let counters = Arc::new(Counters::default());
 
-    let fast = if allow_fast && drive_root_letter(&root).is_some() {
-        Some(fast_scan_availability(&root))
-    } else {
-        None
-    };
+    let fast = (mode != FastScan::Off && drive_root_letter(&root).is_some())
+        .then(|| fast_scan_availability(&root));
 
     // Used space is what a whole-drive standard scan works towards.
     let expected_bytes = drive_root_letter(&root)
@@ -353,7 +375,7 @@ fn run_scan(root: PathBuf, allow_fast: bool, tx: Sender<ScanEvent>, cancel: Arc<
         std::thread::Builder::new()
             .name("disk-usage-walk".into())
             .stack_size(64 * 1024 * 1024)
-            .spawn(move || scan_tree(&root, fast, &counters, &cancel))
+            .spawn(move || scan_tree(&root, fast, mode, owner, &counters, &cancel))
     };
     let Ok(worker) = worker else {
         let _ = tx.send(ScanEvent::Finished(ScanOutcome {
@@ -415,12 +437,15 @@ fn snapshot(counters: &Counters, expected_bytes: Option<u64>) -> ScanProgress {
         fraction,
         current: counters.current.lock().ok().and_then(|c| c.clone()),
         method: Some(method),
+        waiting_for_permission: counters.waiting_for_permission.load(Ordering::Relaxed),
     }
 }
 
 fn scan_tree(
     root: &Path,
     fast: Option<Result<char, FastScanNote>>,
+    mode: FastScan,
+    owner: isize,
     counters: &Arc<Counters>,
     cancel: &Arc<AtomicBool>,
 ) -> (Option<DirNode>, ScanMethod, Option<FastScanNote>) {
@@ -434,12 +459,27 @@ fn scan_tree(
                 counters.files.store(done, Ordering::Relaxed);
                 counters.bytes.store(bytes, Ordering::Relaxed);
             };
-            match crate::core::ntfs_mft::scan_volume(letter, cancel, &progress) {
+            let result = if is_elevated() {
+                crate::core::ntfs_mft::scan_volume(letter, cancel, &progress)
+                    .map_err(FastScanNote::Failed)
+            } else if mode == FastScan::AskForAdmin {
+                use crate::core::mft_helper::{ElevatedScanError, scan_elevated};
+                let waiting = |on: bool| counters.waiting_for_permission.store(on, Ordering::Relaxed);
+                scan_elevated(letter, owner, cancel, &waiting, &progress).map_err(|e| match e {
+                    ElevatedScanError::Declined => FastScanNote::Declined,
+                    ElevatedScanError::Failed(reason) => FastScanNote::Failed(reason),
+                })
+            } else {
+                Err(FastScanNote::NeedsAdmin)
+            };
+            match result {
                 Ok(Some(tree)) => return (Some(tree), ScanMethod::Mft, None),
                 Ok(None) => return (None, ScanMethod::Mft, None),
                 Err(reason) => {
-                    eprintln!("MFT scan of {letter}: failed ({reason}); using the standard scan");
-                    note = Some(FastScanNote::Failed(reason));
+                    if let FastScanNote::Failed(detail) = &reason {
+                        eprintln!("MFT scan of {letter}: failed ({detail}); using the standard scan");
+                    }
+                    note = Some(reason);
                     counters.has_fraction.store(false, Ordering::Relaxed);
                     counters.files.store(0, Ordering::Relaxed);
                     counters.bytes.store(0, Ordering::Relaxed);
@@ -701,7 +741,7 @@ mod tests {
         std::fs::write(root.join("sub/b.bin"), vec![0u8; 700]).unwrap();
         std::fs::write(root.join("sub/deeper/c.bin"), vec![0u8; 50]).unwrap();
 
-        let (_, outcome) = wait(start_scan(root.clone(), true));
+        let (_, outcome) = wait(start_scan(root.clone(), FastScan::AskForAdmin));
         assert_eq!(outcome.method, ScanMethod::Standard);
         assert_eq!(outcome.fast_scan_note, None, "a folder never tries the MFT scan");
         let tree = outcome.tree.expect("finished");
@@ -713,7 +753,7 @@ mod tests {
 
         // Rescan one branch after it changed.
         std::fs::write(root.join("sub/deeper/d.bin"), vec![0u8; 25]).unwrap();
-        let (_, branch) = wait(start_scan(root.join("sub").join("deeper"), false));
+        let (_, branch) = wait(start_scan(root.join("sub").join("deeper"), FastScan::Off));
         let mut tree = tree;
         let components = branch_components(&root, &root.join("sub").join("deeper")).unwrap();
         assert!(tree.replace_branch(&components, branch.tree.unwrap()));
@@ -725,7 +765,7 @@ mod tests {
 
     #[test]
     fn cancelled_scan_reports_no_tree() {
-        let handle = start_scan(std::env::temp_dir(), false);
+        let handle = start_scan(std::env::temp_dir(), FastScan::Off);
         handle.cancel();
         let (_, outcome) = wait(handle);
         assert!(outcome.tree.is_none());
@@ -733,7 +773,7 @@ mod tests {
 
     #[test]
     fn unreadable_folder_is_marked() {
-        let (_, outcome) = wait(start_scan(PathBuf::from(r"C:\definitely\not\here"), false));
+        let (_, outcome) = wait(start_scan(PathBuf::from(r"C:\definitely\not\here"), FastScan::Off));
         let tree = outcome.tree.unwrap();
         assert!(tree.unreadable);
         assert_eq!(tree.size, 0);

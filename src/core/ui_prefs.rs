@@ -24,6 +24,10 @@ pub struct UiPrefs {
     /// Put the address bar on its own row above the toolbar (split panes
     /// always do); off = the toolbar and address bar share one row.
     pub address_bar_own_row: bool,
+    /// Analyzing a whole NTFS drive asks Windows for administrator
+    /// permission so the fast MFT scan can run (see `core::mft_helper`);
+    /// off = the fast scan only runs when the app already is elevated.
+    pub disk_usage_ask_admin: bool,
     /// Extra folder listed under New (besides the built-in templates) whose
     /// files are offered as templates. `None` = the default
     /// `Templates` folder inside the data folder.
@@ -45,6 +49,7 @@ impl Default for UiPrefs {
             persist_folder_sizes: true,
             hover_previews: true,
             address_bar_own_row: true,
+            disk_usage_ask_admin: true,
             templates_folder: None,
             toolbar: None,
             shortcuts: Default::default(),

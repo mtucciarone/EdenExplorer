@@ -7,7 +7,7 @@
 //! `core::disk_usage`.
 
 use crate::core::disk_usage::{
-    DirNode, FastScanNote, FileEntry, ScanEvent, ScanHandle, ScanMethod, ScanProgress,
+    DirNode, FastScan, FastScanNote, FileEntry, ScanEvent, ScanHandle, ScanMethod, ScanProgress,
     branch_components, drive_root_letter, start_scan,
 };
 use crate::core::utils::files::format_size;
@@ -54,6 +54,9 @@ pub struct DiskUsageState {
     selected: Option<PathBuf>,
     /// (total, free) bytes when the root is a whole drive.
     drive_space: Option<(u64, u64)>,
+    /// Ask for administrator permission for the fast scan
+    /// (Settings > Advanced).
+    ask_admin: bool,
 }
 
 impl DiskUsageState {
@@ -64,7 +67,8 @@ impl DiskUsageState {
     /// Opens the dashboard for `root` and starts scanning it, replacing
     /// (and cancelling) whatever it showed before. Reopening the folder
     /// it was last hidden on shows that result again without rescanning.
-    pub fn open_for(&mut self, root: PathBuf) {
+    pub fn open_for(&mut self, root: PathBuf, ask_admin: bool) {
+        self.ask_admin = ask_admin;
         if self.root == root && (self.tree.is_some() || self.scan.is_some()) {
             self.open = true;
             return;
@@ -72,6 +76,7 @@ impl DiskUsageState {
         *self = Self {
             open: true,
             root,
+            ask_admin,
             ..Default::default()
         };
         self.start_full_scan();
@@ -95,7 +100,12 @@ impl DiskUsageState {
         self.progress = ScanProgress::default();
         self.drive_space = drive_root_letter(&self.root)
             .and_then(|_| crate::core::fs::get_drive_space(&self.root));
-        self.scan = Some(start_scan(self.root.clone(), true));
+        let fast = if self.ask_admin {
+            FastScan::AskForAdmin
+        } else {
+            FastScan::IfElevated
+        };
+        self.scan = Some(start_scan(self.root.clone(), fast));
     }
 
     fn start_branch_scan(&mut self, branch: PathBuf) {
@@ -107,7 +117,7 @@ impl DiskUsageState {
             return;
         }
         self.branch_progress = ScanProgress::default();
-        let handle = start_scan(branch.clone(), false);
+        let handle = start_scan(branch.clone(), FastScan::Off);
         self.branch_scan = Some((branch, handle));
     }
 
@@ -553,6 +563,7 @@ fn draw_summary(ui: &mut egui::Ui, i18n: &I18n, palette: &ThemePalette, state: &
     if let Some(note) = state.info.as_ref().and_then(|i| i.note.as_ref()) {
         let text = match note {
             FastScanNote::NeedsAdmin => i18n.tr("disk_usage_note_admin"),
+            FastScanNote::Declined => i18n.tr("disk_usage_note_declined"),
             FastScanNote::NotNtfs => i18n.tr("disk_usage_note_not_ntfs"),
             FastScanNote::Failed(reason) => format!("{} {reason}", i18n.tr("disk_usage_note_failed")),
         };
@@ -683,8 +694,13 @@ fn draw_full_scan_progress(ui: &mut egui::Ui, i18n: &I18n, palette: &ThemePalett
                 Some(ScanMethod::Mft) => format!(" · {} {}", regular::LIGHTNING, i18n.tr("disk_usage_method_mft")),
                 _ => String::new(),
             };
+            let title = if progress.waiting_for_permission {
+                format!("{} {}", regular::SHIELD_CHECK, i18n.tr("disk_usage_waiting_for_permission"))
+            } else {
+                format!("{}{method}", i18n.tr("disk_usage_scanning"))
+            };
             ui.label(
-                egui::RichText::new(format!("{}{method}", i18n.tr("disk_usage_scanning")))
+                egui::RichText::new(title)
                     .strong()
                     .size(palette.text_size + 1.0)
                     .color(palette.text_normal),

@@ -21,7 +21,7 @@ Items marked [x] have been implemented (see the README changelog); the rest aren
 
 ### Entry points
 - [x] **"Analyze Disk Usage…"** in the right-click menu for folders and drives (including drives in This PC and the sidebar), opening a dashboard dialog or a dedicated tab (L)
-- [x] **Fast whole-drive scan** that reads the NTFS Master File Table directly, like WizTree; needs admin rights, so fall back to the existing NT scan without them (L)
+- [x] **Fast whole-drive scan** that reads the NTFS Master File Table directly, like WizTree; needs admin rights, so it asks for them with one UAC prompt (running only the MFT read elevated) and falls back to the existing NT scan without them (L)
 - [x] Background scanning with progress, Cancel, and "Rescan This Branch" (M)
 
 ### Dashboard views

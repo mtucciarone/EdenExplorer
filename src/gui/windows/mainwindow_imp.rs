@@ -5331,7 +5331,8 @@ impl MainWindow {
     /// Opens the Disk Usage dashboard for a folder or drive.
     pub(crate) fn analyze_disk_usage(&mut self, path: PathBuf) {
         if path.is_dir() {
-            self.disk_usage_state.open_for(path);
+            let ask_admin = self.settings_window.current_settings.ui_prefs.disk_usage_ask_admin;
+            self.disk_usage_state.open_for(path, ask_admin);
         }
     }
 
