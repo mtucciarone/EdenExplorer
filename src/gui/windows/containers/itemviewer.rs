@@ -1167,6 +1167,16 @@ pub fn draw_item_viewer(
                                     action = Some(ItemViewerAction::OpenTerminal);
                                     ui.close();
                                 }
+                                if view.nav.current.is_dir()
+                                    && ui.button(i18n.tr("disk_usage_menu")).clicked()
+                                {
+                                    action = Some(ItemViewerAction::Context(
+                                        ItemViewerContextAction::AnalyzeDiskUsage(
+                                            view.nav.current.clone(),
+                                        ),
+                                    ));
+                                    ui.close();
+                                }
 
                                 ui.separator();
 

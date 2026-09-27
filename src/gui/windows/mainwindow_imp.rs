@@ -2118,6 +2118,9 @@ impl MainWindow {
                     self.load_path();
                 }
             }
+            ItemViewerContextAction::AnalyzeDiskUsage(path) => {
+                self.analyze_disk_usage(path);
+            }
             ItemViewerContextAction::Checksum(path) => {
                 let file_name = path
                     .file_name()
@@ -5088,6 +5091,9 @@ impl MainWindow {
                 self.open_new_tab(path);
                 self.load_path();
             }
+            if let Some(path) = action.analyze_disk_usage {
+                self.analyze_disk_usage(path);
+            }
             if let Some(path) = action.select_favorite {
                 self.sidebar_state.item_clicked = Some(path);
             }
@@ -5183,6 +5189,7 @@ impl MainWindow {
 
         let active_tab = self.active_tab();
         self.about_window.open
+            || self.disk_usage_state.is_open()
             || self.tags_state.picker.is_some()
             || self.tags_state.delete_confirmation.is_some()
             || self
@@ -5300,6 +5307,31 @@ impl MainWindow {
             panel,
         ) {
             self.toggle_performance_panel();
+        }
+    }
+
+    pub(crate) fn draw_disk_usage_window(
+        &mut self,
+        ctx: &egui::Context,
+        palette: &crate::gui::theme::ThemePalette,
+    ) {
+        use crate::gui::windows::disk_usage_ui::{DiskUsageAction, draw_disk_usage_window};
+        match draw_disk_usage_window(ctx, &self.i18n, palette, &mut self.disk_usage_state) {
+            Some(DiskUsageAction::OpenInNewTab(path)) => {
+                // Keep the result: "Analyze Disk Usage…" on the same folder
+                // brings it straight back.
+                self.disk_usage_state.hide();
+                self.open_new_tab(path);
+                self.load_path();
+            }
+            None => {}
+        }
+    }
+
+    /// Opens the Disk Usage dashboard for a folder or drive.
+    pub(crate) fn analyze_disk_usage(&mut self, path: PathBuf) {
+        if path.is_dir() {
+            self.disk_usage_state.open_for(path);
         }
     }
 

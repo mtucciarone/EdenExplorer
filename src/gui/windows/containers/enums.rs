@@ -125,4 +125,6 @@ pub enum ItemViewerContextAction {
     /// `SendToMode`) to every folder in one Send To group - the `bool` is
     /// `is_cut` (`true` = move). See `core::send_to`.
     SendTo(Vec<PathBuf>, Vec<PathBuf>, bool),
+    /// Opens the Disk Usage dashboard for a folder or drive.
+    AnalyzeDiskUsage(PathBuf),
 }

@@ -187,14 +187,14 @@ fn format_with_pattern(dt_local: &DateTime<Local>, pattern: &str) -> Option<Stri
 }
 
 /// Convert PathBuf -> UTF-16
-fn path_to_wide(path: &Path) -> Vec<u16> {
+pub(crate) fn path_to_wide(path: &Path) -> Vec<u16> {
     let mut w: Vec<u16> = path.as_os_str().encode_wide().collect();
     w.push(0);
     w
 }
 
 /// Open directory handle
-fn open_directory_handle(path: &PathBuf) -> Option<HANDLE> {
+pub(crate) fn open_directory_handle(path: &PathBuf) -> Option<HANDLE> {
     let wide = path_to_wide(path);
     let pcw = PCWSTR(wide.as_ptr());
 

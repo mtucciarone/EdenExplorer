@@ -8,6 +8,12 @@ All screenshots were taken with sample data (the `Eden Demo` folder: photos, a s
 
 Opening the website project in Details + Preview and previewing a Markdown file with a Mermaid diagram, an SVG, and a Python file, jumping back with the address bar breadcrumbs, searching for "invoice", browsing Photos in Gallery and Details + Preview, then opening Settings > Toolbar.
 
+## Analyze Disk Usage
+
+![Analyze Disk Usage](disk-usage.gif)
+
+Right-click the background of a folder > Analyze Disk Usage…, the background scan with live progress, expanding Videos and Vacation 2025 (folders and files mixed, largest first, each with its share of the parent folder), then Rescan This Branch on Videos.
+
 ## Performance Panel Benchmark
 
 ![Performance panel benchmark](performance-benchmark.gif)
@@ -251,3 +257,15 @@ Select By Pattern (Ctrl+Shift+S) selecting `*.docx; *.txt`, Invert Selection (Ct
 ### Settings - Behavior, with Remember View Per Folder, Remember Folder Sizes, Hover Previews, and the New File Templates Folder
 
 ![Settings - Behavior](56-settings-behavior.png)
+
+### Analyze Disk Usage… - where the space in a folder goes: folders and files largest first, each with its share of the parent folder, size on disk, and file/folder counts; Rescan This Branch re-reads the selected folder
+
+![Analyze Disk Usage](57-disk-usage.png)
+
+### Disk Usage scanning in the background, with the files, size, and folders found so far, the folder being read, and Cancel
+
+![Disk Usage scan in progress](58-disk-usage-scanning.png)
+
+### Analyze Disk Usage… in a folder's background right-click menu (it's also on folders, drives in This PC, and drives and favorites in the sidebar)
+
+![Analyze Disk Usage menu](59-disk-usage-menu.png)

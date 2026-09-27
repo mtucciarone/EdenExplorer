@@ -279,6 +279,21 @@ pub fn draw_sidebar(
                                     action.open_new_tab = Some(drive.path.clone());
                                 }
                             }
+                            if !is_raw_physical_drive_path(&drive.path) {
+                                Popup::context_menu(&resp)
+                                    .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+                                    .show(|ui| {
+                                        apply_eden_text_overrides(ui, palette);
+                                        if ui.button(&i18n.tr("inputs_newtab")).clicked() {
+                                            action.open_new_tab = Some(drive.path.clone());
+                                            ui.close();
+                                        }
+                                        if ui.button(&i18n.tr("disk_usage_menu")).clicked() {
+                                            action.analyze_disk_usage = Some(drive.path.clone());
+                                            ui.close();
+                                        }
+                                    });
+                            }
                         }
                     }
 
@@ -424,6 +439,10 @@ pub fn draw_sidebar(
                                 apply_eden_text_overrides(ui, palette);
                                 if ui.button(&i18n.tr("inputs_newtab")).clicked() {
                                     action.open_new_tab = Some(favorite.path.clone());
+                                    ui.close();
+                                }
+                                if ui.button(&i18n.tr("disk_usage_menu")).clicked() {
+                                    action.analyze_disk_usage = Some(favorite.path.clone());
                                     ui.close();
                                 }
                                 if ui.button(&i18n.tr("remove_favorite")).clicked() {

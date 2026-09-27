@@ -8,7 +8,7 @@ Items marked [x] have been implemented (see the README changelog); the rest aren
 
 ## Suggested Priorities
 
-1. **Disk Usage Analyzer**, in phases: tree with percentage bars and top files first, then the treemap and file types, then duplicates and snapshots.
+1. **Disk Usage Analyzer**, in phases: the dashboard with its percentage-bar tree, the fast MFT scan, and background scanning are done; next the Top 100 largest files, then the treemap and file types, then duplicates and snapshots.
 2. **Quick Look (Space)** and a **command palette**.
 3. **Archive extraction** and **queued transfers with verify-after-copy**.
 4. **Folder compare/sync** and **editable shortcuts**.
@@ -20,14 +20,14 @@ Items marked [x] have been implemented (see the README changelog); the rest aren
 *Inspired by WinDirStat, RidNacs, WizTree, TreeSize, DaisyDisk.*
 
 ### Entry points
-- [ ] **"Analyze Disk Usage…"** in the right-click menu for folders and drives (including drives in This PC and the sidebar), opening a dashboard dialog or a dedicated tab (L)
-- [ ] **Fast whole-drive scan** that reads the NTFS Master File Table directly, like WizTree; needs admin rights, so fall back to the existing NT scan without them (L)
-- [ ] Background scanning with progress, Cancel, and "Rescan This Branch" (M)
+- [x] **"Analyze Disk Usage…"** in the right-click menu for folders and drives (including drives in This PC and the sidebar), opening a dashboard dialog or a dedicated tab (L)
+- [x] **Fast whole-drive scan** that reads the NTFS Master File Table directly, like WizTree; needs admin rights, so fall back to the existing NT scan without them (L)
+- [x] Background scanning with progress, Cancel, and "Rescan This Branch" (M)
 
 ### Dashboard views
 - [ ] **Treemap** (WinDirStat-style cushion shading): click a block to select the file, double-click to zoom in, breadcrumbs to zoom out (L)
 - [ ] **Sunburst ring chart** (DaisyDisk, Filelight, Baobab) as an alternative to the treemap (M)
-- [ ] **Tree with percentage bars** (RidNacs, TreeSize): name, size, % of parent, file count, colored bar, expandable rows (M)
+- [x] **Tree with percentage bars** (RidNacs, TreeSize): name, size, % of parent, file count, colored bar, expandable rows (M)
 - [ ] **File type breakdown** (WinDirStat extension list): size and count per extension, colored to match the treemap; selecting a type highlights it in the treemap (M)
 - [ ] **Top 100 largest files and folders**, with Reveal, Delete, and Move actions (S)
 - [ ] **Age chart**: how much space is in files not touched for 1 month, 1 year, 3+ years (S)

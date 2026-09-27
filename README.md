@@ -120,8 +120,9 @@
 | ![Markdown and Mermaid preview](Screenshots/07-markdown-mermaid-preview.png) | ![Split view](Screenshots/13-split-view.png) |
 | ![Bulk rename](Screenshots/23-bulk-rename.png) | ![Settings - Shortcuts](Screenshots/39-settings-shortcuts.png) |
 | ![Performance panel](Screenshots/44-performance-panel.png) | ![Benchmark This Folder results](Screenshots/45-performance-benchmark.png) |
+| ![Analyze Disk Usage](Screenshots/57-disk-usage.png) | ![Disk Usage scan in progress](Screenshots/58-disk-usage-scanning.png) |
 
-See the [Screenshots folder](Screenshots/README.md) for all 56 feature screenshots, plus short GIFs of the [Performance panel benchmark](Screenshots/performance-benchmark.gif), the [animated GIF preview controls](Screenshots/gif-preview-controls.gif), and [selection tools and New File templates](Screenshots/selection-and-templates.gif).
+See the [Screenshots folder](Screenshots/README.md) for all 59 feature screenshots, plus short GIFs of [Analyze Disk Usage](Screenshots/disk-usage.gif), the [Performance panel benchmark](Screenshots/performance-benchmark.gif), the [animated GIF preview controls](Screenshots/gif-preview-controls.gif), and [selection tools and New File templates](Screenshots/selection-and-templates.gif).
 
 ## Star History
 
@@ -332,6 +333,8 @@ See [ROADMAP.md](ROADMAP.md) for planned and suggested features.
 - [x] **Remembered folder sizes** - calculated folder sizes are kept between sessions and shown immediately (with the in-progress hourglass while they're re-checked) instead of counting up from zero (Settings > Behavior > Remember Folder Sizes; Reset Data > Folder Size Cache)
 - [x] **Portable mode** - Settings > Advanced > Portable Mode keeps all settings and data in an `EdenExplorerData` folder next to `EdenExplorer.exe` (copying your current data there, or back when turned off); creating that folder by hand before the first launch also makes the app portable
 - [x] **Address bar on its own row** - the address bar now sits on a full-width row above the toolbar (as split panes already did), leaving the whole toolbar row for buttons; Settings > General > Address Bar On Its Own Row switches back to one shared row
+- [x] **Analyze Disk Usage** - right-click a folder, a folder's background, a drive in This PC, or a drive or favorite in the sidebar and choose **Analyze Disk Usage…** to open a dashboard showing where the space goes: an expandable tree of folders and files, largest first, with size, a bar for each item's share of its parent folder, size on disk, and file/folder counts, plus the drive's used/free space and how much of it the scan couldn't see. It scans in the background with live progress (files, bytes, folders, the folder being read) and Cancel; **Rescan** starts over and **Rescan This Branch** re-reads one folder and updates every total above it. Open In New Tab, Show In Folder, and Copy Path act on the selected item
+- [x] **Fast MFT scan for whole drives** - when EdenExplorer runs as administrator, analyzing a whole NTFS drive reads the drive's Master File Table directly (like WizTree), getting every file in one pass instead of opening each folder; without admin rights, on non-NTFS drives, or if the fast scan fails, it uses the standard folder-by-folder scan (many folders at once, not following junctions or symbolic links) and says why
 - [x] **Consistent Title Case** - buttons, menu items, headings, setting labels, and short tooltips all use Title Case; longer explanations stay as normal sentences
 
 

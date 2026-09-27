@@ -145,6 +145,8 @@ pub struct MainWindow {
     pub(crate) notifications_state: NotificationsState,
     /// Live metrics + folder benchmark for the Performance panel.
     pub(crate) performance_state: crate::gui::windows::performance_ui::PerformanceState,
+    /// The "Analyze Disk Usage…" dashboard (`disk_usage_ui`).
+    pub(crate) disk_usage_state: crate::gui::windows::disk_usage_ui::DiskUsageState,
     /// Completed, reversible Rename/BulkRename/Move/Copy operations, most
     /// recent last - see `UndoableOperation`'s doc comment in
     /// `mainwindow_imp.rs`. Deliberately in-memory only (never persisted),
@@ -415,6 +417,7 @@ impl Default for MainWindow {
             folder_views_changed_at: None,
             notifications_state: NotificationsState::default(),
             performance_state: Default::default(),
+            disk_usage_state: Default::default(),
             undo_stack: std::collections::VecDeque::new(),
             redo_stack: std::collections::VecDeque::new(),
             theme_dirty: true,
@@ -545,7 +548,8 @@ impl eframe::App for MainWindow {
             let blocking_modal_open = self.pending_paste_conflict.is_some()
                 || self.pending_bulk_rename.is_some()
                 || self.pending_checksum.is_some()
-                || self.select_by_pattern.is_some();
+                || self.select_by_pattern.is_some()
+                || self.disk_usage_state.is_open();
             ui.ctx().memory_mut(|mem| {
                 mem.data.insert_temp(
                     egui::Id::new(
@@ -1208,7 +1212,8 @@ impl eframe::App for MainWindow {
                                             let blocking_modal_open = self.pending_paste_conflict.is_some()
                                                 || self.pending_bulk_rename.is_some()
                                                 || self.pending_checksum.is_some()
-                || self.select_by_pattern.is_some();
+                || self.select_by_pattern.is_some()
+                || self.disk_usage_state.is_open();
 
                                             if primary_clicked && !blocking_modal_open {
                                                 if let Some(pos) = pointer_pos {
@@ -1719,6 +1724,7 @@ impl eframe::App for MainWindow {
         self.handle_pending_settings_action(ui.ctx());
         self.handle_draw_about_window(ui.ctx(), &palette);
         self.draw_performance_panel(ui.ctx(), &palette, frame.info().cpu_usage);
+        self.draw_disk_usage_window(ui.ctx(), &palette);
         self.handle_global_shortcuts(ui.ctx());
 
         if tags_changed {

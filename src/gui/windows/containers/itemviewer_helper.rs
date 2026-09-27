@@ -495,6 +495,14 @@ pub fn handle_context_menu_actions(
     context_paths.dedup();
 
     if is_drive_view {
+        if context_paths.len() == 1
+            && menu_item_button(ui, regular::CHART_PIE_SLICE, &i18n.tr("disk_usage_menu")).clicked()
+        {
+            *action = Some(ItemViewerAction::Context(
+                ItemViewerContextAction::AnalyzeDiskUsage(context_paths[0].clone()),
+            ));
+            ui.close();
+        }
         if menu_item_button(ui, regular::INFO, &i18n.tr("properties")).clicked() {
             *action = Some(ItemViewerAction::Context(
                 ItemViewerContextAction::Properties(context_paths.clone()),
@@ -824,6 +832,18 @@ pub fn handle_context_menu_actions(
                     *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Checksum(
                         context_paths[0].clone(),
                     )));
+                    ui.close();
+                }
+            }
+            ContextMenuSection::AnalyzeDiskUsage => {
+                if context_paths.len() == 1
+                    && context_paths[0].is_dir()
+                    && menu_item_button(ui, regular::CHART_PIE_SLICE, &i18n.tr("disk_usage_menu"))
+                        .clicked()
+                {
+                    *action = Some(ItemViewerAction::Context(
+                        ItemViewerContextAction::AnalyzeDiskUsage(context_paths[0].clone()),
+                    ));
                     ui.close();
                 }
             }

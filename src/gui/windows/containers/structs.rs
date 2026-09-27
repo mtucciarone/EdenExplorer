@@ -1222,6 +1222,8 @@ pub struct SidebarAction {
     /// "Clear All" was chosen from the Recent Locations section header's
     /// context menu.
     pub clear_recent_locations: bool,
+    /// "Analyze Disk Usage…" was chosen for a drive or favorite.
+    pub analyze_disk_usage: Option<PathBuf>,
 }
 
 #[derive(Default)]

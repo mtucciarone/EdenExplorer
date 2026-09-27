@@ -117,6 +117,8 @@
   <li><b>Custom executable icon and file association</b></li>
   <li><b>Persistent settings</b> using efficient binary cache, with an optional <b>portable mode</b> that keeps them next to the exe</li>
   <li><b>Remembered folder sizes</b> between sessions, shown instantly on the next visit</li>
+  <li><b>Analyze Disk Usage…</b> for any folder or drive (right-click menu, This PC, sidebar): an expandable size tree with a share-of-parent bar, size on disk, and file/folder counts, scanned in the background with progress, Cancel, Rescan, and <b>Rescan This Branch</b></li>
+  <li><b>Fast MFT scan</b> of whole NTFS drives when running as administrator, reading the Master File Table directly like WizTree, with automatic fallback to a parallel folder-by-folder scan</li>
 </ul>
 
 <h3>Security</h3>

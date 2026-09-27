@@ -38,6 +38,10 @@ pub enum ContextMenuSection {
     /// these can appear, and the user can add/remove them freely - see
     /// `ContextMenuSection::is_removable`.
     Separator,
+    /// "Analyze Disk Usage…" (folders only). Declared after `Separator`
+    /// on purpose: saved orders store each section by its position in
+    /// this list, so new sections can only ever be added at the end.
+    AnalyzeDiskUsage,
 }
 
 impl ContextMenuSection {
@@ -57,6 +61,7 @@ impl ContextMenuSection {
         ContextMenuSection::Delete,
         ContextMenuSection::CreateShortcut,
         ContextMenuSection::Checksum,
+        ContextMenuSection::AnalyzeDiskUsage,
         ContextMenuSection::Properties,
         ContextMenuSection::WindowsMenu,
     ];
@@ -78,6 +83,7 @@ impl ContextMenuSection {
             ContextMenuSection::Delete => "context_menu_order_delete",
             ContextMenuSection::CreateShortcut => "context_menu_order_create_shortcut",
             ContextMenuSection::Checksum => "context_menu_order_checksum",
+            ContextMenuSection::AnalyzeDiskUsage => "context_menu_order_analyze_disk_usage",
             ContextMenuSection::Properties => "context_menu_order_properties",
             ContextMenuSection::WindowsMenu => "context_menu_order_windows_menu",
             ContextMenuSection::Separator => "context_menu_order_separator",
@@ -107,14 +113,16 @@ pub fn default_order() -> Vec<ContextMenuSection> {
         Separator,
         CreateShortcut,
         Checksum,
+        AnalyzeDiskUsage,
         Properties,
         Separator,
         WindowsMenu,
     ]
 }
 
-/// Repairs a loaded order against `FIXED_SECTIONS`: appends any fixed
-/// section that's missing (e.g. a future build adds a new section type a
+/// Repairs a loaded order against `FIXED_SECTIONS`: adds any fixed
+/// section that's missing - right after the section it follows in the
+/// default order when that one's present, otherwise at the end (e.g. a future build adds a new section type a
 /// saved file predates - the same "an old save can't reference a variant
 /// that didn't exist yet" gap `postcard`'s whole-struct decode already
 /// forces this module to guard against everywhere else) and drops any
@@ -127,9 +135,17 @@ fn normalize_order(mut order: Vec<ContextMenuSection>) -> Vec<ContextMenuSection
     let mut seen = std::collections::HashSet::new();
     order.retain(|section| section.is_separator() || seen.insert(*section));
 
-    for &section in ContextMenuSection::FIXED_SECTIONS {
-        if !order.contains(&section) {
-            order.push(section);
+    for (i, &section) in ContextMenuSection::FIXED_SECTIONS.iter().enumerate() {
+        if order.contains(&section) {
+            continue;
+        }
+        let after = i
+            .checked_sub(1)
+            .map(|p| ContextMenuSection::FIXED_SECTIONS[p])
+            .and_then(|previous| order.iter().position(|s| *s == previous));
+        match after {
+            Some(pos) => order.insert(pos + 1, section),
+            None => order.push(section),
         }
     }
 
@@ -233,6 +249,31 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn a_section_added_later_lands_after_its_neighbour() {
+        // A saved order from before "Analyze Disk Usage…" existed.
+        let mut old = default_order();
+        old.retain(|s| *s != ContextMenuSection::AnalyzeDiskUsage);
+        let normalized = normalize_order(old);
+        let checksum = normalized
+            .iter()
+            .position(|s| *s == ContextMenuSection::Checksum)
+            .unwrap();
+        assert_eq!(normalized[checksum + 1], ContextMenuSection::AnalyzeDiskUsage);
+        assert_eq!(normalized, default_order());
+    }
+
+    #[test]
+    fn old_saved_orders_still_decode() {
+        // `Separator` was the last variant before `AnalyzeDiskUsage` was
+        // added; its stored index must not change.
+        let bytes = postcard::to_allocvec(&ContextMenuOrderSnapshot {
+            order: vec![ContextMenuSection::Separator, ContextMenuSection::WindowsMenu],
+        })
+        .unwrap();
+        assert_eq!(bytes, vec![2, 13, 12]);
     }
 
     #[test]
