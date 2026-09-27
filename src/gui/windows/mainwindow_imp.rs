@@ -3383,9 +3383,15 @@ impl MainWindow {
         }
 
         for (id, result) in finished {
-            self.pending_compress_jobs.remove(&id);
+            let dest_zip = self.pending_compress_jobs.remove(&id).map(|(_, zip)| zip);
             let status = match result {
-                Ok(()) => crate::gui::windows::containers::notifications::FileOpStatus::Completed,
+                Ok(()) => {
+                    // A zip made from the Disk Usage dashboard shows up there.
+                    if let Some(folder) = dest_zip.as_deref().and_then(Path::parent) {
+                        self.disk_usage_state.folder_changed(folder);
+                    }
+                    crate::gui::windows::containers::notifications::FileOpStatus::Completed
+                }
                 Err(e) => {
                     eprintln!("Compress failed: {e}");
                     crate::gui::windows::containers::notifications::FileOpStatus::Failed
@@ -5375,6 +5381,12 @@ impl MainWindow {
                     self.send_to_folders(paths.clone(), vec![destination.clone()], true);
                     self.disk_usage_state.files_moving(&paths, &destination);
                 }
+            }
+            Some(DiskUsageAction::Compress(paths)) => {
+                // The usual Compress: a zip next to the first item, with a
+                // progress notification; the folder it lands in is rescanned
+                // when it's done (see `poll_pending_compress`).
+                self.handle_context_action(ItemViewerContextAction::Compress(paths));
             }
             None => {}
         }

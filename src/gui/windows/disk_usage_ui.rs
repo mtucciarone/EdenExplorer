@@ -40,6 +40,8 @@ pub enum DiskUsageAction {
     Delete { paths: Vec<PathBuf>, permanent: bool },
     /// Ask for a folder and move these files there.
     MoveTo(Vec<PathBuf>),
+    /// Zip these next to the first one.
+    Compress(Vec<PathBuf>),
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -52,6 +54,8 @@ pub(crate) enum Tab {
     Types,
     Largest,
     LargestFolders,
+    /// Only while comparing with a snapshot.
+    Changes,
 }
 
 /// A file or folder being moved from a Largest list: removed from the
@@ -130,6 +134,7 @@ pub struct DiskUsageState {
     pub(crate) chart_zoom: Vec<String>,
     pub(crate) treemap: Option<crate::gui::windows::disk_usage_charts::TreemapCache>,
     pub(crate) sunburst: Option<crate::gui::windows::disk_usage_charts::SunburstCache>,
+    pub(crate) tools: crate::gui::windows::disk_usage_tools::ToolsState,
 }
 
 impl DiskUsageState {
@@ -176,6 +181,18 @@ impl DiskUsageState {
             rescan: rescan.clone(),
             since,
         }));
+    }
+
+    /// Call when something new appeared in `folder` (a zip was made
+    /// there): it's rescanned if it's inside the analyzed folder.
+    pub fn folder_changed(&mut self, folder: &Path) {
+        if self.tree.is_some()
+            && branch_components(&self.root, folder).is_some()
+            && !self.rescan_queue.iter().any(|f| f == folder)
+        {
+            self.rescan_queue.push(folder.to_path_buf());
+            self.last_move_check = None;
+        }
     }
 
     /// Drops a deleted or moved-away file or folder from the results.
@@ -536,6 +553,7 @@ pub fn draw_disk_usage_window(
     }
     state.poll();
     state.poll_moves();
+    crate::gui::windows::disk_usage_tools::poll_tools(i18n, state);
 
     let mut action = None;
     let mut close = ctx.input(|i| i.key_pressed(egui::Key::Escape));
@@ -567,7 +585,7 @@ pub fn draw_disk_usage_window(
                 ui.add_space(8.0);
             }
             let results_shown = state.tree.is_some() && state.scan.is_none();
-            if results_shown && !matches!(state.tab, Tab::Tree | Tab::Treemap | Tab::Sunburst) {
+            if results_shown && !matches!(state.tab, Tab::Tree | Tab::Treemap | Tab::Sunburst | Tab::Changes) {
                 crate::gui::windows::disk_usage_views::draw_filter_bar(ui, i18n, palette, state);
             }
             match state.tab {
@@ -582,6 +600,9 @@ pub fn draw_disk_usage_window(
                 }
                 Tab::LargestFolders if state.tree.is_some() && state.scan.is_none() => {
                     draw_folders_toolbar(ui, i18n, palette, state, &mut action)
+                }
+                Tab::Changes if results_shown => {
+                    crate::gui::windows::disk_usage_tools::draw_changes_toolbar(ui, i18n, palette, state, &mut action)
                 }
                 _ => draw_toolbar(ui, i18n, palette, state, &mut action),
             }
@@ -602,6 +623,7 @@ pub fn draw_disk_usage_window(
                     Tab::Sunburst => crate::gui::windows::disk_usage_charts::draw_sunburst(ui, i18n, palette, state, &mut action),
                     Tab::Largest => draw_largest(ui, i18n, palette, state, &mut action),
                     Tab::LargestFolders => draw_folders(ui, i18n, palette, state, &mut action),
+                    Tab::Changes => crate::gui::windows::disk_usage_tools::draw_changes(ui, i18n, palette, state, &mut action),
                 }
             } else if state.cancelled {
                 ui.add_space(40.0);
@@ -623,7 +645,7 @@ pub fn draw_disk_usage_window(
 
     if close {
         state.close();
-    } else if state.scanning() {
+    } else if state.scanning() || state.tools.busy() || !state.rescan_queue.is_empty() {
         ctx.request_repaint_after(Duration::from_millis(100));
     }
     action
@@ -633,7 +655,7 @@ fn draw_header(
     ui: &mut egui::Ui,
     i18n: &I18n,
     palette: &ThemePalette,
-    state: &DiskUsageState,
+    state: &mut DiskUsageState,
     close: &mut bool,
 ) {
     ui.horizontal(|ui| {
@@ -654,6 +676,8 @@ fn draw_header(
                 .size(palette.text_size)
                 .color(palette.text_normal),
         );
+        ui.add_space(8.0);
+        crate::gui::windows::disk_usage_tools::draw_status(ui, palette, state);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
                 .add(egui::Button::new(regular::X).frame(false))
@@ -662,6 +686,10 @@ fn draw_header(
             {
                 *close = true;
             }
+            ui.add_space(8.0);
+            // Right to left: Export ends up left of Snapshots.
+            crate::gui::windows::disk_usage_tools::draw_snapshot_menu(ui, i18n, palette, state);
+            crate::gui::windows::disk_usage_tools::draw_export_menu(ui, i18n, state);
         });
     });
 }
@@ -845,6 +873,31 @@ fn draw_toolbar(
             });
         }
 
+        let editable = selected.as_ref().filter(|(p, _)| !busy && *p != state.root).map(|(p, _)| p.clone());
+        let move_to = ui
+            .add_enabled_ui(editable.is_some(), |ui| {
+                eden_button(ui, palette, &format!("{} {}", regular::FOLDER_SIMPLE_DASHED, i18n.tr("disk_usage_move_to")))
+            })
+            .inner;
+        if move_to.on_hover_text(i18n.tr("tooltip_disk_usage_move_to")).clicked()
+            && let Some(path) = &editable
+        {
+            *action = Some(DiskUsageAction::MoveTo(vec![path.clone()]));
+        }
+        let delete = ui
+            .add_enabled_ui(editable.is_some(), |ui| {
+                eden_button(ui, palette, &format!("{} {}", regular::TRASH, i18n.tr("disk_usage_delete")))
+            })
+            .inner;
+        if delete.on_hover_text(i18n.tr("tooltip_disk_usage_delete")).clicked()
+            && let Some(path) = &editable
+        {
+            *action = Some(DiskUsageAction::Delete {
+                paths: vec![path.clone()],
+                permanent: ui.input(|i| i.modifiers.shift),
+            });
+        }
+
         let copy = ui
             .add_enabled_ui(selected.is_some(), |ui| {
                 eden_button(ui, palette, &format!("{} {}", regular::LINK, i18n.tr("disk_usage_copy_path")))
@@ -989,6 +1042,7 @@ fn draw_tree(
 
     let branch_in_progress = state.branch_scan.as_ref().map(|(p, _)| p.clone());
     let busy = state.scanning();
+    let root = state.root.clone();
     let mut toggle: Option<PathBuf> = None;
     let mut select: Option<PathBuf> = None;
     let mut rescan_branch: Option<PathBuf> = None;
@@ -1194,6 +1248,11 @@ fn draw_tree(
                         });
                         ui.close();
                     }
+                    let targets = [row.path.clone()];
+                    if let Some(chosen) = crate::gui::windows::disk_usage_tools::cleanup_menu(ui, i18n, &targets, !busy && row.path != root) {
+                        *action = Some(chosen);
+                    }
+                    ui.separator();
                     if ui
                         .button(format!("{}  {}", regular::LINK, i18n.tr("disk_usage_copy_path")))
                         .clicked()
@@ -1230,7 +1289,11 @@ fn draw_tabs(ui: &mut egui::Ui, i18n: &I18n, palette: &ThemePalette, state: &mut
             (Tab::Types, regular::SHAPES, "disk_usage_tab_types"),
             (Tab::Largest, regular::SORT_DESCENDING, "disk_usage_tab_largest"),
             (Tab::LargestFolders, regular::FOLDERS, "disk_usage_tab_largest_folders"),
+            (Tab::Changes, regular::GIT_DIFF, "disk_usage_tab_changes"),
         ] {
+            if tab == Tab::Changes && state.tools.compare.is_none() {
+                continue;
+            }
             let selected = state.tab == tab;
             let text = egui::RichText::new(format!("{icon} {}", i18n.tr(key)))
                 .size(palette.text_size)
@@ -1363,6 +1426,7 @@ fn draw_largest(
 ) {
     let total_files = state.tree.as_ref().map(|t| t.file_count).unwrap_or(0);
     let total_size = state.tree.as_ref().map(|t| t.size).unwrap_or(0);
+    let busy = state.scanning();
     let files = largest(state).to_vec();
     if files.is_empty() {
         ui.add_space(30.0);
@@ -1496,33 +1560,8 @@ fn draw_largest(
                         reveal = Some(targets[0].clone());
                         ui.close();
                     }
-                    if ui
-                        .button(format!("{}  {}", regular::FOLDER_SIMPLE_DASHED, i18n.tr("disk_usage_move_to")))
-                        .clicked()
-                    {
-                        menu_action = Some(DiskUsageAction::MoveTo(targets.clone()));
-                        ui.close();
-                    }
-                    ui.separator();
-                    if ui
-                        .button(format!("{}  {}", regular::TRASH, i18n.tr("disk_usage_delete")))
-                        .clicked()
-                    {
-                        menu_action = Some(DiskUsageAction::Delete {
-                            paths: targets.clone(),
-                            permanent: false,
-                        });
-                        ui.close();
-                    }
-                    if ui
-                        .button(format!("{}  {}", regular::TRASH, i18n.tr("recycle_bin_delete_permanently")))
-                        .clicked()
-                    {
-                        menu_action = Some(DiskUsageAction::Delete {
-                            paths: targets.clone(),
-                            permanent: true,
-                        });
-                        ui.close();
+                    if let Some(chosen) = crate::gui::windows::disk_usage_tools::cleanup_menu(ui, i18n, &targets, !busy) {
+                        menu_action = Some(chosen);
                     }
                     ui.separator();
                     if ui
@@ -1851,24 +1890,8 @@ fn draw_folders(
                             ui.close();
                         }
                     }
-                    if item(ui, editable && !busy, regular::FOLDER_SIMPLE_DASHED, i18n.tr("disk_usage_move_to")) {
-                        chosen = Some(DiskUsageAction::MoveTo(targets.clone()));
-                        ui.close();
-                    }
-                    ui.separator();
-                    if item(ui, editable && !busy, regular::TRASH, i18n.tr("disk_usage_delete")) {
-                        chosen = Some(DiskUsageAction::Delete {
-                            paths: targets.clone(),
-                            permanent: false,
-                        });
-                        ui.close();
-                    }
-                    if item(ui, editable && !busy, regular::TRASH, i18n.tr("recycle_bin_delete_permanently")) {
-                        chosen = Some(DiskUsageAction::Delete {
-                            paths: targets.clone(),
-                            permanent: true,
-                        });
-                        ui.close();
+                    if let Some(action) = crate::gui::windows::disk_usage_tools::cleanup_menu(ui, i18n, &targets, editable && !busy) {
+                        chosen = Some(action);
                     }
                     ui.separator();
                     if item(ui, true, regular::LINK, i18n.tr("disk_usage_copy_path")) {

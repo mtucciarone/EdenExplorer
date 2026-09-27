@@ -5,6 +5,8 @@ pub mod compress;
 pub mod context_menu_order;
 pub mod context_menu_settings;
 pub mod disk_usage;
+pub mod disk_usage_export;
+pub mod disk_usage_snapshot;
 pub mod disk_usage_stats;
 pub mod drives;
 pub mod everything;

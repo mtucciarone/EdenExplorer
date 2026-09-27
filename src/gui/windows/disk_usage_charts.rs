@@ -168,6 +168,12 @@ fn item_menu(
         state.type_selected = Some(crate::core::disk_usage_stats::extension_of(relative.last().map(String::as_str).unwrap_or("")));
         ui.close();
     }
+    let targets = [path.clone()];
+    let editable = !state.scanning() && path != state.root;
+    if let Some(chosen) = crate::gui::windows::disk_usage_tools::cleanup_menu(ui, i18n, &targets, editable) {
+        *action = Some(chosen);
+    }
+    ui.separator();
     if ui.button(format!("{}  {}", regular::LINK, i18n.tr("disk_usage_copy_path"))).clicked() {
         crate::core::utils::clipboard::copy_text_to_clipboard(&path.display().to_string());
         ui.close();
