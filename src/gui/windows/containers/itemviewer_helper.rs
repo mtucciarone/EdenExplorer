@@ -2203,11 +2203,13 @@ pub fn draw_empty_item_viewer_area(
 
     // Register the interaction after rendering the empty-state container so the complete
     // container, not just its label, receives the standard ItemViewer background actions.
-    let response = ui.interact(
-        empty_rect,
-        ui.id().with("item_viewer_empty_background"),
-        egui::Sense::click(),
-    );
+    let response = ui
+        .interact(
+            empty_rect,
+            ui.id().with("item_viewer_empty_background"),
+            egui::Sense::click(),
+        )
+        .on_hover_cursor(egui::CursorIcon::Default);
 
     let mut action = None;
 
@@ -2227,6 +2229,7 @@ pub fn draw_empty_item_viewer_area(
         Popup::context_menu(&response)
             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| {
+                ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Default);
                 apply_eden_text_overrides(ui, palette);
                 if ui.button("New Folder").clicked() {
                     action = Some(ItemViewerAction::CreateFolder);
@@ -2265,6 +2268,7 @@ pub fn draw_empty_item_viewer_area(
         Popup::context_menu(&response)
             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| {
+                ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Default);
                 apply_eden_text_overrides(ui, palette);
                 if ui.button("Refresh").clicked() {
                     action = Some(ItemViewerAction::RefreshCurrentDirectory);
