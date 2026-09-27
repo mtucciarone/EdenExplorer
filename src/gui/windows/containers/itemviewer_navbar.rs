@@ -543,6 +543,9 @@ fn draw_search_box_contents(
 
         let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
         let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+        // Keys typed here (Enter to search, Backspace, ...) belong to the
+        // search box, not the file list underneath.
+        action.is_breadcrumb_path_edit_active = true;
 
         if enter && !tab.search_box_buffer.trim().is_empty() {
             action.open_search = Some((
@@ -676,7 +679,11 @@ fn draw_breadcrumb_row_contents(
                 tab.breadcrumb_select_all_on_focus = false;
             }
 
-            action.is_breadcrumb_path_edit_active = resp.has_focus();
+            // Also on the frame focus is lost: pressing Enter to submit
+            // the path drops focus in that same frame, and the file list
+            // (handled after this) must not treat that Enter as "open the
+            // selected item" too.
+            action.is_breadcrumb_path_edit_active = resp.has_focus() || resp.lost_focus();
 
             let enter = ui.input(|i| i.key_pressed(egui::Key::Enter));
             let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));

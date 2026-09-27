@@ -1214,6 +1214,14 @@ impl MainWindow {
             view.explorer_state.selected_paths.clear();
             view.explorer_state.selection_anchor = None;
             view.explorer_state.selection_focus = None;
+            // Don't keep previewing a file from the folder just left.
+            if view
+                .preview_selection
+                .as_ref()
+                .is_some_and(|p| p.parent() != Some(current_path.as_path()))
+            {
+                view.preview_selection = None;
+            }
             view.item_viewer_filter_state.dirty = true;
             view.item_viewer_filter_state.cached_indices.clear();
             view.columns_view_state.needs_reload = true;
