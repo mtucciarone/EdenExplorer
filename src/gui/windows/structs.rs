@@ -180,6 +180,11 @@ pub struct AppSettings {
     /// Loaded/saved separately (as JSON) - see `core::ui_prefs`.
     #[serde(default)]
     pub ui_prefs: crate::core::ui_prefs::UiPrefs,
+    /// Bumped whenever a folder's remembered view changes, so the main
+    /// window can save it shortly after (see
+    /// `MainWindow::save_folder_views_if_due`). Never saved itself.
+    #[serde(skip)]
+    pub folder_views_revision: u64,
 }
 
 fn default_true() -> bool {

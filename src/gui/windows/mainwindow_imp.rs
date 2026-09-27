@@ -249,6 +249,14 @@ impl AppSettings {
     /// follows future changes to the defaults. Returns whether anything
     /// changed.
     pub(crate) fn remember_folder_view(&mut self, snapshot: DirectorySettingsSnapshot) -> bool {
+        let changed = self.remember_folder_view_inner(snapshot);
+        if changed {
+            self.folder_views_revision = self.folder_views_revision.wrapping_add(1);
+        }
+        changed
+    }
+
+    fn remember_folder_view_inner(&mut self, snapshot: DirectorySettingsSnapshot) -> bool {
         if !self.ui_prefs.remember_folder_views {
             return false;
         }
@@ -292,7 +300,11 @@ impl AppSettings {
         let before = self.directory_settings.len();
         self.directory_settings
             .retain(|entry| !same_folder(&entry.directory, directory));
-        before != self.directory_settings.len()
+        let changed = before != self.directory_settings.len();
+        if changed {
+            self.folder_views_revision = self.folder_views_revision.wrapping_add(1);
+        }
+        changed
     }
 
     /// Makes `snapshot`'s view (display mode, sort, columns) the default for
@@ -1005,6 +1017,28 @@ impl MainWindow {
         let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
 
         self.save_app_settings_to_disk();
+    }
+
+    /// Saves settings a couple of seconds after a folder's remembered view
+    /// last changed (view mode, sort, column widths ...), so those changes
+    /// survive even if the app doesn't exit cleanly. Call once per frame.
+    pub(crate) fn save_folder_views_if_due(&mut self, ctx: &egui::Context) {
+        const DELAY: std::time::Duration = std::time::Duration::from_secs(2);
+        let revision = self.settings_window.current_settings.folder_views_revision;
+        if revision == self.saved_folder_views_revision {
+            self.folder_views_changed_at = None;
+            return;
+        }
+        let changed_at = *self
+            .folder_views_changed_at
+            .get_or_insert_with(std::time::Instant::now);
+        if changed_at.elapsed() >= DELAY {
+            self.save_app_settings_to_disk();
+            self.saved_folder_views_revision = revision;
+            self.folder_views_changed_at = None;
+        } else {
+            ctx.request_repaint_after(DELAY);
+        }
     }
 
     /// Re-applies each open view's folder view settings (e.g. after

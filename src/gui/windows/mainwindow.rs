@@ -134,6 +134,10 @@ pub struct MainWindow {
     pub(crate) select_by_pattern: Option<crate::gui::windows::mainwindow_imp::SelectByPatternState>,
     /// The last pattern used, offered again the next time the dialog opens.
     pub(crate) last_select_pattern: String,
+    /// `AppSettings::folder_views_revision` as of the last save, and when
+    /// it first differed - see `save_folder_views_if_due`.
+    pub(crate) saved_folder_views_revision: u64,
+    pub(crate) folder_views_changed_at: Option<std::time::Instant>,
     pub(crate) pending_checksum:
         Option<crate::gui::windows::mainwindow_imp::ChecksumDialogState>,
     /// Tracked copy/move/delete operations shown by the top-right
@@ -270,6 +274,7 @@ impl Default for MainWindow {
             sidebar_visibility: crate::core::indexer::load_sidebar_visibility(),
             show_performance_panel: crate::core::perf::load_performance_panel_visible(),
             ui_prefs: crate::core::ui_prefs::load_ui_prefs(),
+            folder_views_revision: 0,
         };
 
         let system_locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
@@ -405,6 +410,8 @@ impl Default for MainWindow {
             pending_checksum: None,
             select_by_pattern: None,
             last_select_pattern: String::new(),
+            saved_folder_views_revision: 0,
+            folder_views_changed_at: None,
             notifications_state: NotificationsState::default(),
             performance_state: Default::default(),
             undo_stack: std::collections::VecDeque::new(),
@@ -1606,6 +1613,7 @@ impl eframe::App for MainWindow {
         self.handle_directory_batch_recieve(ui.ctx());
         self.handle_directory_size_updates(ui.ctx());
         self.folder_size_cache.save_if_due();
+        self.save_folder_views_if_due(ui.ctx());
         self.handle_throttle_size_requests(ui.ctx());
         self.handle_topbar_action(topbar_action);
         self.handle_sidebar_action(sidebar_action, sidebar_drag_sources.as_deref());

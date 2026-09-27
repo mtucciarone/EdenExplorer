@@ -321,13 +321,17 @@ pub fn draw_gallery_view(
                             let hovered = pointer_pos.is_some_and(|p| rect.contains(p));
                             if hovered || is_selected || !explorer_state.selected_paths.is_empty() {
                                 let box_rect = egui::Rect::from_min_size(
-                                    rect.min + egui::vec2(6.0, 6.0),
-                                    egui::vec2(18.0, 18.0),
+                                    rect.min + egui::vec2(8.0, 8.0),
+                                    egui::vec2(20.0, 20.0),
                                 );
-                                ui.painter().rect_filled(
+                                // A dark, outlined backdrop so the box reads
+                                // clearly over any thumbnail.
+                                ui.painter().rect(
                                     box_rect,
-                                    egui::CornerRadius::same(5),
-                                    palette.row_bg.gamma_multiply(0.85),
+                                    egui::CornerRadius::same(6),
+                                    egui::Color32::from_black_alpha(160),
+                                    egui::Stroke::new(1.0, egui::Color32::from_white_alpha(140)),
+                                    egui::StrokeKind::Inside,
                                 );
                                 let mut checked = is_selected;
                                 let clicked = ui

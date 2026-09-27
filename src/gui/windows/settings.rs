@@ -170,6 +170,7 @@ impl Default for AppSettings {
             sidebar_visibility: crate::core::indexer::SidebarSectionVisibility::default(),
             show_performance_panel: false,
             ui_prefs: crate::core::ui_prefs::UiPrefs::default(),
+            folder_views_revision: 0,
         }
     }
 }
