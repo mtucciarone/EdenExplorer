@@ -4340,6 +4340,27 @@ impl MainWindow {
         tabbar_action: Option<ItemViewerNavBarAction>,
         drag_sources: Option<&[PathBuf]>,
     ) {
+        if let Some(command) = tabbar_action.as_ref().and_then(|t| t.toolbar_command) {
+            use crate::core::toolbar::ToolbarItem;
+            let item_action = match command {
+                ToolbarItem::SelectAll => Some(ItemViewerAction::SelectAll),
+                ToolbarItem::InvertSelection => Some(ItemViewerAction::InvertSelection),
+                ToolbarItem::SelectByPattern => Some(ItemViewerAction::SelectByPattern),
+                ToolbarItem::PerformancePanel => {
+                    self.toggle_performance_panel();
+                    None
+                }
+                ToolbarItem::Settings => {
+                    self.open_or_focus_settings_tab();
+                    None
+                }
+                _ => None,
+            };
+            if item_action.is_some() {
+                handle_pending_actions(item_action, self);
+            }
+        }
+
         if let Some(action) = tabbar_action.as_ref().and_then(|t| t.nav.as_ref()) {
             match action {
                 ItemViewerNavAction::Back => {

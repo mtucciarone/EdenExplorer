@@ -131,6 +131,9 @@ pub fn draw_tab_content(
                     saved_search_count,
                     settings_window.current_settings.middle_click_opens_new_tab,
                     settings_window.current_settings.tag_icon_style,
+                    &crate::core::toolbar::drawn_layout(
+                        settings_window.current_settings.ui_prefs.toolbar.as_deref(),
+                    ),
                 ));
             });
 

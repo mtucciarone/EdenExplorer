@@ -775,3 +775,16 @@ settings_templates_reset = Reset To Default
 # Hover previews
 settings_hover_previews = Hover Previews For Images And Videos
 tooltip_settings_hover_previews = In Details view, hovering an image or video file for a moment shows a larger thumbnail of it.
+
+# Customizable toolbar
+settings_category_toolbar = Toolbar
+tooltip_settings_toolbar = Choose which buttons the file-view toolbar shows, their order, and where separators go. Changes apply immediately.
+toolbar_preview = Preview
+toolbar_current = Toolbar Buttons
+toolbar_available = Available Buttons
+toolbar_add = Add
+toolbar_remove = Remove
+toolbar_reset = Reset To Default
+toolbar_separator = Separator
+toolbar_item_favorite = Add/Remove Favorite
+settings_title_short = Settings

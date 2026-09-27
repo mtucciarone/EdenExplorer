@@ -40,12 +40,13 @@ pub enum SettingsCategory {
     SendTo,
     TabGroups,
     Tags,
+    Toolbar,
     Shortcuts,
     Advanced,
 }
 
 impl SettingsCategory {
-    pub const ALL: [SettingsCategory; 12] = [
+    pub const ALL: [SettingsCategory; 13] = [
         SettingsCategory::General,
         SettingsCategory::Behavior,
         SettingsCategory::Startup,
@@ -56,6 +57,7 @@ impl SettingsCategory {
         SettingsCategory::SendTo,
         SettingsCategory::TabGroups,
         SettingsCategory::Tags,
+        SettingsCategory::Toolbar,
         SettingsCategory::Shortcuts,
         SettingsCategory::Advanced,
     ];
@@ -72,6 +74,7 @@ impl SettingsCategory {
             SettingsCategory::SendTo => regular::PAPER_PLANE_TILT,
             SettingsCategory::TabGroups => regular::FOLDERS,
             SettingsCategory::Tags => regular::TAG,
+            SettingsCategory::Toolbar => regular::TOOLBOX,
             SettingsCategory::Shortcuts => regular::KEYBOARD,
             SettingsCategory::Advanced => regular::WRENCH,
         }
@@ -89,6 +92,7 @@ impl SettingsCategory {
             SettingsCategory::SendTo => i18n.tr("settings_category_send_to"),
             SettingsCategory::TabGroups => i18n.tr("settings_category_tab_groups"),
             SettingsCategory::Tags => i18n.tr("settings_category_tags"),
+            SettingsCategory::Toolbar => i18n.tr("settings_category_toolbar"),
             SettingsCategory::Shortcuts => i18n.tr("settings_category_shortcuts"),
             SettingsCategory::Advanced => i18n.tr("settings_category_advanced"),
         }
@@ -711,6 +715,13 @@ pub fn draw_settings_page(
                             }
                             SettingsCategory::Startup => {
                                 draw_startup_section(ui, i18n, settings, palette, &mut action);
+                            }
+                            SettingsCategory::Toolbar => {
+                                if let Some(a) = crate::gui::windows::toolbar_ui::draw_toolbar_settings(
+                                    ui, i18n, settings, palette,
+                                ) {
+                                    action = Some(a);
+                                }
                             }
                             SettingsCategory::Shortcuts => {
                                 crate::gui::windows::shortcuts_ui::draw_shortcuts_settings(

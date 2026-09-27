@@ -25,6 +25,9 @@ pub struct UiPrefs {
     /// files are offered as templates. `None` = the default
     /// `Templates` folder inside the data folder.
     pub templates_folder: Option<PathBuf>,
+    /// The file-view toolbar's buttons and separators, in order
+    /// (Settings > Toolbar). `None` = the default layout.
+    pub toolbar: Option<Vec<crate::core::toolbar::ToolbarItem>>,
 }
 
 impl Default for UiPrefs {
@@ -34,6 +37,7 @@ impl Default for UiPrefs {
             persist_folder_sizes: true,
             hover_previews: true,
             templates_folder: None,
+            toolbar: None,
         }
     }
 }

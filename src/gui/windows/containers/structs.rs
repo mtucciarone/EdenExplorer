@@ -970,6 +970,10 @@ pub struct ItemViewerNavBarAction {
     /// folder as a new tab instead of navigating the current one, matching
     /// the same gesture the file list's own folder rows already support.
     pub open_in_new_tab: Option<PathBuf>,
+    /// A toolbar button that isn't navigation/file-creation specific
+    /// (Select All, Invert Selection, Select By Pattern, Performance Panel,
+    /// Settings) - see `core::toolbar::ToolbarItem`.
+    pub toolbar_command: Option<crate::core::toolbar::ToolbarItem>,
 }
 
 #[derive(Clone, Copy)]

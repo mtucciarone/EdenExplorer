@@ -1,3 +1,4 @@
+use crate::core::toolbar::ToolbarItem;
 use crate::core::fs::{MY_PC_PATH, MY_RECYCLE_BIN_PATH, parse_tag_view_path};
 use crate::core::launch::{self, ShellUriResolution};
 use crate::core::network;
@@ -70,6 +71,7 @@ pub fn draw_itemviewer_navigation_bar(
     saved_search_count: usize,
     middle_click_opens_new_tab: bool,
     tag_icon_style: crate::core::indexer::TagIconStyle,
+    toolbar_layout: &[ToolbarItem],
 ) -> ItemViewerNavBarAction {
     let mut action = ItemViewerNavBarAction::default();
     let tabbar_rect = ui.available_rect_before_wrap();
@@ -130,6 +132,7 @@ pub fn draw_itemviewer_navigation_bar(
                 ui,
                 i18n,
                 palette,
+                toolbar_layout,
                 is_favorited,
                 &tab.nav.current,
                 tab.nav.is_root() || is_settings,
@@ -160,6 +163,7 @@ pub fn draw_itemviewer_navigation_bar(
                 ui,
                 i18n,
                 palette,
+                toolbar_layout,
                 is_favorited,
                 &tab.nav.current,
                 tab.nav.is_root() || is_settings,
@@ -991,111 +995,16 @@ fn nav_icon_button_active(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn draw_navigation_bar_buttons(
+/// The toolbar's favorite star: filled and tinted while the current folder
+/// is a favorite.
+fn draw_favorite_button(
     ui: &mut egui::Ui,
     i18n: &I18n,
     palette: &ThemePalette,
     is_favorited: bool,
-    current_dir: &Path,
-    is_root: bool,
-    is_recycle_bin: bool,
-    can_go_back: bool,
-    can_go_forward: bool,
-    display_mode: ItemViewerDisplayMode,
-    search_active: bool,
-) -> ItemViewerNavBarAction {
-    let mut action = ItemViewerNavBarAction::default();
-
-    // Navigation buttons
-    if nav_icon_button(
-        ui,
-        regular::ARROW_LEFT,
-        palette,
-        can_go_back,
-        &i18n.tr("tooltip_nav_back"),
-    )
-    .clicked()
-        && can_go_back
-    {
-        action.nav = Some(ItemViewerNavAction::Back);
-    }
-
-    if nav_icon_button(
-        ui,
-        regular::ARROW_RIGHT,
-        palette,
-        can_go_forward,
-        &i18n.tr("tooltip_nav_forward"),
-    )
-    .clicked()
-        && can_go_forward
-    {
-        action.nav = Some(ItemViewerNavAction::Forward);
-    }
-
-    let can_go_up = !is_root && !is_recycle_bin;
-    if nav_icon_button(
-        ui,
-        regular::ARROW_UP,
-        palette,
-        can_go_up,
-        &i18n.tr("tooltip_nav_up"),
-    )
-    .clicked()
-        && can_go_up
-    {
-        action.nav = Some(ItemViewerNavAction::Up);
-    }
-
-    // Previously routed through `clickable_icon_sized_with_base_color` (a
-    // general-purpose helper also used by notifications/tags/topbar icon
-    // buttons) instead of the same `nav_icon_button` every other toolbar
-    // button uses - the one toolbar icon with a different hover look
-    // (a background fill, via that helper's own hardcoded `primary_hover`)
-    // than the rest (icon-color-only). Unified onto `nav_icon_button` so
-    // Refresh's hover now follows the same `toolbar_icon_hover_color`/
-    // `toolbar_icon_hover_bg_color` fields as the rest of the toolbar.
-    if nav_icon_button(
-        ui,
-        regular::ARROWS_CLOCKWISE,
-        palette,
-        true,
-        &i18n.tr("tooltip_refresh"),
-    )
-    .clicked()
-    {
-        action.refresh_current_directory = true;
-        clear_clipboard_files();
-    }
-
-    // Action buttons
-    if nav_icon_button(
-        ui,
-        regular::FOLDER_PLUS,
-        palette,
-        !is_recycle_bin,
-        &i18n.tr("tooltip_newfolder"),
-    )
-    .clicked()
-        && !is_recycle_bin
-    {
-        action.create_folder = true;
-    }
-
-    if nav_icon_button(
-        ui,
-        regular::FILE_PLUS,
-        palette,
-        !is_recycle_bin,
-        &i18n.tr("tooltip_newfile"),
-    )
-    .clicked()
-        && !is_recycle_bin
-    {
-        action.create_file = true;
-    }
-
+    enabled: bool,
+    action: &mut ItemViewerNavBarAction,
+) {
     let star_icon = if is_favorited {
         fill::STAR
     } else {
@@ -1106,7 +1015,6 @@ fn draw_navigation_bar_buttons(
     } else {
         palette.tooltip_text_color
     };
-
     let star_font = if is_favorited {
         FontId::new(TOOLBAR_ICON_SIZE, FontFamily::Name("phosphor_fill".into()))
     } else {
@@ -1114,7 +1022,7 @@ fn draw_navigation_bar_buttons(
     };
 
     let star_resp = ui.add_enabled(
-        !is_root && !is_recycle_bin,
+        enabled,
         egui::Label::new(
             egui::RichText::new(star_icon)
                 .font(star_font)
@@ -1124,7 +1032,7 @@ fn draw_navigation_bar_buttons(
         .sense(egui::Sense::click()),
     );
 
-    let star_resp = if is_root || is_recycle_bin {
+    let star_resp = if !enabled {
         star_resp.on_hover_text(
             egui::RichText::new(i18n.tr("tooltip_favorites_disabled"))
                 .size(palette.tooltip_text_size)
@@ -1151,97 +1059,140 @@ fn draw_navigation_bar_buttons(
             action.add_favorite = true;
         }
     }
+}
 
-    if nav_icon_button_active(
-        ui,
-        regular::MAGNIFYING_GLASS,
-        palette,
-        true,
-        search_active,
-        &i18n.tr(if search_active {
-            "tooltip_search_close"
-        } else {
-            "tooltip_search"
-        }),
-    )
-    .clicked()
-    {
-        action.activate_search_box = true;
+/// Icon and tooltip/label i18n key for a toolbar button (not Separator).
+pub(crate) fn toolbar_item_icon_and_key(item: ToolbarItem) -> (&'static str, &'static str) {
+    match item {
+        ToolbarItem::Back => (regular::ARROW_LEFT, "tooltip_nav_back"),
+        ToolbarItem::Forward => (regular::ARROW_RIGHT, "tooltip_nav_forward"),
+        ToolbarItem::Up => (regular::ARROW_UP, "tooltip_nav_up"),
+        ToolbarItem::Refresh => (regular::ARROWS_CLOCKWISE, "tooltip_refresh"),
+        ToolbarItem::NewFolder => (regular::FOLDER_PLUS, "tooltip_newfolder"),
+        ToolbarItem::NewFile => (regular::FILE_PLUS, "tooltip_newfile"),
+        ToolbarItem::Favorite => (regular::STAR, "toolbar_item_favorite"),
+        ToolbarItem::Search => (regular::MAGNIFYING_GLASS, "tooltip_search"),
+        ToolbarItem::ViewDetails => (regular::ROWS, "view_details"),
+        ToolbarItem::ViewGallery => (regular::IMAGES_SQUARE, "view_gallery"),
+        ToolbarItem::ViewColumns => (regular::COLUMNS, "view_columns"),
+        ToolbarItem::ViewColumnPreview => (regular::COLUMNS_PLUS_RIGHT, "view_column_preview"),
+        ToolbarItem::ViewPreview => (regular::EYE, "view_preview"),
+        ToolbarItem::ViewDetailPreview => (regular::SIDEBAR, "view_detail_preview"),
+        ToolbarItem::Terminal => (regular::TERMINAL, "tooltip_open_terminal"),
+        ToolbarItem::SelectAll => (regular::CHECK_SQUARE, "select_all"),
+        ToolbarItem::InvertSelection => (regular::SWAP, "select_invert"),
+        ToolbarItem::SelectByPattern => (regular::ASTERISK, "select_by_pattern_title"),
+        ToolbarItem::PerformancePanel => (regular::GAUGE, "shortcut_performance_panel"),
+        ToolbarItem::Settings => (regular::GEAR, "settings_title_short"),
+        ToolbarItem::Separator => ("", "toolbar_separator"),
     }
+}
 
-    ui.add_space(2.0);
-    ui.separator();
-    ui.add_space(2.0);
-
+#[allow(clippy::too_many_arguments)]
+fn draw_navigation_bar_buttons(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    palette: &ThemePalette,
+    layout: &[ToolbarItem],
+    is_favorited: bool,
+    current_dir: &Path,
+    is_root: bool,
+    is_recycle_bin: bool,
+    can_go_back: bool,
+    can_go_forward: bool,
+    display_mode: ItemViewerDisplayMode,
+    search_active: bool,
+) -> ItemViewerNavBarAction {
+    let mut action = ItemViewerNavBarAction::default();
+    let can_go_up = !is_root && !is_recycle_bin;
     let display_mode_enabled = !is_recycle_bin && !is_root;
-    for (mode, icon, tooltip_key) in [
-        (
-            ItemViewerDisplayMode::Details,
-            regular::ROWS,
-            "view_details",
-        ),
-        (
-            ItemViewerDisplayMode::Gallery,
-            regular::IMAGES_SQUARE,
-            "view_gallery",
-        ),
-        (
-            ItemViewerDisplayMode::Columns,
-            regular::COLUMNS,
-            "view_columns",
-        ),
-        (
-            ItemViewerDisplayMode::ColumnPreview,
-            regular::COLUMNS_PLUS_RIGHT,
-            "view_column_preview",
-        ),
-        (ItemViewerDisplayMode::Preview, regular::EYE, "view_preview"),
-        (
-            ItemViewerDisplayMode::DetailPreview,
-            regular::SIDEBAR,
-            "view_detail_preview",
-        ),
-    ] {
-        // Previously a raw `egui::Label` (no hover feedback at all - the
-        // icon didn't change on hover the way every other toolbar button
-        // does) using `ui.visuals().text_color()` for its inactive color
-        // (ambient egui text color, not `palette.toolbar_icon_color` -
-        // didn't even match the rest of the toolbar's own default icon
-        // color). Unified onto the same `nav_icon_button_active` helper
-        // Refresh and the search toggle already use, so these six icons
-        // get real hover feedback (`toolbar_icon_hover_color`/
-        // `toolbar_icon_hover_bg_color`) and a consistent normal/active
-        // look with the rest of the toolbar for free.
-        if nav_icon_button_active(
-            ui,
-            icon,
-            palette,
-            display_mode_enabled,
-            display_mode == mode,
-            &i18n.tr(tooltip_key),
-        )
-        .clicked()
-            && display_mode_enabled
-        {
-            action.set_display_mode = Some(mode);
+    let file_actions_enabled = !is_recycle_bin;
+
+    for &item in layout {
+        let (icon, tooltip_key) = toolbar_item_icon_and_key(item);
+        let view_mode = match item {
+            ToolbarItem::ViewDetails => Some(ItemViewerDisplayMode::Details),
+            ToolbarItem::ViewGallery => Some(ItemViewerDisplayMode::Gallery),
+            ToolbarItem::ViewColumns => Some(ItemViewerDisplayMode::Columns),
+            ToolbarItem::ViewColumnPreview => Some(ItemViewerDisplayMode::ColumnPreview),
+            ToolbarItem::ViewPreview => Some(ItemViewerDisplayMode::Preview),
+            ToolbarItem::ViewDetailPreview => Some(ItemViewerDisplayMode::DetailPreview),
+            _ => None,
+        };
+        if let Some(mode) = view_mode {
+            if nav_icon_button_active(
+                ui,
+                icon,
+                palette,
+                display_mode_enabled,
+                display_mode == mode,
+                &i18n.tr(tooltip_key),
+            )
+            .clicked()
+                && display_mode_enabled
+            {
+                action.set_display_mode = Some(mode);
+            }
+            continue;
         }
-    }
 
-    ui.add_space(2.0);
-    ui.separator();
-    ui.add_space(2.0);
-
-    if nav_icon_button(
-        ui,
-        regular::TERMINAL,
-        palette,
-        !is_recycle_bin,
-        &i18n.tr("tooltip_open_terminal"),
-    )
-    .clicked()
-        && !is_recycle_bin
-    {
-        open_default_terminal(current_dir);
+        match item {
+            ToolbarItem::Separator => {
+                ui.add_space(2.0);
+                ui.separator();
+                ui.add_space(2.0);
+            }
+            ToolbarItem::Favorite => draw_favorite_button(
+                ui,
+                i18n,
+                palette,
+                is_favorited,
+                !is_root && !is_recycle_bin,
+                &mut action,
+            ),
+            ToolbarItem::Search => {
+                let tooltip = i18n.tr(if search_active {
+                    "tooltip_search_close"
+                } else {
+                    "tooltip_search"
+                });
+                if nav_icon_button_active(ui, icon, palette, true, search_active, &tooltip).clicked() {
+                    action.activate_search_box = true;
+                }
+            }
+            _ => {
+                let enabled = match item {
+                    ToolbarItem::Back => can_go_back,
+                    ToolbarItem::Forward => can_go_forward,
+                    ToolbarItem::Up => can_go_up,
+                    ToolbarItem::NewFolder
+                    | ToolbarItem::NewFile
+                    | ToolbarItem::Terminal
+                    | ToolbarItem::SelectAll
+                    | ToolbarItem::InvertSelection
+                    | ToolbarItem::SelectByPattern => file_actions_enabled,
+                    _ => true,
+                };
+                if !nav_icon_button(ui, icon, palette, enabled, &i18n.tr(tooltip_key)).clicked()
+                    || !enabled
+                {
+                    continue;
+                }
+                match item {
+                    ToolbarItem::Back => action.nav = Some(ItemViewerNavAction::Back),
+                    ToolbarItem::Forward => action.nav = Some(ItemViewerNavAction::Forward),
+                    ToolbarItem::Up => action.nav = Some(ItemViewerNavAction::Up),
+                    ToolbarItem::Refresh => {
+                        action.refresh_current_directory = true;
+                        clear_clipboard_files();
+                    }
+                    ToolbarItem::NewFolder => action.create_folder = true,
+                    ToolbarItem::NewFile => action.create_file = true,
+                    ToolbarItem::Terminal => open_default_terminal(current_dir),
+                    other => action.toolbar_command = Some(other),
+                }
+            }
+        }
     }
 
     action
@@ -1656,4 +1607,7 @@ fn merge_toolbar_action(action: &mut ItemViewerNavBarAction, toolbar: ItemViewer
         action.set_display_mode = toolbar.set_display_mode;
     }
     action.activate_search_box |= toolbar.activate_search_box;
+    if action.toolbar_command.is_none() {
+        action.toolbar_command = toolbar.toolbar_command;
+    }
 }
