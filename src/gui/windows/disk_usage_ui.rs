@@ -7,7 +7,7 @@
 //! `core::disk_usage`.
 
 use crate::core::disk_usage::{
-    DirNode, LargeFile, largest_files, FastScan, FastScanNote, FileEntry, ScanEvent, ScanHandle, ScanMethod, ScanProgress,
+    DirNode, LargeFile, LargeFolder, largest_files, largest_folders, FastScan, FastScanNote, FileEntry, ScanEvent, ScanHandle, ScanMethod, ScanProgress,
     branch_components, drive_root_letter, start_scan,
 };
 use crate::core::utils::files::format_size;
@@ -22,7 +22,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-/// How many files the Largest Files list shows.
+/// How many files (and folders) the Largest Files (Folders) lists show.
 const LARGEST_COUNT: usize = 100;
 /// How long a moved file is watched for (see `files_moving`).
 const MOVE_WATCH_LIMIT: Duration = Duration::from_secs(600);
@@ -47,9 +47,10 @@ enum Tab {
     #[default]
     Tree,
     Largest,
+    LargestFolders,
 }
 
-/// A file being moved from the Largest Files list: removed from the
+/// A file or folder being moved from a Largest list: removed from the
 /// results once it's gone from `path`; `rescan` is its destination folder
 /// when that's inside the analyzed folder (so it shows up there).
 struct PendingMove {
@@ -99,6 +100,11 @@ pub struct DiskUsageState {
     largest_revision: Option<u64>,
     largest_selected: HashSet<PathBuf>,
     largest_anchor: Option<usize>,
+    /// The Largest Folders list, likewise.
+    folders: Vec<LargeFolder>,
+    folders_revision: Option<u64>,
+    folders_selected: HashSet<PathBuf>,
+    folders_anchor: Option<usize>,
     pending_moves: Vec<PendingMove>,
     last_move_check: Option<Instant>,
     /// Destination folders waiting to be rescanned (one scan at a time).
@@ -151,16 +157,21 @@ impl DiskUsageState {
         }));
     }
 
+    /// Drops a deleted or moved-away file or folder from the results.
     fn forget_file(&mut self, path: &Path) {
         let removed = match (self.tree.as_mut(), branch_components(&self.root, path)) {
-            (Some(tree), Some(components)) => tree.remove_file(&components).is_some(),
+            (Some(tree), Some(components)) => {
+                tree.remove_file(&components).is_some() || tree.remove_dir(&components).is_some()
+            }
             _ => false,
         };
         if removed {
             self.revision += 1;
         }
-        self.largest_selected.remove(path);
-        if self.selected.as_deref() == Some(path) {
+        self.largest_selected.retain(|p| !p.starts_with(path));
+        self.folders_selected.retain(|p| !p.starts_with(path));
+        self.expanded.retain(|p| !p.starts_with(path));
+        if self.selected.as_deref().is_some_and(|p| p.starts_with(path)) {
             self.selected = None;
         }
     }
@@ -537,6 +548,9 @@ pub fn draw_disk_usage_window(
                 Tab::Largest if state.tree.is_some() && state.scan.is_none() => {
                     draw_largest_toolbar(ui, i18n, palette, state, &mut action)
                 }
+                Tab::LargestFolders if state.tree.is_some() && state.scan.is_none() => {
+                    draw_folders_toolbar(ui, i18n, palette, state, &mut action)
+                }
                 _ => draw_toolbar(ui, i18n, palette, state, &mut action),
             }
             ui.add_space(6.0);
@@ -551,6 +565,7 @@ pub fn draw_disk_usage_window(
                 match state.tab {
                     Tab::Tree => draw_tree(ui, i18n, palette, state, &mut action),
                     Tab::Largest => draw_largest(ui, i18n, palette, state, &mut action),
+                    Tab::LargestFolders => draw_folders(ui, i18n, palette, state, &mut action),
                 }
             } else if state.cancelled {
                 ui.add_space(40.0);
@@ -1174,6 +1189,7 @@ fn draw_tabs(ui: &mut egui::Ui, i18n: &I18n, palette: &ThemePalette, state: &mut
         for (tab, icon, key) in [
             (Tab::Tree, regular::TREE_STRUCTURE, "disk_usage_tab_tree"),
             (Tab::Largest, regular::SORT_DESCENDING, "disk_usage_tab_largest"),
+            (Tab::LargestFolders, regular::FOLDERS, "disk_usage_tab_largest_folders"),
         ] {
             let selected = state.tab == tab;
             let text = egui::RichText::new(format!("{icon} {}", i18n.tr(key)))
@@ -1494,31 +1510,345 @@ fn ui_modifiers(response: &egui::Response) -> egui::Modifiers {
     response.ctx.input(|i| i.modifiers)
 }
 
+fn select_largest(state: &mut DiskUsageState, files: &[LargeFile], index: usize, modifiers: egui::Modifiers) {
+    let paths: Vec<&PathBuf> = files.iter().map(|f| &f.path).collect();
+    select_row(&mut state.largest_selected, &mut state.largest_anchor, &paths, index, modifiers);
+}
+
 /// Click = select only this row, Ctrl+Click = toggle it, Shift+Click =
 /// select the range from the last clicked row.
-fn select_largest(state: &mut DiskUsageState, files: &[LargeFile], index: usize, modifiers: egui::Modifiers) {
-    let path = files[index].path.clone();
+fn select_row(
+    selected: &mut HashSet<PathBuf>,
+    anchor: &mut Option<usize>,
+    paths: &[&PathBuf],
+    index: usize,
+    modifiers: egui::Modifiers,
+) {
+    let path = paths[index].clone();
     if modifiers.shift
-        && let Some(anchor) = state.largest_anchor.filter(|a| *a < files.len())
+        && let Some(from_anchor) = anchor.filter(|a| *a < paths.len())
     {
-        let (from, to) = if anchor <= index { (anchor, index) } else { (index, anchor) };
+        let (from, to) = if from_anchor <= index { (from_anchor, index) } else { (index, from_anchor) };
         if !modifiers.command {
-            state.largest_selected.clear();
+            selected.clear();
         }
-        state
-            .largest_selected
-            .extend(files[from..=to].iter().map(|f| f.path.clone()));
+        selected.extend(paths[from..=to].iter().map(|p| (*p).clone()));
         return;
     }
     if modifiers.command {
-        if !state.largest_selected.remove(&path) {
-            state.largest_selected.insert(path);
+        if !selected.remove(&path) {
+            selected.insert(path);
         }
     } else {
-        state.largest_selected.clear();
-        state.largest_selected.insert(path);
+        selected.clear();
+        selected.insert(path);
     }
-    state.largest_anchor = Some(index);
+    *anchor = Some(index);
+}
+
+/// The Largest Folders list, rebuilt only after the results changed.
+fn folders(state: &mut DiskUsageState) -> &[LargeFolder] {
+    if state.folders_revision != Some(state.revision) {
+        state.folders = state
+            .tree
+            .as_ref()
+            .map(|tree| largest_folders(tree, &state.root, LARGEST_COUNT))
+            .unwrap_or_default();
+        state.folders_revision = Some(state.revision);
+        let still_listed: HashSet<&PathBuf> = state.folders.iter().map(|f| &f.path).collect();
+        state.folders_selected.retain(|p| still_listed.contains(p));
+        state.folders_anchor = None;
+    }
+    &state.folders
+}
+
+/// The selected folders in list order.
+fn folders_selection(state: &DiskUsageState) -> Vec<PathBuf> {
+    state
+        .folders
+        .iter()
+        .filter(|f| state.folders_selected.contains(&f.path))
+        .map(|f| f.path.clone())
+        .collect()
+}
+
+/// What a folder selection allows: the analyzed folder itself can't be
+/// moved or deleted from here.
+fn folder_edits_allowed(state: &DiskUsageState, selection: &[PathBuf]) -> bool {
+    !selection.is_empty() && !selection.iter().any(|p| p == &state.root)
+}
+
+fn draw_folders_toolbar(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    palette: &ThemePalette,
+    state: &mut DiskUsageState,
+    action: &mut Option<DiskUsageAction>,
+) {
+    let busy = state.scanning();
+    let selection = folders_selection(state);
+    let single = (selection.len() == 1).then(|| selection[0].clone());
+    let editable = folder_edits_allowed(state, &selection);
+    let button = |ui: &mut egui::Ui, enabled: bool, icon: &str, key: &str| {
+        ui.add_enabled_ui(enabled, |ui| eden_button(ui, palette, &format!("{icon} {}", i18n.tr(key))))
+            .inner
+    };
+    ui.horizontal(|ui| {
+        if button(ui, !busy, regular::ARROW_CLOCKWISE, "disk_usage_rescan")
+            .on_hover_text(i18n.tr("tooltip_disk_usage_rescan"))
+            .clicked()
+        {
+            state.start_full_scan();
+        }
+        if button(ui, !busy && single.is_some(), regular::ARROWS_CLOCKWISE, "disk_usage_rescan_branch")
+            .on_hover_text(i18n.tr("tooltip_disk_usage_rescan_branch"))
+            .clicked()
+            && let Some(folder) = single.clone()
+        {
+            state.start_branch_scan(folder);
+        }
+        if button(ui, single.is_some(), regular::ARROW_SQUARE_OUT, "disk_usage_open_in_tab").clicked()
+            && let Some(folder) = single.clone()
+        {
+            *action = Some(DiskUsageAction::OpenInNewTab(folder));
+        }
+        let reveal_ok = single.as_ref().is_some_and(|p| p.parent().is_some() && *p != state.root);
+        if button(ui, reveal_ok, regular::FOLDER_OPEN, "disk_usage_show_in_folder").clicked()
+            && let Some(folder) = single.clone()
+        {
+            *action = Some(DiskUsageAction::Reveal(folder));
+        }
+        if button(ui, editable && !busy, regular::FOLDER_SIMPLE_DASHED, "disk_usage_move_to")
+            .on_hover_text(i18n.tr("tooltip_disk_usage_move_folders"))
+            .clicked()
+        {
+            *action = Some(DiskUsageAction::MoveTo(selection.clone()));
+        }
+        if button(ui, editable && !busy, regular::TRASH, "disk_usage_delete")
+            .on_hover_text(i18n.tr("tooltip_disk_usage_delete_folders"))
+            .clicked()
+        {
+            *action = Some(DiskUsageAction::Delete {
+                paths: selection.clone(),
+                permanent: ui.input(|i| i.modifiers.shift),
+            });
+        }
+        if button(ui, !selection.is_empty(), regular::LINK, "disk_usage_copy_path").clicked() {
+            copy_paths(&selection);
+        }
+        if !selection.is_empty() {
+            ui.add_space(6.0);
+            ui.label(muted(
+                palette,
+                format!("{} {}", format_count(selection.len() as u64), i18n.tr("disk_usage_selected")),
+            ));
+        }
+    });
+}
+
+fn draw_folders(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    palette: &ThemePalette,
+    state: &mut DiskUsageState,
+    action: &mut Option<DiskUsageAction>,
+) {
+    let total_dirs = state.tree.as_ref().map(|t| t.dir_count + 1).unwrap_or(0);
+    let total_size = state.tree.as_ref().map(|t| t.size).unwrap_or(0);
+    let busy = state.scanning();
+    let folders = folders(state).to_vec();
+    if folders.is_empty() {
+        ui.add_space(30.0);
+        ui.vertical_centered(|ui| ui.label(muted(palette, i18n.tr("disk_usage_no_files"))));
+        return;
+    }
+    ui.label(muted(
+        palette,
+        format!(
+            "{} {} {} {} {} · {}",
+            i18n.tr("disk_usage_showing"),
+            format_count(folders.len() as u64),
+            i18n.tr("disk_usage_of"),
+            format_count(total_dirs),
+            i18n.tr("disk_usage_folders"),
+            i18n.tr("disk_usage_folders_ranked_by_own"),
+        ),
+    ));
+    ui.add_space(4.0);
+
+    let mut clicked: Option<(usize, egui::Modifiers)> = None;
+    let mut chosen: Option<DiskUsageAction> = None;
+    let mut copy: Option<Vec<PathBuf>> = None;
+    let mut rescan_branch: Option<PathBuf> = None;
+    let row_height = (palette.text_size + 10.0).max(22.0);
+    let header_color = palette.text_normal.gamma_multiply(0.75);
+    ui.style_mut().interaction.selectable_labels = false;
+
+    TableBuilder::new(ui)
+        .id_salt("disk_usage_folders_table")
+        .striped(false)
+        .resizable(true)
+        .sense(egui::Sense::click())
+        .auto_shrink([false, false])
+        .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+        .column(Column::exact(44.0))
+        .column(Column::remainder().at_least(220.0).clip(true))
+        .column(Column::initial(96.0).at_least(70.0))
+        .column(Column::initial(170.0).at_least(110.0))
+        .column(Column::initial(70.0).at_least(50.0))
+        .column(Column::initial(110.0).at_least(80.0))
+        .header(row_height, |mut header| {
+            for (key, tip) in [
+                ("disk_usage_col_rank", None),
+                ("disk_usage_col_folder", None),
+                ("disk_usage_col_own_size", Some("tooltip_disk_usage_col_own_size")),
+                ("disk_usage_col_share_total", None),
+                ("disk_usage_col_files", None),
+                ("disk_usage_col_with_subfolders", Some("tooltip_disk_usage_col_with_subfolders")),
+            ] {
+                header.col(|ui| {
+                    let label = ui.label(
+                        egui::RichText::new(i18n.tr(key))
+                            .strong()
+                            .size(palette.text_size - 1.0)
+                            .color(header_color),
+                    );
+                    if let Some(tip) = tip {
+                        label.on_hover_text(i18n.tr(tip));
+                    }
+                });
+            }
+        })
+        .body(|body| {
+            body.rows(row_height, folders.len(), |mut row| {
+                let index = row.index();
+                let folder = &folders[index];
+                let is_selected = state.folders_selected.contains(&folder.path);
+                row.set_selected(is_selected);
+                let color = if is_selected {
+                    palette.item_viewer_row_text_selected
+                } else {
+                    palette.text_normal
+                };
+                let mono = |s: String| {
+                    egui::RichText::new(s)
+                        .family(egui::FontFamily::Monospace)
+                        .size(palette.text_size - 1.0)
+                        .color(color)
+                };
+
+                row.col(|ui| {
+                    ui.label(mono(format!("{}", index + 1)).color(color.gamma_multiply(0.7)));
+                });
+                row.col(|ui| {
+                    // The folder's name, with the path it's in greyed after.
+                    let name = folder
+                        .path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| folder.path.display().to_string());
+                    ui.label(
+                        egui::RichText::new(format!("{} {name}", regular::FOLDER))
+                            .size(palette.text_size)
+                            .color(color),
+                    );
+                    if let Some(parent) = folder.path.parent().filter(|_| folder.path.file_name().is_some()) {
+                        ui.label(
+                            egui::RichText::new(parent.display().to_string())
+                                .size(palette.text_size - 1.0)
+                                .color(color.gamma_multiply(0.6)),
+                        );
+                    }
+                });
+                row.col(|ui| {
+                    ui.label(mono(format_size(folder.own_size)));
+                });
+                row.col(|ui| {
+                    share_bar(ui, palette, share(folder.own_size, total_size), palette.primary);
+                });
+                row.col(|ui| {
+                    ui.label(mono(format_count(folder.own_files)).color(color.gamma_multiply(0.85)));
+                });
+                row.col(|ui| {
+                    ui.label(mono(format_size(folder.total_size)).color(color.gamma_multiply(0.85)));
+                });
+
+                let response = row.response();
+                if response.clicked() {
+                    clicked = Some((index, ui_modifiers(&response)));
+                }
+                if response.double_clicked() {
+                    chosen = Some(DiskUsageAction::OpenInNewTab(folder.path.clone()));
+                }
+                response.context_menu(|ui| {
+                    if !is_selected {
+                        clicked = Some((index, egui::Modifiers::NONE));
+                    }
+                    let targets: Vec<PathBuf> = if is_selected {
+                        folders_selection(state)
+                    } else {
+                        vec![folder.path.clone()]
+                    };
+                    let editable = folder_edits_allowed(state, &targets);
+                    let item = |ui: &mut egui::Ui, enabled: bool, icon: &str, label: String| {
+                        ui.add_enabled(enabled, egui::Button::new(format!("{icon}  {label}")))
+                            .clicked()
+                    };
+                    if targets.len() == 1 {
+                        if item(ui, true, regular::ARROW_SQUARE_OUT, i18n.tr("disk_usage_open_in_tab")) {
+                            chosen = Some(DiskUsageAction::OpenInNewTab(targets[0].clone()));
+                            ui.close();
+                        }
+                        if item(ui, targets[0] != state.root, regular::FOLDER_OPEN, i18n.tr("disk_usage_show_in_folder")) {
+                            chosen = Some(DiskUsageAction::Reveal(targets[0].clone()));
+                            ui.close();
+                        }
+                        if item(ui, !busy, regular::ARROWS_CLOCKWISE, i18n.tr("disk_usage_rescan_branch")) {
+                            rescan_branch = Some(targets[0].clone());
+                            ui.close();
+                        }
+                    }
+                    if item(ui, editable && !busy, regular::FOLDER_SIMPLE_DASHED, i18n.tr("disk_usage_move_to")) {
+                        chosen = Some(DiskUsageAction::MoveTo(targets.clone()));
+                        ui.close();
+                    }
+                    ui.separator();
+                    if item(ui, editable && !busy, regular::TRASH, i18n.tr("disk_usage_delete")) {
+                        chosen = Some(DiskUsageAction::Delete {
+                            paths: targets.clone(),
+                            permanent: false,
+                        });
+                        ui.close();
+                    }
+                    if item(ui, editable && !busy, regular::TRASH, i18n.tr("recycle_bin_delete_permanently")) {
+                        chosen = Some(DiskUsageAction::Delete {
+                            paths: targets.clone(),
+                            permanent: true,
+                        });
+                        ui.close();
+                    }
+                    ui.separator();
+                    if item(ui, true, regular::LINK, i18n.tr("disk_usage_copy_path")) {
+                        copy = Some(targets.clone());
+                        ui.close();
+                    }
+                });
+            });
+        });
+
+    if let Some((index, modifiers)) = clicked {
+        let paths: Vec<&PathBuf> = folders.iter().map(|f| &f.path).collect();
+        select_row(&mut state.folders_selected, &mut state.folders_anchor, &paths, index, modifiers);
+    }
+    if let Some(paths) = copy {
+        copy_paths(&paths);
+    }
+    if let Some(folder) = rescan_branch {
+        state.start_branch_scan(folder);
+    }
+    if let Some(chosen) = chosen {
+        *action = Some(chosen);
+    }
 }
 
 #[cfg(test)]
@@ -1659,6 +1989,43 @@ mod tests {
         assert!(state.pending_moves.is_empty());
         assert_eq!(state.tree.as_ref().unwrap().size, 300);
         assert!(state.rescan_queue.is_empty(), "destination is outside the results");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn deleted_folders_leave_the_results_and_the_root_is_protected() {
+        let dir = std::env::temp_dir().join(format!("eden_du_dirs_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("keep")).unwrap();
+        let root = node(
+            &dir.display().to_string(),
+            0,
+            vec![
+                node("gone", 0, vec![node("deep", 0, vec![], vec![("a", 900)])], vec![("b", 100)]),
+                node("keep", 0, vec![], vec![("c", 300)]),
+            ],
+            vec![("top", 50)],
+        );
+        let mut state = DiskUsageState {
+            root: dir.clone(),
+            tree: Some(root),
+            ..Default::default()
+        };
+        assert_eq!(folders(&mut state).len(), 4);
+        state.folders_selected.insert(dir.join("gone").join("deep"));
+        state.expanded.insert(dir.join("gone"));
+
+        // `gone` doesn't exist on disk, so deleting it takes `deep` too.
+        state.files_removed(&[dir.join("gone"), dir.join("keep")]);
+        assert_eq!(state.tree.as_ref().unwrap().size, 350);
+        let left: Vec<PathBuf> = folders(&mut state).iter().map(|f| f.path.clone()).collect();
+        assert_eq!(left, vec![dir.join("keep"), dir.clone()]);
+        assert!(state.folders_selected.is_empty());
+        assert!(state.expanded.iter().all(|p| !p.starts_with(dir.join("gone"))));
+
+        assert!(!folder_edits_allowed(&state, &[dir.clone()]), "the analyzed folder itself");
+        assert!(folder_edits_allowed(&state, &[dir.join("keep")]));
+        assert!(!folder_edits_allowed(&state, &[]));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

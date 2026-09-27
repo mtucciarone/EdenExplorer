@@ -277,3 +277,11 @@ Select By Pattern (Ctrl+Shift+S) selecting `*.docx; *.txt`, Invert Selection (Ct
 ### Largest Files right-click menu - Show In Folder, Move To…, Delete, Delete Permanently, and Copy Path
 
 ![Largest Files menu](61-disk-usage-largest-menu.png)
+
+### Disk Usage > Largest Folders - folders ranked by the files directly inside them (Vacation 2025 owns 160 MB, 280 MB with its Raw Clips subfolder, which is listed on its own), with share of the total, file count, and size including subfolders
+
+![Disk Usage - Largest Folders](62-disk-usage-largest-folders.png)
+
+### Largest Folders right-click menu - Open In New Tab, Show In Folder, Rescan This Branch, Move To…, Delete, Delete Permanently, and Copy Path
+
+![Largest Folders menu](63-disk-usage-largest-folders-menu.png)

@@ -5361,6 +5361,15 @@ impl MainWindow {
                     .set_title(self.i18n.tr("disk_usage_move_to"))
                     .pick_folder();
                 if let Some(destination) = picked {
+                    // A folder can't go inside itself, and moving something
+                    // to where it already is does nothing.
+                    let paths: Vec<PathBuf> = paths
+                        .into_iter()
+                        .filter(|p| !destination.starts_with(p) && p.parent() != Some(destination.as_path()))
+                        .collect();
+                    if paths.is_empty() {
+                        return;
+                    }
                     // Same transfer as Send To > Move: conflict prompts,
                     // progress notification, and Undo.
                     self.send_to_folders(paths.clone(), vec![destination.clone()], true);

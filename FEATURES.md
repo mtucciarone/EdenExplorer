@@ -119,6 +119,7 @@
   <li><b>Remembered folder sizes</b> between sessions, shown instantly on the next visit</li>
   <li><b>Analyze Disk Usage…</b> for any folder or drive (right-click menu, This PC, sidebar): an expandable size tree with a share-of-parent bar, size on disk, and file/folder counts, scanned in the background with progress, Cancel, Rescan, and <b>Rescan This Branch</b></li>
   <li><b>Largest Files</b> tab in Disk Usage: the 100 biggest files anywhere in the analyzed folder or drive, with Show In Folder, Move To…, Delete, and Copy Path for one or several at once</li>
+  <li><b>Largest Folders</b> tab in Disk Usage: the 100 folders with the most data in their own files, with Open In New Tab, Show In Folder, Rescan This Branch, Move To…, Delete, and Copy Path</li>
   <li><b>Fast MFT scan</b> of whole NTFS drives, reading the Master File Table directly like WizTree; when the app isn't elevated it asks Windows once and runs only the MFT read in a small elevated helper (optional, Settings &gt; Advanced), with automatic fallback to a parallel folder-by-folder scan</li>
 </ul>
 

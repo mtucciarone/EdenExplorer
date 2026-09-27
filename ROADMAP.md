@@ -8,7 +8,7 @@ Items marked [x] have been implemented (see the README changelog); the rest aren
 
 ## Suggested Priorities
 
-1. **Disk Usage Analyzer**, in phases: the dashboard with its percentage-bar tree, the Largest Files list, the fast MFT scan, and background scanning are done; next the treemap and file types, then duplicates and snapshots.
+1. **Disk Usage Analyzer**, in phases: the dashboard with its percentage-bar tree, the Largest Files and Largest Folders lists, the fast MFT scan, and background scanning are done; next the treemap and file types, then duplicates and snapshots.
 2. **Quick Look (Space)** and a **command palette**.
 3. **Archive extraction** and **queued transfers with verify-after-copy**.
 4. **Folder compare/sync** and **editable shortcuts**.
@@ -30,7 +30,7 @@ Items marked [x] have been implemented (see the README changelog); the rest aren
 - [x] **Tree with percentage bars** (RidNacs, TreeSize): name, size, % of parent, file count, colored bar, expandable rows (M)
 - [ ] **File type breakdown** (WinDirStat extension list): size and count per extension, colored to match the treemap; selecting a type highlights it in the treemap (M)
 - [x] **Top 100 largest files**, with Reveal, Delete, and Move actions (S)
-- [ ] **Top 100 largest folders** (by their own files, not counting subfolders), with the same actions (S)
+- [x] **Top 100 largest folders** (by their own files, not counting subfolders), with the same actions (S)
 - [ ] **Age chart**: how much space is in files not touched for 1 month, 1 year, 3+ years (S)
 - [ ] **Drive summary**: used/free space, cluster size, and wasted "slack" space (S)
 
