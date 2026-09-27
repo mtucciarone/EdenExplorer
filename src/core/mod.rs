@@ -6,6 +6,7 @@ pub mod context_menu_order;
 pub mod context_menu_settings;
 pub mod drives;
 pub mod everything;
+pub mod folder_size_cache;
 pub mod fs;
 pub mod indexer;
 pub mod launch;

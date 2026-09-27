@@ -3843,6 +3843,9 @@ impl MainWindow {
                             self.tags_state.delete_confirmation = None;
                             self.persist_tags();
                         }
+                        ResetTarget::FolderSizeCache => {
+                            self.folder_size_cache.clear();
+                        }
                         ResetTarget::FolderViews => {
                             settings.directory_settings.clear();
                             self.save_app_settings_to_disk();
@@ -5228,6 +5231,15 @@ impl MainWindow {
                             .pending_size_set
                             .remove(&path);
                     }
+                    if self.settings_window.current_settings.ui_prefs.persist_folder_sizes {
+                        if done {
+                            self.folder_size_cache.insert(&path, size);
+                        } else if self.folder_size_cache.get(&path).is_some() {
+                            // Keep showing the remembered size while the
+                            // re-check runs, rather than counting up from 0.
+                            continue;
+                        }
+                    }
                     self.folder_sizes.insert(
                         path.clone(),
                         ItemViewerFolderSizeState { bytes: size, done },
@@ -5289,12 +5301,21 @@ impl MainWindow {
                 .settings_window
                 .current_settings
                 .folder_scanning_enabled;
-            for item in batch.iter() {
+            let use_size_cache = self.settings_window.current_settings.ui_prefs.persist_folder_sizes;
+            for item in batch.iter_mut() {
                 if item.is_dir && folder_scanning_enabled {
+                    // Show a size remembered from an earlier visit straight
+                    // away (still marked in-progress until re-checked).
+                    let cached = use_size_cache
+                        .then(|| self.folder_size_cache.get(&item.path))
+                        .flatten();
+                    if cached.is_some() {
+                        item.file_size = cached;
+                    }
                     // Only set up folder size tracking if scanning is enabled
                     self.folder_sizes.entry(item.path.clone()).or_insert(
                         ItemViewerFolderSizeState {
-                            bytes: 0,
+                            bytes: cached.unwrap_or(0),
                             done: false,
                         },
                     );

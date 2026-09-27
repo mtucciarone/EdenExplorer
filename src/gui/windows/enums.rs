@@ -46,10 +46,11 @@ pub enum ResetTarget {
     TabGroups,
     Tags,
     FolderViews,
+    FolderSizeCache,
 }
 
 impl ResetTarget {
-    pub const ALL: [ResetTarget; 7] = [
+    pub const ALL: [ResetTarget; 8] = [
         ResetTarget::Favorites,
         ResetTarget::CustomContextMenu,
         ResetTarget::CustomThemes,
@@ -57,6 +58,7 @@ impl ResetTarget {
         ResetTarget::TabGroups,
         ResetTarget::Tags,
         ResetTarget::FolderViews,
+        ResetTarget::FolderSizeCache,
     ];
 
     /// The i18n key prefix for this target's strings:
@@ -70,6 +72,7 @@ impl ResetTarget {
             ResetTarget::TabGroups => "reset_data_tab_groups",
             ResetTarget::Tags => "reset_data_tags",
             ResetTarget::FolderViews => "reset_data_folder_views",
+            ResetTarget::FolderSizeCache => "reset_data_folder_size_cache",
         }
     }
 }

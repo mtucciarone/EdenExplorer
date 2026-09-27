@@ -732,3 +732,9 @@ settings_remember_folder_views = Remember View Per Folder
 tooltip_settings_remember_folder_views = Each folder keeps its own view mode, sort, and columns. Turn off to show every folder with the default view. Right-click a folder's background > View to reset one folder or make its view the default.
 reset_data_folder_views = Folder Views
 reset_data_folder_views_confirm = Forget the view mode, sort, and columns remembered for every folder? All folders will use the default view.
+
+# Persistent folder sizes
+settings_persist_folder_sizes = Remember Folder Sizes
+tooltip_settings_persist_folder_sizes = Saves calculated folder sizes so they show immediately the next time you open a folder (marked with an hourglass while they're re-checked in the background). Needs Enable Folder Size Scanning.
+reset_data_folder_size_cache = Folder Size Cache
+reset_data_folder_size_cache_confirm = Forget every remembered folder size? Sizes will be calculated from scratch the next time each folder is opened.

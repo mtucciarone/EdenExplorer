@@ -161,6 +161,9 @@ pub struct MainWindow {
     pub(crate) focused_split: SplitSide,
     pub(crate) next_tab_id: u64,
     pub(crate) folder_sizes: HashMap<PathBuf, ItemViewerFolderSizeState>,
+    /// Folder sizes remembered from earlier sessions - see
+    /// `core::folder_size_cache`.
+    pub(crate) folder_size_cache: crate::core::folder_size_cache::FolderSizeCache,
     pub(crate) rename_state: Option<RenameState>,
     pub(crate) dragdrop: Option<Box<dyn DragDropBackend>>,
     pub(crate) file_type_cache: HashMap<String, String>,
@@ -362,6 +365,7 @@ impl Default for MainWindow {
             focused_split: SplitSide::Primary,
             next_tab_id,
             folder_sizes: HashMap::new(),
+            folder_size_cache: crate::core::folder_size_cache::FolderSizeCache::load(),
 
             sidebar_state: {
                 let sections = crate::core::indexer::load_sidebar_sections();
@@ -1593,6 +1597,7 @@ impl eframe::App for MainWindow {
 
         self.handle_directory_batch_recieve(ui.ctx());
         self.handle_directory_size_updates(ui.ctx());
+        self.folder_size_cache.save_if_due();
         self.handle_throttle_size_requests(ui.ctx());
         self.handle_topbar_action(topbar_action);
         self.handle_sidebar_action(sidebar_action, sidebar_drag_sources.as_deref());
@@ -1721,6 +1726,8 @@ impl eframe::App for MainWindow {
     }
 
     fn on_exit(&mut self) {
+        self.folder_size_cache.save();
+
         if !self
             .settings_window
             .current_settings

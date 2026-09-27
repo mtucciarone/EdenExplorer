@@ -1093,6 +1093,16 @@ fn draw_behavior_section(
             "tooltip_settings_remember_folder_views",
             action,
         );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut prefs.persist_folder_sizes,
+            "settings_persist_folder_sizes",
+            "tooltip_settings_persist_folder_sizes",
+            action,
+        );
     });
 
     settings_section(ui, palette, |ui| {
