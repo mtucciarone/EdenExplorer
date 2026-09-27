@@ -22,5 +22,6 @@ pub mod shortcuts;
 pub mod syntax_highlight;
 pub mod system_paths;
 pub mod tab_groups;
+pub mod ui_prefs;
 pub mod utils;
 pub mod video;

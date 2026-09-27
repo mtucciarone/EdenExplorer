@@ -1183,6 +1183,16 @@ pub fn draw_item_viewer(
                                             ui.close();
                                         }
                                     }
+
+                                    ui.separator();
+                                    if ui.button(i18n.tr("view_reset_folder_view")).clicked() {
+                                        action = Some(ItemViewerAction::ResetFolderView);
+                                        ui.close();
+                                    }
+                                    if ui.button(i18n.tr("view_use_as_default")).clicked() {
+                                        action = Some(ItemViewerAction::UseFolderViewAsDefault);
+                                        ui.close();
+                                    }
                                 });
 
                                 // `draw_custom_context_menu_group` draws its own leading

@@ -67,29 +67,6 @@ pub(crate) fn default_column_state(settings: &AppSettings) -> ItemViewerColumnSt
     )
 }
 
-pub(crate) fn default_directory_settings_snapshot(directory: PathBuf) -> DirectorySettingsSnapshot {
-    let default_settings = AppSettings::default();
-
-    DirectorySettingsSnapshot {
-        directory,
-        item_viewer_file_column_order: default_settings.item_viewer_file_column_order,
-        item_viewer_drive_column_order: default_settings.item_viewer_drive_column_order,
-        recycle_bin_column_order: default_settings.recycle_bin_column_order,
-        item_viewer_file_column_sizes: default_settings.item_viewer_file_column_sizes,
-        item_viewer_drive_column_sizes: default_settings.item_viewer_drive_column_sizes,
-        recycle_bin_column_sizes: default_settings.recycle_bin_column_sizes,
-        filter_query: String::new(),
-        display_mode: ItemViewerDisplayMode::Details,
-        gallery_thumbnail_size: GalleryThumbnailSize::Medium,
-        sort_column: SortColumn::Name,
-        sort_ascending: true,
-        sort_keys: vec![SortKey {
-            column: SortColumn::Name,
-            ascending: true,
-        }],
-    }
-}
-
 pub(crate) fn directory_settings_snapshot_for_view(view: &TabView) -> DirectorySettingsSnapshot {
     DirectorySettingsSnapshot {
         directory: view.nav.current.clone(),
@@ -146,10 +123,7 @@ pub(crate) fn apply_directory_settings_to_view(
             ItemViewerDisplayMode::Columns | ItemViewerDisplayMode::ColumnPreview
         );
 
-    let snapshot = settings
-        .directory_settings
-        .iter()
-        .find(|entry| entry.directory == view.nav.current);
+    let snapshot = settings.folder_view(&view.nav.current);
 
     if let Some(snapshot) = snapshot {
         view.column_state = ItemViewerColumnState::from_orders(
@@ -197,35 +171,132 @@ pub(crate) fn apply_directory_settings_to_view(
     }
 }
 
-pub(crate) fn persist_directory_settings_snapshot(
-    entries: &mut Vec<DirectorySettingsSnapshot>,
-    snapshot: DirectorySettingsSnapshot,
-) -> bool {
-    let default_snapshot = default_directory_settings_snapshot(snapshot.directory.clone());
+/// Most folders whose view is remembered; the least recently changed are
+/// forgotten first.
+const MAX_REMEMBERED_FOLDER_VIEWS: usize = 5000;
 
-    if snapshot == default_snapshot {
-        if let Some(pos) = entries
-            .iter()
-            .position(|entry| entry.directory == snapshot.directory)
-        {
-            entries.remove(pos);
-            return true;
-        }
+/// Whether two folder paths are the same folder: Windows paths are
+/// case-insensitive and may or may not end in a separator.
+pub(crate) fn same_folder(a: &Path, b: &Path) -> bool {
+    // Runs every frame against every remembered folder, so avoid
+    // allocating for the usual all-ASCII paths.
+    let a = a.to_string_lossy();
+    let b = b.to_string_lossy();
+    let a = a.trim_end_matches(['\\', '/']);
+    let b = b.trim_end_matches(['\\', '/']);
+    if a.eq_ignore_ascii_case(b) {
+        return true;
+    }
+    if a.is_ascii() && b.is_ascii() {
         return false;
     }
+    a.to_lowercase() == b.to_lowercase()
+}
 
-    if let Some(pos) = entries
-        .iter()
-        .position(|entry| entry.directory == snapshot.directory)
-    {
-        if entries[pos] == snapshot {
+impl AppSettings {
+    /// The view a folder gets when nothing is remembered for it - the
+    /// user's own defaults (Settings), not the app's built-in ones.
+    pub(crate) fn default_folder_view(&self, directory: PathBuf) -> DirectorySettingsSnapshot {
+        let columns = default_column_state(self);
+        DirectorySettingsSnapshot {
+            directory,
+            item_viewer_file_column_order: columns.file_column_order,
+            item_viewer_drive_column_order: columns.drive_column_order,
+            recycle_bin_column_order: columns.recycle_bin_column_order,
+            item_viewer_file_column_sizes: columns.file_column_sizes,
+            item_viewer_drive_column_sizes: columns.drive_column_sizes,
+            recycle_bin_column_sizes: columns.recycle_bin_column_sizes,
+            filter_query: String::new(),
+            display_mode: self.default_display_mode,
+            gallery_thumbnail_size: GalleryThumbnailSize::Medium,
+            sort_column: self.sort_column,
+            sort_ascending: self.sort_ascending,
+            sort_keys: vec![SortKey {
+                column: self.sort_column,
+                ascending: self.sort_ascending,
+            }],
+        }
+    }
+
+    /// The remembered view for `directory`, if per-folder views are on and
+    /// one was saved.
+    pub(crate) fn folder_view(&self, directory: &Path) -> Option<&DirectorySettingsSnapshot> {
+        if !self.ui_prefs.remember_folder_views {
+            return None;
+        }
+        self.directory_settings
+            .iter()
+            .find(|entry| same_folder(&entry.directory, directory))
+    }
+
+    /// Remembers `snapshot` as its folder's view. A view identical to the
+    /// defaults isn't stored (and forgets any earlier one), so the folder
+    /// follows future changes to the defaults. Returns whether anything
+    /// changed.
+    pub(crate) fn remember_folder_view(&mut self, snapshot: DirectorySettingsSnapshot) -> bool {
+        if !self.ui_prefs.remember_folder_views {
             return false;
         }
-        entries[pos] = snapshot;
-        true
-    } else {
-        entries.push(snapshot);
-        true
+        let position = self
+            .directory_settings
+            .iter()
+            .position(|entry| same_folder(&entry.directory, &snapshot.directory));
+
+        if snapshot == self.default_folder_view(snapshot.directory.clone()) {
+            return match position {
+                Some(pos) => {
+                    self.directory_settings.remove(pos);
+                    true
+                }
+                None => false,
+            };
+        }
+
+        match position {
+            Some(pos) if self.directory_settings[pos] == snapshot => false,
+            Some(pos) => {
+                // Most recently changed last, so the cap below drops the
+                // folders that haven't been touched for longest.
+                self.directory_settings.remove(pos);
+                self.directory_settings.push(snapshot);
+                true
+            }
+            None => {
+                self.directory_settings.push(snapshot);
+                if self.directory_settings.len() > MAX_REMEMBERED_FOLDER_VIEWS {
+                    let excess = self.directory_settings.len() - MAX_REMEMBERED_FOLDER_VIEWS;
+                    self.directory_settings.drain(..excess);
+                }
+                true
+            }
+        }
+    }
+
+    /// Forgets `directory`'s remembered view.
+    pub(crate) fn forget_folder_view(&mut self, directory: &Path) -> bool {
+        let before = self.directory_settings.len();
+        self.directory_settings
+            .retain(|entry| !same_folder(&entry.directory, directory));
+        before != self.directory_settings.len()
+    }
+
+    /// Makes `snapshot`'s view (display mode, sort, columns) the default for
+    /// every folder that has no view of its own.
+    pub(crate) fn use_folder_view_as_default(&mut self, snapshot: &DirectorySettingsSnapshot) {
+        self.default_display_mode = snapshot.display_mode;
+        let primary = snapshot.sort_keys.first().copied().unwrap_or(SortKey {
+            column: snapshot.sort_column,
+            ascending: snapshot.sort_ascending,
+        });
+        self.sort_column = primary.column;
+        self.sort_ascending = primary.ascending;
+        self.item_viewer_file_column_order = snapshot.item_viewer_file_column_order.clone();
+        self.item_viewer_file_column_sizes = snapshot.item_viewer_file_column_sizes.clone();
+        self.item_viewer_drive_column_order = snapshot.item_viewer_drive_column_order.clone();
+        self.item_viewer_drive_column_sizes = snapshot.item_viewer_drive_column_sizes.clone();
+        self.recycle_bin_column_order = snapshot.recycle_bin_column_order.clone();
+        self.recycle_bin_column_sizes = snapshot.recycle_bin_column_sizes.clone();
+        self.forget_folder_view(&snapshot.directory);
     }
 }
 
@@ -916,12 +987,29 @@ impl MainWindow {
         sort_files_by_keys(&mut self.active_tab_mut().view_mut(side).files, &sort_keys);
 
         let snapshot = directory_settings_snapshot_for_view(self.active_tab().view(side));
-        let _ = persist_directory_settings_snapshot(
-            &mut self.settings_window.current_settings.directory_settings,
-            snapshot,
-        );
+        let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
 
         self.save_app_settings_to_disk();
+    }
+
+    /// Re-applies each open view's folder view settings (e.g. after
+    /// remembered views were cleared) and reloads the visible ones.
+    fn reload_all_views(&mut self) {
+        let settings = self.settings_window.current_settings.clone();
+        for tab in &mut self.tabs {
+            apply_directory_settings_to_view(
+                &mut tab.primary_view,
+                &settings,
+                DisplayModeFallback::Default,
+            );
+            if let Some(split) = tab.split_view.as_mut() {
+                apply_directory_settings_to_view(split, &settings, DisplayModeFallback::Default);
+            }
+        }
+        self.load_view(SplitSide::Primary);
+        if self.active_tab().split_view.is_some() {
+            self.load_view(SplitSide::Secondary);
+        }
     }
 
     fn save_app_settings_to_disk(&self) {
@@ -1012,6 +1100,7 @@ impl MainWindow {
         crate::core::perf::save_performance_panel_visible(
             self.settings_window.current_settings.show_performance_panel,
         );
+        crate::core::ui_prefs::save_ui_prefs(&self.settings_window.current_settings.ui_prefs);
         crate::core::context_menu_order::save_context_menu_order(
             &self.settings_window.current_settings.context_menu_order,
         );
@@ -3754,6 +3843,11 @@ impl MainWindow {
                             self.tags_state.delete_confirmation = None;
                             self.persist_tags();
                         }
+                        ResetTarget::FolderViews => {
+                            settings.directory_settings.clear();
+                            self.save_app_settings_to_disk();
+                            self.reload_all_views();
+                        }
                     }
                 }
                 SettingsAction::ExportSettings => {
@@ -4011,10 +4105,7 @@ impl MainWindow {
                     let snapshot = directory_settings_snapshot_for_view(
                         self.active_tab().view(self.focused_split),
                     );
-                    let _ = persist_directory_settings_snapshot(
-                        &mut self.settings_window.current_settings.directory_settings,
-                        snapshot,
-                    );
+                    let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
                     // Store current path in navigation history before going back
                     if let Some(parent) = self.current_nav().get_parent() {
                         let current = self.current_nav().current.clone();
@@ -4031,20 +4122,14 @@ impl MainWindow {
                     let snapshot = directory_settings_snapshot_for_view(
                         self.active_tab().view(self.focused_split),
                     );
-                    let _ = persist_directory_settings_snapshot(
-                        &mut self.settings_window.current_settings.directory_settings,
-                        snapshot,
-                    );
+                    let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
                     self.current_nav_mut().go_forward();
                 }
                 ItemViewerNavAction::Up => {
                     let snapshot = directory_settings_snapshot_for_view(
                         self.active_tab().view(self.focused_split),
                     );
-                    let _ = persist_directory_settings_snapshot(
-                        &mut self.settings_window.current_settings.directory_settings,
-                        snapshot,
-                    );
+                    let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
                     // Store current path in navigation history before going up
                     if let Some(parent) = self.current_nav().get_parent() {
                         let current = self.current_nav().current.clone();
@@ -4080,10 +4165,7 @@ impl MainWindow {
                 let snapshot = directory_settings_snapshot_for_view(
                     self.active_tab().view(self.focused_split),
                 );
-                let _ = persist_directory_settings_snapshot(
-                    &mut self.settings_window.current_settings.directory_settings,
-                    snapshot,
-                );
+                let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
                 // Store current path in navigation history before navigating
                 if let Some(parent) = self.current_nav().get_parent() {
                     let current = self.current_nav().current.clone();
@@ -4378,16 +4460,10 @@ impl MainWindow {
                     if let Some(idx) = self.tabs.iter().position(|t| t.id == id) {
                         if let Some(tab) = self.tabs.get(idx) {
                             let snapshot = directory_settings_snapshot_for_view(&tab.primary_view);
-                            let _ = persist_directory_settings_snapshot(
-                                &mut self.settings_window.current_settings.directory_settings,
-                                snapshot,
-                            );
+                            let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
                             if let Some(split) = tab.split_view.as_ref() {
                                 let snapshot = directory_settings_snapshot_for_view(split);
-                                let _ = persist_directory_settings_snapshot(
-                                    &mut self.settings_window.current_settings.directory_settings,
-                                    snapshot,
-                                );
+                                let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
                             }
                         }
                         self.tabs.remove(idx);
@@ -4403,10 +4479,7 @@ impl MainWindow {
                     }
                 } else {
                     let snapshot = directory_settings_snapshot_for_view(&self.tabs[0].primary_view);
-                    let _ = persist_directory_settings_snapshot(
-                        &mut self.settings_window.current_settings.directory_settings,
-                        snapshot,
-                    );
+                    let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
                     let (
                         _folder_scanning_enabled,
                         _show_hidden_files_folders,
@@ -4487,16 +4560,10 @@ impl MainWindow {
                         for &idx in &indices_to_close {
                             let tab = &self.tabs[idx];
                             let snapshot = directory_settings_snapshot_for_view(&tab.primary_view);
-                            let _ = persist_directory_settings_snapshot(
-                                &mut self.settings_window.current_settings.directory_settings,
-                                snapshot,
-                            );
+                            let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
                             if let Some(split) = tab.split_view.as_ref() {
                                 let snapshot = directory_settings_snapshot_for_view(split);
-                                let _ = persist_directory_settings_snapshot(
-                                    &mut self.settings_window.current_settings.directory_settings,
-                                    snapshot,
-                                );
+                                let _ = self.settings_window.current_settings.remember_folder_view(snapshot);
                             }
                         }
 
@@ -5480,10 +5547,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     );
                     let snapshot =
                         directory_settings_snapshot_for_view(explorer.active_tab().view(side));
-                    let _ = persist_directory_settings_snapshot(
-                        &mut explorer.settings_window.current_settings.directory_settings,
-                        snapshot,
-                    );
+                    let _ = explorer.settings_window.current_settings.remember_folder_view(snapshot);
                 }
             }
             ItemViewerAction::FitColumn(column) => {
@@ -5536,10 +5600,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     );
                     let snapshot =
                         directory_settings_snapshot_for_view(explorer.active_tab().view(side));
-                    let _ = persist_directory_settings_snapshot(
-                        &mut explorer.settings_window.current_settings.directory_settings,
-                        snapshot,
-                    );
+                    let _ = explorer.settings_window.current_settings.remember_folder_view(snapshot);
                 }
             }
             ItemViewerAction::MoveColumnRight(column) => {
@@ -5563,10 +5624,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     );
                     let snapshot =
                         directory_settings_snapshot_for_view(explorer.active_tab().view(side));
-                    let _ = persist_directory_settings_snapshot(
-                        &mut explorer.settings_window.current_settings.directory_settings,
-                        snapshot,
-                    );
+                    let _ = explorer.settings_window.current_settings.remember_folder_view(snapshot);
                 }
             }
             ItemViewerAction::MoveColumnToStart(column) => {
@@ -5594,10 +5652,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     );
                     let snapshot =
                         directory_settings_snapshot_for_view(explorer.active_tab().view(side));
-                    let _ = persist_directory_settings_snapshot(
-                        &mut explorer.settings_window.current_settings.directory_settings,
-                        snapshot,
-                    );
+                    let _ = explorer.settings_window.current_settings.remember_folder_view(snapshot);
                 }
             }
             ItemViewerAction::MoveColumnToEnd(column) => {
@@ -5625,10 +5680,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     );
                     let snapshot =
                         directory_settings_snapshot_for_view(explorer.active_tab().view(side));
-                    let _ = persist_directory_settings_snapshot(
-                        &mut explorer.settings_window.current_settings.directory_settings,
-                        snapshot,
-                    );
+                    let _ = explorer.settings_window.current_settings.remember_folder_view(snapshot);
                 }
             }
             ItemViewerAction::Select(path) => {
@@ -5758,10 +5810,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 let snapshot = directory_settings_snapshot_for_view(
                     explorer.active_tab().view(explorer.focused_split),
                 );
-                let _ = persist_directory_settings_snapshot(
-                    &mut explorer.settings_window.current_settings.directory_settings,
-                    snapshot,
-                );
+                let _ = explorer.settings_window.current_settings.remember_folder_view(snapshot);
 
                 // Store current path in navigation history before navigating
                 if let Some(parent) = explorer.current_nav().get_parent() {
@@ -5943,13 +5992,31 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     view.explorer_state.selection_focus = None;
                 }
             }
+            ItemViewerAction::ResetFolderView => {
+                let directory = explorer.active_tab().view(side).nav.current.clone();
+                if explorer
+                    .settings_window
+                    .current_settings
+                    .forget_folder_view(&directory)
+                {
+                    explorer.save_app_settings_to_disk();
+                }
+                // Reloading re-applies the (now default) view.
+                explorer.load_view(side);
+            }
+            ItemViewerAction::UseFolderViewAsDefault => {
+                let snapshot =
+                    directory_settings_snapshot_for_view(explorer.active_tab().view(side));
+                explorer
+                    .settings_window
+                    .current_settings
+                    .use_folder_view_as_default(&snapshot);
+                explorer.save_app_settings_to_disk();
+            }
             ItemViewerAction::ColumnSizesChanged => {
                 let snapshot =
                     directory_settings_snapshot_for_view(explorer.active_tab().view(side));
-                let _ = persist_directory_settings_snapshot(
-                    &mut explorer.settings_window.current_settings.directory_settings,
-                    snapshot,
-                );
+                let _ = explorer.settings_window.current_settings.remember_folder_view(snapshot);
 
                 explorer.save_app_settings_to_disk();
             }
@@ -6255,5 +6322,113 @@ mod undo_redo_safety_tests {
             replaced.insert(dest, Vec::new());
         }
         assert!(!MainWindow::redo_target_occupied(&op));
+    }
+}
+
+#[cfg(test)]
+mod folder_view_memory_tests {
+    use super::*;
+
+    fn snapshot_with_mode(
+        settings: &AppSettings,
+        dir: &str,
+        mode: ItemViewerDisplayMode,
+    ) -> DirectorySettingsSnapshot {
+        let mut snapshot = settings.default_folder_view(PathBuf::from(dir));
+        snapshot.display_mode = mode;
+        snapshot
+    }
+
+    #[test]
+    fn a_view_matching_the_built_in_default_is_kept_when_the_user_default_differs() {
+        let mut settings = AppSettings::default();
+        settings.default_display_mode = ItemViewerDisplayMode::Gallery;
+        let details = snapshot_with_mode(&settings, r"C:\Photos", ItemViewerDisplayMode::Details);
+        assert!(settings.remember_folder_view(details));
+        assert_eq!(
+            settings.folder_view(Path::new(r"C:\Photos")).map(|s| s.display_mode),
+            Some(ItemViewerDisplayMode::Details)
+        );
+    }
+
+    #[test]
+    fn a_view_matching_the_user_default_is_forgotten() {
+        let mut settings = AppSettings::default();
+        let gallery = snapshot_with_mode(&settings, r"C:\Photos", ItemViewerDisplayMode::Gallery);
+        assert!(settings.remember_folder_view(gallery));
+        let default = settings.default_folder_view(PathBuf::from(r"C:\Photos"));
+        assert!(settings.remember_folder_view(default));
+        assert!(settings.folder_view(Path::new(r"C:\Photos")).is_none());
+    }
+
+    #[test]
+    fn lookup_ignores_case_and_trailing_separator() {
+        let mut settings = AppSettings::default();
+        let gallery = snapshot_with_mode(&settings, r"C:\Photos", ItemViewerDisplayMode::Gallery);
+        settings.remember_folder_view(gallery.clone());
+        assert!(settings.folder_view(Path::new(r"c:\photos\")).is_some());
+
+        // Updating through a differently-cased path replaces, not duplicates.
+        let mut columns = gallery;
+        columns.directory = PathBuf::from(r"c:\PHOTOS");
+        columns.display_mode = ItemViewerDisplayMode::Columns;
+        settings.remember_folder_view(columns);
+        assert_eq!(settings.directory_settings.len(), 1);
+    }
+
+    #[test]
+    fn turning_it_off_ignores_saved_views_without_deleting_them() {
+        let mut settings = AppSettings::default();
+        let gallery = snapshot_with_mode(&settings, r"C:\A", ItemViewerDisplayMode::Gallery);
+        settings.remember_folder_view(gallery);
+        settings.ui_prefs.remember_folder_views = false;
+        assert!(settings.folder_view(Path::new(r"C:\A")).is_none());
+        let columns = snapshot_with_mode(&settings, r"C:\B", ItemViewerDisplayMode::Columns);
+        assert!(!settings.remember_folder_view(columns));
+        settings.ui_prefs.remember_folder_views = true;
+        assert!(settings.folder_view(Path::new(r"C:\A")).is_some());
+        assert!(settings.folder_view(Path::new(r"C:\B")).is_none());
+    }
+
+    #[test]
+    fn oldest_views_are_dropped_past_the_cap() {
+        let mut settings = AppSettings::default();
+        for i in 0..MAX_REMEMBERED_FOLDER_VIEWS + 3 {
+            let snapshot = snapshot_with_mode(
+                &settings,
+                &format!(r"C:\F{i}"),
+                ItemViewerDisplayMode::Gallery,
+            );
+            settings.remember_folder_view(snapshot);
+        }
+        assert_eq!(settings.directory_settings.len(), MAX_REMEMBERED_FOLDER_VIEWS);
+        assert!(settings.folder_view(Path::new(r"C:\F0")).is_none());
+        assert!(settings.folder_view(Path::new(r"C:\F3")).is_some());
+    }
+
+    #[test]
+    fn use_as_default_updates_defaults_and_forgets_the_folder() {
+        let mut settings = AppSettings::default();
+        let mut snapshot = snapshot_with_mode(&settings, r"C:\A", ItemViewerDisplayMode::Columns);
+        snapshot.sort_keys = vec![SortKey { column: SortColumn::Size, ascending: false }];
+        settings.remember_folder_view(snapshot.clone());
+        settings.use_folder_view_as_default(&snapshot);
+        assert_eq!(settings.default_display_mode, ItemViewerDisplayMode::Columns);
+        assert_eq!(settings.sort_column, SortColumn::Size);
+        assert!(!settings.sort_ascending);
+        assert!(settings.directory_settings.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod same_folder_tests {
+    use super::same_folder;
+    use std::path::Path;
+
+    #[test]
+    fn compares_case_insensitively_including_non_ascii() {
+        assert!(same_folder(Path::new(r"C:\Photos\"), Path::new(r"c:\photos")));
+        assert!(same_folder(Path::new(r"C:\Éclair"), Path::new(r"c:\éclair")));
+        assert!(!same_folder(Path::new(r"C:\Photos"), Path::new(r"C:\Photos2")));
     }
 }

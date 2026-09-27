@@ -60,6 +60,10 @@ pub enum ItemViewerAction {
         target_dir: PathBuf,
     },
     ColumnSizesChanged,
+    /// Forget this folder's remembered view so it uses the default again.
+    ResetFolderView,
+    /// Make this folder's view (display mode, sort, columns) the default.
+    UseFolderViewAsDefault,
     /// Run a user-defined custom context menu command (see
     /// `core::context_menu_settings`) against `paths` - the selection it was
     /// invoked on, or empty for the folder-background menu (in which case

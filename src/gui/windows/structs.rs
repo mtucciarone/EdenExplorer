@@ -177,6 +177,9 @@ pub struct AppSettings {
     /// `core::perf::{load_performance_panel_visible, save_performance_panel_visible}`.
     #[serde(default)]
     pub show_performance_panel: bool,
+    /// Loaded/saved separately (as JSON) - see `core::ui_prefs`.
+    #[serde(default)]
+    pub ui_prefs: crate::core::ui_prefs::UiPrefs,
 }
 
 fn default_true() -> bool {

@@ -720,3 +720,11 @@ settings_data_folder = Data Folder:
 settings_portable_mode_enabled = Portable Mode is on. Settings are now saved next to EdenExplorer.exe.
 settings_portable_mode_disabled = Portable Mode is off. Settings are saved in your user profile again.
 settings_portable_mode_failed = Couldn't switch Portable Mode:
+
+# Per-folder views
+view_reset_folder_view = Reset Folder View
+view_use_as_default = Use As Default View
+settings_remember_folder_views = Remember View Per Folder
+tooltip_settings_remember_folder_views = Each folder keeps its own view mode, sort, and columns. Turn off to show every folder with the default view. Right-click a folder's background > View to reset one folder or make its view the default.
+reset_data_folder_views = Folder Views
+reset_data_folder_views_confirm = Forget the view mode, sort, and columns remembered for every folder? All folders will use the default view.

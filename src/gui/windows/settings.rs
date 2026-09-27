@@ -165,6 +165,7 @@ impl Default for AppSettings {
             context_menu_order: crate::core::context_menu_order::default_order(),
             sidebar_visibility: crate::core::indexer::SidebarSectionVisibility::default(),
             show_performance_panel: false,
+            ui_prefs: crate::core::ui_prefs::UiPrefs::default(),
         }
     }
 }
@@ -1049,6 +1050,31 @@ fn draw_general_section(
     });
 }
 
+/// A checkbox row with an info tooltip that applies (and saves) the
+/// settings as soon as it's toggled.
+fn applying_checkbox(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    palette: &ThemePalette,
+    value: &mut bool,
+    label_key: &str,
+    tooltip_key: &str,
+    action: &mut Option<SettingsAction>,
+) {
+    ui.horizontal(|ui| {
+        if setting_checkbox(
+            ui,
+            palette,
+            value,
+            RichText::new(i18n.tr(label_key)).color(palette.text_normal),
+            label_key,
+        ) {
+            *action = Some(SettingsAction::ApplySettings);
+        }
+        info_icon(ui, &i18n.tr(tooltip_key), palette);
+    });
+}
+
 fn draw_behavior_section(
     ui: &mut egui::Ui,
     i18n: &mut I18n,
@@ -1056,6 +1082,19 @@ fn draw_behavior_section(
     palette: &ThemePalette,
     action: &mut Option<SettingsAction>,
 ) {
+    settings_section(ui, palette, |ui| {
+        let prefs = &mut settings.current_settings.ui_prefs;
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut prefs.remember_folder_views,
+            "settings_remember_folder_views",
+            "tooltip_settings_remember_folder_views",
+            action,
+        );
+    });
+
     settings_section(ui, palette, |ui| {
         ui.horizontal(|ui| {
             if setting_checkbox(

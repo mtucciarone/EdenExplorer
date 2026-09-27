@@ -26,7 +26,7 @@ use crate::gui::windows::containers::tags::draw_tag_picker_popup;
 use crate::gui::windows::containers::topbar::draw_topbar;
 use crate::gui::windows::mainwindow_imp::{
     DisplayModeFallback, apply_directory_settings_to_view, directory_settings_snapshot_for_view,
-    handle_pending_actions, persist_directory_settings_snapshot,
+    handle_pending_actions, 
 };
 use crate::gui::windows::structs::{
     AboutWindow, AppSettings, Navigation, SettingsWindow, SidebarState, ThemeCustomizer,
@@ -262,6 +262,7 @@ impl Default for MainWindow {
             context_menu_order: crate::core::context_menu_order::load_context_menu_order(),
             sidebar_visibility: crate::core::indexer::load_sidebar_visibility(),
             show_performance_panel: crate::core::perf::load_performance_panel_visible(),
+            ui_prefs: crate::core::ui_prefs::load_ui_prefs(),
         };
 
         let system_locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
@@ -1297,13 +1298,9 @@ impl eframe::App for MainWindow {
                                                                         .primary_view,
                                                                 );
                                                             let _ =
-                                                                persist_directory_settings_snapshot(
-                                                                    &mut self
+                                                                self
                                                                         .settings_window
-                                                                        .current_settings
-                                                                        .directory_settings,
-                                                                    snapshot,
-                                                                );
+                                                                        .current_settings.remember_folder_view(snapshot);
                                                         },
                                                     );
                                                 });
@@ -1404,13 +1401,9 @@ impl eframe::App for MainWindow {
                                                                         .unwrap(),
                                                                 );
                                                             let _ =
-                                                                persist_directory_settings_snapshot(
-                                                                    &mut self
+                                                                self
                                                                         .settings_window
-                                                                        .current_settings
-                                                                        .directory_settings,
-                                                                    snapshot,
-                                                                );
+                                                                        .current_settings.remember_folder_view(snapshot);
                                                         },
                                                     );
                                                 });
@@ -1468,13 +1461,9 @@ impl eframe::App for MainWindow {
                                                 directory_settings_snapshot_for_view(
                                                     &self.tabs[self.active_tab].primary_view,
                                                 );
-                                            let _ = persist_directory_settings_snapshot(
-                                                &mut self
+                                            let _ = self
                                                     .settings_window
-                                                    .current_settings
-                                                    .directory_settings,
-                                                snapshot,
-                                            );
+                                                    .current_settings.remember_folder_view(snapshot);
                                         }
                                     });
                                 },

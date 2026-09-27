@@ -45,16 +45,18 @@ pub enum ResetTarget {
     SendTo,
     TabGroups,
     Tags,
+    FolderViews,
 }
 
 impl ResetTarget {
-    pub const ALL: [ResetTarget; 6] = [
+    pub const ALL: [ResetTarget; 7] = [
         ResetTarget::Favorites,
         ResetTarget::CustomContextMenu,
         ResetTarget::CustomThemes,
         ResetTarget::SendTo,
         ResetTarget::TabGroups,
         ResetTarget::Tags,
+        ResetTarget::FolderViews,
     ];
 
     /// The i18n key prefix for this target's strings:
@@ -67,6 +69,7 @@ impl ResetTarget {
             ResetTarget::SendTo => "reset_data_send_to",
             ResetTarget::TabGroups => "reset_data_tab_groups",
             ResetTarget::Tags => "reset_data_tags",
+            ResetTarget::FolderViews => "reset_data_folder_views",
         }
     }
 }
