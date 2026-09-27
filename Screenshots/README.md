@@ -20,6 +20,12 @@ Pressing Ctrl+K to open the panel, then choosing 10 runs and clicking Benchmark 
 
 Playing, pausing, stepping forward and back a frame, dragging the seek bar, stopping (back to frame 1), and playing again.
 
+## Selection Tools And New File Templates
+
+![Selection tools and New File templates](selection-and-templates.gif)
+
+Select By Pattern (Ctrl+Shift+S) selecting `*.docx; *.txt`, Invert Selection (Ctrl+I), then right-click > New File > Excel Workbook (.xlsx), which goes straight into rename.
+
 ## Features
 
 ### Details view - tagged folders are tinted by tag color, with a Tags column showing every tag as a chip
@@ -174,11 +180,11 @@ Playing, pausing, stepping forward and back a frame, dragging the seek bar, stop
 
 ![Settings - Tags](38-settings-tags.png)
 
-### Settings - Shortcuts
+### Settings - Shortcuts, where most shortcuts can be changed: + adds a key combination, × removes one, and locked rows are fixed
 
 ![Settings - Shortcuts](39-settings-shortcuts.png)
 
-### Settings - Advanced, with Reset Settings, Export/Import Settings, the Reset Data card, and Show Performance Panel
+### Settings - Advanced, with Reset Settings, Export/Import Settings, the Reset Data card (now including Folder Views and Folder Size Cache), Portable Mode switched on, and Show Performance Panel
 
 ![Settings - Advanced](40-settings-advanced.png)
 
@@ -202,10 +208,46 @@ Playing, pausing, stepping forward and back a frame, dragging the seek bar, stop
 
 ![Benchmark This Folder results](45-performance-benchmark.png)
 
-### Settings - Shortcuts, Window group with the new Show/Hide Performance Panel shortcut
+### Settings - Shortcuts, the Window group with the Show/Hide Performance Panel shortcut
 
 ![Settings - Shortcuts, Performance Panel shortcut](46-settings-shortcuts-performance.png)
 
 ### Animated GIF preview with media controls - seek bar, Play/Pause, Stop, Previous/Next Frame, current/total time, and the frame number
 
 ![Animated GIF preview controls](47-gif-preview-controls.png)
+
+### Status bar - free space on the drive, and the active type-to-filter ("new", 2 of 9 items) with a button to clear it
+
+![Status bar with filter and free space](48-status-bar-filter-free-space.png)
+
+### Right-click > New File - built-in Text, Markdown, Word, and Excel templates, plus Open Templates Folder (files in that folder are listed too); also Select All, Invert Selection, and Select By Pattern
+
+![New File templates](49-new-file-templates.png)
+
+### Select By Pattern (Ctrl+Shift+S) - wildcard patterns with a live match count
+
+![Select By Pattern](50-select-by-pattern.png)
+
+### Gallery selection checkboxes - click a tile's checkbox to add or remove it without Ctrl
+
+![Gallery selection checkboxes](51-gallery-selection-checkboxes.png)
+
+### Hover preview - hovering an image or video in Details view shows its thumbnail
+
+![Hover preview](52-hover-preview.png)
+
+### View menu - Reset Folder View and Use As Default View for the per-folder view memory
+
+![View menu folder view options](53-view-menu-folder-view.png)
+
+### Settings - Toolbar, with a live preview; here Invert Selection, Select By Pattern, and Settings were added
+
+![Settings - Toolbar](54-settings-toolbar.png)
+
+### Settings - Shortcuts after adding Ctrl+E to New Tab (customized rows get a • and a reset button)
+
+![Settings - Shortcuts editing](55-settings-shortcuts-editing.png)
+
+### Settings - Behavior, with Remember View Per Folder, Remember Folder Sizes, Hover Previews, and the New File Templates Folder
+
+![Settings - Behavior](56-settings-behavior.png)

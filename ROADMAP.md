@@ -2,7 +2,7 @@
 
 Ideas for future features, gathered from other file managers (Mac Finder, ForkLift, Path Finder, Nautilus, Dolphin, Thunar, File Pilot, Files App, FileCommander, Directory Opus, QTTabBar, Total Commander, TeraCopy) and disk space analyzers (WinDirStat, RidNacs, WizTree, TreeSize, DaisyDisk, Filelight).
 
-Nothing here is scheduled yet. Items already in the app (tabs, split view, tags, bulk rename, previews, checksums, zip, Everything search, custom context menu, undo/redo, Performance panel, ...) are left out.
+Items marked [x] have been implemented (see the README changelog); the rest aren't scheduled yet. Items already in the app (tabs, split view, tags, bulk rename, previews, checksums, zip, Everything search, custom context menu, undo/redo, Performance panel, ...) are left out.
 
 **Effort:** **S** = a day or two · **M** = about a week · **L** = a larger project
 
@@ -51,13 +51,13 @@ Nothing here is scheduled yet. Items already in the app (tabs, split view, tags,
 - [ ] **Up to 4 panes**, plus a synchronized browsing mode for comparing two folders (Directory Opus, Total Commander) (M–L)
 - [ ] **Folder compare**: highlight files that differ, are newer, or exist on only one side, then sync left to right (Directory Opus, FreeFileSync) (L)
 - [ ] **Flat view**: every file in all subfolders as one list (Directory Opus) (S)
-- [ ] **Per-folder view memory**: each folder remembers its own view mode, sort, and columns (Finder, Dolphin, Directory Opus) (S)
+- [x] **Per-folder view memory**: each folder remembers its own view mode, sort, and columns (Finder, Dolphin, Directory Opus) (S)
 - [ ] **Filter bar options**: wildcards, regex, "only images/docs" chips, hide matches (Dolphin, Directory Opus) (S)
 - [ ] **Spring-loaded folders**: hovering over a folder while dragging opens it (Finder) (S)
 - [ ] **More sidebar places**: pinned network locations, cloud folders, WSL distros, mounted ISOs (Nautilus, Dolphin) (S)
 - [ ] **Workspaces / layouts**: save a whole window (tabs, split, sidebar state) and restore it, one step beyond Tab Groups (Directory Opus "Layouts") (M)
 - [ ] **Breadcrumb dropdowns** on the `>` arrows listing sibling folders (Explorer, Path Finder) (S)
-- [ ] **Customizable toolbar**: add, remove, and reorder buttons (Directory Opus, QTTabBar) (M)
+- [x] **Customizable toolbar**: add, remove, and reorder buttons (Directory Opus, QTTabBar) (M)
 
 ## 3. File Operations
 
@@ -65,7 +65,7 @@ Nothing here is scheduled yet. Items already in the app (tabs, split view, tags,
 - [ ] **Verify after copy** using the existing checksums (TeraCopy) (S)
 - [ ] **Batch conflict rules**: Apply To All, Keep Both, Replace Only If Newer/Larger (M)
 - [ ] **Copy To / Move To** with a folder picker and recent destinations (Explorer, Path Finder) (S)
-- [ ] **New File from templates**: .txt, .md, .docx, or a user templates folder (Nautilus, Dolphin, Files App) (S)
+- [x] **New File from templates**: .txt, .md, .docx, .xlsx, or a user templates folder (Nautilus, Dolphin, Files App) (S)
 - [ ] **Extract archives** (zip, 7z, tar, gz, rar via 7-Zip): Extract Here, Extract to Folder, and browsing into an archive like a folder (Files App, Dolphin, Directory Opus) (M–L)
 - [ ] **Split and join large files** (Total Commander) (S)
 - [ ] **Secure delete / shred** (FileCommander) (S)
@@ -93,16 +93,16 @@ Nothing here is scheduled yet. Items already in the app (tabs, split view, tags,
 - [ ] **Remote locations**: FTP, SFTP, WebDAV, and S3 you can browse like folders (ForkLift, FileCommander, Directory Opus) (L)
 - [ ] **WSL filesystem browsing** (`\\wsl$`) in the sidebar (S)
 - [ ] **Scripting and macros**: user scripts (Rhai or Lua) with access to the selection, bound to buttons or shortcuts (Directory Opus, Total Commander) (L)
-- [ ] **Editable keyboard shortcuts**: make the read-only Settings > Shortcuts page remappable (Directory Opus, File Pilot) (M)
-- [ ] **Portable mode**: keep settings next to the .exe (Total Commander) (S)
-- [ ] **Persistent folder size cache** so large folders show sizes instantly on the next visit (S)
+- [x] **Editable keyboard shortcuts**: make the read-only Settings > Shortcuts page remappable (Directory Opus, File Pilot) (M)
+- [x] **Portable mode**: keep settings next to the .exe (Total Commander) (S)
+- [x] **Persistent folder size cache** so large folders show sizes instantly on the next visit (S)
 - [ ] **Session restore after a crash or restart**, including split view and scroll position (S)
 
 ## 6. Quality of Life
 
-- [ ] **Hover preview tooltips** for images and videos (QTTabBar) (S)
-- [ ] **Checkbox selection mode, Invert Selection, and Select by Pattern** (`*.jpg`) (Explorer, Directory Opus) (S)
-- [ ] **Status bar extras**: selection size, free space, active filter indicator (S)
+- [x] **Hover preview tooltips** for images and videos (QTTabBar) (S)
+- [x] **Checkbox selection mode, Invert Selection, and Select by Pattern** (`*.jpg`) (Explorer, Directory Opus) (S)
+- [x] **Status bar extras**: selection size, free space, active filter indicator (S)
 - [ ] **Drive health**: SMART status and temperature in This PC (M)
 - [ ] **Accessibility**: high-contrast theme, UI scaling slider, screen-reader labels (M)
 - [ ] **Update check** against GitHub Releases (notify only) (S)

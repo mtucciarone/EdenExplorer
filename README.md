@@ -121,7 +121,7 @@
 | ![Bulk rename](Screenshots/23-bulk-rename.png) | ![Settings - Shortcuts](Screenshots/39-settings-shortcuts.png) |
 | ![Performance panel](Screenshots/44-performance-panel.png) | ![Benchmark This Folder results](Screenshots/45-performance-benchmark.png) |
 
-See the [Screenshots folder](Screenshots/README.md) for all 47 feature screenshots, plus short GIFs of the [Performance panel benchmark](Screenshots/performance-benchmark.gif) and the [animated GIF preview controls](Screenshots/gif-preview-controls.gif).
+See the [Screenshots folder](Screenshots/README.md) for all 56 feature screenshots, plus short GIFs of the [Performance panel benchmark](Screenshots/performance-benchmark.gif), the [animated GIF preview controls](Screenshots/gif-preview-controls.gif), and [selection tools and New File templates](Screenshots/selection-and-templates.gif).
 
 ## Star History
 
@@ -134,7 +134,7 @@ See the [Screenshots folder](Screenshots/README.md) for all 47 feature screensho
 </a>
 
 ## Keyboard Shortcuts
-The full list, including mouse shortcuts, is also available in the app under **Settings > Shortcuts**.
+The full list, including mouse shortcuts, is also available in the app under **Settings > Shortcuts**, where most of them can be changed (add, remove, or reset key combinations). The defaults are:
 
 - F1 - Toggle fullscreen
 - Ctrl+Shift+C - Copy selected path
@@ -158,6 +158,8 @@ The full list, including mouse shortcuts, is also available in the app under **S
 - Ctrl+Z - Undo the last rename/move/copy
 - Ctrl+Y (Ctrl+Shift+Z) - Redo
 - Ctrl+K - Show/hide the Performance panel
+- Ctrl+I - Invert selection
+- Ctrl+Shift+S - Select by pattern (wildcards such as `*.jpg; *.png`)
 
 
 See [ROADMAP.md](ROADMAP.md) for planned and suggested features.
@@ -320,6 +322,15 @@ See [ROADMAP.md](ROADMAP.md) for planned and suggested features.
 - [x] **Performance panel** - live folder load, folder size scan, frame time, FPS, and memory metrics, plus Benchmark This Folder with min/avg/max per listing method and Copy Results (Settings > Advanced, or Ctrl+K)
 - [x] **Media controls for animated GIFs** - previewing an animated GIF now shows a seek bar plus Play/Pause, Stop (rewind to the first frame), Previous Frame and Next Frame buttons (stepping pauses playback), current/total time to a tenth of a second, and "Frame N / M"; clicking the image also plays/pauses
 - [x] **Preview pane stays on screen in Details + Preview** - a wide details table no longer pushes the right edge of the preview pane (and its media controls) out of view, and the Performance panel shows "No Subfolders" for a folder with nothing to size instead of "Open a folder to measure"
+- [x] **Editable keyboard shortcuts** - Settings > Shortcuts lets you add a key combination to any app shortcut (press it), remove one, or reset a row or all of them; a combination already in use moves to the new action, and keys Windows or text editing need (Ctrl+C/X/V, Delete, Enter, arrows, Esc) are locked
+- [x] **Customizable toolbar** - Settings > Toolbar: reorder, remove, and add toolbar buttons and separators, with a live preview and Reset To Default; Select All, Invert Selection, Select By Pattern, Performance Panel, and Settings can be added as buttons
+- [x] **New File templates** - right-click > New File offers Text (.txt), Markdown (.md), Word (.docx), and Excel (.xlsx) files (valid, ready-to-open documents), plus every file in your templates folder (Settings > Behavior > New File Templates Folder; Open Templates Folder is in the same menu)
+- [x] **Selection tools** - Invert Selection (Ctrl+I), Select By Pattern (Ctrl+Shift+S: wildcard patterns with a live match count, Select / Add To Selection / Deselect), both in the background right-click menu, plus selection checkboxes on Gallery tiles like the Details view's checkbox column
+- [x] **Status bar extras** - free space on the current drive, and while type-to-filter is active, a chip showing the filter, how many items it leaves, and a button to clear it (alongside the existing selection count and size)
+- [x] **Hover previews** - in Details view, hovering an image or video shows a thumbnail tooltip (Settings > Behavior > Hover Previews For Images And Videos)
+- [x] **Better per-folder view memory** - each folder's view mode, sort, and columns are now compared against your own defaults (not the built-in ones), matched case-insensitively, saved within two seconds of a change, and capped at 5,000 folders; the View menu adds Reset Folder View and Use As Default View, Settings > Behavior > Remember View Per Folder turns it off, and Reset Data > Folder Views clears them
+- [x] **Remembered folder sizes** - calculated folder sizes are kept between sessions and shown immediately (with the in-progress hourglass while they're re-checked) instead of counting up from zero (Settings > Behavior > Remember Folder Sizes; Reset Data > Folder Size Cache)
+- [x] **Portable mode** - Settings > Advanced > Portable Mode keeps all settings and data in an `EdenExplorerData` folder next to `EdenExplorer.exe` (copying your current data there, or back when turned off); creating that folder by hand before the first launch also makes the app portable
 - [x] **Consistent Title Case** - buttons, menu items, headings, setting labels, and short tooltips all use Title Case; longer explanations stay as normal sentences
 
 

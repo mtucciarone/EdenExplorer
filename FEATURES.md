@@ -74,6 +74,13 @@
   <li><b>Six view layouts</b> - Details, Gallery, Columns, Columns + Preview, Preview, and Details + Preview</li>
   <li><b>Preview pane</b> for images, Markdown with Mermaid diagrams, code, PDF, Office, fonts, archives, audio, and video</li>
   <li><b>Animated GIF media controls</b> in the preview pane - Play/Pause, Stop, previous/next frame, a frame seek bar, and current/total time with the frame number</li>
+  <li><b>New File templates</b> - Text, Markdown, Word, and Excel documents, plus your own templates folder</li>
+  <li><b>Selection tools</b> - Invert Selection, Select By Pattern (wildcards), and checkboxes in Details and Gallery</li>
+  <li><b>Hover previews</b> for images and videos in Details view</li>
+  <li><b>Customizable toolbar</b> - reorder, add, and remove buttons and separators</li>
+  <li><b>Editable keyboard shortcuts</b> in Settings > Shortcuts</li>
+  <li><b>Per-folder view memory</b> with Reset Folder View and Use As Default View</li>
+  <li><b>Status bar</b> with selection size, drive free space, and the active filter</li>
 </ul>
 
 <h3>File Operations</h3>
@@ -108,7 +115,8 @@
   <li><b>Benchmark This Folder</b> - times the app's <code>NtQueryDirectoryFile</code> listing against Rust's <code>read_dir</code> and <code>read_dir</code> + per-file metadata over 3/5/10 runs, with min/avg/max, items/sec, and Copy Results</li>
   <li><b>Windows API integration</b> for native operating system functionality</li>
   <li><b>Custom executable icon and file association</b></li>
-  <li><b>Persistent settings</b> using efficient binary cache</li>
+  <li><b>Persistent settings</b> using efficient binary cache, with an optional <b>portable mode</b> that keeps them next to the exe</li>
+  <li><b>Remembered folder sizes</b> between sessions, shown instantly on the next visit</li>
 </ul>
 
 <h3>Security</h3>
