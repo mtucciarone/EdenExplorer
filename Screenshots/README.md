@@ -1,12 +1,12 @@
 # EdenExplorer Screenshots
 
-All screenshots were taken with sample data (the `Eden Demo` folder: photos, a small website project, a Rust project, invoices, music, a font, and an archive). The Performance panel shots use `C:\Windows\System32` so the benchmark has a few hundred entries to list.
+All screenshots were taken with sample data (the `Eden Demo` folder: photos, a small website project, a Rust project, invoices, music, a font, and an archive). The Performance panel shots use `C:\Windows\System32` so the benchmark has a few hundred entries to list. Every screenshot shows the current layout: the address bar on its own row above the toolbar, and the status bar with selection size, free space, and the active filter.
 
 ## Walkthrough
 
 ![EdenExplorer walkthrough](eden-explorer-walkthrough.gif)
 
-Browsing Photos in Gallery and Details + Preview, previewing a Markdown file with a Mermaid diagram and a Python file, running a search, opening a tag view, opening Settings > Shortcuts, and hiding and re-showing sidebar sections from Settings > General.
+Opening the website project in Details + Preview and previewing a Markdown file with a Mermaid diagram, an SVG, and a Python file, jumping back with the address bar breadcrumbs, searching for "invoice", browsing Photos in Gallery and Details + Preview, then opening Settings > Toolbar.
 
 ## Performance Panel Benchmark
 
@@ -140,7 +140,7 @@ Select By Pattern (Ctrl+Shift+S) selecting `*.docx; *.txt`, Invert Selection (Ct
 
 ![Light theme](28-light-theme.png)
 
-### Settings - General, including the new Sidebar Sections card
+### Settings - General, including Address Bar On Its Own Row and the Sidebar Sections card
 
 ![Settings - General](29-settings-general.png)
 
@@ -184,7 +184,7 @@ Select By Pattern (Ctrl+Shift+S) selecting `*.docx; *.txt`, Invert Selection (Ct
 
 ![Settings - Shortcuts](39-settings-shortcuts.png)
 
-### Settings - Advanced, with Reset Settings, Export/Import Settings, the Reset Data card (now including Folder Views and Folder Size Cache), Portable Mode switched on, and Show Performance Panel
+### Settings - Advanced, with Reset Settings, Export/Import Settings, the Reset Data card (now including Folder Views and Folder Size Cache), Portable Mode, and Show Performance Panel
 
 ![Settings - Advanced](40-settings-advanced.png)
 
