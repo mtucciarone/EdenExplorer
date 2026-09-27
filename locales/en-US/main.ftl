@@ -801,3 +801,7 @@ shortcuts_assigned = assigned.
 shortcuts_moved_from = assigned here and removed from
 shortcut_back_mouse = Navigate Back (Mouse)
 shortcut_forward_mouse = Navigate Forward (Mouse)
+
+# Address bar row
+settings_address_bar_own_row = Address Bar On Its Own Row
+tooltip_settings_address_bar_own_row = Shows the address bar on a full-width row above the toolbar, leaving the whole toolbar row for buttons (Settings > Toolbar). Turn off to put them side by side on one row. Split panes always use separate rows.

@@ -21,6 +21,9 @@ pub struct UiPrefs {
     pub persist_folder_sizes: bool,
     /// Show a thumbnail tooltip when hovering an image or video file.
     pub hover_previews: bool,
+    /// Put the address bar on its own row above the toolbar (split panes
+    /// always do); off = the toolbar and address bar share one row.
+    pub address_bar_own_row: bool,
     /// Extra folder listed under New (besides the built-in templates) whose
     /// files are offered as templates. `None` = the default
     /// `Templates` folder inside the data folder.
@@ -41,6 +44,7 @@ impl Default for UiPrefs {
             remember_folder_views: true,
             persist_folder_sizes: true,
             hover_previews: true,
+            address_bar_own_row: true,
             templates_folder: None,
             toolbar: None,
             shortcuts: Default::default(),

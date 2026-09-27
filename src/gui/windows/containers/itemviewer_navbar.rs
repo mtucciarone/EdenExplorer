@@ -66,7 +66,7 @@ pub fn draw_itemviewer_navigation_bar(
     is_favorited: bool,
     drag_active: bool,
     drag_hover_target: Option<PathBuf>,
-    is_split_pane: bool,
+    address_bar_own_row: bool,
     tags: &[TagGroup],
     saved_search_count: usize,
     middle_click_opens_new_tab: bool,
@@ -97,10 +97,11 @@ pub fn draw_itemviewer_navigation_bar(
     // recycle bin for the purposes of disabling those toolbar buttons.
     let disable_file_actions = is_recycle_bin || is_settings || tab.nav.is_tag_view();
 
-    if is_split_pane {
-        // In a dual-pane split, each pane is only half-width, so the address
-        // bar gets its own full-width row above the toolbar instead of
-        // squeezing in beside it.
+    if address_bar_own_row {
+        // The address bar gets its own full-width row above the toolbar -
+        // always in a dual-pane split (each pane is only half-width), and
+        // otherwise unless Settings > General turns it off - so the toolbar
+        // row has room for however many buttons it's given.
         ui.add_space(TOOLBAR_ROW_VERTICAL_PADDING);
         ui.horizontal(|ui| {
             ui.add_space(1.5);

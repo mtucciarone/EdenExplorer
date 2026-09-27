@@ -1032,6 +1032,18 @@ fn draw_general_section(
     });
 
     settings_section(ui, palette, |ui| {
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut settings.current_settings.ui_prefs.address_bar_own_row,
+            "settings_address_bar_own_row",
+            "tooltip_settings_address_bar_own_row",
+            action,
+        );
+    });
+
+    settings_section(ui, palette, |ui| {
         setting_label(
             ui,
             &i18n.tr("settings_sidebar_sections"),

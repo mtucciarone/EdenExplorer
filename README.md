@@ -331,6 +331,7 @@ See [ROADMAP.md](ROADMAP.md) for planned and suggested features.
 - [x] **Better per-folder view memory** - each folder's view mode, sort, and columns are now compared against your own defaults (not the built-in ones), matched case-insensitively, saved within two seconds of a change, and capped at 5,000 folders; the View menu adds Reset Folder View and Use As Default View, Settings > Behavior > Remember View Per Folder turns it off, and Reset Data > Folder Views clears them
 - [x] **Remembered folder sizes** - calculated folder sizes are kept between sessions and shown immediately (with the in-progress hourglass while they're re-checked) instead of counting up from zero (Settings > Behavior > Remember Folder Sizes; Reset Data > Folder Size Cache)
 - [x] **Portable mode** - Settings > Advanced > Portable Mode keeps all settings and data in an `EdenExplorerData` folder next to `EdenExplorer.exe` (copying your current data there, or back when turned off); creating that folder by hand before the first launch also makes the app portable
+- [x] **Address bar on its own row** - the address bar now sits on a full-width row above the toolbar (as split panes already did), leaving the whole toolbar row for buttons; Settings > General > Address Bar On Its Own Row switches back to one shared row
 - [x] **Consistent Title Case** - buttons, menu items, headings, setting labels, and short tooltips all use Title Case; longer explanations stay as normal sentences
 
 

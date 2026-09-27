@@ -101,7 +101,12 @@ pub fn draw_tab_content(
     const ADDRESS_BAR_SLACK: f32 = 10.0;
     let address_bar_row_height = ADDRESS_BAR_TOTAL_HEIGHT + ADDRESS_BAR_SLACK;
     let toolbar_row_height = 30.0;
-    let tabbar_height = if is_split_pane {
+    // The address bar gets its own row above the toolbar in a split pane
+    // (half width) and, by default, everywhere else too, so a toolbar with
+    // extra buttons (Settings > Toolbar) has the full width.
+    let address_bar_own_row =
+        is_split_pane || settings_window.current_settings.ui_prefs.address_bar_own_row;
+    let tabbar_height = if address_bar_own_row {
         address_bar_row_height + toolbar_row_height + 4.0 * TOOLBAR_ROW_VERTICAL_PADDING
     } else {
         address_bar_row_height.max(toolbar_row_height) + 2.0 * TOOLBAR_ROW_VERTICAL_PADDING
@@ -126,7 +131,7 @@ pub fn draw_tab_content(
                     is_favorited,
                     drag_active,
                     drag_hover_target.clone(),
-                    is_split_pane,
+                    address_bar_own_row,
                     &tags_state.groups,
                     saved_search_count,
                     settings_window.current_settings.middle_click_opens_new_tab,
