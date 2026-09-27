@@ -2,8 +2,8 @@ use crate::core::drives::{get_drive_infos, is_raw_physical_drive_path};
 use crate::core::fs::{FileItem, get_shell_item_metadata};
 use crate::core::fs::{MY_RECYCLE_BIN_PATH, parallel_directory_scan, scan_dir_async};
 use crate::core::indexer::{
-    DirectorySettingsSnapshot, load_app_settings, save_app_settings, save_favorites, save_tags,
-    save_theme_settings, WindowSizeMode
+    DirectorySettingsSnapshot, WindowSizeMode, load_app_settings, save_app_settings,
+    save_favorites, save_tags, save_theme_settings,
 };
 use crate::gui::MainWindow;
 use crate::gui::i18n::I18n;
@@ -1145,9 +1145,7 @@ impl MainWindow {
                         match &self.settings_window.current_settings.window_size_mode {
                             WindowSizeMode::Custom { width, height } => {
                                 crate::gui::windows::windowsoverrides::set_window_size_keep_origin(
-                                    hwnd,
-                                    *width,
-                                    *height,
+                                    hwnd, *width, *height,
                                 );
 
                                 crate::gui::windows::windowsoverrides::clamp_window_to_monitor_work_area(hwnd);

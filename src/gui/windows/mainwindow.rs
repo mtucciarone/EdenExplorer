@@ -1,6 +1,4 @@
-use crate::core::indexer::{
-    load_app_settings, load_favorites, load_tags, load_theme_settings
-};
+use crate::core::indexer::{load_app_settings, load_favorites, load_tags, load_theme_settings};
 use crate::core::launch::take_forwarded_paths;
 use crate::core::utils::tabs::update_tab_infos_cache;
 use crate::gui::dragdrop::{DragDropBackend, DropTargets};
