@@ -27,7 +27,12 @@ pub struct UiPrefs {
     pub templates_folder: Option<PathBuf>,
     /// The file-view toolbar's buttons and separators, in order
     /// (Settings > Toolbar). `None` = the default layout.
+    #[serde(deserialize_with = "lenient")]
     pub toolbar: Option<Vec<crate::core::toolbar::ToolbarItem>>,
+    /// Keyboard shortcuts changed from their defaults (Settings >
+    /// Shortcuts) - see `core::keymap`.
+    #[serde(deserialize_with = "lenient")]
+    pub shortcuts: crate::core::keymap::ShortcutOverrides,
 }
 
 impl Default for UiPrefs {
@@ -38,8 +43,21 @@ impl Default for UiPrefs {
             hover_previews: true,
             templates_folder: None,
             toolbar: None,
+            shortcuts: Default::default(),
         }
     }
+}
+
+/// Reads a field that may hold values this version doesn't understand (a
+/// button or key from a newer version, a hand-edit): anything unreadable
+/// falls back to the default instead of discarding the whole file.
+fn lenient<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned + Default,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or_default())
 }
 
 fn prefs_path() -> Option<PathBuf> {
@@ -75,6 +93,17 @@ mod tests {
         assert!(!prefs.hover_previews);
         assert!(prefs.remember_folder_views);
         assert!(prefs.persist_folder_sizes);
+    }
+
+    #[test]
+    fn one_unreadable_field_does_not_lose_the_others() {
+        let prefs: UiPrefs = serde_json::from_str(
+            r#"{"hover_previews": false, "toolbar": ["Back", "FutureButton"], "shortcuts": {"Nope": 1}}"#,
+        )
+        .unwrap();
+        assert!(!prefs.hover_previews);
+        assert_eq!(prefs.toolbar, None);
+        assert!(prefs.shortcuts.is_empty());
     }
 
     #[test]

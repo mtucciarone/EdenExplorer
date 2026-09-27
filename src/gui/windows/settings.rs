@@ -725,9 +725,11 @@ pub fn draw_settings_page(
                                 }
                             }
                             SettingsCategory::Shortcuts => {
-                                crate::gui::windows::shortcuts_ui::draw_shortcuts_settings(
-                                    ui, i18n, palette,
-                                );
+                                if let Some(a) = crate::gui::windows::shortcuts_ui::draw_shortcuts_settings(
+                                    ui, i18n, settings, palette,
+                                ) {
+                                    action = Some(a);
+                                }
                             }
                             SettingsCategory::Advanced => {
                                 draw_advanced_section(ui, i18n, settings, palette, &mut action);

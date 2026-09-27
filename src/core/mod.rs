@@ -9,6 +9,7 @@ pub mod everything;
 pub mod folder_size_cache;
 pub mod fs;
 pub mod indexer;
+pub mod keymap;
 pub mod launch;
 pub mod mermaid;
 pub mod network;

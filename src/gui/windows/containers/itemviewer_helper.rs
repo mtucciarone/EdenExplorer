@@ -1838,18 +1838,18 @@ pub fn handle_global_actions(
     ui.input(|i| {
         let alt = i.modifiers.alt;
 
+        use crate::core::keymap::{ShortcutAction, pressed};
         if i.pointer.button_pressed(egui::PointerButton::Extra1)
-            || (alt && i.key_pressed(egui::Key::ArrowLeft))
-            || i.key_pressed(egui::Key::Backspace)
+            || pressed(i, ShortcutAction::Back)
         {
             set_nav_action(ItemViewerNavAction::Back);
         }
         if i.pointer.button_pressed(egui::PointerButton::Extra2)
-            || (alt && i.key_pressed(egui::Key::ArrowRight))
+            || pressed(i, ShortcutAction::Forward)
         {
             set_nav_action(ItemViewerNavAction::Forward);
         }
-        if alt && i.key_pressed(egui::Key::ArrowUp) {
+        if pressed(i, ShortcutAction::Up) {
             set_nav_action(ItemViewerNavAction::Up);
         }
 
@@ -1881,13 +1881,13 @@ pub fn handle_global_actions(
                 action = Some(ItemViewerAction::Open(dir_path.clone()));
             }
         }
-        if i.modifiers.command && i.key_pressed(egui::Key::A) {
+        if pressed(i, ShortcutAction::SelectAll) {
             action = Some(ItemViewerAction::SelectAll);
         }
-        if i.modifiers.command && !i.modifiers.shift && i.key_pressed(egui::Key::I) {
+        if pressed(i, ShortcutAction::InvertSelection) {
             action = Some(ItemViewerAction::InvertSelection);
         }
-        if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::S) {
+        if pressed(i, ShortcutAction::SelectByPattern) {
             action = Some(ItemViewerAction::SelectByPattern);
         }
         if i.modifiers.command
@@ -1898,7 +1898,7 @@ pub fn handle_global_actions(
             // Any other key functions won't work with egui v0.33.x
             action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
         }
-        if i.modifiers.command && i.modifiers.shift && i.key_pressed(egui::Key::C) {
+        if pressed(i, ShortcutAction::CopyPath) {
             if is_recycle_bin_view || is_drive_view {
                 return;
             }

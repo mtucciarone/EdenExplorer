@@ -276,6 +276,7 @@ impl Default for MainWindow {
             ui_prefs: crate::core::ui_prefs::load_ui_prefs(),
             folder_views_revision: 0,
         };
+        crate::core::keymap::set_overrides(&loaded_settings.ui_prefs.shortcuts);
 
         let system_locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
 

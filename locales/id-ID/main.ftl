@@ -788,3 +788,18 @@ toolbar_reset = Reset To Default
 toolbar_separator = Separator
 toolbar_item_favorite = Add/Remove Favorite
 settings_title_short = Settings
+
+# Editable shortcuts
+shortcuts_edit_hint = Click + to add a key combination, × to remove one, or ↺ to restore a row's default. Rows with a lock are fixed.
+shortcuts_reset_all = Reset All Shortcuts
+shortcuts_fixed = Fixed - handled by Windows or text editing
+shortcuts_reset_row = Reset To Default
+shortcuts_press_keys = Press A Key Combination (Esc To Cancel)
+shortcuts_add = Add Key Combination
+shortcuts_none = No Shortcut
+shortcuts_remove = Remove
+shortcuts_reserved = is reserved and can't be assigned.
+shortcuts_assigned = assigned.
+shortcuts_moved_from = assigned here and removed from
+shortcut_back_mouse = Navigate Back (Mouse)
+shortcut_forward_mouse = Navigate Forward (Mouse)

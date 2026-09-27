@@ -5287,43 +5287,41 @@ impl MainWindow {
     }
 
     pub fn handle_global_shortcuts(&mut self, ctx: &egui::Context) {
+        // Keep the shared keymap in step with the settings (edits in
+        // Settings > Shortcuts, Reset Settings, Import Settings).
+        crate::core::keymap::set_overrides(&self.settings_window.current_settings.ui_prefs.shortcuts);
+        crate::core::keymap::expire_recording(ctx.cumulative_pass_nr());
+
         if self.global_shortcuts_disabled(ctx) {
             return;
         }
 
+        use crate::core::keymap::{ShortcutAction, pressed};
+
         if !ctx.egui_wants_keyboard_input()
-            && ctx.input(|input| {
-                input.modifiers.ctrl
-                    && !input.modifiers.shift
-                    && !input.modifiers.alt
-                    && input.key_pressed(egui::Key::K)
-            })
+            && ctx.input(|input| pressed(input, ShortcutAction::PerformancePanel))
         {
             self.toggle_performance_panel();
             return;
         }
 
         let shortcuts = ctx.input(|input| {
-            let ctrl = input.modifiers.ctrl;
-            let alt = input.modifiers.alt;
-            let shift = input.modifiers.shift;
-
             (
-                ctrl && shift && input.key_pressed(egui::Key::Tab),
-                ctrl && input.key_pressed(egui::Key::Tab),
-                ctrl && input.key_pressed(egui::Key::T),
-                ctrl && input.key_pressed(egui::Key::W),
-                ctrl && shift && input.key_pressed(egui::Key::N),
-                ctrl && input.key_pressed(egui::Key::R),
-                input.key_pressed(egui::Key::F5),
-                input.key_pressed(egui::Key::F1),
-                alt && input.key_pressed(egui::Key::D),
-                input.key_pressed(egui::Key::F2),
-                alt && input.key_pressed(egui::Key::Enter),
-                ctrl && input.key_pressed(egui::Key::F),
-                ctrl && !shift && input.key_pressed(egui::Key::Z),
-                ctrl && input.key_pressed(egui::Key::Y),
-                ctrl && shift && input.key_pressed(egui::Key::Z),
+                pressed(input, ShortcutAction::PreviousTab),
+                pressed(input, ShortcutAction::NextTab),
+                pressed(input, ShortcutAction::NewTab),
+                pressed(input, ShortcutAction::CloseTab),
+                pressed(input, ShortcutAction::NewFolder),
+                pressed(input, ShortcutAction::Refresh),
+                false,
+                pressed(input, ShortcutAction::Fullscreen),
+                pressed(input, ShortcutAction::AddressBar),
+                pressed(input, ShortcutAction::Rename),
+                pressed(input, ShortcutAction::Properties),
+                pressed(input, ShortcutAction::Search),
+                pressed(input, ShortcutAction::Undo),
+                pressed(input, ShortcutAction::Redo),
+                false,
             )
         });
 

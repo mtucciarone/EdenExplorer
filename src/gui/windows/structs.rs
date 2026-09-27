@@ -218,6 +218,12 @@ pub struct SettingsWindow {
     /// Result of the last Portable Mode switch (Settings > Advanced):
     /// `(succeeded, message)`, shown under the checkbox.
     pub portable_mode_status: Option<(bool, String)>,
+    /// Settings > Shortcuts: the action waiting for a new key combination,
+    /// the last message shown there, and the frame the page was last drawn
+    /// (to cancel recording when the user leaves the page).
+    pub recording_shortcut: Option<crate::core::keymap::ShortcutAction>,
+    pub shortcut_message: Option<(bool, String)>,
+    pub shortcuts_page_last_pass: u64,
 }
 
 pub struct SidebarState {
