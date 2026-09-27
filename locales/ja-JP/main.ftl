@@ -738,3 +738,11 @@ settings_persist_folder_sizes = Remember Folder Sizes
 tooltip_settings_persist_folder_sizes = Saves calculated folder sizes so they show immediately the next time you open a folder (marked with an hourglass while they're re-checked in the background). Needs Enable Folder Size Scanning.
 reset_data_folder_size_cache = Folder Size Cache
 reset_data_folder_size_cache_confirm = Forget every remembered folder size? Sizes will be calculated from scratch the next time each folder is opened.
+
+# Status bar extras
+status_free = Free
+status_total = Total
+status_free_space_tooltip = Free space on this drive
+status_filter = Filter
+status_of = of
+status_clear_filter = Clear Filter (Esc)

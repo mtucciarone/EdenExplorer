@@ -379,6 +379,28 @@ pub fn draw_tab_content(
                             }),
                         );
 
+                        // Free space on the drive holding this folder (not
+                        // for virtual views like the Recycle Bin or tags).
+                        if tag_view_group_id.is_none()
+                            && let Some((total, free)) = cached_drive_space(&view.nav.current)
+                        {
+                            ui.add_space(COLUMN_SPACING);
+                            let tooltip = format!(
+                                "{} ({} {})",
+                                i18n.tr("status_free_space_tooltip"),
+                                format_size(total),
+                                i18n.tr("status_total"),
+                            );
+                            ui.label(
+                                RichText::new(format!("{} {}", format_size(free), i18n.tr("status_free")))
+                                    .font(font_id.clone())
+                                    .color(text_color),
+                            )
+                            .on_hover_text(&tooltip);
+                            ui.label(RichText::new(regular::DATABASE).font(font_id.clone()).color(icon_color))
+                                .on_hover_text(&tooltip);
+                        }
+
                         if counts.selected_count > 0 {
                             ui.add_space(COLUMN_SPACING);
                             let selected_label = if counts.selected_count == 1 {
@@ -394,6 +416,49 @@ pub fn draw_tab_content(
                             );
                             ui.label(RichText::new(selected_text).font(font_id.clone()).color(text_color));
                         }
+
+                        // Active type-to-filter: what's being matched, how
+                        // many items it leaves, and a button to clear it.
+                        let filter = &view.item_viewer_filter_state;
+                        if tag_view_group_id.is_none() && filter.active && !filter.query.is_empty() {
+                            ui.add_space(COLUMN_SPACING);
+                            let shown = counts.dir_count + counts.file_count;
+                            let chip = egui::Frame::NONE
+                                .fill(palette.primary.gamma_multiply(0.18))
+                                .stroke(egui::Stroke::new(1.0, palette.primary.gamma_multiply(0.6)))
+                                .corner_radius(egui::CornerRadius::same(palette.small_radius))
+                                .inner_margin(egui::Margin::symmetric(6, 1))
+                                .show(ui, |ui| {
+                                    ui.spacing_mut().item_spacing.x = 4.0;
+                                    let clear = ui
+                                        .add(
+                                            egui::Button::new(
+                                                RichText::new(regular::X).font(font_id.clone()).color(text_color),
+                                            )
+                                            .frame(false),
+                                        )
+                                        .on_hover_text(i18n.tr("status_clear_filter"))
+                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                        .clicked();
+                                    ui.label(
+                                        RichText::new(format!(
+                                            "{} \"{}\" \u{2022} {} {} {}",
+                                            i18n.tr("status_filter"),
+                                            filter.query,
+                                            shown,
+                                            i18n.tr("status_of"),
+                                            view.files.len(),
+                                        ))
+                                        .font(font_id.clone())
+                                        .color(text_color),
+                                    );
+                                    ui.label(RichText::new(regular::FUNNEL).font(font_id.clone()).color(palette.primary));
+                                    clear
+                                });
+                            if chip.inner {
+                                view.item_viewer_filter_state = Default::default();
+                            }
+                        }
                     });
                         });
                 }
@@ -403,6 +468,32 @@ pub fn draw_tab_content(
     ui.spacing_mut().item_spacing.y = old_spacing;
 
     (tabbar_action, pending_action)
+}
+
+/// Free/total space of the drive holding `path`, looked up at most every
+/// 10 seconds per drive (the status bar is drawn every frame).
+fn cached_drive_space(path: &std::path::Path) -> Option<(u64, u64)> {
+    use std::cell::RefCell;
+    use std::time::{Duration, Instant};
+    thread_local! {
+        static CACHE: RefCell<HashMap<PathBuf, (Instant, Option<(u64, u64)>)>> =
+            RefCell::new(HashMap::new());
+    }
+    if !path.is_absolute() {
+        return None;
+    }
+    let root = path.ancestors().last()?.to_path_buf();
+    CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some((at, space)) = cache.get(&root)
+            && at.elapsed() < Duration::from_secs(10)
+        {
+            return *space;
+        }
+        let space = crate::core::fs::get_drive_space(&path.to_path_buf());
+        cache.insert(root, (Instant::now(), space));
+        space
+    })
 }
 
 /// The status bar's four right-aligned counters plus the selection summary,
