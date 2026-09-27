@@ -289,6 +289,8 @@ fn draw_live_metrics(
                     i18n.tr("perf_folders"),
                     format_duration(elapsed)
                 )
+            } else if let Some(sample) = state.last_size_scan.as_ref().filter(|s| s.count == 0) {
+                format!("{} · {}", i18n.tr("perf_no_subfolders"), folder_name(&sample.path))
             } else if let Some(sample) = &state.last_size_scan {
                 format!(
                     "{} {} · {} · {}",

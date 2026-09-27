@@ -296,6 +296,16 @@ pub fn draw_preview_pane(
     selection: Option<&Path>,
     palette: &ThemePalette,
 ) {
+    // In Details + Preview a wide table can push this pane's cell partly
+    // past the window's right edge; lay the pane out in the part that's
+    // actually visible so full-width and right-aligned content (media
+    // controls, centered images) isn't cut off.
+    // (Less a few points for the view's own border.)
+    let visible_width = (ui.clip_rect().right() - ui.max_rect().left() - 6.0).max(0.0);
+    if visible_width < ui.available_width() {
+        ui.set_max_width(visible_width);
+    }
+
     let Some(path) = selection else {
         egui::Frame::NONE
             .fill(palette.preview_pane_bg_color)
@@ -1096,13 +1106,30 @@ fn draw_preview_content(
         Some(PreviewPayload::Animated { .. })
     ) {
         if let Some(texture) = preview_service.animated_texture_for(ui.ctx(), path) {
+            // Seek bar row + buttons row.
+            const CONTROLS_HEIGHT: f32 = 58.0;
             let avail = ui.available_size();
-            egui::ScrollArea::both()
-                .id_salt("preview_pane_animated")
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    ui.add(egui::Image::new(&texture).max_size(avail).shrink_to_fit());
-                });
+            let image_area_height = (avail.y - CONTROLS_HEIGHT - 6.0).max(0.0);
+
+            ui.allocate_ui(egui::vec2(avail.x, image_area_height), |ui| {
+                let resp = ui.add(
+                    egui::Image::new(&texture)
+                        .max_size(ui.available_size())
+                        .shrink_to_fit()
+                        .sense(egui::Sense::click()),
+                );
+                let clicked = resp.clicked();
+                resp.on_hover_text(i18n.tr("preview_video_toggle_play"))
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                if clicked {
+                    preview_service.toggle_animation_paused(path);
+                }
+            });
+
+            ui.add_space(6.0);
+            if let Some(info) = preview_service.animation_info(path) {
+                draw_animation_controls(ui, i18n, palette, preview_service, path, info);
+            }
         } else {
             ui.weak(i18n.tr("preview_loading"));
         }
@@ -1676,6 +1703,87 @@ fn format_system_time(time: std::time::SystemTime) -> String {
     dt.format("%Y-%m-%d %H:%M").to_string()
 }
 
+/// Play/Pause, Stop, previous/next frame, a frame seek slider, and the
+/// current time/frame for an animated GIF in the preview pane.
+fn draw_animation_controls(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    palette: &ThemePalette,
+    preview_service: &mut crate::core::preview::PreviewService,
+    path: &Path,
+    info: crate::core::preview::AnimationInfo,
+) {
+    // Seek bar on its own full-width row, so it stays usable in a narrow pane.
+    ui.scope(|ui| {
+        ui.spacing_mut().slider_width = ui.available_width();
+        let mut frame = info.frame_index;
+        let slider_resp = ui
+            .add(egui::Slider::new(&mut frame, 0..=info.frame_count - 1).show_value(false))
+            .on_hover_text(i18n.tr("preview_anim_seek"));
+        if slider_resp.changed() && frame != info.frame_index {
+            preview_service.seek_animation(path, frame);
+        }
+    });
+    ui.add_space(4.0);
+
+    ui.horizontal(|ui| {
+        let control = |ui: &mut egui::Ui, icon: &str, tooltip: String| {
+            ui.add(egui::Button::new(egui::RichText::new(icon).size(16.0)))
+                .on_hover_text(tooltip)
+                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                .clicked()
+        };
+
+        let (icon, tooltip) = if info.paused {
+            (regular::PLAY, i18n.tr("preview_anim_play"))
+        } else {
+            (regular::PAUSE, i18n.tr("preview_anim_pause"))
+        };
+        if control(ui, icon, tooltip) {
+            preview_service.toggle_animation_paused(path);
+        }
+        if control(ui, regular::STOP, i18n.tr("preview_anim_stop")) {
+            preview_service.stop_animation(path);
+        }
+        if control(ui, regular::SKIP_BACK, i18n.tr("preview_anim_previous_frame")) {
+            preview_service.step_animation(path, false);
+        }
+        if control(ui, regular::SKIP_FORWARD, i18n.tr("preview_anim_next_frame")) {
+            preview_service.step_animation(path, true);
+        }
+
+        ui.add_space(4.0);
+        ui.label(
+            egui::RichText::new(format!(
+                "{} / {}",
+                format_animation_time(info.position),
+                format_animation_time(info.duration)
+            ))
+            .monospace()
+            .size(palette.tooltip_text_size),
+        );
+
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(
+                egui::RichText::new(format!(
+                    "{} {} / {}",
+                    i18n.tr("preview_anim_frame"),
+                    info.frame_index + 1,
+                    info.frame_count
+                ))
+                .size(palette.tooltip_text_size)
+                .color(palette.text_normal.gamma_multiply(0.75)),
+            );
+        });
+    });
+}
+
+/// "0:01.2" - GIFs are usually seconds long, so tenths are shown.
+fn format_animation_time(duration: std::time::Duration) -> String {
+    let tenths = duration.as_millis() / 100;
+    format!("{}:{:02}.{}", tenths / 600, (tenths / 10) % 60, tenths % 10)
+}
+
 fn format_video_time(seconds: f64) -> String {
     let total = seconds.max(0.0).round() as u64;
     let hours = total / 3600;
@@ -1685,5 +1793,18 @@ fn format_video_time(seconds: f64) -> String {
         format!("{hours}:{minutes:02}:{secs:02}")
     } else {
         format!("{minutes}:{secs:02}")
+    }
+}
+
+#[cfg(test)]
+mod animation_time_tests {
+    use super::format_animation_time;
+    use std::time::Duration;
+
+    #[test]
+    fn shows_minutes_seconds_and_tenths() {
+        assert_eq!(format_animation_time(Duration::from_millis(0)), "0:00.0");
+        assert_eq!(format_animation_time(Duration::from_millis(1250)), "0:01.2");
+        assert_eq!(format_animation_time(Duration::from_millis(83_400)), "1:23.4");
     }
 }

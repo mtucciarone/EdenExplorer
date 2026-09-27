@@ -14,6 +14,12 @@ Browsing Photos in Gallery and Details + Preview, previewing a Markdown file wit
 
 Pressing Ctrl+K to open the panel, then choosing 10 runs and clicking Benchmark This Folder: a progress bar (with Cancel) runs while each listing method is timed, then the min/avg/max and items/sec table appears with the fastest method highlighted.
 
+## Animated GIF Preview Controls
+
+![Animated GIF preview controls](gif-preview-controls.gif)
+
+Playing, pausing, stepping forward and back a frame, dragging the seek bar, stopping (back to frame 1), and playing again.
+
 ## Features
 
 ### Details view - tagged folders are tinted by tag color, with a Tags column showing every tag as a chip
@@ -199,3 +205,7 @@ Pressing Ctrl+K to open the panel, then choosing 10 runs and clicking Benchmark 
 ### Settings - Shortcuts, Window group with the new Show/Hide Performance Panel shortcut
 
 ![Settings - Shortcuts, Performance Panel shortcut](46-settings-shortcuts-performance.png)
+
+### Animated GIF preview with media controls - seek bar, Play/Pause, Stop, Previous/Next Frame, current/total time, and the frame number
+
+![Animated GIF preview controls](47-gif-preview-controls.png)

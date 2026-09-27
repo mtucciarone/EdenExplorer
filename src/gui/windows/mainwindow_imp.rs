@@ -5257,6 +5257,18 @@ impl MainWindow {
                     count: view.files.len(),
                     elapsed: started.elapsed(),
                 };
+                // A folder with no subfolders has nothing to size; record
+                // that instead of leaving the previous folder's scan showing.
+                let no_subfolders = view.size_rx.is_some() && view.size_scan_folders == 0;
+                if no_subfolders {
+                    self.performance_state.last_size_scan = Some(
+                        crate::gui::windows::performance_ui::TimedSample {
+                            count: 0,
+                            elapsed: std::time::Duration::ZERO,
+                            ..sample.clone()
+                        },
+                    );
+                }
                 self.performance_state.last_listing = Some(sample);
             }
             self.finish_size_scan_metric_if_done(side);

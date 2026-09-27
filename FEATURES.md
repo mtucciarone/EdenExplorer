@@ -73,6 +73,7 @@
   <li><b>Tab Groups</b> - save a named set of folders and reopen them all at once</li>
   <li><b>Six view layouts</b> - Details, Gallery, Columns, Columns + Preview, Preview, and Details + Preview</li>
   <li><b>Preview pane</b> for images, Markdown with Mermaid diagrams, code, PDF, Office, fonts, archives, audio, and video</li>
+  <li><b>Animated GIF media controls</b> in the preview pane - Play/Pause, Stop, previous/next frame, a frame seek bar, and current/total time with the frame number</li>
 </ul>
 
 <h3>File Operations</h3>

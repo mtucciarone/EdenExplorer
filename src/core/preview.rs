@@ -112,6 +112,29 @@ pub enum PreviewPayload {
 struct AnimationPlayback {
     frame_index: usize,
     next_frame_at: std::time::Instant,
+    /// Frozen on `frame_index` - set by Pause, Stop, and frame stepping.
+    paused: bool,
+    /// The frame was changed by a control (seek/stop/step) rather than by
+    /// playback, so the texture must be refreshed on the next draw.
+    dirty: bool,
+}
+
+/// Where an animated preview's playback is, for the preview pane's media
+/// controls - see `PreviewService::animation_info`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AnimationInfo {
+    pub frame_index: usize,
+    pub frame_count: usize,
+    /// Time from the start of the animation to the start of the current frame.
+    pub position: std::time::Duration,
+    /// One full loop of the animation.
+    pub duration: std::time::Duration,
+    pub paused: bool,
+}
+
+/// Time from the first frame to the start of `frame_index`.
+fn animation_offset(frames: &[AnimatedFrame], frame_index: usize) -> std::time::Duration {
+    frames.iter().take(frame_index).map(|f| f.delay).sum()
 }
 
 /// Background loader for the preview pane: extracting text from a PDF/Word
@@ -223,11 +246,22 @@ impl PreviewService {
             .or_insert_with(|| AnimationPlayback {
                 frame_index: 0,
                 next_frame_at: now + frames[0].delay,
+                paused: false,
+                dirty: false,
             });
+
+        let mut advanced = std::mem::take(&mut playback.dirty);
+        if playback.paused {
+            let frame_index = playback.frame_index;
+            let color_image = egui::ColorImage::from_rgba_unmultiplied(
+                *size,
+                frames[frame_index].rgba.as_slice(),
+            );
+            return Some(self.upload_animation_texture(ctx, path, color_image, advanced));
+        }
 
         // Advance however many frames have elapsed (bounded by frame count so
         // a huge gap - e.g. the app was minimized - doesn't spin forever).
-        let mut advanced = false;
         for _ in 0..frames.len() {
             if now < playback.next_frame_at {
                 break;
@@ -247,12 +281,23 @@ impl PreviewService {
 
         let color_image =
             egui::ColorImage::from_rgba_unmultiplied(*size, frames[frame_index].rgba.as_slice());
+        Some(self.upload_animation_texture(ctx, path, color_image, advanced))
+    }
 
+    /// Updates (or first creates) the single texture an animated preview
+    /// reuses for every frame.
+    fn upload_animation_texture(
+        &mut self,
+        ctx: &egui::Context,
+        path: &Path,
+        color_image: egui::ColorImage,
+        changed: bool,
+    ) -> egui::TextureHandle {
         if let Some(texture) = self.textures.get_mut(path) {
-            if advanced || texture.size() != *size {
+            if changed || texture.size() != color_image.size {
                 texture.set(color_image, egui::TextureOptions::LINEAR);
             }
-            return Some(texture.clone());
+            return texture.clone();
         }
 
         let texture = ctx.load_texture(
@@ -261,7 +306,86 @@ impl PreviewService {
             egui::TextureOptions::LINEAR,
         );
         self.textures.insert(path.to_path_buf(), texture.clone());
-        Some(texture)
+        texture
+    }
+
+    fn animation_frames(&self, path: &Path) -> Option<&[AnimatedFrame]> {
+        match self.cache.peek(path)? {
+            PreviewPayload::Animated { frames, .. } if !frames.is_empty() => Some(frames),
+            _ => None,
+        }
+    }
+
+    /// Playback position of an animated preview, for the media controls.
+    /// `None` if `path` isn't a loaded animation.
+    pub fn animation_info(&self, path: &Path) -> Option<AnimationInfo> {
+        let frames = self.animation_frames(path)?;
+        let (frame_index, paused) = self
+            .animations
+            .get(path)
+            .map(|p| (p.frame_index, p.paused))
+            .unwrap_or((0, false));
+        Some(AnimationInfo {
+            frame_index,
+            frame_count: frames.len(),
+            position: animation_offset(frames, frame_index),
+            duration: animation_offset(frames, frames.len()),
+            paused,
+        })
+    }
+
+    /// Runs `update` on this animation's playback state (creating it if it
+    /// hasn't been drawn yet) and restarts the current frame's timer, so a
+    /// resumed or sought animation shows the new frame for its full delay.
+    fn update_playback(&mut self, path: &Path, update: impl FnOnce(&mut AnimationPlayback, usize)) {
+        let delays: Vec<std::time::Duration> = match self.animation_frames(path) {
+            Some(frames) => frames.iter().map(|f| f.delay).collect(),
+            None => return,
+        };
+        let now = std::time::Instant::now();
+        let playback = self
+            .animations
+            .entry(path.to_path_buf())
+            .or_insert_with(|| AnimationPlayback {
+                frame_index: 0,
+                next_frame_at: now,
+                paused: false,
+                dirty: false,
+            });
+        update(playback, delays.len());
+        playback.frame_index = playback.frame_index.min(delays.len() - 1);
+        playback.next_frame_at = now + delays[playback.frame_index];
+        playback.dirty = true;
+    }
+
+    pub fn toggle_animation_paused(&mut self, path: &Path) {
+        self.update_playback(path, |playback, _| playback.paused = !playback.paused);
+    }
+
+    /// Stops playback and rewinds to the first frame.
+    pub fn stop_animation(&mut self, path: &Path) {
+        self.update_playback(path, |playback, _| {
+            playback.paused = true;
+            playback.frame_index = 0;
+        });
+    }
+
+    /// Jumps to `frame_index`, keeping the current play/pause state.
+    pub fn seek_animation(&mut self, path: &Path, frame_index: usize) {
+        self.update_playback(path, |playback, _| playback.frame_index = frame_index);
+    }
+
+    /// Pauses and moves one frame forward (`forward`) or back, wrapping at
+    /// either end.
+    pub fn step_animation(&mut self, path: &Path, forward: bool) {
+        self.update_playback(path, |playback, frame_count| {
+            playback.paused = true;
+            playback.frame_index = if forward {
+                (playback.frame_index + 1) % frame_count
+            } else {
+                (playback.frame_index + frame_count - 1) % frame_count
+            };
+        });
     }
 }
 
@@ -1662,5 +1786,79 @@ mod safety_limit_tests {
         assert!(compressed.len() < 64 * 1024);
         let result = read_capped(flate2::read::GzDecoder::new(compressed.as_slice()), 1024 * 1024);
         assert!(result.is_err());
+    }
+}
+
+#[cfg(test)]
+mod animation_control_tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn service_with_animation(path: &Path, delays_ms: &[u64]) -> PreviewService {
+        let mut service = PreviewService::default();
+        let frames = delays_ms
+            .iter()
+            .map(|&ms| AnimatedFrame {
+                rgba: vec![0; 4],
+                delay: Duration::from_millis(ms),
+            })
+            .collect();
+        service.cache.put(
+            path.to_path_buf(),
+            PreviewPayload::Animated { size: [1, 1], frames },
+        );
+        service
+    }
+
+    #[test]
+    fn info_reports_position_and_duration() {
+        let path = Path::new(r"C:\a.gif");
+        let mut service = service_with_animation(path, &[100, 200, 300]);
+        let info = service.animation_info(path).unwrap();
+        assert_eq!(info.frame_count, 3);
+        assert_eq!(info.frame_index, 0);
+        assert_eq!(info.duration, Duration::from_millis(600));
+        assert!(!info.paused);
+
+        service.seek_animation(path, 2);
+        let info = service.animation_info(path).unwrap();
+        assert_eq!(info.frame_index, 2);
+        assert_eq!(info.position, Duration::from_millis(300));
+        assert!(!info.paused, "seeking keeps playing");
+    }
+
+    #[test]
+    fn pause_stop_and_step() {
+        let path = Path::new(r"C:\b.gif");
+        let mut service = service_with_animation(path, &[100, 100, 100, 100]);
+
+        service.toggle_animation_paused(path);
+        assert!(service.animation_info(path).unwrap().paused);
+        service.toggle_animation_paused(path);
+        assert!(!service.animation_info(path).unwrap().paused);
+
+        service.step_animation(path, false);
+        let info = service.animation_info(path).unwrap();
+        assert_eq!(info.frame_index, 3, "stepping back from the first frame wraps");
+        assert!(info.paused, "stepping pauses");
+        service.step_animation(path, true);
+        assert_eq!(service.animation_info(path).unwrap().frame_index, 0);
+
+        service.seek_animation(path, 99);
+        assert_eq!(service.animation_info(path).unwrap().frame_index, 3, "seek is clamped");
+
+        service.stop_animation(path);
+        let info = service.animation_info(path).unwrap();
+        assert_eq!(info.frame_index, 0);
+        assert!(info.paused);
+    }
+
+    #[test]
+    fn controls_ignore_non_animations() {
+        let path = Path::new(r"C:\c.png");
+        let mut service = PreviewService::default();
+        service.toggle_animation_paused(path);
+        service.stop_animation(path);
+        assert!(service.animation_info(path).is_none());
     }
 }

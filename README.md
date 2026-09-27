@@ -121,7 +121,7 @@
 | ![Bulk rename](Screenshots/23-bulk-rename.png) | ![Settings - Shortcuts](Screenshots/39-settings-shortcuts.png) |
 | ![Performance panel](Screenshots/44-performance-panel.png) | ![Benchmark This Folder results](Screenshots/45-performance-benchmark.png) |
 
-See the [Screenshots folder](Screenshots/README.md) for all 46 feature screenshots, plus a short [Performance panel benchmark GIF](Screenshots/performance-benchmark.gif).
+See the [Screenshots folder](Screenshots/README.md) for all 47 feature screenshots, plus short GIFs of the [Performance panel benchmark](Screenshots/performance-benchmark.gif) and the [animated GIF preview controls](Screenshots/gif-preview-controls.gif).
 
 ## Star History
 
@@ -318,6 +318,8 @@ See [ROADMAP.md](ROADMAP.md) for planned and suggested features.
 - [x] **Safer Undo/Redo** - Ctrl+Z/Ctrl+Y no longer undo a file operation while you're typing in a text field (address bar, search, filter, Settings), undo/redo refuses to overwrite an item that now occupies the name it would restore (the step stays available to retry), and a failed undo/redo now shows in the notification panel instead of failing silently
 - [x] **Undo/Redo in the notification panel and toast** - every undo and redo, successful or not, now appears in the notification panel and toast titled "Undo: ..." or "Redo: ..." (for example "Undo: Moving 3 Items to Documents"), including undoing a copy (shown as deleting the copies to the Recycle Bin) and attempts that are refused because a file now occupies the name
 - [x] **Performance panel** - live folder load, folder size scan, frame time, FPS, and memory metrics, plus Benchmark This Folder with min/avg/max per listing method and Copy Results (Settings > Advanced, or Ctrl+K)
+- [x] **Media controls for animated GIFs** - previewing an animated GIF now shows a seek bar plus Play/Pause, Stop (rewind to the first frame), Previous Frame and Next Frame buttons (stepping pauses playback), current/total time to a tenth of a second, and "Frame N / M"; clicking the image also plays/pauses
+- [x] **Preview pane stays on screen in Details + Preview** - a wide details table no longer pushes the right edge of the preview pane (and its media controls) out of view, and the Performance panel shows "No Subfolders" for a folder with nothing to size instead of "Open a folder to measure"
 - [x] **Consistent Title Case** - buttons, menu items, headings, setting labels, and short tooltips all use Title Case; longer explanations stay as normal sentences
 
 

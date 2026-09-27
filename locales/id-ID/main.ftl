@@ -681,6 +681,7 @@ perf_peak = peak
 perf_fps_now = now
 perf_fps_possible = possible
 perf_scanning = Scanning
+perf_no_subfolders = No Subfolders
 perf_size_scan_off = Off (Folder Size Scanning is disabled)
 perf_no_data = Open a folder to measure
 tooltip_perf_folder_load = How long the last folder took to list, from opening it until every item was shown.
@@ -705,3 +706,12 @@ perf_cache_note = Each method gets one warm-up run first, so the timings mostly 
 settings_show_performance_panel = Show Performance Panel
 tooltip_settings_show_performance_panel = Shows a floating panel with live folder load, folder size scan, frame time, and memory metrics, plus a folder benchmark. Also toggled with Ctrl+K.
 shortcut_performance_panel = Show/Hide Performance Panel
+
+# Animated GIF preview controls
+preview_anim_play = Play
+preview_anim_pause = Pause
+preview_anim_stop = Stop
+preview_anim_previous_frame = Previous Frame
+preview_anim_next_frame = Next Frame
+preview_anim_frame = Frame
+preview_anim_seek = Drag To Seek
