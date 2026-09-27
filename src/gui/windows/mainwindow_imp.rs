@@ -1226,7 +1226,16 @@ impl MainWindow {
             view.item_viewer_filter_state.cached_indices.clear();
             view.columns_view_state.needs_reload = true;
         }
-        self.folder_sizes.clear();
+        // Folder sizes are shared by both panes of a split: keep the other
+        // pane's (its folder isn't being reloaded), drop everything else.
+        let other_side = match side {
+            SplitSide::Primary => SplitSide::Secondary,
+            SplitSide::Secondary => SplitSide::Primary,
+        };
+        let other_dir = (self.active_tab().split_view.is_some())
+            .then(|| self.active_tab().view(other_side).nav.current.clone());
+        self.folder_sizes
+            .retain(|path, _| other_dir.as_deref().is_some_and(|dir| path.parent() == Some(dir)));
         self.file_size_text_cache.clear();
         self.folder_size_text_cache.clear();
         self.drive_size_text_cache.clear();
