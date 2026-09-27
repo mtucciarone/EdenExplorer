@@ -8,7 +8,7 @@ Items marked [x] have been implemented (see the README changelog); the rest aren
 
 ## Suggested Priorities
 
-1. **Disk Usage Analyzer**, in phases: the dashboard with its percentage-bar tree, the Largest Files and Largest Folders lists, the fast MFT scan, and background scanning are done; next the treemap and file types, then duplicates and snapshots.
+1. ~~**Disk Usage Analyzer**~~ - done: every item in section 1 is implemented.
 2. **Quick Look (Space)** and a **command palette**.
 3. **Archive extraction** and **queued transfers with verify-after-copy**.
 4. **Folder compare/sync** and **editable shortcuts**.
@@ -25,23 +25,23 @@ Items marked [x] have been implemented (see the README changelog); the rest aren
 - [x] Background scanning with progress, Cancel, and "Rescan This Branch" (M)
 
 ### Dashboard views
-- [ ] **Treemap** (WinDirStat-style cushion shading): click a block to select the file, double-click to zoom in, breadcrumbs to zoom out (L)
-- [ ] **Sunburst ring chart** (DaisyDisk, Filelight, Baobab) as an alternative to the treemap (M)
+- [x] **Treemap** (WinDirStat-style cushion shading): click a block to select the file, double-click to zoom in, breadcrumbs to zoom out (L)
+- [x] **Sunburst ring chart** (DaisyDisk, Filelight, Baobab) as an alternative to the treemap (M)
 - [x] **Tree with percentage bars** (RidNacs, TreeSize): name, size, % of parent, file count, colored bar, expandable rows (M)
-- [ ] **File type breakdown** (WinDirStat extension list): size and count per extension, colored to match the treemap; selecting a type highlights it in the treemap (M)
+- [x] **File type breakdown** (WinDirStat extension list): size and count per extension, colored to match the treemap; selecting a type highlights it in the treemap (M)
 - [x] **Top 100 largest files**, with Reveal, Delete, and Move actions (S)
 - [x] **Top 100 largest folders** (by their own files, not counting subfolders), with the same actions (S)
-- [ ] **Age chart**: how much space is in files not touched for 1 month, 1 year, 3+ years (S)
-- [ ] **Drive summary**: used/free space, cluster size, and wasted "slack" space (S)
+- [x] **Age chart**: how much space is in files not touched for 1 month, 1 year, 3+ years (S)
+- [x] **Drive summary**: used/free space, cluster size, and wasted "slack" space (S)
 
 ### Actions and extras
-- [ ] **Cleanup actions** from the dashboard (Recycle, Delete Permanently, Move To, Compress, Open in Tab), going through the existing notification and undo system (M)
-- [ ] **Duplicate finder**: match by size, then partial hash, then full hash (reusing the checksum code); groups with "keep newest/oldest" helpers (M)
-- [ ] **Snapshots and compare**: save a scan and later show what grew or shrank since then (M)
-- [ ] **Export** results as CSV, HTML report, or JSON, plus "Copy Summary" like the benchmark's Copy Results (S)
-- [ ] **Filters**: exclude folders, only files over X MB, only one file type (S)
-- [ ] **Drive benchmark**: sequential and random read/write speed (like CrystalDiskMark), next to the folder-listing benchmark in the Performance panel (M)
-- [ ] **Storage Sense-style cleanup shortcuts**: measure and clean Temp, Windows Update cache, browser caches, the Recycle Bin, and old Downloads in one click (M)
+- [x] **Cleanup actions** from the dashboard (Recycle, Delete Permanently, Move To, Compress, Open in Tab), going through the existing notification and undo system (M)
+- [x] **Duplicate finder**: match by size, then partial hash, then full hash (reusing the checksum code); groups with "keep newest/oldest" helpers (M)
+- [x] **Snapshots and compare**: save a scan and later show what grew or shrank since then (M)
+- [x] **Export** results as CSV, HTML report, or JSON, plus "Copy Summary" like the benchmark's Copy Results (S)
+- [x] **Filters**: exclude folders, only files over X MB, only one file type (S)
+- [x] **Drive benchmark**: sequential and random read/write speed (like CrystalDiskMark), next to the folder-listing benchmark in the Performance panel (M)
+- [x] **Storage Sense-style cleanup shortcuts**: measure and clean Temp, Windows Update cache, browser caches, the Recycle Bin, and old Downloads in one click (M)
 
 ## 2. Navigation and Layout
 

@@ -113,6 +113,7 @@
   <li><b>Low memory footprint</b> designed for responsive long-running use</li>
   <li><b>Performance panel</b> (Settings &gt; Advanced or <code>Ctrl+K</code>) with live folder load time and items/sec, folder size scan time, frame time/FPS, and memory use</li>
   <li><b>Benchmark This Folder</b> - times the app's <code>NtQueryDirectoryFile</code> listing against Rust's <code>read_dir</code> and <code>read_dir</code> + per-file metadata over 3/5/10 runs, with min/avg/max, items/sec, and Copy Results</li>
+  <li><b>Benchmark This Drive</b> - sequential and random 4K read/write speed and IOPS of the current folder's drive, uncached, like CrystalDiskMark</li>
   <li><b>Windows API integration</b> for native operating system functionality</li>
   <li><b>Custom executable icon and file association</b></li>
   <li><b>Persistent settings</b> using efficient binary cache, with an optional <b>portable mode</b> that keeps them next to the exe</li>
@@ -120,6 +121,15 @@
   <li><b>Analyze Disk Usage…</b> for any folder or drive (right-click menu, This PC, sidebar): an expandable size tree with a share-of-parent bar, size on disk, and file/folder counts, scanned in the background with progress, Cancel, Rescan, and <b>Rescan This Branch</b></li>
   <li><b>Largest Files</b> tab in Disk Usage: the 100 biggest files anywhere in the analyzed folder or drive, with Show In Folder, Move To…, Delete, and Copy Path for one or several at once</li>
   <li><b>Largest Folders</b> tab in Disk Usage: the 100 folders with the most data in their own files, with Open In New Tab, Show In Folder, Rescan This Branch, Move To…, Delete, and Copy Path</li>
+  <li><b>Disk Usage Overview</b>: drive summary (used/free, file system, cluster size, slack space), space by category, and space by age</li>
+  <li><b>File Types</b> tab: size, share, count, and largest file per extension, grouped into categories and colored like the charts</li>
+  <li><b>Treemap</b> (cushion-shaded, WinDirStat-style) and <b>Sunburst</b> ring chart with zoom, breadcrumbs, and file type highlighting</li>
+  <li><b>Filters</b> for the Disk Usage lists: minimum size, one category or extension, and skipped folders</li>
+  <li><b>Cleanup actions</b> in every Disk Usage view: Move To, Compress To ZIP, Delete, and Delete Permanently, with Undo</li>
+  <li><b>Export</b> Disk Usage results as CSV, an HTML report, or JSON, or <b>Copy Summary</b></li>
+  <li><b>Snapshots</b>: save a scan and compare later to see what's new, removed, grew, or shrank</li>
+  <li><b>Duplicate finder</b>: size, then partial hash, then full SHA-256, with Keep Newest / Keep Oldest</li>
+  <li><b>Clean Up</b>: Storage Sense-style shortcuts for temp files, the Windows Update cache, browser caches, the Recycle Bin, and old Downloads</li>
   <li><b>Fast MFT scan</b> of whole NTFS drives, reading the Master File Table directly like WizTree; when the app isn't elevated it asks Windows once and runs only the MFT read in a small elevated helper (optional, Settings &gt; Advanced), with automatic fallback to a parallel folder-by-folder scan</li>
 </ul>
 

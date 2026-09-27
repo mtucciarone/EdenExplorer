@@ -285,3 +285,39 @@ Select By Pattern (Ctrl+Shift+S) selecting `*.docx; *.txt`, Invert Selection (Ct
 ### Largest Folders right-click menu - Open In New Tab, Show In Folder, Rescan This Branch, Move To…, Delete, Delete Permanently, and Copy Path
 
 ![Largest Folders menu](63-disk-usage-largest-folders-menu.png)
+
+### Disk Usage > Overview - drive summary with cluster slack, space by category (click one to see it in File Types), and space by age
+
+![Disk Usage - Overview](71-disk-usage-overview.png)
+
+### Disk Usage > File Types - every extension with its category, size, share, count, size on disk, and largest file; the colors match the treemap and sunburst
+
+![Disk Usage - File Types](72-disk-usage-file-types.png)
+
+### Disk Usage > Treemap - cushion-shaded blocks colored by file type, with breadcrumbs, Zoom In/Out, and Highlight
+
+![Disk Usage - Treemap](65-disk-usage-treemap.png)
+
+### Disk Usage > Sunburst - rings for each folder level, colored by top-level folder; the center zooms back out
+
+![Disk Usage - Sunburst](64-disk-usage-sunburst.png)
+
+### Folder Tree right-click menu with the cleanup actions every view shares - Move To…, Compress To ZIP, Delete, Delete Permanently - and Move To… and Delete in the toolbar
+
+![Disk Usage cleanup menu](67-disk-usage-cleanup-menu.png)
+
+### Snapshots > Compare With - the Changes tab after adding an ISO, removing a zip, and growing a video: folders that grew, with before, now, and difference
+
+![Disk Usage - Changes](66-disk-usage-changes.png)
+
+### Disk Usage > Duplicates - groups of identical files with how much each group can free; Keep Newest / Keep Oldest mark the extra copies
+
+![Disk Usage - Duplicates](68-disk-usage-duplicates.png)
+
+### Disk Usage > Clean Up - temp files, Windows Update cache, browser caches, Recycle Bin, and old Downloads, each measured with a Clean button
+
+![Disk Usage - Clean Up](69-disk-usage-cleanup.png)
+
+### Performance panel > Benchmark This Drive - sequential and random 4K read/write speed and IOPS (this run is under Wine, which can't bypass its cache, so the numbers are cache speed)
+
+![Benchmark This Drive](70-drive-benchmark.png)
