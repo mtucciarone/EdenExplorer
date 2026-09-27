@@ -9,6 +9,7 @@ pub mod disk_usage;
 pub mod disk_usage_export;
 pub mod disk_usage_snapshot;
 pub mod disk_usage_stats;
+pub mod drive_bench;
 pub mod drives;
 pub mod duplicates;
 pub mod everything;

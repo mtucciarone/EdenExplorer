@@ -15,6 +15,7 @@ use crate::core::utils::files::format_size;
 use crate::core::utils::widgets::{eden_button, modal_frame};
 use crate::gui::i18n::I18n;
 use crate::gui::theme::ThemePalette;
+use crate::core::drive_bench::{DriveBenchEvent, DriveBenchHandle, DriveReport, Phase, start_drive_benchmark};
 use crossbeam_channel::Receiver;
 use eframe::egui;
 use egui_phosphor::regular;
@@ -26,6 +27,8 @@ use std::time::{Duration, Instant};
 const FRAME_WINDOW: usize = 120;
 const MEMORY_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const RUN_CHOICES: [u32; 3] = [3, 5, 10];
+/// Drive benchmark test file sizes, in MB.
+const DRIVE_SIZES: [u64; 3] = [64, 256, 1024];
 
 /// A finished timing: `count` items (entries listed, or folders sized) in
 /// `elapsed`, for the folder at `path`.
@@ -58,6 +61,13 @@ pub struct PerformanceState {
     benchmark_progress: (u32, u32),
     benchmark_report: Option<BenchmarkReport>,
     copied_at: Option<Instant>,
+    /// Showing the drive benchmark instead of the folder one.
+    drive_tab: bool,
+    drive_size: usize,
+    drive_handle: Option<DriveBenchHandle>,
+    drive_progress: (Phase, f32),
+    drive_result: Option<Result<DriveReport, String>>,
+    drive_copied_at: Option<Instant>,
 }
 
 impl Default for PerformanceState {
@@ -75,6 +85,12 @@ impl Default for PerformanceState {
             benchmark_progress: (0, 0),
             benchmark_report: None,
             copied_at: None,
+            drive_tab: false,
+            drive_size: 1,
+            drive_handle: None,
+            drive_progress: (Phase::SeqWrite, 0.0),
+            drive_result: None,
+            drive_copied_at: None,
         }
     }
 }
@@ -120,6 +136,25 @@ impl PerformanceState {
         Some((sum / self.frame_cpu.len() as f32, max))
     }
 
+    fn poll_drive_benchmark(&mut self) {
+        let Some(handle) = &self.drive_handle else {
+            return;
+        };
+        while let Ok(event) = handle.rx.try_recv() {
+            match event {
+                DriveBenchEvent::Progress(phase, fraction) => self.drive_progress = (phase, fraction),
+                DriveBenchEvent::Finished(result) => {
+                    // An empty error is a cancel: keep the previous result.
+                    if !matches!(&result, Err(e) if e.is_empty()) {
+                        self.drive_result = Some(result);
+                    }
+                    self.drive_handle = None;
+                    return;
+                }
+            }
+        }
+    }
+
     fn poll_benchmark(&mut self) {
         let Some(rx) = &self.benchmark_rx else {
             return;
@@ -158,6 +193,7 @@ pub fn draw_performance_panel(
     panel: PanelContext,
 ) -> bool {
     state.poll_benchmark();
+    state.poll_drive_benchmark();
     let mut close = false;
 
     egui::Window::new(i18n.tr("perf_title"))
@@ -200,13 +236,32 @@ pub fn draw_performance_panel(
             ui.separator();
             ui.add_space(6.0);
 
-            section_title(ui, palette, &i18n.tr("perf_benchmark_title"));
-            draw_benchmark(ui, i18n, palette, state, &panel);
+            ui.horizontal(|ui| {
+                for (drive, icon, key) in [
+                    (false, regular::FOLDER, "perf_benchmark_title"),
+                    (true, regular::HARD_DRIVES, "perf_drive_title"),
+                ] {
+                    let on = state.drive_tab == drive;
+                    let text = egui::RichText::new(format!("{icon} {}", i18n.tr(key)))
+                        .strong()
+                        .size(palette.text_size)
+                        .color(if on { palette.item_viewer_row_text_selected } else { palette.text_normal });
+                    if ui.add(egui::Button::selectable(on, text)).clicked() {
+                        state.drive_tab = drive;
+                    }
+                }
+            });
+            ui.add_space(6.0);
+            if state.drive_tab {
+                draw_drive_benchmark(ui, i18n, palette, state, &panel);
+            } else {
+                draw_benchmark(ui, i18n, palette, state, &panel);
+            }
         });
 
     // Keep the live numbers (memory, benchmark progress) moving even when
     // nothing else asks for a repaint.
-    let refresh = if state.benchmark_rx.is_some() {
+    let refresh = if state.benchmark_rx.is_some() || state.drive_handle.is_some() {
         Duration::from_millis(100)
     } else {
         Duration::from_millis(500)
@@ -567,6 +622,177 @@ fn draw_benchmark(
     ui.add_space(4.0);
     ui.label(
         egui::RichText::new(i18n.tr("perf_cache_note"))
+            .size(palette.text_size - 2.0)
+            .color(palette.text_normal.gamma_multiply(0.55)),
+    );
+}
+
+fn draw_drive_benchmark(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    palette: &ThemePalette,
+    state: &mut PerformanceState,
+    panel: &PanelContext,
+) {
+    let running = state.drive_handle.is_some();
+    let muted = |text: String| {
+        egui::RichText::new(text)
+            .size(palette.text_size - 1.0)
+            .color(palette.text_normal.gamma_multiply(0.75))
+    };
+    match &panel.current_folder {
+        Some(folder) => {
+            let drive = crate::core::drive_bench::drive_of(folder).unwrap_or_default();
+            ui.label(muted(format!("{} {drive}  ·  {}", regular::HARD_DRIVES, folder.display())));
+        }
+        None => {
+            ui.label(muted(i18n.tr("perf_drive_unavailable")));
+        }
+    }
+    ui.add_space(6.0);
+
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(i18n.tr("perf_drive_test_size")).size(palette.text_size).color(palette.text_normal));
+        for (i, mb) in DRIVE_SIZES.iter().enumerate() {
+            ui.add_enabled_ui(!running, |ui| {
+                let label = if *mb >= 1024 { format!("{} GB", mb / 1024) } else { format!("{mb} MB") };
+                if ui.selectable_label(state.drive_size == i, label).clicked() {
+                    state.drive_size = i;
+                }
+            });
+        }
+        ui.add_space(8.0);
+        if running {
+            if eden_button(ui, palette, &format!("{} {}", regular::STOP, i18n.tr("cancel"))).clicked()
+                && let Some(handle) = &state.drive_handle
+            {
+                handle.cancel();
+            }
+        } else {
+            let clicked = ui
+                .add_enabled_ui(panel.current_folder.is_some(), |ui| {
+                    eden_button(ui, palette, &format!("{} {}", regular::PLAY, i18n.tr("perf_drive_button")))
+                })
+                .inner
+                .clicked();
+            if clicked && let Some(folder) = panel.current_folder.clone() {
+                state.drive_progress = (Phase::SeqWrite, 0.0);
+                state.drive_handle = Some(start_drive_benchmark(folder, DRIVE_SIZES[state.drive_size] * 1024 * 1024));
+            }
+        }
+    });
+
+    if running {
+        let (phase, fraction) = state.drive_progress;
+        let index = [Phase::SeqWrite, Phase::SeqRead, Phase::RandomRead, Phase::RandomWrite]
+            .iter()
+            .position(|p| *p == phase)
+            .unwrap_or(0);
+        ui.add_space(6.0);
+        ui.label(muted(format!("{} ({}/4)", i18n.tr(phase.i18n_key()), index + 1)));
+        ui.add(
+            egui::ProgressBar::new((index as f32 + fraction) / 4.0)
+                .desired_height(6.0)
+                .fill(palette.primary),
+        );
+        return;
+    }
+
+    let report = match &state.drive_result {
+        None => {
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new(i18n.tr("perf_drive_hint"))
+                    .size(palette.text_size - 1.0)
+                    .color(palette.text_normal.gamma_multiply(0.6)),
+            );
+            return;
+        }
+        Some(Err(error)) => {
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new(format!("{}: {error}", i18n.tr("perf_drive_failed")))
+                    .size(palette.text_size - 1.0)
+                    .color(palette.notification_status_error),
+            );
+            return;
+        }
+        Some(Ok(report)) => report,
+    };
+
+    ui.add_space(8.0);
+    ui.label(muted(format!(
+        "{} · {} MB · {}",
+        report.folder.display(),
+        report.file_size / (1024 * 1024),
+        report.finished_at.format("%H:%M:%S"),
+    )));
+    ui.add_space(4.0);
+    let best = report.results.iter().map(|r| r.mb_per_sec()).fold(0.0f64, f64::max);
+    egui::Frame::NONE
+        .fill(palette.row_bg)
+        .corner_radius(egui::CornerRadius::same(palette.medium_radius))
+        .stroke(egui::Stroke::new(1.0, palette.borders_default))
+        .inner_margin(egui::Margin::symmetric(10, 8))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            egui::Grid::new("perf_drive_grid")
+                .num_columns(4)
+                .spacing([12.0, 6.0])
+                .show(ui, |ui| {
+                    for header in ["perf_drive_test", "perf_drive_speed", "", "perf_drive_iops"] {
+                        ui.label(
+                            egui::RichText::new(if header.is_empty() { String::new() } else { i18n.tr(header) })
+                                .strong()
+                                .size(palette.text_size - 1.0)
+                                .color(palette.text_normal.gamma_multiply(0.75)),
+                        );
+                    }
+                    ui.end_row();
+                    for phase in Phase::ALL {
+                        let Some(result) = report.result(phase) else { continue };
+                        ui.label(egui::RichText::new(i18n.tr(phase.i18n_key())).size(palette.text_size).color(palette.text_normal));
+                        ui.label(
+                            egui::RichText::new(format!("{:.1} MB/s", result.mb_per_sec()))
+                                .family(egui::FontFamily::Monospace)
+                                .size(palette.text_size - 1.0)
+                                .color(palette.text_normal),
+                        );
+                        // A bar relative to the fastest test.
+                        let (rect, _) = ui.allocate_exact_size(egui::vec2(80.0, 6.0), egui::Sense::hover());
+                        ui.painter().rect_filled(rect, 3.0, palette.drive_usage_background);
+                        let fraction = if best > 0.0 { (result.mb_per_sec() / best) as f32 } else { 0.0 };
+                        let mut filled = rect;
+                        filled.set_width((rect.width() * fraction).max(2.0));
+                        ui.painter().rect_filled(filled, 3.0, palette.primary);
+                        ui.label(
+                            egui::RichText::new(format!("{:.0}", result.iops()))
+                                .family(egui::FontFamily::Monospace)
+                                .size(palette.text_size - 1.0)
+                                .color(palette.text_normal.gamma_multiply(0.85)),
+                        );
+                        ui.end_row();
+                    }
+                });
+        });
+
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        if eden_button(ui, palette, &format!("{} {}", regular::COPY, i18n.tr("perf_copy_results"))).clicked() {
+            crate::core::utils::clipboard::copy_text_to_clipboard(&report.to_text());
+            state.drive_copied_at = Some(Instant::now());
+        }
+        if state.drive_copied_at.is_some_and(|t| t.elapsed() < Duration::from_secs(2)) {
+            ui.label(
+                egui::RichText::new(format!("{} {}", regular::CHECK, i18n.tr("perf_copied")))
+                    .size(palette.text_size - 1.0)
+                    .color(palette.notification_status_success),
+            );
+        }
+    });
+    ui.add_space(4.0);
+    ui.label(
+        egui::RichText::new(i18n.tr("perf_drive_note"))
             .size(palette.text_size - 2.0)
             .color(palette.text_normal.gamma_multiply(0.55)),
     );
