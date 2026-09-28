@@ -487,6 +487,30 @@ pub enum PasteConflictAction {
     Replace,
     Skip,
     Rename,
+    /// Replace only the existing items older than the one being pasted;
+    /// skip the rest.
+    ReplaceIfNewer,
+    /// Replace only the existing items smaller than the one being pasted;
+    /// skip the rest.
+    ReplaceIfLarger,
+}
+
+/// Whether `source` should replace `existing` under a conditional rule
+/// (Replace If Newer / If Larger); always true for plain Replace.
+fn replace_qualifies(action: PasteConflictAction, source: &Path, existing: &Path) -> bool {
+    let size = |p: &Path| {
+        if p.is_dir() {
+            crate::core::fs::calculate_folder_size_fast(p.to_path_buf())
+        } else {
+            std::fs::metadata(p).map(|m| m.len()).unwrap_or(0)
+        }
+    };
+    let modified = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    match action {
+        PasteConflictAction::ReplaceIfNewer => modified(source) > modified(existing),
+        PasteConflictAction::ReplaceIfLarger => size(source) > size(existing),
+        _ => true,
+    }
 }
 
 /// A paste `paste_clipboard_native` held back because one or more source
@@ -1315,6 +1339,26 @@ impl MainWindow {
             return;
         }
 
+        // A folder inside an archive (see `core::archive_view`): listed from
+        // the archive, read once and kept.
+        if crate::core::archive_view::split(&current_path).is_some() {
+            let (tx, rx) = unbounded();
+            let settings = &self.settings_window.current_settings;
+            crate::core::archive_view::list_folder_async(
+                current_path,
+                tx,
+                Arc::new(Mutex::new(None)),
+                settings.date_style,
+                settings.time_format_24h,
+                settings.custom_date_format.clone(),
+            );
+            let view = self.active_tab_mut().view_mut(side);
+            view.rx = Some(rx);
+            view.is_loading = true;
+            view.load_started_at = Some(std::time::Instant::now());
+            return;
+        }
+
         if is_root {
             let view = self.active_tab_mut().view_mut(side);
             for d in get_drive_infos() {
@@ -1889,6 +1933,12 @@ impl MainWindow {
                         .insert(notification_id, (rx, dest_zip));
                 }
             }
+            ItemViewerContextAction::Extract(archives, choice) => {
+                self.extract_archives(archives, choice);
+            }
+            ItemViewerContextAction::ExtractEntries(paths, choice) => {
+                self.extract_archive_entries(paths, choice);
+            }
             ItemViewerContextAction::RenameRequest(path, new_name) => {
                 let trimmed = new_name.trim();
 
@@ -2418,9 +2468,13 @@ impl MainWindow {
             ),
             _ => {}
         }
-        let handle = crate::core::robocopy::RobocopyHandle::start(jobs, total_bytes);
+        // Runs now, or waits its turn behind another transfer on the same
+        // disk (Settings > Behavior > Queue Transfers On The Same Disk).
+        let handle = crate::core::robocopy::RobocopyHandle::idle(jobs, total_bytes);
+        let disks = crate::core::robocopy::transfer_disks(&paths, &target_dir);
+        let queue_enabled = self.settings_window.current_settings.ui_prefs.queue_transfers;
         self.notifications_state
-            .attach_robocopy_job(notification_id, handle);
+            .start_transfer(notification_id, handle, disks, queue_enabled);
 
         self.pending_robocopy_pastes.insert(
             notification_id,
@@ -2491,7 +2545,10 @@ impl MainWindow {
             let mut renames = HashMap::new();
             let mut replaced: HashMap<PathBuf, Vec<u8>> = HashMap::new();
             let paths = match action {
-                PasteConflictAction::Replace => {
+                PasteConflictAction::Replace
+                | PasteConflictAction::ReplaceIfNewer
+                | PasteConflictAction::ReplaceIfLarger => {
+                    let mut kept = Vec::with_capacity(prompt.paths.len());
                     // Make Replace non-destructive: recycle the item that's
                     // about to be overwritten first (instead of letting
                     // robocopy overwrite it directly, which would be
@@ -2505,6 +2562,11 @@ impl MainWindow {
                                 path.file_name().map(|n| n.to_string_lossy().to_string())
                         {
                             let existing_path = prompt.target_dir.join(&name);
+                            // Replace If Newer/Larger: an item that doesn't
+                            // qualify is skipped instead.
+                            if !replace_qualifies(action, path, &existing_path) {
+                                continue;
+                            }
                             if delete_paths_native_standalone(
                                 vec![existing_path.clone()],
                                 true,
@@ -2517,8 +2579,9 @@ impl MainWindow {
                                 replaced.insert(existing_path, pidl);
                             }
                         }
+                        kept.push(path.clone());
                     }
-                    prompt.paths
+                    kept
                 }
                 PasteConflictAction::Skip => prompt
                     .paths
@@ -2794,6 +2857,47 @@ impl MainWindow {
                                         .clicked()
                                         {
                                             resolution = Some(PasteConflictAction::Replace);
+                                        }
+                                    },
+                                );
+                            });
+
+                            // Conditional Replace: only the existing items
+                            // the pasted ones beat are replaced, the rest are
+                            // skipped.
+                            ui.add_space(10.0);
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new(self.i18n.tr("paste_conflict_replace_only_if"))
+                                        .size(palette.text_size)
+                                        .color(palette.text_normal.gamma_multiply(0.75)),
+                                );
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        for (key, tip, action) in [
+                                            (
+                                                "paste_conflict_if_larger",
+                                                "tooltip_paste_conflict_if_larger",
+                                                PasteConflictAction::ReplaceIfLarger,
+                                            ),
+                                            (
+                                                "paste_conflict_if_newer",
+                                                "tooltip_paste_conflict_if_newer",
+                                                PasteConflictAction::ReplaceIfNewer,
+                                            ),
+                                        ] {
+                                            if secondary_dialog_button(ui, palette, &self.i18n.tr(key))
+                                                .on_hover_text(
+                                                    egui::RichText::new(self.i18n.tr(tip))
+                                                        .size(palette.tooltip_text_size)
+                                                        .color(palette.tooltip_text_color),
+                                                )
+                                                .clicked()
+                                            {
+                                                resolution = Some(action);
+                                            }
+                                            ui.add_space(6.0);
                                         }
                                     },
                                 );
@@ -3291,6 +3395,15 @@ impl MainWindow {
             if pending.is_cut && self.move_tagged_paths_to_dir(&pending.paths, &pending.target_dir)
             {
                 self.persist_tags();
+            }
+
+            // Settings > Behavior > Verify Copies: check the copies against
+            // their sources before calling the copy done.
+            if !pending.is_cut
+                && matches!(pending.origin, PasteOrigin::UserAction)
+                && self.settings_window.current_settings.ui_prefs.verify_copies
+            {
+                self.start_verify(id, &pending.paths, &pending.target_dir, &pending.renames);
             }
 
             let pasted_paths = Self::selection_paths_after_paste(
@@ -5728,8 +5841,15 @@ impl MainWindow {
                 .current_settings
                 .folder_scanning_enabled;
             let use_size_cache = self.settings_window.current_settings.ui_prefs.persist_folder_sizes;
+            // Inside an archive the listing already has each folder's total.
+            let in_archive = crate::core::archive_view::split(&self.active_tab().view(side).nav.current).is_some();
             for item in batch.iter_mut() {
-                if item.is_dir && folder_scanning_enabled {
+                if item.is_dir && in_archive {
+                    if let Some(bytes) = item.file_size {
+                        self.folder_sizes
+                            .insert(item.path.clone(), ItemViewerFolderSizeState { bytes, done: true });
+                    }
+                } else if item.is_dir && folder_scanning_enabled {
                     // Show a size remembered from an earlier visit straight
                     // away (still marked in-progress until re-checked).
                     let cached = use_size_cache
@@ -5959,7 +6079,51 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             }
         }
 
+        // Browsing inside an archive is read-only: nothing is created,
+        // renamed, deleted, moved or pasted there (extract first).
+        if crate::core::archive_view::split(&explorer.current_nav().current).is_some()
+            && matches!(
+                &action,
+                ItemViewerAction::CreateFolder
+                    | ItemViewerAction::CreateFileFromTemplate(_)
+                    | ItemViewerAction::CreateShortcutHere
+                    | ItemViewerAction::FilesDropped(_)
+                    | ItemViewerAction::StartEdit(_)
+                    | ItemViewerAction::Context(
+                        ItemViewerContextAction::Delete(..)
+                            | ItemViewerContextAction::Cut(_)
+                            | ItemViewerContextAction::Copy(_)
+                            | ItemViewerContextAction::Paste
+                            | ItemViewerContextAction::RenameRequest(..)
+                            | ItemViewerContextAction::BulkRenameRequest(_)
+                            | ItemViewerContextAction::BulkRenameCommit(_)
+                            | ItemViewerContextAction::Compress(_)
+                            | ItemViewerContextAction::CreateShortcut(_)
+                            | ItemViewerContextAction::SendTo(..)
+                    )
+            )
+        {
+            return;
+        }
+
         match action {
+            ItemViewerAction::OpenWithDefault(paths)
+                if !paths.is_empty() && paths.iter().all(|p| crate::core::archive_view::is_inside_archive(p)) =>
+            {
+                for path in paths {
+                    explorer.open_from_archive(path);
+                }
+            }
+            // Double-clicking a zip/7z/tar opens it like a folder
+            // (Settings > Behavior > Open Archives Like Folders).
+            ItemViewerAction::OpenWithDefault(paths)
+                if paths.len() == 1
+                    && explorer.settings_window.current_settings.ui_prefs.browse_archives
+                    && crate::core::archive_view::is_browsable_archive(&paths[0]) =>
+            {
+                let path = paths.into_iter().next().unwrap_or_default();
+                handle_pending_actions(Some(ItemViewerAction::Open(path)), explorer);
+            }
             ItemViewerAction::Sort {
                 column,
                 additive,
@@ -6723,6 +6887,33 @@ impl MainWindow {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod conflict_rule_tests {
+    use super::*;
+
+    #[test]
+    fn replace_if_newer_or_larger_compares_the_right_way() {
+        let dir = std::env::temp_dir().join(format!("eden-conflict-rules-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let small_old = dir.join("small_old.txt");
+        let big_new = dir.join("big_new.txt");
+        std::fs::write(&small_old, b"a").unwrap();
+        std::fs::write(&big_new, b"abcdef").unwrap();
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        std::fs::File::options().write(true).open(&small_old).unwrap().set_modified(old).unwrap();
+
+        use PasteConflictAction::*;
+        assert!(replace_qualifies(ReplaceIfNewer, &big_new, &small_old));
+        assert!(!replace_qualifies(ReplaceIfNewer, &small_old, &big_new));
+        assert!(replace_qualifies(ReplaceIfLarger, &big_new, &small_old));
+        assert!(!replace_qualifies(ReplaceIfLarger, &small_old, &big_new));
+        assert!(!replace_qualifies(ReplaceIfLarger, &big_new, &big_new), "same size isn't larger");
+        assert!(replace_qualifies(Replace, &small_old, &big_new));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 

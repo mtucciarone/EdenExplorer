@@ -6,6 +6,8 @@ use eframe::egui;
 use egui::{Align, Align2, Color32, CornerRadius, FontId, Layout, RichText, Stroke};
 use egui_phosphor::regular;
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 /// How long a completion toast stays on screen before auto-hiding.
@@ -29,11 +31,15 @@ pub enum FileOpKind {
     Delete,
     Rename,
     Compress,
+    Extract,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileOpStatus {
     InProgress,
+    /// Waiting for another transfer on the same disk to finish (see the
+    /// transfer queue on `NotificationsState`).
+    Queued,
     /// Stopped by the user via the panel's Pause button - robocopy jobs
     /// only, see `core::robocopy`. Resumable.
     Paused,
@@ -79,6 +85,9 @@ pub struct FileOperation {
     /// Set when this operation was carried out by Undo/Redo - see
     /// `NotificationsState::mark_history`.
     pub history: Option<HistoryAction>,
+    /// A second line under the title ("Verifying…", "Verified 120 files",
+    /// "3 files differ", an error), already localized.
+    pub detail: Option<String>,
 }
 
 struct ActiveToast {
@@ -99,6 +108,21 @@ pub struct NotificationsState {
     /// is what the panel uses to decide whether to show Pause/Resume/
     /// Cancel controls for a row instead of the plain dismiss button.
     robocopy_jobs: HashMap<u64, RobocopyHandle>,
+    /// Cancel flags of other background jobs (extractions, verification) -
+    /// their rows get a Cancel button.
+    cancel_flags: HashMap<u64, Arc<AtomicBool>>,
+    /// Transfers waiting their turn, in the order they'll start, with the
+    /// disks each touches.
+    queue: Vec<(u64, Vec<String>)>,
+    /// Disks of the robocopy transfers currently running.
+    running_disks: HashMap<u64, Vec<String>>,
+    /// Pause All: queued transfers don't start until Resume All.
+    queue_held: bool,
+    /// Disks of paused transfers, taken back when they resume.
+    paused_disks: HashMap<u64, Vec<String>>,
+    /// Ids of queued transfers cancelled from the panel, reported by the
+    /// next `poll_robocopy_jobs` so the caller can drop its bookkeeping.
+    cancelled_queued: Vec<u64>,
 }
 
 impl NotificationsState {
@@ -153,6 +177,7 @@ impl NotificationsState {
                 finished_at: None,
                 progress: None,
                 history: None,
+                detail: None,
             },
         );
         self.active_toast = Some(ActiveToast {
@@ -173,16 +198,139 @@ impl NotificationsState {
         }
     }
 
-    /// Attaches a live robocopy job to an operation created via
-    /// `start_operation` - its presence is what makes the panel show
-    /// Pause/Resume/Cancel controls for that row instead of the plain
-    /// dismiss button.
-    pub fn attach_robocopy_job(&mut self, id: u64, handle: RobocopyHandle) {
+    pub fn has_robocopy_job(&self, id: u64) -> bool {
+        self.robocopy_jobs.contains_key(&id)
+    }
+
+    fn op_mut(&mut self, id: u64) -> Option<&mut FileOperation> {
+        self.operations.iter_mut().find(|o| o.id == id)
+    }
+
+    /// Gives a non-robocopy background job's row a Cancel button that sets
+    /// `flag`.
+    pub fn attach_cancel_flag(&mut self, id: u64, flag: Arc<AtomicBool>) {
+        self.cancel_flags.insert(id, flag);
+    }
+
+    pub fn detach_cancel_flag(&mut self, id: u64) {
+        self.cancel_flags.remove(&id);
+    }
+
+    pub fn has_cancel_flag(&self, id: u64) -> bool {
+        self.cancel_flags.contains_key(&id)
+    }
+
+    pub fn set_progress(&mut self, id: u64, progress: Option<f32>) {
+        if let Some(op) = self.op_mut(id) {
+            op.progress = progress;
+        }
+    }
+
+    pub fn set_detail(&mut self, id: u64, detail: Option<String>) {
+        if let Some(op) = self.op_mut(id) {
+            op.detail = detail;
+        }
+    }
+
+    /// Puts a finished operation back in progress (e.g. a copy whose files
+    /// are now being verified).
+    pub fn reopen_operation(&mut self, id: u64) {
+        if let Some(op) = self.op_mut(id) {
+            op.status = FileOpStatus::InProgress;
+            op.finished_at = None;
+            op.progress = Some(0.0);
+        }
+    }
+
+    /// Starts a robocopy transfer created with `RobocopyHandle::idle` -
+    /// right away, or (when `queue_enabled` and a running transfer uses one
+    /// of the same disks, or Pause All is on) once it's its turn.
+    pub fn start_transfer(&mut self, id: u64, mut handle: RobocopyHandle, disks: Vec<String>, queue_enabled: bool) {
+        let busy = self.queue_held
+            || self.running_disks.values().any(|running| running.iter().any(|d| disks.contains(d)))
+            || self.queue.iter().any(|(_, queued)| queued.iter().any(|d| disks.contains(d)));
+        if queue_enabled && busy {
+            if let Some(op) = self.op_mut(id) {
+                op.status = FileOpStatus::Queued;
+            }
+            self.queue.push((id, disks));
+        } else {
+            handle.resume();
+            self.running_disks.insert(id, disks);
+        }
         self.robocopy_jobs.insert(id, handle);
     }
 
-    pub fn has_robocopy_job(&self, id: u64) -> bool {
-        self.robocopy_jobs.contains_key(&id)
+    /// Starts queued transfers whose disks are free, in queue order.
+    fn start_ready_transfers(&mut self) {
+        if self.queue_held {
+            return;
+        }
+        let mut i = 0;
+        while i < self.queue.len() {
+            let disks = &self.queue[i].1;
+            let blocked = self.running_disks.values().any(|running| running.iter().any(|d| disks.contains(d)))
+                || self.queue[..i].iter().any(|(_, earlier)| earlier.iter().any(|d| disks.contains(d)));
+            if blocked {
+                i += 1;
+                continue;
+            }
+            let (id, disks) = self.queue.remove(i);
+            if let Some(handle) = self.robocopy_jobs.get_mut(&id) {
+                handle.resume();
+                self.running_disks.insert(id, disks);
+                if let Some(op) = self.op_mut(id) {
+                    op.status = FileOpStatus::InProgress;
+                }
+            }
+        }
+    }
+
+    /// Where a queued transfer is in the queue (1 = next).
+    pub fn queue_position(&self, id: u64) -> Option<usize> {
+        self.queue.iter().position(|(q, _)| *q == id).map(|p| p + 1)
+    }
+
+    /// Moves a queued transfer earlier (`-1`) or later (`1`) in the queue.
+    pub fn move_queued(&mut self, id: u64, delta: i32) {
+        if let Some(pos) = self.queue.iter().position(|(q, _)| *q == id) {
+            let new = (pos as i32 + delta).clamp(0, self.queue.len() as i32 - 1) as usize;
+            let entry = self.queue.remove(pos);
+            self.queue.insert(new, entry);
+        }
+    }
+
+    pub fn transfers_active(&self) -> bool {
+        !self.robocopy_jobs.is_empty()
+    }
+
+    pub fn queue_held(&self) -> bool {
+        self.queue_held
+    }
+
+    /// Pause All: pauses every running transfer and holds the queue.
+    pub fn pause_all(&mut self) {
+        self.queue_held = true;
+        let running: Vec<u64> = self.running_disks.keys().copied().collect();
+        for id in running {
+            self.pause_job(id);
+        }
+    }
+
+    /// Resume All: resumes paused transfers (one per disk, the rest wait in
+    /// the queue) and releases the queue.
+    pub fn resume_all(&mut self) {
+        self.queue_held = false;
+        let paused: Vec<u64> = self
+            .operations
+            .iter()
+            .filter(|o| o.status == FileOpStatus::Paused && self.robocopy_jobs.contains_key(&o.id))
+            .map(|o| o.id)
+            .collect();
+        for id in paused {
+            self.resume_job(id);
+        }
+        self.start_ready_transfers();
     }
 
     pub fn pause_job(&mut self, id: u64) {
@@ -192,15 +340,53 @@ impl NotificationsState {
     }
 
     pub fn resume_job(&mut self, id: u64) {
+        // A paused transfer gave up its disks; if another transfer is now
+        // using one of them, it goes back into the queue (first in line).
+        let disks = self
+            .queue
+            .iter()
+            .find(|(q, _)| *q == id)
+            .map(|(_, d)| d.clone())
+            .or_else(|| self.paused_disks.remove(&id))
+            .unwrap_or_default();
+        let busy = self.running_disks.values().any(|running| running.iter().any(|d| disks.contains(d)));
+        if busy {
+            if !self.queue.iter().any(|(q, _)| *q == id) {
+                self.queue.insert(0, (id, disks));
+            }
+            if let Some(op) = self.op_mut(id) {
+                op.status = FileOpStatus::Queued;
+            }
+            return;
+        }
+        self.queue.retain(|(q, _)| *q != id);
         if let Some(handle) = self.robocopy_jobs.get_mut(&id) {
             handle.resume();
+            self.running_disks.insert(id, disks);
         }
-        if let Some(op) = self.operations.iter_mut().find(|o| o.id == id) {
+        if let Some(op) = self.op_mut(id) {
             op.status = FileOpStatus::InProgress;
         }
     }
 
     pub fn cancel_job(&mut self, id: u64) {
+        if let Some(flag) = self.cancel_flags.get(&id) {
+            flag.store(true, Ordering::Relaxed);
+        }
+        // A queued (never started) or paused transfer has no worker to
+        // report back: finish it here.
+        let waiting = self.queue.iter().any(|(q, _)| *q == id)
+            || self.operations.iter().any(|o| o.id == id && o.status == FileOpStatus::Paused);
+        if waiting && self.robocopy_jobs.remove(&id).is_some() {
+            self.queue.retain(|(q, _)| *q != id);
+            self.paused_disks.remove(&id);
+            if let Some(op) = self.op_mut(id) {
+                op.status = FileOpStatus::Cancelled;
+                op.finished_at = Some(Instant::now());
+            }
+            self.cancelled_queued.push(id);
+            return;
+        }
         if let Some(handle) = self.robocopy_jobs.get(&id) {
             handle.request_cancel();
         }
@@ -217,7 +403,8 @@ impl NotificationsState {
     /// (see `PendingPaste` in `mainwindow_imp.rs`) rather than leaking it.
     /// Call once per frame.
     pub fn poll_robocopy_jobs(&mut self) -> Vec<(u64, bool)> {
-        let mut terminal = Vec::new();
+        let mut terminal: Vec<(u64, bool)> = self.cancelled_queued.drain(..).map(|id| (id, false)).collect();
+        let mut paused = Vec::new();
 
         for (&id, handle) in self.robocopy_jobs.iter() {
             while let Ok(update) = handle.rx.try_recv() {
@@ -261,13 +448,26 @@ impl NotificationsState {
                         if let Some(op) = self.operations.iter_mut().find(|o| o.id == id) {
                             op.status = FileOpStatus::Paused;
                         }
+                        paused.push(id);
                     }
                 }
             }
         }
 
+        let mut freed = false;
         for &(id, _) in &terminal {
             self.robocopy_jobs.remove(&id);
+            freed |= self.running_disks.remove(&id).is_some();
+        }
+        // A paused transfer frees its disks for the queue until resumed.
+        for id in paused {
+            if let Some(disks) = self.running_disks.remove(&id) {
+                self.paused_disks.insert(id, disks);
+                freed = true;
+            }
+        }
+        if freed {
+            self.start_ready_transfers();
         }
 
         terminal
@@ -303,7 +503,7 @@ impl NotificationsState {
     pub fn in_progress_count(&self) -> usize {
         self.operations
             .iter()
-            .filter(|o| o.status == FileOpStatus::InProgress)
+            .filter(|o| matches!(o.status, FileOpStatus::InProgress | FileOpStatus::Queued))
             .count()
     }
 
@@ -313,7 +513,13 @@ impl NotificationsState {
     /// thread. If that thread later calls `finish_operation` for an id that
     /// was cleared here, it's a harmless no-op (see that function).
     pub fn clear_all(&mut self) {
-        self.operations.clear();
+        // Rows that can still be paused, resumed, reordered or cancelled
+        // stay - dropping them would leave no way to control their job.
+        let controllable = |o: &FileOperation| {
+            matches!(o.status, FileOpStatus::InProgress | FileOpStatus::Queued | FileOpStatus::Paused)
+                && (self.robocopy_jobs.contains_key(&o.id) || self.cancel_flags.contains_key(&o.id))
+        };
+        self.operations.retain(|o| controllable(o));
     }
 }
 
@@ -324,12 +530,14 @@ fn kind_icon(kind: FileOpKind) -> &'static str {
         FileOpKind::Delete => regular::TRASH,
         FileOpKind::Rename => regular::PENCIL_SIMPLE,
         FileOpKind::Compress => regular::FILE_ZIP,
+        FileOpKind::Extract => regular::ARCHIVE,
     }
 }
 
 fn status_icon(status: FileOpStatus) -> &'static str {
     match status {
         FileOpStatus::InProgress => regular::SPINNER,
+        FileOpStatus::Queued => regular::HOURGLASS,
         FileOpStatus::Paused => regular::PAUSE_CIRCLE,
         FileOpStatus::Completed => regular::CHECK_CIRCLE,
         FileOpStatus::Failed => regular::WARNING_CIRCLE,
@@ -348,7 +556,9 @@ fn status_icon(status: FileOpStatus) -> &'static str {
 fn status_color(status: FileOpStatus, palette: &ThemePalette) -> Color32 {
     match status {
         FileOpStatus::Completed => palette.notification_status_success,
-        FileOpStatus::InProgress | FileOpStatus::Paused => palette.notification_status_warning,
+        FileOpStatus::InProgress | FileOpStatus::Paused | FileOpStatus::Queued => {
+            palette.notification_status_warning
+        }
         FileOpStatus::Failed | FileOpStatus::Cancelled => palette.notification_status_error,
     }
 }
@@ -360,12 +570,14 @@ fn kind_label(i18n: &I18n, kind: FileOpKind) -> String {
         FileOpKind::Delete => i18n.tr("notifications_kind_delete"),
         FileOpKind::Rename => i18n.tr("notifications_kind_rename"),
         FileOpKind::Compress => i18n.tr("notifications_kind_compress"),
+        FileOpKind::Extract => i18n.tr("notifications_kind_extract"),
     }
 }
 
 fn status_label(i18n: &I18n, status: FileOpStatus) -> String {
     match status {
         FileOpStatus::InProgress => i18n.tr("notifications_status_in_progress"),
+        FileOpStatus::Queued => i18n.tr("notifications_status_queued"),
         FileOpStatus::Paused => i18n.tr("notifications_status_paused"),
         FileOpStatus::Completed => i18n.tr("notifications_status_completed"),
         FileOpStatus::Failed => i18n.tr("notifications_status_failed"),
@@ -385,7 +597,10 @@ fn item_word(i18n: &I18n, count: usize) -> String {
 fn operation_title(i18n: &I18n, op: &FileOperation) -> String {
     let verb = kind_label(i18n, op.kind);
     let items = item_word(i18n, op.item_count);
-    let title = if op.destination_label.is_empty() {
+    let title = if op.kind == FileOpKind::Extract && !op.destination_label.is_empty() {
+        // "Extracting Photos.zip" (the label is the archive).
+        format!("{verb} {}", op.destination_label)
+    } else if op.destination_label.is_empty() {
         format!("{verb} {} {items}", op.item_count)
     } else {
         format!(
@@ -494,6 +709,20 @@ pub fn draw_notifications_button(
                             {
                                 state.clear_all();
                             }
+                            if state.transfers_active() {
+                                let (icon, key) = if state.queue_held() {
+                                    (regular::PLAY, "notifications_resume_all")
+                                } else {
+                                    (regular::PAUSE, "notifications_pause_all")
+                                };
+                                if eden_button(ui, palette, &format!("{icon} {}", i18n.tr(key))).clicked() {
+                                    if state.queue_held() {
+                                        state.resume_all();
+                                    } else {
+                                        state.pause_all();
+                                    }
+                                }
+                            }
                         });
                     });
 
@@ -531,9 +760,13 @@ pub fn draw_notifications_button(
                             .max_height(PANEL_MAX_HEIGHT)
                             .show(ui, |ui| {
                                 for op in &state.operations {
-                                    let has_job = state.has_robocopy_job(op.id);
+                                    let controls = RowControls {
+                                        transfer: state.has_robocopy_job(op.id),
+                                        cancel_only: state.has_cancel_flag(op.id),
+                                        queue_position: state.queue_position(op.id),
+                                    };
                                     if let Some(action) =
-                                        draw_operation_row(ui, i18n, palette, op, has_job)
+                                        draw_operation_row(ui, i18n, palette, op, controls)
                                     {
                                         actions.push(action);
                                     }
@@ -547,6 +780,7 @@ pub fn draw_notifications_button(
                                 RowAction::Pause(id) => state.pause_job(id),
                                 RowAction::Resume(id) => state.resume_job(id),
                                 RowAction::Cancel(id) => state.cancel_job(id),
+                                RowAction::Move(id, delta) => state.move_queued(id, delta),
                             }
                         }
                     }
@@ -575,6 +809,18 @@ enum RowAction {
     Pause(u64),
     Resume(u64),
     Cancel(u64),
+    /// Earlier (-1) or later (1) in the transfer queue.
+    Move(u64, i32),
+}
+
+#[derive(Clone, Copy)]
+struct RowControls {
+    /// A robocopy transfer: Pause/Resume and Cancel.
+    transfer: bool,
+    /// Another background job: Cancel only.
+    cancel_only: bool,
+    /// Waiting in the transfer queue at this position (1 = next).
+    queue_position: Option<usize>,
 }
 
 fn draw_operation_row(
@@ -582,7 +828,7 @@ fn draw_operation_row(
     i18n: &I18n,
     palette: &ThemePalette,
     op: &FileOperation,
-    has_robocopy_job: bool,
+    controls: RowControls,
 ) -> Option<RowAction> {
     let mut action = None;
 
@@ -615,9 +861,17 @@ fn draw_operation_row(
         // paused) get two icon buttons instead of the plain dismiss X -
         // dismissing those would leave the underlying process running with
         // no way left to stop or resume it.
-        let controllable = has_robocopy_job
-            && matches!(op.status, FileOpStatus::InProgress | FileOpStatus::Paused);
-        let controls_width = if controllable { 52.0 } else { 28.0 };
+        let active = matches!(op.status, FileOpStatus::InProgress | FileOpStatus::Paused | FileOpStatus::Queued);
+        let controllable = controls.transfer && active;
+        let cancel_only = !controllable && controls.cancel_only && active;
+        let queued = op.status == FileOpStatus::Queued && controls.queue_position.is_some();
+        let controls_width = if queued {
+            100.0
+        } else if controllable {
+            52.0
+        } else {
+            28.0
+        };
 
         let content_width = PANEL_WIDTH - 24.0 - controls_width - 24.0;
         ui.scope(|ui| {
@@ -630,8 +884,12 @@ fn draw_operation_row(
                             .color(ui.visuals().text_color()),
                     );
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let status = match (op.status, controls.queue_position) {
+                            (FileOpStatus::Queued, Some(pos)) => format!("{} #{pos}", status_label(i18n, op.status)),
+                            _ => status_label(i18n, op.status),
+                        };
                         ui.label(
-                            RichText::new(status_label(i18n, op.status))
+                            RichText::new(status)
                                 .size(palette.tooltip_text_size)
                                 .color(palette.icon_color),
                         );
@@ -643,7 +901,16 @@ fn draw_operation_row(
                     });
                 });
 
-                // Only robocopy jobs ever have a progress fraction -
+                if let Some(detail) = &op.detail {
+                    ui.label(
+                        RichText::new(detail)
+                            .size(palette.tooltip_text_size)
+                            .color(palette.icon_color),
+                    );
+                }
+
+                // Only background jobs that report progress (robocopy
+                // transfers, extraction, verification) have a fraction -
                 // `IFileOperation`-backed operations have no progress
                 // callback to source one from (see `FileOperation::progress`'s
                 // doc comment), so this bar simply doesn't appear for them.
@@ -678,7 +945,38 @@ fn draw_operation_row(
         });
 
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if controllable {
+            let tip = |key: &str| {
+                RichText::new(i18n.tr(key))
+                    .size(palette.tooltip_text_size)
+                    .color(palette.tooltip_text_color)
+            };
+            if queued {
+                if clickable_icon(ui, regular::PROHIBIT, palette)
+                    .on_hover_text(tip("tooltip_notifications_cancel"))
+                    .clicked()
+                {
+                    action = Some(RowAction::Cancel(op.id));
+                }
+                if clickable_icon(ui, regular::CARET_DOWN, palette)
+                    .on_hover_text(tip("tooltip_notifications_later"))
+                    .clicked()
+                {
+                    action = Some(RowAction::Move(op.id, 1));
+                }
+                if clickable_icon(ui, regular::CARET_UP, palette)
+                    .on_hover_text(tip("tooltip_notifications_sooner"))
+                    .clicked()
+                {
+                    action = Some(RowAction::Move(op.id, -1));
+                }
+            } else if cancel_only {
+                if clickable_icon(ui, regular::PROHIBIT, palette)
+                    .on_hover_text(tip("tooltip_notifications_cancel"))
+                    .clicked()
+                {
+                    action = Some(RowAction::Cancel(op.id));
+                }
+            } else if controllable {
                 if clickable_icon(ui, regular::PROHIBIT, palette)
                     .on_hover_text(
                         RichText::new(i18n.tr("tooltip_notifications_cancel"))
@@ -861,5 +1159,80 @@ mod history_label_tests {
         assert!(title(undo).starts_with(&undo_prefix));
         assert!(title(redo).starts_with(&redo_prefix));
         assert!(title(redo).ends_with("Docs"));
+    }
+}
+
+#[cfg(test)]
+mod queue_tests {
+    use super::*;
+    use crate::core::robocopy::RobocopyHandle;
+
+    fn transfer(state: &mut NotificationsState, disks: &[&str], queue: bool) -> u64 {
+        let id = state.start_operation(FileOpKind::Copy, 1, "Dest".into(), false);
+        // No jobs: once started, the worker reports Completed right away.
+        let handle = RobocopyHandle::idle(Vec::new(), 0);
+        state.start_transfer(id, handle, disks.iter().map(|d| d.to_string()).collect(), queue);
+        id
+    }
+
+    fn status(state: &NotificationsState, id: u64) -> FileOpStatus {
+        state.operations.iter().find(|o| o.id == id).unwrap().status
+    }
+
+    /// Polls until nothing is running (the empty jobs finish at once).
+    fn drain(state: &mut NotificationsState) -> Vec<(u64, bool)> {
+        let mut done = Vec::new();
+        for _ in 0..200 {
+            done.extend(state.poll_robocopy_jobs());
+            if state.running_disks.is_empty() && state.queue.is_empty() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        done
+    }
+
+    #[test]
+    fn same_disk_transfers_wait_their_turn() {
+        let mut state = NotificationsState::default();
+        let a = transfer(&mut state, &["c:"], true);
+        let b = transfer(&mut state, &["c:", "d:"], true);
+        let c = transfer(&mut state, &["e:"], true);
+        let d = transfer(&mut state, &["d:"], true);
+        assert_eq!(status(&state, a), FileOpStatus::InProgress);
+        assert_eq!(status(&state, b), FileOpStatus::Queued);
+        assert_eq!(status(&state, c), FileOpStatus::InProgress, "another disk runs in parallel");
+        assert_eq!(status(&state, d), FileOpStatus::Queued, "d: is waiting behind b");
+        assert_eq!(state.queue_position(b), Some(1));
+        assert_eq!(state.queue_position(d), Some(2));
+
+        state.move_queued(d, -1);
+        assert_eq!(state.queue_position(d), Some(1));
+
+        let finished = drain(&mut state);
+        let ids: Vec<u64> = finished.iter().map(|(id, _)| *id).collect();
+        for id in [a, b, c, d] {
+            assert!(ids.contains(&id), "{id} finished");
+            assert_eq!(status(&state, id), FileOpStatus::Completed);
+        }
+    }
+
+    #[test]
+    fn queue_off_runs_everything_and_cancel_works_while_queued() {
+        let mut state = NotificationsState::default();
+        let a = transfer(&mut state, &["c:"], false);
+        let b = transfer(&mut state, &["c:"], false);
+        assert_eq!(status(&state, a), FileOpStatus::InProgress);
+        assert_eq!(status(&state, b), FileOpStatus::InProgress);
+        drain(&mut state);
+
+        state.pause_all();
+        let held = transfer(&mut state, &["z:"], true);
+        assert_eq!(status(&state, held), FileOpStatus::Queued, "Pause All holds new transfers");
+        state.cancel_job(held);
+        assert_eq!(status(&state, held), FileOpStatus::Cancelled);
+        assert_eq!(state.poll_robocopy_jobs(), vec![(held, false)]);
+        state.resume_all();
+        assert!(!state.queue_held());
     }
 }

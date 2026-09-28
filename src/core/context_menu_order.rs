@@ -42,6 +42,8 @@ pub enum ContextMenuSection {
     /// on purpose: saved orders store each section by its position in
     /// this list, so new sections can only ever be added at the end.
     AnalyzeDiskUsage,
+    /// Extract Here / Extract To (archives only).
+    Extract,
 }
 
 impl ContextMenuSection {
@@ -55,6 +57,7 @@ impl ContextMenuSection {
         ContextMenuSection::OpenDefaultProgram,
         ContextMenuSection::SendTo,
         ContextMenuSection::Compress,
+        ContextMenuSection::Extract,
         ContextMenuSection::CustomContextMenu,
         ContextMenuSection::FileOperations,
         ContextMenuSection::Rename,
@@ -84,6 +87,7 @@ impl ContextMenuSection {
             ContextMenuSection::CreateShortcut => "context_menu_order_create_shortcut",
             ContextMenuSection::Checksum => "context_menu_order_checksum",
             ContextMenuSection::AnalyzeDiskUsage => "context_menu_order_analyze_disk_usage",
+            ContextMenuSection::Extract => "context_menu_order_extract",
             ContextMenuSection::Properties => "context_menu_order_properties",
             ContextMenuSection::WindowsMenu => "context_menu_order_windows_menu",
             ContextMenuSection::Separator => "context_menu_order_separator",
@@ -105,6 +109,7 @@ pub fn default_order() -> Vec<ContextMenuSection> {
         SendTo,
         Separator,
         Compress,
+        Extract,
         CustomContextMenu,
         Separator,
         FileOperations,

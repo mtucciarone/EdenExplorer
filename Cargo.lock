@@ -8,6 +8,7 @@ version = "0.28.0"
 dependencies = [
  "ab_glyph",
  "bincode",
+ "bzip2",
  "chrono",
  "crc32fast",
  "crossbeam-channel",
@@ -24,6 +25,7 @@ dependencies = [
  "image",
  "lazy_static",
  "lru",
+ "lzma-rust2",
  "md-5",
  "ntapi",
  "num_cpus",
@@ -2970,6 +2972,9 @@ name = "lzma-rust2"
 version = "0.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e2a88783b84d2d67ef2791778a9e76bfb68b8017aaf6c9d7d5f2626a478b16c"
+dependencies = [
+ "sha2 0.11.0",
+]
 
 [[package]]
 name = "maybe-rayon"

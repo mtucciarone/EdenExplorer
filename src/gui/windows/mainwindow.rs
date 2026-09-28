@@ -127,6 +127,12 @@ pub struct MainWindow {
     /// each - polled once per frame by `poll_pending_compress`.
     pub(crate) pending_compress_jobs:
         HashMap<u64, (crossbeam_channel::Receiver<Result<(), String>>, PathBuf)>,
+    /// Running extractions, by notification id (see `archive_ops`).
+    pub(crate) pending_extracts: HashMap<u64, crate::gui::windows::archive_ops::PendingExtract>,
+    /// Files being extracted from inside an archive to be opened.
+    pub(crate) pending_archive_opens: Vec<crate::gui::windows::archive_ops::ArchiveOpen>,
+    /// Copies being checked against their sources (see `core::verify`).
+    pub(crate) pending_verifies: HashMap<u64, crate::gui::windows::transfer_ops::PendingVerify>,
     /// The "Checksums" modal's state while it's open - see
     /// `ChecksumDialogState`'s doc comment in `mainwindow_imp.rs`. Drawn as
     /// a modal from the update loop, alongside `pending_paste_conflict`.
@@ -416,6 +422,9 @@ impl Default for MainWindow {
             pending_send_to: None,
             pending_bulk_rename: None,
             pending_compress_jobs: HashMap::new(),
+            pending_extracts: HashMap::new(),
+            pending_archive_opens: Vec::new(),
+            pending_verifies: HashMap::new(),
             pending_checksum: None,
             select_by_pattern: None,
             quick_look: None,
@@ -1725,6 +1734,9 @@ impl eframe::App for MainWindow {
         self.poll_pending_paste();
         self.poll_pending_conflict_resolution();
         self.poll_pending_compress();
+        self.poll_pending_extracts();
+        self.poll_archive_opens();
+        self.poll_pending_verifies();
         self.poll_pending_checksum();
         self.draw_paste_conflict_modal(ui.ctx(), &palette);
         self.draw_bulk_rename_modal(ui.ctx(), &palette);

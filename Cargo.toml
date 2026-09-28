@@ -95,6 +95,8 @@ ttf-parser = "0.25"
 resvg = "0.45"
 fontdb = "0.23"
 flate2 = "1"
+bzip2 = "0.6"
+lzma-rust2 = { version = "0.20", default-features = false, features = ["std", "xz"] }
 syntect = { version = "5", default-features = false, features = ["parsing", "regex-fancy", "default-syntaxes", "default-themes"] }
 sevenz-rust2 = "0.22"
 pulldown-cmark = "0.12"

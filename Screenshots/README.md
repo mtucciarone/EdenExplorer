@@ -44,6 +44,18 @@ Selecting a photo and pressing Space opens Quick Look over the window; ↓ and �
 
 Ctrl+Shift+P, then typing `pho` jumps to the Photos folder, `gal` switches to the Gallery view, `det` back to Details, and `setbeh` opens Settings on the Behavior page.
 
+## Archives
+
+![Extracting and browsing archives](archives.gif)
+
+Right-click a zip > Extract To "Holiday Photos\\" (progress in the notifications panel, then the new folder is selected), then double-click the zip to browse it like a folder: into Beach, Gallery thumbnails straight from the archive, Quick Look on a photo, and back out with the breadcrumbs.
+
+## Queued And Verified Copies
+
+![Queued and verified copies](transfers.gif)
+
+Copying a 180 MB folder to Documents and then to Desktop: the second copy waits as "Queued #1" (with sooner/later/cancel buttons and Pause All in the header) until the first finishes, and with Verify Copies on each one ends with "Verified 3 files".
+
 ## Features
 
 ### Details view - tagged folders are tinted by tag color, with a Tags column showing every tag as a chip
@@ -341,3 +353,27 @@ Ctrl+Shift+P, then typing `pho` jumps to the Photos folder, `gal` switches to th
 ### Command palette (Ctrl+Shift+P) - typing `set` lists the Settings pages first; commands show their shortcuts, folders their paths
 
 ![Command palette](74-command-palette.png)
+
+### Right-click a zip - Extract Here, Extract To "Holiday Photos\\", and Extract To…
+
+![Extract menu](75-extract-menu.png)
+
+### Browsing inside a zip in Gallery view - thumbnails, folder sizes, and breadcrumbs through the archive
+
+![Browsing an archive](76-archive-gallery.png)
+
+### Right-click items inside an archive - Open, Extract Next To The Archive, Extract To…, and Copy Path
+
+![Archive item menu](77-archive-menu.png)
+
+### Paste conflict dialog - Keep Both, Apply To All, and Replace Only If The Pasted One Is Newer / Larger
+
+![Paste conflict rules](78-paste-conflict.png)
+
+### Notifications - a second copy to the same disk queued behind the first, with reorder, cancel, and Pause All
+
+![Transfer queue](79-transfer-queue.png)
+
+### Notifications - both copies finished and verified by checksum
+
+![Verified copies](80-verified.png)

@@ -24,6 +24,15 @@ pub struct UiPrefs {
     /// Space opens Quick Look (a large preview of the selected item); off =
     /// Space starts type-to-filter like any other character.
     pub quick_look: bool,
+    /// Double-clicking a zip/7z/tar archive opens it like a folder instead
+    /// of in its default program (see `core::archive_view`).
+    pub browse_archives: bool,
+    /// Copies and moves that share a disk run one after another instead of
+    /// at the same time (see the transfer queue in `notifications`).
+    pub queue_transfers: bool,
+    /// After a copy finishes, every copied file is compared with its
+    /// source by checksum (see `core::verify`).
+    pub verify_copies: bool,
     /// Put the address bar on its own row above the toolbar (split panes
     /// always do); off = the toolbar and address bar share one row.
     pub address_bar_own_row: bool,
@@ -52,6 +61,9 @@ impl Default for UiPrefs {
             persist_folder_sizes: true,
             hover_previews: true,
             quick_look: true,
+            browse_archives: true,
+            queue_transfers: true,
+            verify_copies: false,
             address_bar_own_row: true,
             disk_usage_ask_admin: true,
             templates_folder: None,

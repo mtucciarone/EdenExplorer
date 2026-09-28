@@ -208,7 +208,12 @@ impl Drop for ComGuard {
 }
 
 fn run_thumbnail_job(job: ThumbnailJob, tx: Sender<ThumbnailResult>) {
-    let image = extract_thumbnail(&job.path).or_else(|_| decode_image_fallback(&job.path));
+    // A file inside an archive gets its thumbnail from a temporary
+    // extracted copy (see `core::archive_view`).
+    let image = match crate::core::archive_view::readable_path(&job.path) {
+        Ok(path) => extract_thumbnail(&path).or_else(|_| decode_image_fallback(&path)),
+        Err(e) => Err(windows::core::Error::new(windows::core::HRESULT(-1), e)),
+    };
     let _ = tx.send(ThumbnailResult {
         key: job.key,
         image: image.ok(),

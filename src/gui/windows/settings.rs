@@ -1149,6 +1149,36 @@ fn draw_behavior_section(
             "tooltip_settings_quick_look",
             action,
         );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut prefs.browse_archives,
+            "settings_browse_archives",
+            "tooltip_settings_browse_archives",
+            action,
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut prefs.queue_transfers,
+            "settings_queue_transfers",
+            "tooltip_settings_queue_transfers",
+            action,
+        );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut prefs.verify_copies,
+            "settings_verify_copies",
+            "tooltip_settings_verify_copies",
+            action,
+        );
     });
 
     settings_section(ui, palette, |ui| {

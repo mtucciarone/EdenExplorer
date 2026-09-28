@@ -315,6 +315,14 @@ impl AudioPreviewService {
         self.current_path = Some(path.to_path_buf());
         self.load_error = None;
         self.waveform = None;
+        // Playing straight from inside an archive would mean extracting on
+        // the UI thread; opening the file (double-click) plays it instead.
+        if crate::core::archive_view::is_inside_archive(path) {
+            self.player = None;
+            self.waveform_rx = None;
+            self.load_error = Some(crate::core::archive_view::MEDIA_IN_ARCHIVE.to_string());
+            return;
+        }
         self.player = match AudioPlayer::open(path) {
             Ok(player) => Some(player),
             Err(err) => {

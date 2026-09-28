@@ -10,8 +10,8 @@ Items marked [x] have been implemented (see the README changelog); the rest aren
 
 1. ~~**Disk Usage Analyzer**~~ - done: every item in section 1 is implemented.
 2. ~~**Quick Look (Space)** and a **command palette**~~ - done.
-3. **Archive extraction** and **queued transfers with verify-after-copy**.
-4. **Folder compare/sync** and **editable shortcuts**.
+3. ~~**Archive extraction** and **queued transfers with verify-after-copy**~~ - done, along with batch conflict rules.
+4. **Folder compare/sync** (editable shortcuts are already done).
 
 ---
 
@@ -62,12 +62,12 @@ Items marked [x] have been implemented (see the README changelog); the rest aren
 
 ## 3. File Operations
 
-- [ ] **Queued transfers**: run copies to the same disk one after another instead of in parallel, with reorder and Pause All (TeraCopy, FileCommander, Directory Opus) (M)
-- [ ] **Verify after copy** using the existing checksums (TeraCopy) (S)
-- [ ] **Batch conflict rules**: Apply To All, Keep Both, Replace Only If Newer/Larger (M)
+- [x] **Queued transfers**: run copies to the same disk one after another instead of in parallel, with reorder and Pause All (TeraCopy, FileCommander, Directory Opus) (M)
+- [x] **Verify after copy** using the existing checksums (TeraCopy) (S)
+- [x] **Batch conflict rules**: Apply To All, Keep Both, Replace Only If Newer/Larger (M)
 - [ ] **Copy To / Move To** with a folder picker and recent destinations (Explorer, Path Finder) (S)
 - [x] **New File from templates**: .txt, .md, .docx, .xlsx, or a user templates folder (Nautilus, Dolphin, Files App) (S)
-- [ ] **Extract archives** (zip, 7z, tar, gz, rar via 7-Zip): Extract Here, Extract to Folder, and browsing into an archive like a folder (Files App, Dolphin, Directory Opus) (M–L)
+- [x] **Extract archives** (zip, 7z, tar, gz, rar via 7-Zip): Extract Here, Extract to Folder, and browsing into an archive like a folder (Files App, Dolphin, Directory Opus) (M–L)
 - [ ] **Split and join large files** (Total Commander) (S)
 - [ ] **Secure delete / shred** (FileCommander) (S)
 - [ ] **Symbolic links and junctions**: create them and show their targets (Link Shell Extension, Directory Opus) (S)

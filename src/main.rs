@@ -20,6 +20,9 @@ fn main() -> eframe::Result<()> {
     if let Some(code) = crate::core::mft_helper::run_helper_from_args() {
         std::process::exit(code);
     }
+    // Files opened from inside archives last session (in the background:
+    // there may be many).
+    std::thread::spawn(crate::core::archive_view::clean_temp);
 
     let launch_options = match parse_args(std::env::args()) {
         Ok(options) => options,

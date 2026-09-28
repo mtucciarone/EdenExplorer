@@ -129,4 +129,20 @@ pub enum ItemViewerContextAction {
     SendTo(Vec<PathBuf>, Vec<PathBuf>, bool),
     /// Opens the Disk Usage dashboard for a folder or drive.
     AnalyzeDiskUsage(PathBuf),
+    /// Extract whole archives (see `core::extract`).
+    Extract(Vec<PathBuf>, ExtractChoice),
+    /// Extract items picked while browsing inside an archive (their
+    /// virtual paths, see `core::archive_view`).
+    ExtractEntries(Vec<PathBuf>, ExtractChoice),
+}
+
+/// Where Extract puts the results.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExtractChoice {
+    /// Into the archive's own folder.
+    Here,
+    /// Into a new folder named after the archive, next to it.
+    OwnFolder,
+    /// Ask for a folder.
+    Pick,
 }

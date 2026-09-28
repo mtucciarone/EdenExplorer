@@ -1,3 +1,4 @@
+pub mod archive_ops;
 pub mod containers; // small reusable components
 pub mod command_palette;
 
@@ -26,4 +27,5 @@ pub mod shortcuts_ui;
 pub mod structs;
 pub mod tab_groups_ui;
 pub mod toolbar_ui;
+pub mod transfer_ops;
 pub mod windowsoverrides;

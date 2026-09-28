@@ -175,6 +175,20 @@ pub fn build_jobs(
 /// doesn't already exist in `target_dir`, starting at `-001` - the format
 /// the user asked for. Falls back to a timestamp-based suffix past `-999`,
 /// which should never actually happen in practice.
+/// The disks a transfer touches (drive letters or `\\server\share`,
+/// lowercased): every source's and the destination's. Two transfers
+/// sharing one run one after the other when transfers are queued.
+pub fn transfer_disks(sources: &[PathBuf], target_dir: &Path) -> Vec<String> {
+    let disk = |p: &Path| match p.components().next() {
+        Some(std::path::Component::Prefix(prefix)) => Some(prefix.as_os_str().to_string_lossy().to_lowercase()),
+        _ => None,
+    };
+    let mut disks: Vec<String> = sources.iter().filter_map(|p| disk(p)).chain(disk(target_dir)).collect();
+    disks.sort();
+    disks.dedup();
+    disks
+}
+
 pub fn next_available_name(target_dir: &Path, name: &str) -> String {
     let path = Path::new(name);
     let stem = path
@@ -441,23 +455,15 @@ pub struct RobocopyHandle {
 }
 
 impl RobocopyHandle {
-    pub fn start(jobs: Vec<RobocopyJobSpec>, total_bytes: u64) -> Self {
-        let signal = Arc::new(AtomicU8::new(SIGNAL_RUN));
-        let remaining = Arc::new(Mutex::new(jobs));
-        let completed_bytes_base = Arc::new(Mutex::new(0u64));
-        let (tx, rx) = unbounded();
-
-        let worker_signal = signal.clone();
-        let worker_remaining = remaining.clone();
-        let worker_base = completed_bytes_base.clone();
-        thread::spawn(move || {
-            run_jobs(worker_remaining, worker_signal, tx, total_bytes, worker_base);
-        });
-
+    /// A transfer that doesn't run anything until `resume` is called -
+    /// right away, or once it's its turn in the transfer queue (see
+    /// `NotificationsState::start_transfer`).
+    pub fn idle(jobs: Vec<RobocopyJobSpec>, total_bytes: u64) -> Self {
+        let (_tx, rx) = unbounded();
         Self {
-            signal,
-            remaining,
-            completed_bytes_base,
+            signal: Arc::new(AtomicU8::new(SIGNAL_RUN)),
+            remaining: Arc::new(Mutex::new(jobs)),
+            completed_bytes_base: Arc::new(Mutex::new(0u64)),
             total_bytes,
             rx,
         }

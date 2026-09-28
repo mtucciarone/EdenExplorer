@@ -207,7 +207,8 @@ pub fn existing_directories(options: &LaunchOptions) -> Result<Vec<PathBuf>, Lau
     let mut paths = Vec::with_capacity(options.paths.len());
 
     for path in &options.paths {
-        if !is_virtual_path(path) && !path.is_dir() {
+        // A zip/7z/tar (or a folder inside one) opens like a folder too.
+        if !is_virtual_path(path) && !path.is_dir() && crate::core::archive_view::split(path).is_none() {
             return Err(LaunchError::InvalidDirectory(path.clone()));
         }
 

@@ -513,6 +513,48 @@ pub fn handle_context_menu_actions(
         return;
     }
 
+    // Inside an archive (browsed like a folder): read-only, so just open,
+    // extract and copy the path.
+    // (One check on the folder, not one per selected item: this runs every
+    // frame while the menu is open.)
+    if context_paths
+        .first()
+        .and_then(|p| p.parent())
+        .is_some_and(|dir| crate::core::archive_view::split(dir).is_some())
+    {
+        use crate::gui::windows::containers::enums::ExtractChoice;
+        if context_paths.len() == 1
+            && menu_item_button(ui, regular::ARROW_SQUARE_OUT, &i18n.tr("archive_open_item")).clicked()
+        {
+            *action = Some(if file.is_dir {
+                ItemViewerAction::Open(context_paths[0].clone())
+            } else {
+                ItemViewerAction::OpenWithDefault(context_paths.clone())
+            });
+            ui.close();
+        }
+        for (icon, key, choice) in [
+            (regular::ARROW_LINE_DOWN, "extract_selected_here", ExtractChoice::Here),
+            (regular::FOLDER_OPEN, "extract_selected_to", ExtractChoice::Pick),
+        ] {
+            if menu_item_button(ui, icon, &i18n.tr(key)).clicked() {
+                *action = Some(ItemViewerAction::Context(ItemViewerContextAction::ExtractEntries(
+                    context_paths.clone(),
+                    choice,
+                )));
+                ui.close();
+            }
+        }
+        ui.separator();
+        if menu_item_button(ui, regular::LINK, &i18n.tr("disk_usage_copy_path")).clicked() {
+            *action = Some(ItemViewerAction::Context(ItemViewerContextAction::CopyPath(
+                context_paths.clone(),
+            )));
+            ui.close();
+        }
+        return;
+    }
+
     if is_recycle_bin_view {
         if menu_item_button_enabled(ui, !is_cut, regular::SCISSORS, &i18n.tr("inputs_cut"))
             .clicked()
@@ -703,6 +745,36 @@ pub fn handle_context_menu_actions(
                         context_paths.clone(),
                     )));
                     ui.close();
+                }
+            }
+            ContextMenuSection::Extract => {
+                use crate::gui::windows::containers::enums::ExtractChoice;
+                // `all_files` already holds the (per-frame) is-folder check;
+                // `can_extract` only looks at the name.
+                let archives = !context_paths.is_empty()
+                    && all_files
+                    && context_paths.iter().all(|p| crate::core::extract::can_extract(p));
+                if archives {
+                    let folder_label = if context_paths.len() == 1 {
+                        let name = context_paths[0].file_name().and_then(|n| n.to_str()).unwrap_or("");
+                        let stem = crate::core::extract::ArchiveKind::of(name).map(|(_, s)| s).unwrap_or(name);
+                        format!("{} \"{stem}\\\"", i18n.tr("extract_to"))
+                    } else {
+                        i18n.tr("extract_each_to_folder")
+                    };
+                    for (icon, label, choice) in [
+                        (regular::ARROW_LINE_DOWN, i18n.tr("extract_here"), ExtractChoice::Here),
+                        (regular::FOLDER_SIMPLE, folder_label, ExtractChoice::OwnFolder),
+                        (regular::FOLDER_OPEN, format!("{}…", i18n.tr("extract_to")), ExtractChoice::Pick),
+                    ] {
+                        if menu_item_button(ui, icon, &label).clicked() {
+                            *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Extract(
+                                context_paths.clone(),
+                                choice,
+                            )));
+                            ui.close();
+                        }
+                    }
                 }
             }
             ContextMenuSection::SendTo => {

@@ -334,6 +334,12 @@ impl VideoPreviewService {
         self.current_path = Some(path.to_path_buf());
         self.texture = None;
         self.load_error = None;
+        // See `AudioPreviewService::set_current`.
+        if crate::core::archive_view::is_inside_archive(path) {
+            self.player = None;
+            self.load_error = Some(crate::core::archive_view::MEDIA_IN_ARCHIVE.to_string());
+            return;
+        }
         self.player = match VideoPlayer::open(path) {
             Ok(player) => Some(player),
             Err(err) => {

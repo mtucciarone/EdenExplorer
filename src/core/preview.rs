@@ -191,7 +191,13 @@ impl PreviewService {
         thread::spawn(move || {
             // A decoder panicking on a malformed file must not leave this
             // path stuck on "Loading" forever - report it as an error.
-            let payload = std::panic::catch_unwind(|| load_preview_payload(&owned))
+            // A file inside an archive is previewed from a temporary
+            // extracted copy (see `core::archive_view`).
+            let readable = crate::core::archive_view::readable_path(&owned);
+            let payload = std::panic::catch_unwind(|| match &readable {
+                Ok(path) => load_preview_payload(path),
+                Err(e) => PreviewPayload::Error(e.clone()),
+            })
                 .unwrap_or_else(|_| {
                     PreviewPayload::Error("Couldn't preview this file (it may be damaged).".to_string())
                 });
