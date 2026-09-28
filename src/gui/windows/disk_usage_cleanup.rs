@@ -31,11 +31,35 @@ pub(crate) struct DupState {
     pub(crate) marked: HashSet<PathBuf>,
     min_size: usize,
     cancelled: bool,
+    /// Worked out when `groups` or `marked` change (see `invalidate`), not
+    /// every frame - there can be tens of thousands of files.
+    summary: Option<DupSummary>,
+    /// Table rows: (group, file within it; `None` = the group's header).
+    rows: Option<Vec<(usize, Option<usize>)>>,
+}
+
+#[derive(Clone, Copy, Default)]
+struct DupSummary {
+    marked: usize,
+    marked_size: u64,
+    /// At least one copy of every group stays unmarked.
+    safe: bool,
+    extra_copies: usize,
+    wasted: u64,
 }
 
 impl Default for DupState {
     fn default() -> Self {
-        Self { handle: None, progress: DupProgress::default(), groups: None, marked: HashSet::new(), min_size: 2, cancelled: false }
+        Self {
+            handle: None,
+            progress: DupProgress::default(),
+            groups: None,
+            marked: HashSet::new(),
+            min_size: 2,
+            cancelled: false,
+            summary: None,
+            rows: None,
+        }
     }
 }
 
@@ -44,8 +68,46 @@ impl DupState {
         self.handle.is_some()
     }
 
+    /// Call after changing `groups` or `marked`.
+    fn invalidate(&mut self) {
+        self.summary = None;
+        self.rows = None;
+    }
+
+    fn summary(&mut self) -> DupSummary {
+        if let Some(summary) = self.summary {
+            return summary;
+        }
+        let groups = self.groups.as_deref().unwrap_or_default();
+        let mut summary = DupSummary { safe: true, ..Default::default() };
+        for group in groups {
+            let marked = group.files.iter().filter(|f| self.marked.contains(&f.path)).count();
+            summary.marked += marked;
+            summary.marked_size += group.size * marked as u64;
+            summary.safe &= marked < group.files.len();
+            summary.extra_copies += group.files.len().saturating_sub(1);
+            summary.wasted += group.wasted();
+        }
+        self.summary = Some(summary);
+        summary
+    }
+
+    fn rows(&mut self) -> &[(usize, Option<usize>)] {
+        if self.rows.is_none() {
+            let groups = self.groups.as_deref().unwrap_or_default();
+            let mut rows = Vec::with_capacity(groups.iter().map(|g| g.files.len() + 1).sum());
+            for (g, group) in groups.iter().enumerate() {
+                rows.push((g, None));
+                rows.extend((0..group.files.len()).map(|f| (g, Some(f))));
+            }
+            self.rows = Some(rows);
+        }
+        self.rows.as_deref().unwrap_or_default()
+    }
+
     /// Drops a deleted or moved-away file (or everything under a folder).
     pub(crate) fn forget(&mut self, path: &Path) {
+        self.invalidate();
         if let Some(groups) = &mut self.groups {
             crate::core::duplicates::forget(groups, |p| p.starts_with(path));
         }
@@ -119,6 +181,7 @@ pub(crate) fn poll_cleanup(state: &mut DiskUsageState) {
                     if groups.is_some() {
                         state.dups.groups = groups;
                         state.dups.marked.clear();
+                        state.dups.invalidate();
                     }
                     state.dups.handle = None;
                     break;
@@ -238,6 +301,7 @@ pub(crate) fn draw_duplicates_toolbar(
                 && let Some(groups) = &state.dups.groups
             {
                 state.dups.marked = crate::core::duplicates::all_but_one(groups, keep).into_iter().collect();
+                state.dups.invalidate();
             }
         }
         let any = !state.dups.marked.is_empty();
@@ -247,11 +311,12 @@ pub(crate) fn draw_duplicates_toolbar(
             .clicked()
         {
             state.dups.marked.clear();
+            state.dups.invalidate();
         }
         ui.separator();
 
-        let marked = marked_in_order(state);
-        let safe = state.dups.groups.as_ref().is_some_and(|g| crate::core::duplicates::keeps_a_copy(g, &state.dups.marked));
+        let summary = state.dups.summary();
+        let safe = summary.safe;
         let can_act = any && safe && !state.scanning();
         let recycle = ui
             .add_enabled_ui(can_act, |ui| eden_button(ui, palette, &format!("{} {}", regular::TRASH, i18n.tr("disk_usage_dup_recycle_marked"))))
@@ -262,26 +327,24 @@ pub(crate) fn draw_duplicates_toolbar(
             recycle.on_hover_text(i18n.tr("tooltip_disk_usage_delete"))
         };
         if recycle.clicked() {
-            *action = Some(DiskUsageAction::Delete { paths: marked.clone(), permanent: ui.input(|i| i.modifiers.shift) });
+            *action = Some(DiskUsageAction::Delete { paths: marked_in_order(state), permanent: ui.input(|i| i.modifiers.shift) });
         }
         if ui
             .add_enabled_ui(can_act, |ui| eden_button(ui, palette, &format!("{} {}", regular::FOLDER_SIMPLE_DASHED, i18n.tr("disk_usage_move_to"))))
             .inner
             .clicked()
         {
-            *action = Some(DiskUsageAction::MoveTo(marked.clone()));
+            *action = Some(DiskUsageAction::MoveTo(marked_in_order(state)));
         }
         if any {
-            let size: u64 = state
-                .dups
-                .groups
-                .iter()
-                .flatten()
-                .map(|g| g.size * g.files.iter().filter(|f| state.dups.marked.contains(&f.path)).count() as u64)
-                .sum();
             ui.label(muted(
                 palette,
-                format!("{} {} · {}", format_count(marked.len() as u64), i18n.tr("disk_usage_dup_marked"), format_size(size)),
+                format!(
+                    "{} {} · {}",
+                    format_count(summary.marked as u64),
+                    i18n.tr("disk_usage_dup_marked"),
+                    format_size(summary.marked_size)
+                ),
             ));
         }
     });
@@ -322,11 +385,6 @@ fn draw_dup_progress(ui: &mut egui::Ui, i18n: &I18n, palette: &ThemePalette, sta
     ui.ctx().request_repaint_after(Duration::from_millis(100));
 }
 
-enum DupRow<'a> {
-    Group(&'a DupGroup),
-    File(&'a DupGroup, usize),
-}
-
 pub(crate) fn draw_duplicates(
     ui: &mut egui::Ui,
     i18n: &I18n,
@@ -338,7 +396,7 @@ pub(crate) fn draw_duplicates(
         draw_dup_progress(ui, i18n, palette, state);
         return;
     }
-    let Some(groups) = state.dups.groups.clone() else {
+    if state.dups.groups.is_none() {
         ui.add_space(40.0);
         ui.vertical_centered(|ui| {
             ui.label(egui::RichText::new(regular::COPY_SIMPLE).size(34.0).color(palette.text_normal.gamma_multiply(0.5)));
@@ -350,14 +408,19 @@ pub(crate) fn draw_duplicates(
             }
         });
         return;
-    };
-    if groups.is_empty() {
+    }
+    if state.dups.groups.as_ref().is_some_and(|g| g.is_empty()) {
         ui.add_space(40.0);
         ui.vertical_centered(|ui| ui.label(muted(palette, i18n.tr("disk_usage_dup_none"))));
         return;
     }
-    let copies: usize = groups.iter().map(|g| g.files.len() - 1).sum();
-    let wasted: u64 = groups.iter().map(DupGroup::wasted).sum();
+    let summary = state.dups.summary();
+    let (copies, wasted) = (summary.extra_copies, summary.wasted);
+    // Borrowed out of the state for the draw (not cloned: there can be tens
+    // of thousands of files), and put back below.
+    state.dups.rows();
+    let rows = state.dups.rows.take().unwrap_or_default();
+    let groups = state.dups.groups.take().unwrap_or_default();
     ui.label(muted(
         palette,
         format!(
@@ -372,10 +435,6 @@ pub(crate) fn draw_duplicates(
     ));
     ui.add_space(4.0);
 
-    let rows: Vec<DupRow> = groups
-        .iter()
-        .flat_map(|g| std::iter::once(DupRow::Group(g)).chain((0..g.files.len()).map(move |i| DupRow::File(g, i))))
-        .collect();
     let row_height = (palette.text_size + 10.0).max(22.0);
     let header_color = palette.text_normal.gamma_multiply(0.75);
     ui.style_mut().interaction.selectable_labels = false;
@@ -406,8 +465,10 @@ pub(crate) fn draw_duplicates(
         })
         .body(|body| {
             body.rows(row_height, rows.len(), |mut row| {
-                match &rows[row.index()] {
-                    DupRow::Group(group) => {
+                let (g, file_index) = rows[row.index()];
+                let group = &groups[g];
+                match file_index {
+                    None => {
                         row.col(|_| {});
                         row.col(|ui| {
                             ui.label(
@@ -427,8 +488,8 @@ pub(crate) fn draw_duplicates(
                         row.col(|_| {});
                         row.col(|_| {});
                     }
-                    DupRow::File(group, index) => {
-                        let file = &group.files[*index];
+                    Some(index) => {
+                        let file = &group.files[index];
                         let is_marked = state.dups.marked.contains(&file.path);
                         let color = if is_marked { palette.text_normal.gamma_multiply(0.55) } else { palette.text_normal };
                         row.col(|ui| {
@@ -487,10 +548,13 @@ pub(crate) fn draw_duplicates(
             });
         });
 
-    if let Some(path) = toggle
-        && !state.dups.marked.remove(&path)
-    {
-        state.dups.marked.insert(path);
+    state.dups.groups = Some(groups);
+    state.dups.rows = Some(rows);
+    if let Some(path) = toggle {
+        if !state.dups.marked.remove(&path) {
+            state.dups.marked.insert(path);
+        }
+        state.dups.invalidate();
     }
     if let Some(paths) = copy {
         copy_paths(&paths);

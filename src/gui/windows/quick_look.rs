@@ -24,19 +24,22 @@ pub struct QuickLookState {
     tab: usize,
     /// Item count of the folder last shown, so it's read once.
     folder_count: Option<(PathBuf, Option<usize>)>,
+    /// Where the shown item was last frame, so a single selection isn't
+    /// searched for through the whole list every frame.
+    last_position: Option<usize>,
 }
 
 impl QuickLookState {
     pub fn new(side: SplitSide, tab: usize) -> Self {
-        Self { side, tab, folder_count: None }
+        Self { side, tab, folder_count: None, last_position: None }
     }
 }
 
 /// Where the selection is in the visible list: `(position among the
 /// visible items, index into files)` of the first selected visible item.
-pub fn target_index(
+pub fn target_index<'a>(
     visible: &[usize],
-    paths: impl Fn(usize) -> PathBuf,
+    paths: impl Fn(usize) -> &'a std::path::Path,
     selected: &HashSet<PathBuf>,
 ) -> Option<(usize, usize)> {
     if selected.is_empty() {
@@ -45,7 +48,7 @@ pub fn target_index(
     visible
         .iter()
         .enumerate()
-        .find(|(_, idx)| selected.contains(&paths(**idx)))
+        .find(|(_, idx)| selected.contains(paths(**idx)))
         .map(|(pos, idx)| (pos, *idx))
 }
 
@@ -98,7 +101,16 @@ impl MainWindow {
         let (target, position, total, mode) = {
             let view = self.active_tab().view(side);
             let visible = &view.item_viewer_filter_state.cached_indices;
-            let found = target_index(visible, |i| view.files[i].path.clone(), &view.explorer_state.selected_paths);
+            let selected = &view.explorer_state.selected_paths;
+            let cached = state.last_position.filter(|&pos| {
+                selected.len() == 1
+                    && visible.get(pos).is_some_and(|&idx| idx < view.files.len() && selected.contains(&view.files[idx].path))
+            });
+            let found = match cached {
+                Some(pos) => Some((pos, visible[pos])),
+                None => target_index(visible, |i| view.files[i].path.as_path(), selected),
+            };
+            state.last_position = found.map(|(pos, _)| pos);
             match found {
                 Some((pos, idx)) => (Some(view.files[idx].clone()), Some(pos), visible.len(), view.display_mode),
                 None => (None, None, visible.len(), view.display_mode),
@@ -297,10 +309,10 @@ mod tests {
         // Sorted/filtered view showing d, b, c.
         let visible = [3, 1, 2];
         let selected: HashSet<PathBuf> = [PathBuf::from("c"), PathBuf::from("b")].into_iter().collect();
-        assert_eq!(target_index(&visible, |i| files[i].clone(), &selected), Some((1, 1)));
+        assert_eq!(target_index(&visible, |i| files[i].as_path(), &selected), Some((1, 1)));
         let hidden: HashSet<PathBuf> = [PathBuf::from("a")].into_iter().collect();
-        assert_eq!(target_index(&visible, |i| files[i].clone(), &hidden), None);
-        assert_eq!(target_index(&visible, |i| files[i].clone(), &HashSet::new()), None);
+        assert_eq!(target_index(&visible, |i| files[i].as_path(), &hidden), None);
+        assert_eq!(target_index(&visible, |i| files[i].as_path(), &HashSet::new()), None);
     }
 
     #[test]

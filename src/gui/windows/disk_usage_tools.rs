@@ -481,7 +481,17 @@ pub(crate) fn draw_changes(
     });
     ui.add_space(4.0);
 
-    let changes = shown_changes(compare).to_vec();
+    // Borrowed (just the `result` field, so the selection can still be
+    // updated below) rather than copying up to 1,000 rows every frame.
+    let show_files = compare.show_files;
+    let changes: &[crate::core::disk_usage_snapshot::Change] = compare
+        .result
+        .as_ref()
+        .map(|r| {
+            let list = if show_files { &r.files } else { &r.folders };
+            &list[..list.len().min(CHANGES_SHOWN)]
+        })
+        .unwrap_or_default();
     if changes.is_empty() {
         ui.add_space(30.0);
         ui.vertical_centered(|ui| ui.label(muted(palette, i18n.tr("disk_usage_no_changes"))));

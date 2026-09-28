@@ -270,7 +270,9 @@ pub fn all_but_one(groups: &[DupGroup], keep: Keep) -> Vec<PathBuf> {
     marked
 }
 
-/// True when `marked` leaves at least one copy of every group.
+/// True when `marked` leaves at least one copy of every group. (The
+/// dashboard works this out in the same pass as its other totals.)
+#[cfg(test)]
 pub fn keeps_a_copy(groups: &[DupGroup], marked: &std::collections::HashSet<PathBuf>) -> bool {
     groups.iter().all(|g| g.files.iter().any(|f| !marked.contains(&f.path)))
 }
