@@ -1838,31 +1838,12 @@ fn draw_archive_tree(
     }
 
     let (files, folders, size) = view.totals;
-    ui.horizontal(|ui| {
-        ui.weak(
-            egui::RichText::new(format!(
-                "{files} {} · {folders} {} · {}",
-                i18n.tr("preview_archive_files"),
-                i18n.tr("preview_archive_folders"),
-                format_file_size(size)
-            ))
-            .size(palette.tooltip_text_size),
-        );
-        if folders > 0 {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let small = |icon: &str| egui::Button::new(egui::RichText::new(icon).size(palette.tooltip_text_size)).frame(false);
-                if ui.add(small(regular::ARROWS_OUT_LINE_VERTICAL)).on_hover_text(i18n.tr("preview_archive_expand_all")).clicked() {
-                    view.collapsed.clear();
-                    view.rows = None;
-                }
-                if ui.add(small(regular::ARROWS_IN_LINE_VERTICAL)).on_hover_text(i18n.tr("preview_archive_collapse_all")).clicked() {
-                    view.collapsed = entries.iter().enumerate().filter(|(_, e)| e.is_dir).map(|(i, _)| i).collect();
-                    view.rows = None;
-                }
-            });
-        }
-    });
-    ui.add_space(2.0);
+    // The listing sits in a bordered panel: a header strip with the
+    // summary and Expand/Collapse All, then the rows on their own
+    // background with faint zebra stripes.
+    let border = ui.visuals().widgets.noninteractive.bg_stroke.color;
+    let radius = palette.medium_radius.saturating_add(2);
+    let stripe_fill = ui.visuals().text_color().gamma_multiply(0.035);
 
     let text_size = palette.text_size;
     let row_height = (text_size + 9.0).round();
@@ -1874,65 +1855,114 @@ fn draw_archive_tree(
     let name_font = egui::FontId::proportional(text_size);
     let size_font = egui::FontId::proportional(palette.tooltip_text_size);
     let mut toggled = None;
-    let row_count = view.rows(entries).len();
-    egui::ScrollArea::both()
-        .id_salt("preview_pane_archive")
-        .auto_shrink([false, false])
-        .show_rows(ui, row_height, row_count, |ui, range| {
+    egui::Frame::NONE
+        .fill(palette.input_field_bg)
+        .stroke(egui::Stroke::new(1.0, border))
+        .corner_radius(egui::CornerRadius::same(radius))
+        .inner_margin(egui::Margin::same(1))
+        .show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
             ui.spacing_mut().item_spacing.y = 0.0;
-            let visible = view.rows(entries)[range].to_vec();
-            for i in visible {
-                let entry = &entries[i];
-                let collapsed = view.collapsed.contains(&i);
-                let name = ui.painter().layout_no_wrap(entry.name.clone(), name_font.clone(), text_color);
-                let size_text = (!entry.is_dir)
-                    .then(|| ui.painter().layout_no_wrap(format_file_size(entry.size), size_font.clone(), weak_color));
-                let left = 4.0 + entry.depth as f32 * indent;
-                let width = left + 16.0 + icon_size + 6.0 + name.size().x + size_text.as_ref().map_or(0.0, |g| 10.0 + g.size().x) + 8.0;
-                let sense = if entry.is_dir { egui::Sense::click() } else { egui::Sense::hover() };
-                let (rect, response) = ui.allocate_exact_size(egui::vec2(width.max(ui.available_width()), row_height), sense);
-                if !ui.is_rect_visible(rect) {
-                    continue;
-                }
-                let painter = ui.painter();
-                if response.hovered() {
-                    painter.rect_filled(rect, 3.0, hover_fill);
-                }
-                // Indent guides, like VS Code's tree.
-                for level in 0..entry.depth {
-                    let x = rect.left() + 4.0 + level as f32 * indent + 7.5;
-                    painter.vline(x, rect.y_range(), egui::Stroke::new(1.0, weak_color.gamma_multiply(0.25)));
-                }
-                let mut x = rect.left() + left;
-                if entry.is_dir {
-                    let caret = if collapsed { regular::CARET_RIGHT } else { regular::CARET_DOWN };
-                    painter.text(egui::pos2(x + 7.5, rect.center().y), egui::Align2::CENTER_CENTER, caret, size_font.clone(), weak_color);
-                }
-                x += 16.0;
-                let icon = if entry.is_dir && !collapsed { entry.icon_open } else { entry.icon };
-                if let Some(image) = crate::gui::material_icons::image(ui, icon, icon_size) {
-                    let icon_rect = egui::Rect::from_min_size(egui::pos2(x, rect.center().y - icon_size / 2.0), egui::vec2(icon_size, icon_size));
-                    image.paint_at(ui, icon_rect);
-                }
-                x += icon_size + 6.0;
-                let painter = ui.painter();
-                let name_width = name.size().x;
-                painter.galley(egui::pos2(x, rect.center().y - name.size().y / 2.0), name, text_color);
-                if let Some(galley) = size_text {
-                    let pos = egui::pos2(x + name_width + 10.0, rect.center().y - galley.size().y / 2.0);
-                    painter.galley(pos, galley, weak_color);
-                }
-                if response.clicked() {
-                    toggled = Some(i);
-                }
-                if entry.is_dir {
-                    response.on_hover_cursor(egui::CursorIcon::PointingHand);
-                }
-            }
-            if truncated {
-                ui.add_space(8.0);
-                ui.weak(i18n.tr("preview_archive_truncated"));
-            }
+            let header_radius = radius.saturating_sub(1);
+            egui::Frame::NONE
+                .fill(palette.sidebar_bg_color)
+                .corner_radius(egui::CornerRadius { nw: header_radius, ne: header_radius, sw: 0, se: 0 })
+                .inner_margin(egui::Margin::symmetric(10, 6))
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal(|ui| {
+                        ui.weak(
+                            egui::RichText::new(format!(
+                                "{files} {} · {folders} {} · {}",
+                                i18n.tr("preview_archive_files"),
+                                i18n.tr("preview_archive_folders"),
+                                format_file_size(size)
+                            ))
+                            .size(palette.tooltip_text_size),
+                        );
+                        if folders > 0 {
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                let small = |icon: &str| egui::Button::new(egui::RichText::new(icon).size(palette.tooltip_text_size)).frame(false);
+                                if ui.add(small(regular::ARROWS_OUT_LINE_VERTICAL)).on_hover_text(i18n.tr("preview_archive_expand_all")).clicked() {
+                                    view.collapsed.clear();
+                                    view.rows = None;
+                                }
+                                if ui.add(small(regular::ARROWS_IN_LINE_VERTICAL)).on_hover_text(i18n.tr("preview_archive_collapse_all")).clicked() {
+                                    view.collapsed = entries.iter().enumerate().filter(|(_, e)| e.is_dir).map(|(i, _)| i).collect();
+                                    view.rows = None;
+                                }
+                            });
+                        }
+                    });
+                });
+            let line_y = ui.cursor().top();
+            ui.painter().hline(ui.max_rect().x_range(), line_y, egui::Stroke::new(1.0, border));
+            egui::Frame::NONE.inner_margin(egui::Margin::same(4)).show(ui, |ui| {
+                // Counted after the header, whose buttons can change it.
+                let row_count = view.rows(entries).len();
+                egui::ScrollArea::both()
+                    .id_salt("preview_pane_archive")
+                    .auto_shrink([false, false])
+                    .show_rows(ui, row_height, row_count, |ui, range| {
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        let first_row = range.start;
+                        let visible = view.rows(entries)[range].to_vec();
+                        for (k, i) in visible.into_iter().enumerate() {
+                            let entry = &entries[i];
+                            let collapsed = view.collapsed.contains(&i);
+                            let name = ui.painter().layout_no_wrap(entry.name.clone(), name_font.clone(), text_color);
+                            let size_text = (!entry.is_dir)
+                                .then(|| ui.painter().layout_no_wrap(format_file_size(entry.size), size_font.clone(), weak_color));
+                            let left = 4.0 + entry.depth as f32 * indent;
+                            let width = left + 16.0 + icon_size + 6.0 + name.size().x + size_text.as_ref().map_or(0.0, |g| 10.0 + g.size().x) + 8.0;
+                            let sense = if entry.is_dir { egui::Sense::click() } else { egui::Sense::hover() };
+                            let (rect, response) = ui.allocate_exact_size(egui::vec2(width.max(ui.available_width()), row_height), sense);
+                            if !ui.is_rect_visible(rect) {
+                                continue;
+                            }
+                            let painter = ui.painter();
+                            if response.hovered() {
+                                painter.rect_filled(rect, 3.0, hover_fill);
+                            } else if (first_row + k) % 2 == 1 {
+                                painter.rect_filled(rect, 0.0, stripe_fill);
+                            }
+                            // Indent guides, like VS Code's tree.
+                            for level in 0..entry.depth {
+                                let x = rect.left() + 4.0 + level as f32 * indent + 7.5;
+                                painter.vline(x, rect.y_range(), egui::Stroke::new(1.0, weak_color.gamma_multiply(0.25)));
+                            }
+                            let mut x = rect.left() + left;
+                            if entry.is_dir {
+                                let caret = if collapsed { regular::CARET_RIGHT } else { regular::CARET_DOWN };
+                                painter.text(egui::pos2(x + 7.5, rect.center().y), egui::Align2::CENTER_CENTER, caret, size_font.clone(), weak_color);
+                            }
+                            x += 16.0;
+                            let icon = if entry.is_dir && !collapsed { entry.icon_open } else { entry.icon };
+                            if let Some(image) = crate::gui::material_icons::image(ui, icon, icon_size) {
+                                let icon_rect = egui::Rect::from_min_size(egui::pos2(x, rect.center().y - icon_size / 2.0), egui::vec2(icon_size, icon_size));
+                                image.paint_at(ui, icon_rect);
+                            }
+                            x += icon_size + 6.0;
+                            let painter = ui.painter();
+                            let name_width = name.size().x;
+                            painter.galley(egui::pos2(x, rect.center().y - name.size().y / 2.0), name, text_color);
+                            if let Some(galley) = size_text {
+                                let pos = egui::pos2(x + name_width + 10.0, rect.center().y - galley.size().y / 2.0);
+                                painter.galley(pos, galley, weak_color);
+                            }
+                            if response.clicked() {
+                                toggled = Some(i);
+                            }
+                            if entry.is_dir {
+                                response.on_hover_cursor(egui::CursorIcon::PointingHand);
+                            }
+                        }
+                        if truncated {
+                            ui.add_space(8.0);
+                            ui.weak(i18n.tr("preview_archive_truncated"));
+                        }
+                    });
+            });
         });
     if let Some(i) = toggled {
         if !view.collapsed.remove(&i) {

@@ -384,6 +384,6 @@ Copying a 180 MB folder to Documents and then to Desktop: the second copy waits 
 
 ![Verified copies](80-verified.png)
 
-### Preview pane - a zip's contents as a VS Code-style tree with Material Icon Theme icons for each file type and named folder
+### Preview pane - a zip's contents in a bordered panel, as a VS Code-style tree with Material Icon Theme icons for each file type and named folder
 
 ![Archive preview with file icons](81-archive-preview-icons.png)
