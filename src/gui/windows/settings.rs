@@ -1192,6 +1192,32 @@ fn draw_behavior_section(
     });
 
     settings_section(ui, palette, |ui| {
+        setting_row(
+            ui,
+            |ui| {
+                setting_label(
+                    ui,
+                    &i18n.tr("settings_terminal_font_size"),
+                    Some((&i18n.tr("tooltip_settings_terminal_font_size"), palette)),
+                    palette,
+                );
+            },
+            |ui| {
+                apply_eden_visual_overrides(ui, palette);
+                let changed = ui
+                    .add_sized(
+                        [SETTINGS_VALUE_WIDTH, ui.spacing().interact_size.y],
+                        egui::DragValue::new(&mut settings.current_settings.ui_prefs.terminal.font_size).range(8.0..=32.0).speed(0.2).max_decimals(0),
+                    )
+                    .changed();
+                if changed {
+                    *action = Some(SettingsAction::ApplySettings);
+                }
+            },
+        );
+    });
+
+    settings_section(ui, palette, |ui| {
         setting_label(
             ui,
             &i18n.tr("settings_templates_folder"),

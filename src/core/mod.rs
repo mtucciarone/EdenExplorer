@@ -22,6 +22,8 @@ pub mod indexer;
 pub mod keymap;
 pub mod launch;
 pub mod material_icons;
+pub mod terminal;
+pub mod terminal_shells;
 pub mod mft_helper;
 pub mod mermaid;
 pub mod network;

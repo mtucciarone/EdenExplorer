@@ -141,6 +141,7 @@ const SHORTCUT_GROUPS: &[ShortcutGroup] = &[
             Shortcut::Editable(ShortcutAction::Fullscreen),
             Shortcut::Editable(ShortcutAction::PerformancePanel),
             Shortcut::Editable(ShortcutAction::CommandPalette),
+            Shortcut::Editable(ShortcutAction::TerminalPane),
             Shortcut::Fixed {
                 action_key: "shortcut_quick_look",
                 combos: &[&["Space"]],

@@ -4539,6 +4539,10 @@ impl MainWindow {
                     self.toggle_performance_panel();
                     None
                 }
+                ToolbarItem::TerminalPane => {
+                    self.toggle_terminal();
+                    None
+                }
                 ToolbarItem::Settings => {
                     self.open_or_focus_settings_tab();
                     None
@@ -5406,6 +5410,32 @@ impl MainWindow {
 
     /// Shows/hides the Performance panel (Ctrl+K, or its close
     /// button) and remembers the choice, same as the Settings checkbox.
+    /// Shows or hides the active tab's terminal pane.
+    pub(crate) fn toggle_terminal(&mut self) {
+        let tab = self.tabs[self.active_tab].id;
+        self.terminal.toggle(tab);
+    }
+
+    pub(crate) fn handle_terminal_action(
+        &mut self,
+        action: crate::gui::windows::terminal_panel::PanelAction,
+        dir: &std::path::Path,
+    ) {
+        let prefs = &mut self.settings_window.current_settings.ui_prefs;
+        if let Some(height) = action.new_height {
+            prefs.terminal.height = height.clamp(120.0, 2000.0);
+        }
+        if let Some(id) = action.set_default_shell {
+            prefs.terminal.default_shell = Some(id);
+        }
+        if action.persist {
+            crate::core::ui_prefs::save_ui_prefs(prefs);
+        }
+        if action.open_external {
+            crate::gui::windows::containers::itemviewer_navbar::open_default_terminal(dir);
+        }
+    }
+
     pub(crate) fn toggle_performance_panel(&mut self) {
         let settings = &mut self.settings_window.current_settings;
         settings.show_performance_panel = !settings.show_performance_panel;
@@ -5554,6 +5584,7 @@ impl MainWindow {
             ShortcutAction::Undo,
             ShortcutAction::Redo,
             ShortcutAction::CommandPalette,
+            ShortcutAction::TerminalPane,
         ] {
             if matches!(action, ShortcutAction::Undo | ShortcutAction::Redo) && text_focused {
                 continue;
@@ -5651,6 +5682,7 @@ impl MainWindow {
             }
             ShortcutAction::PerformancePanel => self.toggle_performance_panel(),
             ShortcutAction::CommandPalette => self.toggle_command_palette(),
+            ShortcutAction::TerminalPane => self.toggle_terminal(),
             ShortcutAction::Back | ShortcutAction::Forward | ShortcutAction::Up => {
                 let nav = match action {
                     ShortcutAction::Back => ItemViewerNavAction::Back,

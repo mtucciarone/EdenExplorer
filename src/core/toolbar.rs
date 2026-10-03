@@ -21,6 +21,8 @@ pub enum ToolbarItem {
     ViewPreview,
     ViewDetailPreview,
     Terminal,
+    /// Shows or hides the docked terminal pane.
+    TerminalPane,
     SelectAll,
     InvertSelection,
     SelectByPattern,
@@ -32,7 +34,7 @@ pub enum ToolbarItem {
 
 impl ToolbarItem {
     /// The layout the app has always had.
-    pub const DEFAULT: [ToolbarItem; 17] = [
+    pub const DEFAULT: [ToolbarItem; 18] = [
         ToolbarItem::Back,
         ToolbarItem::Forward,
         ToolbarItem::Up,
@@ -50,11 +52,12 @@ impl ToolbarItem {
         ToolbarItem::ViewDetailPreview,
         ToolbarItem::Separator,
         ToolbarItem::Terminal,
+        ToolbarItem::TerminalPane,
     ];
 
     /// Every button that can be placed (separators aside), in the order
     /// the Settings page lists them.
-    pub const BUTTONS: [ToolbarItem; 20] = [
+    pub const BUTTONS: [ToolbarItem; 21] = [
         ToolbarItem::Back,
         ToolbarItem::Forward,
         ToolbarItem::Up,
@@ -70,6 +73,7 @@ impl ToolbarItem {
         ToolbarItem::ViewPreview,
         ToolbarItem::ViewDetailPreview,
         ToolbarItem::Terminal,
+        ToolbarItem::TerminalPane,
         ToolbarItem::SelectAll,
         ToolbarItem::InvertSelection,
         ToolbarItem::SelectByPattern,

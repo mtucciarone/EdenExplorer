@@ -1153,6 +1153,7 @@ pub(crate) fn toolbar_item_icon_and_key(item: ToolbarItem) -> (&'static str, &'s
         ToolbarItem::ViewPreview => (regular::EYE, "view_preview"),
         ToolbarItem::ViewDetailPreview => (regular::SIDEBAR, "view_detail_preview"),
         ToolbarItem::Terminal => (regular::TERMINAL, "tooltip_open_terminal"),
+        ToolbarItem::TerminalPane => (regular::TERMINAL_WINDOW, "shortcut_terminal_pane"),
         ToolbarItem::SelectAll => (regular::CHECK_SQUARE, "select_all"),
         ToolbarItem::InvertSelection => (regular::SWAP, "select_invert"),
         ToolbarItem::SelectByPattern => (regular::ASTERISK, "select_by_pattern_title"),

@@ -20,6 +20,7 @@ pub mod mainwindow_imp;
 pub mod navigation;
 pub mod performance_ui;
 pub mod quick_look;
+pub mod terminal_panel;
 pub mod send_to_ui;
 pub mod settings;
 pub mod shell_context_menu;

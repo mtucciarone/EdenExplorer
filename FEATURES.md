@@ -78,6 +78,7 @@
   <li><b>Selection tools</b> - Invert Selection, Select By Pattern (wildcards), and checkboxes in Details and Gallery</li>
   <li><b>Hover previews</b> for images and videos in Details view</li>
   <li><b>Breadcrumb folder menus</b> - the <code>&gt;</code> arrows in the address bar list the folders inside each part, like Explorer (can be turned off in Settings &gt; General)</li>
+  <li><b>Terminal pane</b> (<code>Ctrl+`</code>) - Command Prompt, Windows PowerShell, PowerShell 7, Git Bash, and WSL (Ubuntu, ...) in session tabs docked under the file view, with colors, scrollback, selection, and Go To Current Folder</li>
   <li><b>Command palette</b> (<code>Ctrl+Shift+P</code>) - every command, view, toggle, and Settings page, plus favorite and recent folders, with fuzzy search</li>
   <li><b>Preview frame</b> - previews sit in a rounded, bordered frame; thickness, color, and corner radius are set in Settings &gt; Appearance, with the padding and inner corners worked out automatically</li>
   <li><b>Quick Look</b> - press Space for a large preview of the selected file or folder; arrow keys move through the list, Enter opens, Space or Esc closes</li>

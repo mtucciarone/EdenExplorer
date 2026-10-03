@@ -142,6 +142,8 @@ pub struct MainWindow {
     pub(crate) quick_look: Option<crate::gui::windows::quick_look::QuickLookState>,
     /// The command palette (Ctrl+Shift+P), when open.
     pub(crate) command_palette: Option<crate::gui::windows::command_palette::CommandPaletteState>,
+    /// The docked terminal pane's shells, per tab.
+    pub(crate) terminal: crate::gui::windows::terminal_panel::TerminalPanels,
     /// Commands run from the palette, most recent first (this session).
     pub(crate) palette_recent: Vec<crate::gui::windows::command_palette::Command>,
     /// The last pattern used, offered again the next time the dialog opens.
@@ -429,6 +431,7 @@ impl Default for MainWindow {
             select_by_pattern: None,
             quick_look: None,
             command_palette: None,
+            terminal: Default::default(),
             palette_recent: Vec::new(),
             last_select_pattern: String::new(),
             saved_folder_views_revision: 0,
@@ -554,6 +557,13 @@ impl MainWindow {
 
 impl eframe::App for MainWindow {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        // While the terminal has focus, its keys are taken before any
+        // shortcut or the file list can react to them.
+        self.terminal.capture_input(ui.ctx());
+        if std::mem::take(&mut self.terminal.toggle_requested) {
+            self.toggle_terminal();
+        }
+        self.terminal.retain_tabs(self.tabs.iter().map(|t| t.id));
         // Read by the preview pane and Quick Look this frame.
         crate::gui::windows::containers::itemviewer_preview::set_preview_frame_style(
             ui.ctx(),
@@ -1178,6 +1188,24 @@ impl eframe::App for MainWindow {
                                         });
 
                                     container.show(ui, |ui| {
+                                        // The terminal pane, if open, takes the bottom of the
+                                        // file view (under both panes of a split).
+                                        let full = ui.available_rect_before_wrap();
+                                        let tab_id = self.tabs[self.active_tab].id;
+                                        let prefs = self.settings_window.current_settings.ui_prefs.terminal.clone();
+                                        if let Some(height) = self.terminal.reserved_height(tab_id, prefs.height, full.height()) {
+                                            let rect = egui::Rect::from_min_max(
+                                                egui::pos2(full.left(), full.bottom() - height),
+                                                full.max,
+                                            );
+                                            let dir = self.active_tab().view(self.focused_split).nav.current.clone();
+                                            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+                                            let action = self.terminal.draw(
+                                                &mut child, rect, tab_id, &dir, height, &prefs, &palette, &self.i18n,
+                                            );
+                                            self.handle_terminal_action(action, &dir);
+                                            ui.set_max_height((full.height() - height).max(0.0));
+                                        }
                                         if has_split {
                                             let split_rect = ui.available_rect_before_wrap();
                                             let (split_rect, _) = ui.allocate_exact_size(

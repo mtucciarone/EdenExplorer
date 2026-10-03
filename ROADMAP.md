@@ -85,7 +85,7 @@ Items marked [x] have been implemented (see the README changelog); the rest aren
 
 ## 5. Integration and Power Users
 
-- [ ] **Built-in terminal pane** that follows the current folder (Dolphin F4, Path Finder, Files App) (M)
+- [x] **Built-in terminal pane** that follows the current folder (Dolphin F4, Path Finder, Files App) (M)
 - [ ] **Open With…** with recommended apps and "always use" (S)
 - [ ] **Cloud status badges** for OneDrive, Dropbox, and Google Drive (synced / online-only), plus Free Up Space (Files App) (M)
 - [ ] **Remote locations**: FTP, SFTP, WebDAV, and S3 you can browse like folders (ForkLift, FileCommander, Directory Opus) (L)

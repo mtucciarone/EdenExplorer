@@ -399,3 +399,11 @@ Copying a 180 MB folder to Documents and then to Desktop: the second copy waits 
 ### Breadcrumb folder menu - the arrow after Eden Demo lists its folders, with Photos (on the current path) highlighted
 
 ![Breadcrumb folder menu](84-breadcrumb-menu.png)
+
+### Terminal pane (Ctrl+`) - PowerShell 7 and Ubuntu (WSL) session tabs docked under the file view, with colors, wide characters, and the cursor (sample output: under Wine the shells can't take input, so this text was fed to the terminal directly)
+
+![Terminal pane](85-terminal-pane.png)
+
+### The terminal pane's + menu - every installed shell (Command Prompt, Windows PowerShell, PowerShell 7, Git Bash, each WSL distribution) and Default Shell
+
+![Terminal shells](86-terminal-shells.png)

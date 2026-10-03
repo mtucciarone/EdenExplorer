@@ -225,3 +225,27 @@ pub fn copy_text_to_clipboard(text: &str) -> bool {
     let _ = unsafe { CloseClipboard() };
     true
 }
+
+/// The clipboard's text, if it holds any (for pasting into the terminal).
+pub fn read_text_from_clipboard() -> Option<String> {
+    unsafe {
+        OpenClipboard(None).ok()?;
+        let mut text = None;
+        if let Ok(handle) = GetClipboardData(CF_UNICODETEXT.0 as u32)
+            && !handle.0.is_null()
+        {
+            let hglobal = windows::Win32::Foundation::HGLOBAL(handle.0 as *mut _);
+            let ptr = GlobalLock(hglobal) as *const u16;
+            if !ptr.is_null() {
+                let mut len = 0;
+                while *ptr.add(len) != 0 {
+                    len += 1;
+                }
+                text = Some(String::from_utf16_lossy(std::slice::from_raw_parts(ptr, len)));
+                let _ = GlobalUnlock(hglobal);
+            }
+        }
+        let _ = CloseClipboard();
+        text
+    }
+}

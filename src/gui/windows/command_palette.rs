@@ -104,6 +104,7 @@ fn shortcut_icon(action: ShortcutAction) -> &'static str {
         ShortcutAction::Fullscreen => regular::ARROWS_OUT,
         ShortcutAction::PerformancePanel => regular::GAUGE,
         ShortcutAction::CommandPalette => regular::COMMAND,
+        ShortcutAction::TerminalPane => regular::TERMINAL_WINDOW,
     }
 }
 

@@ -59,6 +59,26 @@ pub struct UiPrefs {
     /// The `>` arrows between address bar segments open a menu of that
     /// folder's subfolders (like Explorer); off = plain separators.
     pub breadcrumb_dropdowns: bool,
+    /// The terminal pane (`gui::windows::terminal_panel`).
+    #[serde(deserialize_with = "lenient")]
+    pub terminal: TerminalPrefs,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TerminalPrefs {
+    /// Shell new terminals start with (`ShellProfile::id`); `None` = the
+    /// first of PowerShell 7, Windows PowerShell, Command Prompt.
+    pub default_shell: Option<String>,
+    pub font_size: f32,
+    /// Height of the pane in points.
+    pub height: f32,
+}
+
+impl Default for TerminalPrefs {
+    fn default() -> Self {
+        Self { default_shell: None, font_size: 13.0, height: 260.0 }
+    }
 }
 
 /// The rounded border drawn around every preview.
@@ -128,6 +148,7 @@ impl Default for UiPrefs {
             shortcuts: Default::default(),
             preview_frame: PreviewFrame::default(),
             breadcrumb_dropdowns: true,
+            terminal: TerminalPrefs::default(),
         }
     }
 }

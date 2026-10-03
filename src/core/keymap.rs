@@ -129,10 +129,11 @@ pub enum ShortcutAction {
     Fullscreen,
     PerformancePanel,
     CommandPalette,
+    TerminalPane,
 }
 
 impl ShortcutAction {
-    pub const ALL: [ShortcutAction; 22] = [
+    pub const ALL: [ShortcutAction; 23] = [
         ShortcutAction::NewTab,
         ShortcutAction::CloseTab,
         ShortcutAction::NextTab,
@@ -155,6 +156,7 @@ impl ShortcutAction {
         ShortcutAction::Fullscreen,
         ShortcutAction::PerformancePanel,
         ShortcutAction::CommandPalette,
+        ShortcutAction::TerminalPane,
     ];
 
     pub fn defaults(self) -> Vec<KeyCombo> {
@@ -182,6 +184,7 @@ impl ShortcutAction {
             ShortcutAction::Fullscreen => vec![KeyCombo::key(Key::F1)],
             ShortcutAction::PerformancePanel => vec![KeyCombo::ctrl(Key::K)],
             ShortcutAction::CommandPalette => vec![KeyCombo::ctrl_shift(Key::P)],
+            ShortcutAction::TerminalPane => vec![KeyCombo::ctrl(Key::Backtick)],
         }
     }
 
@@ -210,6 +213,7 @@ impl ShortcutAction {
             ShortcutAction::Fullscreen => "shortcut_fullscreen",
             ShortcutAction::PerformancePanel => "shortcut_performance_panel",
             ShortcutAction::CommandPalette => "shortcut_command_palette",
+            ShortcutAction::TerminalPane => "shortcut_terminal_pane",
         }
     }
 }
