@@ -79,6 +79,7 @@ pub fn key_label(key: egui::Key) -> String {
         egui::Key::ArrowDown => "↓".into(),
         egui::Key::Backspace => "Backspace".into(),
         egui::Key::Enter => "Enter".into(),
+        egui::Key::Backtick => "`".into(),
         other => other.name().to_string(),
     }
 }

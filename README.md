@@ -123,8 +123,9 @@
 | ![Performance panel](Screenshots/44-performance-panel.png) | ![Benchmark This Folder results](Screenshots/45-performance-benchmark.png) |
 | ![Analyze Disk Usage](Screenshots/57-disk-usage.png) | ![Disk Usage - Largest Files](Screenshots/60-disk-usage-largest-files.png) |
 | ![Disk Usage - Treemap](Screenshots/65-disk-usage-treemap.png) | ![Disk Usage - Overview](Screenshots/71-disk-usage-overview.png) |
+| ![Terminal pane with PowerShell 7 and Ubuntu](Screenshots/85-terminal-pane.png) | ![Archive preview with VS Code file icons](Screenshots/81-archive-preview-icons.png) |
 
-See the [Screenshots folder](Screenshots/README.md) for all 87 feature screenshots, plus short GIFs of [Analyze Disk Usage](Screenshots/disk-usage.gif), the [Performance panel folder and drive benchmarks](Screenshots/performance-benchmark.gif), the [animated GIF preview controls](Screenshots/gif-preview-controls.gif), [selection tools and New File templates](Screenshots/selection-and-templates.gif), [Quick Look](Screenshots/quick-look.gif), the [command palette](Screenshots/command-palette.gif), [extracting and browsing archives](Screenshots/archives.gif), [archive previews with VS Code file icons](Screenshots/archive-preview.gif), and [queued, verified copies](Screenshots/transfers.gif).
+See the [Screenshots folder](Screenshots/README.md) for all 89 feature screenshots, plus short GIFs of [Analyze Disk Usage](Screenshots/disk-usage.gif), the [Performance panel folder and drive benchmarks](Screenshots/performance-benchmark.gif), the [animated GIF preview controls](Screenshots/gif-preview-controls.gif), [selection tools and New File templates](Screenshots/selection-and-templates.gif), [Quick Look](Screenshots/quick-look.gif), the [command palette](Screenshots/command-palette.gif), [extracting and browsing archives](Screenshots/archives.gif), [archive previews with VS Code file icons](Screenshots/archive-preview.gif), [queued, verified copies](Screenshots/transfers.gif), [breadcrumb folder menus](Screenshots/breadcrumbs.gif), and the [terminal pane](Screenshots/terminal.gif).
 
 ## Star History
 

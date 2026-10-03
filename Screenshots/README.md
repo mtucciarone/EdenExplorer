@@ -54,13 +54,25 @@ Right-click a zip > Extract To "Holiday Photos\\" (progress in the notifications
 
 ![Archive preview with file icons](archive-preview.gif)
 
-Selecting a zip shows its contents in the preview pane as a tree with Material Icon Theme icons (as in VS Code): collapsing src and node_modules, Collapse All, opening the top folder, Expand All, then the same for a tar.gz, in the dark and light themes.
+Selecting a zip shows its contents in the preview pane, inside the rounded preview frame, as a tree with Material Icon Theme icons (as in VS Code): collapsing src and node_modules, Collapse All, opening the top folder and docs, Expand All, then the same for a tar.gz, in the dark and light themes.
 
 ## Queued And Verified Copies
 
 ![Queued and verified copies](transfers.gif)
 
 Copying a 180 MB folder to Documents and then to Desktop: the second copy waits as "Queued #1" (with sooner/later/cancel buttons and Pause All in the header) until the first finishes, and with Verify Copies on each one ends with "Verified 3 files".
+
+## Breadcrumb Folder Menus
+
+![Breadcrumb folder menus](breadcrumbs.gif)
+
+From Photos, the arrow after Eden Demo lists its folders (Photos highlighted) and Music is picked; the arrow after Documents shows Eden Demo on the path; then Eden Demo > Projects, and the arrow at the end lists Projects' own folders to open rust-app.
+
+## Terminal Pane
+
+![Terminal pane](terminal.gif)
+
+Ctrl+` opens the pane with the default shell (PowerShell 7 with an Oh My Posh-style prompt, its icons from the automatically chosen Nerd Font); dragging the top edge makes it taller; the + menu lists every installed shell and starts Ubuntu (WSL) in a second session tab; switching tabs, selecting text, then Ctrl+` hides the pane and the toolbar's Terminal Pane button brings it back with both shells still there. Under Wine the shells can't take input, so the shell output here was fed to the terminal directly.
 
 ## Features
 
@@ -216,7 +228,7 @@ Copying a 180 MB folder to Documents and then to Desktop: the second copy waits 
 
 ![Settings - Tags](38-settings-tags.png)
 
-### Settings - Shortcuts, where most shortcuts can be changed: + adds a key combination, × removes one, and locked rows are fixed
+### Settings - Shortcuts, where most shortcuts can be changed: + adds a key combination, × removes one, and locked rows are fixed; the Window group now includes Terminal Pane (Ctrl+`)
 
 ![Settings - Shortcuts](39-settings-shortcuts.png)
 
@@ -411,3 +423,11 @@ Copying a 180 MB folder to Documents and then to Desktop: the second copy waits 
 ### Terminal pane with an Oh My Posh-style prompt - powerline segments and Nerd Font icons, with Terminal Font on Automatic picking the installed Nerd Font (sample output fed to the terminal directly, as under Wine the shells can't take input)
 
 ![Terminal with Oh My Posh](87-terminal-oh-my-posh.png)
+
+### Settings - Behavior - Terminal Font Size and Terminal Font (Automatic picks an installed Nerd Font for prompt themes like Oh My Posh)
+
+![Terminal settings](88-terminal-settings.png)
+
+### Settings - General - Breadcrumb Folder Menus turns the address bar's > menus on or off
+
+![Breadcrumb Folder Menus setting](89-breadcrumb-setting.png)
