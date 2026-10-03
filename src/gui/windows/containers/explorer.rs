@@ -136,6 +136,10 @@ pub fn draw_tab_content(
                     saved_search_count,
                     settings_window.current_settings.middle_click_opens_new_tab,
                     settings_window.current_settings.tag_icon_style,
+                    crate::gui::windows::containers::itemviewer_navbar::BreadcrumbMenus {
+                        enabled: settings_window.current_settings.ui_prefs.breadcrumb_dropdowns,
+                        show_hidden: settings_window.current_settings.show_hidden_files_folders,
+                    },
                     &crate::core::toolbar::drawn_layout(
                         settings_window.current_settings.ui_prefs.toolbar.as_deref(),
                     ),

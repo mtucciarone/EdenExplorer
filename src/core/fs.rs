@@ -1406,3 +1406,57 @@ mod content_search_tests {
         let _ = std::fs::remove_file(&text_path);
     }
 }
+
+/// The folders directly inside `dir` (name, path), sorted by name the way
+/// the file list sorts: for the address bar's breadcrumb menus. Works
+/// inside archives too. Hidden folders are left out unless `show_hidden`.
+pub fn list_subfolders(dir: &Path, show_hidden: bool) -> Result<Vec<(String, PathBuf)>, String> {
+    let mut folders = Vec::new();
+    if let Some((archive, inner)) = crate::core::archive_view::split(dir) {
+        let items = crate::core::archive_view::listing(&archive)?;
+        for item in crate::core::archive_view::children(&items, &inner) {
+            if item.is_dir {
+                let name = item.path.rsplit('/').next().unwrap_or(&item.path).to_string();
+                folders.push((name.clone(), dir.join(name)));
+            }
+        }
+    } else {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+        for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())?.flatten() {
+            let Ok(kind) = entry.file_type() else { continue };
+            // Junctions and directory links count as folders, as in the list.
+            let is_dir = kind.is_dir() || (kind.is_symlink() && entry.path().is_dir());
+            if !is_dir {
+                continue;
+            }
+            if !show_hidden
+                && entry.metadata().is_ok_and(|m| m.file_attributes() & FILE_ATTRIBUTE_HIDDEN != 0)
+            {
+                continue;
+            }
+            folders.push((entry.file_name().to_string_lossy().into_owned(), entry.path()));
+        }
+    }
+    folders.sort_by_cached_key(|(name, _)| name.to_lowercase());
+    Ok(folders)
+}
+
+#[cfg(test)]
+mod list_subfolders_tests {
+    use super::*;
+
+    #[test]
+    fn lists_only_folders_sorted_by_name() {
+        let dir = std::env::temp_dir().join(format!("eden_subfolders_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        for name in ["beta", "Alpha", "gamma"] {
+            std::fs::create_dir_all(dir.join(name)).unwrap();
+        }
+        std::fs::write(dir.join("file.txt"), b"x").unwrap();
+        let names: Vec<String> = list_subfolders(&dir, true).unwrap().into_iter().map(|(n, _)| n).collect();
+        assert_eq!(names, ["Alpha", "beta", "gamma"]);
+        assert!(list_subfolders(&dir.join("missing"), true).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

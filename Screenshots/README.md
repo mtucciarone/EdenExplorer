@@ -395,3 +395,7 @@ Copying a 180 MB folder to Documents and then to Desktop: the second copy waits 
 ### A custom preview frame - 2 px purple border with 16 px corners around an archive preview
 
 ![Custom preview frame](83-preview-frame-custom.png)
+
+### Breadcrumb folder menu - the arrow after Eden Demo lists its folders, with Photos (on the current path) highlighted
+
+![Breadcrumb folder menu](84-breadcrumb-menu.png)

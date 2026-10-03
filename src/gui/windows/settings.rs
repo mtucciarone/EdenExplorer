@@ -1041,6 +1041,16 @@ fn draw_general_section(
             "tooltip_settings_address_bar_own_row",
             action,
         );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut settings.current_settings.ui_prefs.breadcrumb_dropdowns,
+            "settings_breadcrumb_dropdowns",
+            "tooltip_settings_breadcrumb_dropdowns",
+            action,
+        );
     });
 
     settings_section(ui, palette, |ui| {

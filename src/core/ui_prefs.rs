@@ -56,6 +56,9 @@ pub struct UiPrefs {
     /// (Settings > Appearance > Preview Frame).
     #[serde(deserialize_with = "lenient")]
     pub preview_frame: PreviewFrame,
+    /// The `>` arrows between address bar segments open a menu of that
+    /// folder's subfolders (like Explorer); off = plain separators.
+    pub breadcrumb_dropdowns: bool,
 }
 
 /// The rounded border drawn around every preview.
@@ -124,6 +127,7 @@ impl Default for UiPrefs {
             toolbar: None,
             shortcuts: Default::default(),
             preview_frame: PreviewFrame::default(),
+            breadcrumb_dropdowns: true,
         }
     }
 }

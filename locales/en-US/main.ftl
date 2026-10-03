@@ -1076,6 +1076,9 @@ theme_preview_frame_radius = Corner Radius
 theme_preview_frame_padding = Padding
 theme_preview_frame_inner_radius = Inner Corner Radius
 tooltip_theme_preview_frame_math = Worked out from the corner radius. Padding = corner radius × 0.29 (how far a rounded corner curves in), at least 4 px, so content never pokes past the curve. Inner corner radius = corner radius − border thickness − padding, used for images and the archive header so the inner and outer curves stay evenly spaced.
+settings_breadcrumb_dropdowns = Breadcrumb Folder Menus
+tooltip_settings_breadcrumb_dropdowns = The > arrows between the parts of the address bar open a list of the folders inside that part, like Windows Explorer; the folder on the current path is highlighted. Off: plain separators.
+breadcrumb_no_subfolders = No folders inside
 disk_usage_col_name = Name
 disk_usage_col_size = Size
 disk_usage_col_share = % Of Parent

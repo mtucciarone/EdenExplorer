@@ -71,6 +71,7 @@ pub fn draw_itemviewer_navigation_bar(
     saved_search_count: usize,
     middle_click_opens_new_tab: bool,
     tag_icon_style: crate::core::indexer::TagIconStyle,
+    breadcrumb_menus: BreadcrumbMenus,
     toolbar_layout: &[ToolbarItem],
 ) -> ItemViewerNavBarAction {
     let mut action = ItemViewerNavBarAction::default();
@@ -122,6 +123,7 @@ pub fn draw_itemviewer_navigation_bar(
                 saved_search_count,
                 middle_click_opens_new_tab,
                 tag_icon_style,
+                breadcrumb_menus,
             );
         });
         ui.add_space(TOOLBAR_ROW_VERTICAL_PADDING);
@@ -199,6 +201,7 @@ pub fn draw_itemviewer_navigation_bar(
                 saved_search_count,
                 middle_click_opens_new_tab,
                 tag_icon_style,
+                breadcrumb_menus,
             );
         });
         ui.add_space(TOOLBAR_ROW_VERTICAL_PADDING);
@@ -263,6 +266,7 @@ fn draw_bordered_breadcrumb(
     saved_search_count: usize,
     middle_click_opens_new_tab: bool,
     tag_icon_style: crate::core::indexer::TagIconStyle,
+    breadcrumb_menus: BreadcrumbMenus,
 ) {
     // Computed before the frame is created: inside a horizontal layout, a
     // frame otherwise shrinks to fit its content (like an inline element)
@@ -371,6 +375,7 @@ fn draw_bordered_breadcrumb(
         saved_search_count,
         middle_click_opens_new_tab,
         tag_icon_style,
+        breadcrumb_menus,
     );
 }
 
@@ -578,6 +583,7 @@ fn draw_breadcrumb_row_contents(
     saved_search_count: usize,
     middle_click_opens_new_tab: bool,
     tag_icon_style: crate::core::indexer::TagIconStyle,
+    breadcrumb_menus: BreadcrumbMenus,
 ) {
     if tab.search_box_editing {
         draw_search_box_contents(ui, i18n, tab, tab_id, palette, action, saved_search_count);
@@ -855,24 +861,52 @@ fn draw_breadcrumb_row_contents(
             let font_id =
                 egui::FontId::new(palette.text_size + 2.0, egui::FontFamily::Proportional);
             let breadcrumbs = build_breadcrumbs(&tab.nav.current);
-            let segments = layout_breadcrumbs(ui, &breadcrumbs, breadcrumb_width, &font_id);
+            // Phones and other portable devices aren't real folders, so
+            // their segments keep plain separators.
+            let menus_here =
+                breadcrumb_menus.enabled && !portable::is_portable_path(&tab.nav.current);
+            // Room for the arrow after the last segment.
+            let trailing_arrow = if menus_here { CRUMB_ARROW_WIDTH + 6.0 } else { 0.0 };
+            let segments =
+                layout_breadcrumbs(ui, &breadcrumbs, breadcrumb_width - trailing_arrow, &font_id);
+            let menu_slot = crumb_menu_slot(ui, tab_id);
+            let open_menu_dir = menu_slot
+                .lock()
+                .ok()
+                .and_then(|m| m.as_ref().map(|m| m.dir.clone()));
             let mut first = true;
             let mut breadcrumbs_right = 0.0;
+            let mut previous: Option<&RenderedBreadcrumb> = None;
 
             for crumb in &segments {
                 if !first {
                     let old_spacing = ui.spacing().item_spacing;
-                    ui.spacing_mut().item_spacing.x = 10.0;
-
-                    ui.label(
-                        egui::RichText::new(">")
-                            .size(palette.text_size + 2.0)
-                            .color(palette.text_header_section),
-                    );
-
+                    ui.spacing_mut().item_spacing.x = if menus_here { 2.0 } else { 10.0 };
+                    match previous.filter(|p| menus_here && !p.is_ellipsis) {
+                        // The arrow after a segment lists that segment's
+                        // subfolders, with the next segment highlighted.
+                        Some(parent) => draw_crumb_arrow(
+                            ui,
+                            palette,
+                            &menu_slot,
+                            open_menu_dir.as_deref(),
+                            &parent.path,
+                            Some(&crumb.path),
+                            &tab.nav.current,
+                            breadcrumb_menus.show_hidden,
+                        ),
+                        None => {
+                            ui.label(
+                                egui::RichText::new(">")
+                                    .size(palette.text_size + 2.0)
+                                    .color(palette.text_header_section),
+                            );
+                        }
+                    }
                     ui.spacing_mut().item_spacing = old_spacing;
                 }
                 first = false;
+                previous = Some(crumb);
 
                 let resp = draw_breadcrumb(ui, crumb, icon_cache, palette);
 
@@ -902,6 +936,38 @@ fn draw_breadcrumb_row_contents(
                 );
 
                 breadcrumbs_right = resp.rect.right();
+            }
+
+            // The arrow after the last segment lists the current folder's
+            // subfolders.
+            if menus_here && let Some(last) = segments.last().filter(|c| !c.is_ellipsis) {
+                let old_spacing = ui.spacing().item_spacing;
+                ui.spacing_mut().item_spacing.x = 2.0;
+                draw_crumb_arrow(
+                    ui,
+                    palette,
+                    &menu_slot,
+                    open_menu_dir.as_deref(),
+                    &last.path,
+                    None,
+                    &tab.nav.current,
+                    breadcrumb_menus.show_hidden,
+                );
+                ui.spacing_mut().item_spacing = old_spacing;
+                breadcrumbs_right = ui.min_rect().right();
+            }
+            if menus_here {
+                draw_crumb_menu(
+                    ui,
+                    i18n,
+                    icon_cache,
+                    palette,
+                    &menu_slot,
+                    tab_id,
+                    &tab.nav.current,
+                    middle_click_opens_new_tab,
+                    action,
+                );
             }
 
             // ---- Detect click in empty area to enter path editing ----
@@ -1617,5 +1683,227 @@ fn merge_toolbar_action(action: &mut ItemViewerNavBarAction, toolbar: ItemViewer
     action.activate_search_box |= toolbar.activate_search_box;
     if action.toolbar_command.is_none() {
         action.toolbar_command = toolbar.toolbar_command;
+    }
+}
+
+/// Settings for the address bar's breadcrumb menus.
+#[derive(Clone, Copy, Debug)]
+pub struct BreadcrumbMenus {
+    /// Settings > General > Breadcrumb Folder Menus.
+    pub enabled: bool,
+    /// List hidden folders too (follows Show Hidden Files/Folders).
+    pub show_hidden: bool,
+}
+
+const CRUMB_ARROW_WIDTH: f32 = 18.0;
+
+/// An open breadcrumb menu: the folder it lists, its subfolders once read
+/// (in the background), where it hangs, and which subfolder is on the
+/// current path.
+struct CrumbMenu {
+    dir: PathBuf,
+    on_path: Option<PathBuf>,
+    /// The folder shown when it opened - navigating anywhere closes it.
+    opened_in: PathBuf,
+    anchor: egui::Pos2,
+    arrow_rect: egui::Rect,
+    folders: Option<Result<Vec<(String, PathBuf)>, String>>,
+    /// Fits the longest name (measured once, when the list arrives).
+    width: Option<f32>,
+}
+
+type CrumbMenuSlot = std::sync::Arc<std::sync::Mutex<Option<CrumbMenu>>>;
+
+fn crumb_menu_slot(ui: &egui::Ui, tab_id: u64) -> CrumbMenuSlot {
+    ui.data_mut(|d| d.get_temp_mut_or_default::<CrumbMenuSlot>(egui::Id::new(("crumb_menu", tab_id))).clone())
+}
+
+/// A `>` arrow that opens (or closes) the menu of `dir`'s subfolders.
+#[allow(clippy::too_many_arguments)]
+fn draw_crumb_arrow(
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+    slot: &CrumbMenuSlot,
+    open_dir: Option<&Path>,
+    dir: &Path,
+    on_path: Option<&PathBuf>,
+    current: &Path,
+    show_hidden: bool,
+) {
+    let open = open_dir == Some(dir);
+    let icon = if open { regular::CARET_DOWN } else { regular::CARET_RIGHT };
+    let resp = ui
+        .add(
+            egui::Button::new(
+                egui::RichText::new(icon).size(palette.text_size).color(palette.text_header_section),
+            )
+            .frame(false)
+            .min_size(egui::vec2(CRUMB_ARROW_WIDTH, 0.0)),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    if open {
+        ui.painter().rect_filled(resp.rect, palette.medium_radius, ui.visuals().widgets.hovered.weak_bg_fill);
+        ui.painter().text(
+            resp.rect.center(),
+            egui::Align2::CENTER_CENTER,
+            icon,
+            egui::FontId::proportional(palette.text_size),
+            palette.text_header_section,
+        );
+    }
+    if !resp.clicked() {
+        return;
+    }
+    let Ok(mut menu) = slot.lock() else { return };
+    if open {
+        *menu = None;
+        return;
+    }
+    *menu = Some(CrumbMenu {
+        dir: dir.to_path_buf(),
+        on_path: on_path.cloned(),
+        opened_in: current.to_path_buf(),
+        anchor: resp.rect.left_bottom() + egui::vec2(0.0, 4.0),
+        arrow_rect: resp.rect,
+        folders: None,
+        width: None,
+    });
+    drop(menu);
+    // Read the folder off the UI thread (a slow or network drive must not
+    // freeze the window).
+    let (slot, dir, ctx) = (slot.clone(), dir.to_path_buf(), ui.ctx().clone());
+    std::thread::spawn(move || {
+        let folders = crate::core::fs::list_subfolders(&dir, show_hidden);
+        if let Ok(mut menu) = slot.lock()
+            && let Some(menu) = menu.as_mut().filter(|m| m.dir == dir)
+        {
+            menu.folders = Some(folders);
+        }
+        ctx.request_repaint();
+    });
+}
+
+/// The open breadcrumb menu, if any: a scrolling list of subfolders.
+/// Click opens one (middle-click in a new tab); a click elsewhere, Esc, or
+/// navigating closes it.
+#[allow(clippy::too_many_arguments)]
+fn draw_crumb_menu(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    icon_cache: &IconCache,
+    palette: &ThemePalette,
+    slot: &CrumbMenuSlot,
+    tab_id: u64,
+    current: &Path,
+    middle_click_opens_new_tab: bool,
+    action: &mut ItemViewerNavBarAction,
+) {
+    let Ok(mut guard) = slot.lock() else { return };
+    let Some(menu) = guard.as_mut() else { return };
+    if menu.opened_in != current {
+        *guard = None;
+        return;
+    }
+    let row_height = (palette.text_size + 12.0).round();
+    let icon_size = BREADCRUMB_ICON_SIZE;
+    if menu.width.is_none()
+        && let Some(Ok(folders)) = &menu.folders
+    {
+        let font = egui::FontId::proportional(palette.text_size);
+        let longest = folders
+            .iter()
+            .map(|(name, _)| ui.fonts_mut(|f| f.layout_no_wrap(name.clone(), font.clone(), egui::Color32::WHITE).size().x))
+            .fold(0.0, f32::max);
+        // Icon, gaps, and room for the scroll bar.
+        menu.width = Some((longest + icon_size + 40.0).clamp(160.0, 420.0));
+    }
+    let menu = &*menu;
+    let mut close = false;
+    let area = egui::Area::new(egui::Id::new(("crumb_menu_area", tab_id)))
+        .order(egui::Order::Foreground)
+        .fixed_pos(menu.anchor)
+        .show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                let width = menu.width.unwrap_or(160.0);
+                ui.set_min_width(width);
+                ui.set_max_width(width);
+                match &menu.folders {
+                    None => {
+                        ui.weak(i18n.tr("preview_loading"));
+                    }
+                    Some(Err(err)) => {
+                        ui.weak(err.as_str());
+                    }
+                    Some(Ok(folders)) if folders.is_empty() => {
+                        ui.weak(i18n.tr("breadcrumb_no_subfolders"));
+                    }
+                    Some(Ok(folders)) => {
+                        // As tall as the list, up to about 15 rows, then it scrolls.
+                        let height = (folders.len() as f32 * row_height).min(row_height * 15.0);
+                        // Rows touch (show_rows counts the spacing into its height).
+                        ui.spacing_mut().item_spacing.y = 0.0;
+                        egui::ScrollArea::vertical()
+                            .max_height(height)
+                            .min_scrolled_height(height)
+                            .auto_shrink([false, true])
+                            .show_rows(ui, row_height, folders.len(), |ui, range| {
+                                ui.spacing_mut().item_spacing.y = 0.0;
+                                for (name, path) in &folders[range] {
+                                    let (rect, resp) = ui.allocate_exact_size(
+                                        egui::vec2(ui.available_width(), row_height),
+                                        egui::Sense::click(),
+                                    );
+                                    let on_path = menu.on_path.as_ref() == Some(path);
+                                    if on_path {
+                                        ui.painter().rect_filled(rect, palette.medium_radius, palette.row_selected_bg);
+                                    } else if resp.hovered() {
+                                        ui.painter().rect_filled(
+                                            rect,
+                                            palette.medium_radius,
+                                            ui.visuals().widgets.hovered.weak_bg_fill,
+                                        );
+                                    }
+                                    let icon_rect = egui::Rect::from_center_size(
+                                        egui::pos2(rect.left() + 8.0 + icon_size / 2.0, rect.center().y),
+                                        egui::vec2(icon_size, icon_size),
+                                    );
+                                    if let Some(icon) = icon_cache.get(path, true) {
+                                        egui::Image::new(&icon).paint_at(ui, icon_rect);
+                                    }
+                                    let text_color = if on_path {
+                                        palette.item_viewer_row_text_selected
+                                    } else {
+                                        ui.visuals().text_color()
+                                    };
+                                    let galley = ui.painter().layout(
+                                        name.clone(),
+                                        egui::FontId::proportional(palette.text_size),
+                                        text_color,
+                                        rect.width() - icon_size - 24.0,
+                                    );
+                                    let pos = egui::pos2(icon_rect.right() + 8.0, rect.center().y - galley.size().y / 2.0);
+                                    ui.painter().galley(pos, galley, text_color);
+                                    if resp.clicked() {
+                                        action.nav_to = Some(path.clone());
+                                        close = true;
+                                    } else if middle_click_opens_new_tab && resp.middle_clicked() {
+                                        action.open_in_new_tab = Some(path.clone());
+                                        close = true;
+                                    }
+                                    resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                                }
+                            });
+                    }
+                }
+            });
+        });
+    let pressed_outside = ui.input(|i| {
+        i.pointer.any_pressed()
+            && i.pointer
+                .interact_pos()
+                .is_some_and(|p| !area.response.rect.contains(p) && !menu.arrow_rect.contains(p))
+    });
+    if close || pressed_outside || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        *guard = None;
     }
 }

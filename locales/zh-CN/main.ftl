@@ -1080,6 +1080,9 @@ theme_preview_frame_radius = 圆角半径
 theme_preview_frame_padding = 内边距
 theme_preview_frame_inner_radius = 内部圆角半径
 tooltip_theme_preview_frame_math = 根据圆角半径计算。内边距 = 圆角半径 × 0.29（圆角向内弯曲的距离），至少 4 像素，使内容不会超出弧线。内部圆角半径 = 圆角半径 − 边框粗细 − 内边距，用于图片和压缩包标题栏，使内外弧线间距一致。
+settings_breadcrumb_dropdowns = 路径栏文件夹菜单
+tooltip_settings_breadcrumb_dropdowns = 地址栏各部分之间的 > 箭头会打开该部分内的文件夹列表（与 Windows 资源管理器相同），当前路径上的文件夹会高亮显示。关闭：普通分隔符。
+breadcrumb_no_subfolders = 没有子文件夹
 disk_usage_col_name = 名称
 disk_usage_col_size = 大小
 disk_usage_col_share = 占上级比例

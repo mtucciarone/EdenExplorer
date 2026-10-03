@@ -1080,6 +1080,9 @@ theme_preview_frame_radius = 圓角半徑
 theme_preview_frame_padding = 內距
 theme_preview_frame_inner_radius = 內部圓角半徑
 tooltip_theme_preview_frame_math = 根據圓角半徑計算。內距 = 圓角半徑 × 0.29（圓角向內彎曲的距離），至少 4 像素，使內容不會超出弧線。內部圓角半徑 = 圓角半徑 − 邊框粗細 − 內距，用於圖片和壓縮檔標題列，使內外弧線間距一致。
+settings_breadcrumb_dropdowns = 路徑列資料夾選單
+tooltip_settings_breadcrumb_dropdowns = 網址列各部分之間的 > 箭頭會開啟該部分內的資料夾清單（與 Windows 檔案總管相同），目前路徑上的資料夾會反白顯示。關閉：一般分隔符號。
+breadcrumb_no_subfolders = 沒有子資料夾
 disk_usage_col_name = 名稱
 disk_usage_col_size = 大小
 disk_usage_col_share = 占上層比例

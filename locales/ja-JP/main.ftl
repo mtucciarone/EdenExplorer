@@ -1080,6 +1080,9 @@ theme_preview_frame_radius = 角の半径
 theme_preview_frame_padding = 余白
 theme_preview_frame_inner_radius = 内側の角の半径
 tooltip_theme_preview_frame_math = 角の半径から計算します。余白 = 角の半径 × 0.29（角丸が内側に入り込む量）、最低 4 px で、内容が曲線からはみ出しません。内側の角の半径 = 角の半径 − 枠の太さ − 余白 で、画像やアーカイブのヘッダーに使い、内外の曲線の間隔をそろえます。
+settings_breadcrumb_dropdowns = パンくずリストのフォルダーメニュー
+tooltip_settings_breadcrumb_dropdowns = アドレスバーの各部分の間にある > 矢印で、その中のフォルダー一覧を開きます（Windows エクスプローラーと同じ）。現在のパス上のフォルダーは強調表示されます。オフ：通常の区切り記号。
+breadcrumb_no_subfolders = フォルダーはありません
 disk_usage_col_name = 名前
 disk_usage_col_size = サイズ
 disk_usage_col_share = 親に占める割合

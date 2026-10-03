@@ -55,7 +55,7 @@ Items marked [x] have been implemented (see the README changelog); the rest aren
 - [ ] **Spring-loaded folders**: hovering over a folder while dragging opens it (Finder) (S)
 - [ ] **More sidebar places**: pinned network locations, cloud folders, WSL distros, mounted ISOs (Nautilus, Dolphin) (S)
 - [ ] **Workspaces / layouts**: save a whole window (tabs, split, sidebar state) and restore it, one step beyond Tab Groups (Directory Opus "Layouts") (M)
-- [ ] **Breadcrumb dropdowns** on the `>` arrows listing sibling folders (Explorer, Path Finder) (S)
+- [x] **Breadcrumb dropdowns** on the `>` arrows listing sibling folders (Explorer, Path Finder) (S)
 - [x] **Customizable toolbar**: add, remove, and reorder buttons (Directory Opus, QTTabBar) (M)
 
 ## 3. File Operations

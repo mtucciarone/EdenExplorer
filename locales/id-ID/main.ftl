@@ -1079,6 +1079,9 @@ theme_preview_frame_radius = Radius Sudut
 theme_preview_frame_padding = Jarak Dalam
 theme_preview_frame_inner_radius = Radius Sudut Dalam
 tooltip_theme_preview_frame_math = Dihitung dari radius sudut. Jarak dalam = radius sudut × 0,29 (seberapa jauh sudut membulat melengkung ke dalam), minimal 4 px, agar isi tidak keluar dari lengkungan. Radius sudut dalam = radius sudut − ketebalan bingkai − jarak dalam, dipakai untuk gambar dan header arsip agar lengkungan dalam dan luar tetap berjarak sama.
+settings_breadcrumb_dropdowns = Menu Folder Di Breadcrumb
+tooltip_settings_breadcrumb_dropdowns = Panah > di antara bagian bilah alamat membuka daftar folder di dalam bagian itu, seperti Windows Explorer; folder pada jalur saat ini disorot. Mati: pemisah biasa.
+breadcrumb_no_subfolders = Tidak ada folder di dalamnya
 disk_usage_col_name = Nama
 disk_usage_col_size = Ukuran
 disk_usage_col_share = % Dari Induk
