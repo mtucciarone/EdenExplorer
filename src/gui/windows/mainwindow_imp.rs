@@ -76,7 +76,12 @@ pub(crate) fn directory_settings_snapshot_for_view(view: &TabView) -> DirectoryS
         item_viewer_file_column_sizes: view.column_state.file_column_sizes.clone(),
         item_viewer_drive_column_sizes: view.column_state.drive_column_sizes.clone(),
         recycle_bin_column_sizes: view.column_state.recycle_bin_column_sizes.clone(),
-        filter_query: view.item_viewer_filter_state.query.clone(),
+        // Only plain filters are remembered: the regex and "hide matches"
+        // options aren't saved, and without them the text means something else.
+        filter_query: {
+            let filter = &view.item_viewer_filter_state;
+            if filter.regex || filter.invert { String::new() } else { filter.query.clone() }
+        },
         display_mode: view.display_mode,
         gallery_thumbnail_size: view.gallery_state.thumbnail_size,
         sort_column: view.sort_column,
@@ -5190,6 +5195,9 @@ impl MainWindow {
         drag_sources: Option<&[PathBuf]>,
     ) {
         if let Some(action) = sidebar_action {
+            if action.folder_tree_toggled {
+                crate::core::ui_prefs::save_ui_prefs(&self.settings_window.current_settings.ui_prefs);
+            }
             if let Some((from, to)) = action.reorder {
                 let len = self.sidebar_state.favorites.len();
 
@@ -5585,6 +5593,7 @@ impl MainWindow {
             ShortcutAction::Redo,
             ShortcutAction::CommandPalette,
             ShortcutAction::TerminalPane,
+            ShortcutAction::FilterBar,
         ] {
             if matches!(action, ShortcutAction::Undo | ShortcutAction::Redo) && text_focused {
                 continue;
@@ -5683,6 +5692,14 @@ impl MainWindow {
             ShortcutAction::PerformancePanel => self.toggle_performance_panel(),
             ShortcutAction::CommandPalette => self.toggle_command_palette(),
             ShortcutAction::TerminalPane => self.toggle_terminal(),
+            // Opens the filter box (empty) so its options can be used
+            // without typing first.
+            ShortcutAction::FilterBar => {
+                let side = self.focused_split;
+                let filter = &mut self.active_tab_mut().view_mut(side).item_viewer_filter_state;
+                filter.active = true;
+                filter.focus_requested = false;
+            }
             ShortcutAction::Back | ShortcutAction::Forward | ShortcutAction::Up => {
                 let nav = match action {
                     ShortcutAction::Back => ItemViewerNavAction::Back,
@@ -6412,8 +6429,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     if let Some(anchor_idx) = view.explorer_state.selection_anchor {
                         if let (Some(first_path), Some(last_path)) = (paths.first(), paths.last()) {
                             // Check if we're in a filtered view
-                            let is_filtered = (view.item_viewer_filter_state.active
-                                && !view.item_viewer_filter_state.query.is_empty())
+                            let is_filtered = view.item_viewer_filter_state.narrows()
                                 || view.item_viewer_filter_state.cached_indices.len()
                                     != view.files.len();
 
@@ -6553,8 +6569,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 let idx = {
                     let view = explorer.active_tab().view(explorer.focused_split);
                     // Check if we're in a filtered view
-                    let is_filtered = view.item_viewer_filter_state.active
-                        && !view.item_viewer_filter_state.query.is_empty();
+                    let is_filtered = view.item_viewer_filter_state.narrows();
 
                     if is_filtered {
                         // Use filtered indices

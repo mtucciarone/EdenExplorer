@@ -248,6 +248,8 @@ pub struct SidebarState {
     pub shared_network_expanded: bool,
     pub saved_searches_expanded: bool,
     pub recent_locations_expanded: bool,
+    /// The Folders section's tree (expanded folders, loaded subfolders).
+    pub folder_tree: crate::gui::windows::containers::folder_tree::FolderTreeState,
 }
 
 impl Default for SidebarState {
@@ -268,6 +270,7 @@ impl Default for SidebarState {
             cached_drives: Vec::new(),
             last_drive_refresh: now.checked_sub(Duration::from_secs(60)).unwrap_or(now),
             non_ntfs_popup_path: None,
+            folder_tree: Default::default(),
         }
     }
 }

@@ -79,6 +79,9 @@
   <li><b>Hover previews</b> for images and videos in Details view</li>
   <li><b>Breadcrumb folder menus</b> - the <code>&gt;</code> arrows in the address bar list the folders inside each part, like Explorer (can be turned off in Settings &gt; General)</li>
   <li><b>Terminal pane</b> (<code>Ctrl+`</code>) - Command Prompt, Windows PowerShell, PowerShell 7, Git Bash, and WSL (Ubuntu, ...) in session tabs docked under the file view, with colors, scrollback, selection, and Go To Current Folder; loads your PowerShell profile (Oh My Posh), Clink in Command Prompt, and a Nerd Font automatically for prompt icons</li>
+  <li><b>Folders tree in the sidebar</b> - every drive's folders as an expandable tree, like Explorer's navigation pane: it opens down to the folder you're viewing and highlights it, reads subfolders in the background, and accepts dropped files</li>
+  <li><b>Filter bar options</b> (<code>Ctrl+Shift+F</code>) - plain text, wildcards (<code>*.jpg; *.png</code>), or a regular expression, Hide Matches, and kind chips (Folders, Images, Documents, Video, Audio, Archives, Code)</li>
+  <li><b>Spring-loaded folders</b> - while dragging files, rest on a folder (file list, address bar, or Folders tree) and it opens, so you can drop deeper without letting go</li>
   <li><b>Command palette</b> (<code>Ctrl+Shift+P</code>) - every command, view, toggle, and Settings page, plus favorite and recent folders, with fuzzy search</li>
   <li><b>Preview frame</b> - previews sit in a rounded, bordered frame; thickness, color, and corner radius are set in Settings &gt; Appearance, with the padding and inner corners worked out automatically</li>
   <li><b>Quick Look</b> - press Space for a large preview of the selected file or folder; arrow keys move through the list, Enter opens, Space or Esc closes</li>

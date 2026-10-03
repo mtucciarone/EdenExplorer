@@ -114,6 +114,8 @@ pub fn draw_tab_content(
 
     let old_spacing = ui.spacing().item_spacing.y;
     ui.spacing_mut().item_spacing.y = 0.0;
+    let spring_ctx = ui.ctx().clone();
+    let spring_layer = egui::LayerId::new(egui::Order::Foreground, ui.id().with(("spring_bar", tab_id)));
 
     StripBuilder::new(ui)
         .size(Size::exact(tabbar_height)) // Tabbar
@@ -291,6 +293,41 @@ pub fn draw_tab_content(
 
             drop_targets.item_target.target = hovered_drop_target.clone();
             drop_targets.item_target.rect = hovered_drop_target_rect;
+
+            // Spring-loaded folders: resting on a folder (a row or a
+            // breadcrumb) while dragging opens it, so the drop can go deeper.
+            let spring_ms = settings_window.current_settings.ui_prefs.spring_load_ms;
+            if spring_ms > 0 {
+                let breadcrumb = tabbar_action.as_ref().and_then(|a| a.drag_hover.clone());
+                let hovered = if drag_active {
+                    hovered_drop_target
+                        .clone()
+                        .zip(hovered_drop_target_rect)
+                        .or(breadcrumb)
+                        .filter(|(path, _)| path != &view.nav.current)
+                } else {
+                    None
+                };
+                let step = view.spring.update(
+                    hovered.as_ref().map(|(p, _)| p.as_path()),
+                    std::time::Instant::now(),
+                    std::time::Duration::from_millis(spring_ms as u64),
+                );
+                if let (Some((_, rect)), Some(remaining)) = (&hovered, step.remaining) {
+                    // A thin bar filling up along the folder's bottom edge.
+                    let bar = egui::Rect::from_min_size(
+                        egui::pos2(rect.left(), rect.bottom() - 2.0),
+                        egui::vec2(rect.width() * step.progress, 2.0),
+                    );
+                    spring_ctx.layer_painter(spring_layer).rect_filled(bar, 1.0, palette.primary);
+                    spring_ctx.request_repaint_after(remaining);
+                }
+                if let Some(open) = step.open {
+                    tabbar_action.get_or_insert_with(Default::default).nav_to = Some(open);
+                    // The folder opens after this frame; show it right away.
+                    spring_ctx.request_repaint();
+                }
+            }
             drop_targets.breadcrumb_target.target = tabbar_action
                 .as_ref()
                 .and_then(|a| a.move_files_to_breadcrumb_dir.clone());
@@ -432,7 +469,7 @@ pub fn draw_tab_content(
                         // Active type-to-filter: what's being matched, how
                         // many items it leaves, and a button to clear it.
                         let filter = &view.item_viewer_filter_state;
-                        if tag_view_group_id.is_none() && filter.active && !filter.query.is_empty() {
+                        if tag_view_group_id.is_none() && filter.narrows() {
                             ui.add_space(COLUMN_SPACING);
                             let shown = counts.dir_count + counts.file_count;
                             let chip = egui::Frame::NONE
@@ -454,9 +491,14 @@ pub fn draw_tab_content(
                                         .clicked();
                                     ui.label(
                                         RichText::new(format!(
-                                            "{} \"{}\" \u{2022} {} {} {}",
+                                            "{}{} \u{2022} {} {} {}",
                                             i18n.tr("status_filter"),
-                                            filter.query,
+                                            // A kind chip alone has no text to quote.
+                                            if filter.query.is_empty() {
+                                                String::new()
+                                            } else {
+                                                format!(" \"{}\"", filter.query)
+                                            },
                                             shown,
                                             i18n.tr("status_of"),
                                             view.files.len(),

@@ -24,6 +24,16 @@ use std::time::{Duration, Instant};
 /// `if *expanded { ... }`.
 /// Returns `true` if the section was toggled this frame (so callers can
 /// persist the new state).
+/// The Folders tree's settings for this frame (`None` = section hidden).
+pub struct FolderTreeSidebar<'a> {
+    /// Section expanded (saved in `ui_prefs`).
+    pub expanded: &'a mut bool,
+    pub current: &'a std::path::Path,
+    pub show_hidden: bool,
+    pub spring_delay: Option<std::time::Duration>,
+    pub middle_click_new_tab: bool,
+}
+
 fn draw_section_header(
     ui: &mut egui::Ui,
     palette: &ThemePalette,
@@ -69,6 +79,7 @@ pub fn draw_sidebar(
     recent_locations_state: &RecentLocationsState,
     tag_icon_style: crate::core::indexer::TagIconStyle,
     sidebar_visibility: crate::core::indexer::SidebarSectionVisibility,
+    folder_tree: Option<FolderTreeSidebar<'_>>,
 ) -> SidebarAction {
     const DRIVE_CACHE_DURATION: Duration = Duration::from_secs(30);
     let mut action = SidebarAction::default();
@@ -79,6 +90,7 @@ pub fn draw_sidebar(
     let pointer_pos = ui.ctx().input(|i| i.pointer.hover_pos());
     let pointer_released = ui.ctx().input(|i| i.pointer.primary_released());
     let mut tab_drop_target: Option<PathBuf> = None;
+    let mut tree_header_toggled = false;
     let hovered_target_ref = drag_hover_target.as_ref();
 
     const FOOTER_HEIGHT: f32 = 54.0;
@@ -315,6 +327,56 @@ pub fn draw_sidebar(
                             });
                         if !open {
                             sidebar_state.non_ntfs_popup_path = None;
+                        }
+                    }
+
+                    // --- Folders (tree) ---
+                    if let Some(tree) = folder_tree {
+                        ui.add_space(6.0);
+                        let (changed, _resp) = draw_section_header(
+                            ui,
+                            palette,
+                            &i18n.tr("folder_tree_section"),
+                            tree.expanded,
+                        );
+                        tree_header_toggled = changed;
+                        if *tree.expanded {
+                            ui.add_space(4.0);
+                            let roots: Vec<(PathBuf, String)> = sidebar_state
+                                .cached_drives
+                                .iter()
+                                .filter(|d| !is_raw_physical_drive_path(&d.path))
+                                .map(|d| (d.path.clone(), d.display.clone()))
+                                .collect();
+                            let tree_action = crate::gui::windows::containers::folder_tree::draw_folder_tree(
+                                ui,
+                                i18n,
+                                icon_cache,
+                                palette,
+                                &mut sidebar_state.folder_tree,
+                                &roots,
+                                crate::gui::windows::containers::folder_tree::TreeOptions {
+                                    current: tree.current,
+                                    show_hidden: tree.show_hidden,
+                                    drag_active,
+                                    drag_hover_target: hovered_target_ref,
+                                    pointer_released,
+                                    spring_delay: tree.spring_delay,
+                                    middle_click_new_tab: tree.middle_click_new_tab,
+                                },
+                            );
+                            if tree_action.nav_to.is_some() {
+                                action.nav_to = tree_action.nav_to;
+                            }
+                            if tree_action.open_new_tab.is_some() {
+                                action.open_new_tab = tree_action.open_new_tab;
+                            }
+                            if tree_action.analyze_disk_usage.is_some() {
+                                action.analyze_disk_usage = tree_action.analyze_disk_usage;
+                            }
+                            if tree_action.drop_on.is_some() {
+                                tab_drop_target = tree_action.drop_on;
+                            }
                         }
                     }
 
@@ -858,6 +920,7 @@ pub fn draw_sidebar(
     ui.add_space(14.0);
 
     action.move_files_to_sidebar_dir = tab_drop_target;
+    action.folder_tree_toggled = tree_header_toggled;
     action
 }
 

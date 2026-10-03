@@ -121,6 +121,8 @@ pub struct TabView {
     pub sort_keys: Vec<SortKey>,
     pub explorer_state: ExplorerState,
     pub item_viewer_filter_state: FilterState,
+    /// Spring-loaded folders: how long a folder has been hovered mid-drag.
+    pub spring: crate::core::spring_load::SpringLoad,
     pub column_state: ItemViewerColumnState,
     pub display_mode: ItemViewerDisplayMode,
     pub gallery_state: GalleryState,
@@ -205,6 +207,7 @@ impl TabView {
             }],
             explorer_state: ExplorerState::default(),
             item_viewer_filter_state: FilterState::default(),
+            spring: Default::default(),
             column_state: ItemViewerColumnState::default(),
             display_mode: ItemViewerDisplayMode::Details,
             gallery_state: GalleryState::default(),
@@ -953,6 +956,8 @@ pub struct ItemViewerNavBarAction {
     pub is_breadcrumb_path_edit_active: bool,
     pub move_files_to_breadcrumb_dir: Option<PathBuf>,
     pub move_files_to_breadcrumb_dir_rect: Option<egui::Rect>,
+    /// The breadcrumb under the pointer during a drag (for spring-loading).
+    pub drag_hover: Option<(PathBuf, egui::Rect)>,
     /// Set when the user submits a query from the navbar's inline search
     /// box (Enter key) - opens a new search-results tab for it.
     pub open_search: Option<(String, crate::core::everything::SearchScope)>,
@@ -1224,6 +1229,8 @@ pub struct SidebarAction {
     pub clear_recent_locations: bool,
     /// "Analyze Disk Usage…" was chosen for a drive or favorite.
     pub analyze_disk_usage: Option<PathBuf>,
+    /// The Folders tree's header was clicked (save the expanded state).
+    pub folder_tree_toggled: bool,
 }
 
 #[derive(Default)]
@@ -1263,6 +1270,21 @@ pub struct FilterState {
     pub last_show_hidden_files_folders: bool,
     pub cached_indices: Vec<usize>,
     pub dirty: bool,
+    /// The query is a regular expression.
+    pub regex: bool,
+    /// Hide the matching items instead of showing only them.
+    pub invert: bool,
+    /// Only this kind of item (folders, images, ...).
+    pub kind: Option<crate::core::filter::KindChip>,
+    /// The regex's syntax error, shown on the box.
+    pub error: Option<String>,
+}
+
+impl FilterState {
+    /// The box is open and narrows the list (by text or by kind).
+    pub fn narrows(&self) -> bool {
+        self.active && (!self.query.is_empty() || self.kind.is_some())
+    }
 }
 
 impl Default for FilterState {
@@ -1277,6 +1299,10 @@ impl Default for FilterState {
             last_show_hidden_files_folders: false,
             cached_indices: Vec::new(),
             dirty: true,
+            regex: false,
+            invert: false,
+            kind: None,
+            error: None,
         }
     }
 }

@@ -74,6 +74,7 @@ const SHORTCUT_GROUPS: &[ShortcutGroup] = &[
             Shortcut::Editable(ShortcutAction::SelectAll),
             Shortcut::Editable(ShortcutAction::InvertSelection),
             Shortcut::Editable(ShortcutAction::SelectByPattern),
+            Shortcut::Editable(ShortcutAction::FilterBar),
             Shortcut::Fixed {
                 action_key: "shortcut_select_first_last",
                 combos: &[&["Home"], &["End"]],

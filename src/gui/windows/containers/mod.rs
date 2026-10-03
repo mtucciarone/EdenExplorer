@@ -1,6 +1,7 @@
 pub mod bulk_rename;
 pub mod enums;
 pub mod explorer;
+pub mod folder_tree;
 pub mod itemviewer;
 pub mod itemviewer_columns;
 pub mod itemviewer_gallery;

@@ -6,7 +6,7 @@ use crate::core::utils::widgets::draw_checkbox;
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
-use crate::gui::utils::{draw_object_drag_ghost, filter_match};
+use crate::gui::utils::draw_object_drag_ghost;
 use crate::gui::windows::containers::enums::{
     ItemViewerAction, ItemViewerContextAction, ItemViewerHeaderColumn, ItemViewerNavAction,
 };
@@ -142,12 +142,20 @@ pub fn draw_item_viewer(
         || filter_state.last_show_hidden_files_folders != show_hidden_files_folders;
 
     if filter_changed {
+        // Built once per change: text, wildcards, or regex, inverted or
+        // not, plus the kind chip (see `core::filter`).
+        let (compiled, error) = crate::core::filter::CompiledFilter::new(
+            &filter_state.query,
+            filter_state.regex,
+            filter_state.invert,
+            filter_state.kind,
+        );
+        filter_state.error = error;
         filter_state.cached_indices = files
             .iter()
             .enumerate()
             .filter(|(_, f)| {
-                (show_hidden_files_folders || !f.is_hidden)
-                    && filter_match(&f.name, &filter_state.query)
+                (show_hidden_files_folders || !f.is_hidden) && compiled.matches(&f.name, f.is_dir)
             })
             .map(|(i, _)| i)
             .collect();
@@ -204,6 +212,7 @@ pub fn draw_item_viewer(
     if !modal_input_blocked && is_focused {
         if let Some(global_action) = handle_global_actions(
             ui,
+            i18n,
             files,
             palette,
             tabbar_action,
@@ -226,6 +235,11 @@ pub fn draw_item_viewer(
         ui.centered_and_justified(|ui| {
             if is_loading && files.is_empty() {
                 ui.add(egui::Spinner::new().size(28.0));
+            } else if !files.is_empty() && filter_state.narrows() {
+                // The folder isn't empty; the filter hides everything (or
+                // its regex doesn't compile).
+                let text = filter_state.error.clone().unwrap_or_else(|| i18n.tr("filter_no_matches"));
+                ui.label(text);
             } else {
                 ui.label(network_share_empty_state_text(i18n, network_share_error));
             }

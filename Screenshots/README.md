@@ -74,6 +74,24 @@ From Photos, the arrow after Eden Demo lists its folders (Photos highlighted) an
 
 Ctrl+` opens the pane with the default shell (PowerShell 7 with an Oh My Posh-style prompt, its icons from the automatically chosen Nerd Font); dragging the top edge makes it taller; the + menu lists every installed shell and starts Ubuntu (WSL) in a second session tab; switching tabs, selecting text, then Ctrl+` hides the pane and the toolbar's Terminal Pane button brings it back with both shells still there. Under Wine the shells can't take input, so the shell output here was fed to the terminal directly.
 
+## Sidebar Folders Tree
+
+![Sidebar Folders tree](folder-tree.gif)
+
+Opened in Eden Demo, the tree is already expanded down to it; the arrows expand Eden Demo and Projects, clicking website opens it, clicking Documents in the address bar moves the highlight back up the tree, and right-clicking a folder shows Open In New Tab, Analyze Disk Usage, and Collapse All.
+
+## Filter Bar Options
+
+![Filter bar options](filter-bar.gif)
+
+Ctrl+Shift+F opens the filter box: `app` filters by text, `*.json; *.md` by wildcards, then the `.*` button switches to a regular expression - the box turns red while `\.(py` is incomplete (the view shows the error), `\.(py|html)$` matches, and Hide Matches shows everything else. Without text, the Code and Documents chips show only that kind of file.
+
+## Spring-Loaded Folders
+
+![Spring-loaded folders](spring-loaded-folders.gif)
+
+Dragging Meeting Notes.txt: resting on Projects opens it, resting on Eden Demo in the address bar goes back up, and resting on Projects in the sidebar's Folders tree expands it. Under Wine a held mouse button doesn't reach the app, so the drag here was started directly.
+
 ## Features
 
 ### Details view - tagged folders are tinted by tag color, with a Tags column showing every tag as a chip
@@ -188,7 +206,7 @@ Ctrl+` opens the pane with the default shell (PowerShell 7 with an Oh My Posh-st
 
 ![Light theme](28-light-theme.png)
 
-### Settings - General, including Address Bar On Its Own Row and the Sidebar Sections card
+### Settings - General, including Address Bar On Its Own Row and the Sidebar Sections card (now with Folders, for the sidebar's folder tree)
 
 ![Settings - General](29-settings-general.png)
 
@@ -228,7 +246,7 @@ Ctrl+` opens the pane with the default shell (PowerShell 7 with an Oh My Posh-st
 
 ![Settings - Tags](38-settings-tags.png)
 
-### Settings - Shortcuts, where most shortcuts can be changed: + adds a key combination, × removes one, and locked rows are fixed; the Window group now includes Terminal Pane (Ctrl+`)
+### Settings - Shortcuts, where most shortcuts can be changed: + adds a key combination, × removes one, and locked rows are fixed; the Window group now includes Terminal Pane (Ctrl+`), and Files & Selection includes Filter Bar (Ctrl+Shift+F)
 
 ![Settings - Shortcuts](39-settings-shortcuts.png)
 
@@ -431,3 +449,19 @@ Ctrl+` opens the pane with the default shell (PowerShell 7 with an Oh My Posh-st
 ### Settings - General - Breadcrumb Folder Menus turns the address bar's > menus on or off
 
 ![Breadcrumb Folder Menus setting](89-breadcrumb-setting.png)
+
+### Sidebar Folders tree - every drive's folders, expanded down to the folder being viewed (Projects > website) and highlighted
+
+![Sidebar Folders tree](90-folder-tree.png)
+
+### Filter bar - the kind chips: Code shows only code files (4 of 6), with the status bar's filter chip
+
+![Filter bar kind chips](91-filter-bar-kinds.png)
+
+### Filter bar - a regular expression (`.*`) with Hide Matches: `\.(py|html)$` hides app.py and index.html
+
+![Filter bar regex and Hide Matches](92-filter-bar-regex.png)
+
+### Settings - Behavior - Spring-Loaded Folders, with how long to rest on a folder before it opens
+
+![Spring-Loaded Folders setting](93-spring-load-setting.png)

@@ -1635,6 +1635,9 @@ fn handle_breadcrumb_drag(
     if !hovered {
         return;
     }
+    if let Some(target) = breadcrumb_target_path {
+        action.drag_hover = Some((target.clone(), resp.rect));
+    }
 
     let painter = ui
         .ctx()

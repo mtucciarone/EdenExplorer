@@ -1062,7 +1062,8 @@ fn draw_general_section(
         );
         ui.add_space(SETTINGS_FIELD_GAP);
         let visibility = &mut settings.current_settings.sidebar_visibility;
-        let toggles: [(&mut bool, &str); 5] = [
+        let toggles: [(&mut bool, &str); 6] = [
+            (&mut settings.current_settings.ui_prefs.folder_tree, "folder_tree_section"),
             (&mut visibility.favorites, "favorites"),
             (&mut visibility.tags, "tags"),
             (&mut visibility.saved_searches, "saved_searches"),
@@ -1189,6 +1190,47 @@ fn draw_behavior_section(
             "tooltip_settings_verify_copies",
             action,
         );
+    });
+
+    settings_section(ui, palette, |ui| {
+        let prefs = &mut settings.current_settings.ui_prefs;
+        let mut enabled = prefs.spring_load_ms > 0;
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut enabled,
+            "settings_spring_load",
+            "tooltip_settings_spring_load",
+            action,
+        );
+        if enabled != (prefs.spring_load_ms > 0) {
+            prefs.spring_load_ms = if enabled { 800 } else { 0 };
+        }
+        if enabled {
+            ui.add_space(SETTINGS_FIELD_GAP);
+            setting_row(
+                ui,
+                |ui| {
+                    setting_label(ui, &i18n.tr("settings_spring_load_delay"), None, palette);
+                },
+                |ui| {
+                    apply_eden_visual_overrides(ui, palette);
+                    let changed = ui
+                        .add_sized(
+                            [SETTINGS_VALUE_WIDTH, ui.spacing().interact_size.y],
+                            egui::DragValue::new(&mut prefs.spring_load_ms)
+                                .range(300..=3000)
+                                .speed(10.0)
+                                .suffix(" ms"),
+                        )
+                        .changed();
+                    if changed {
+                        *action = Some(SettingsAction::ApplySettings);
+                    }
+                },
+            );
+        }
     });
 
     settings_section(ui, palette, |ui| {

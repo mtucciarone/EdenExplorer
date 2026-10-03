@@ -105,6 +105,7 @@ fn shortcut_icon(action: ShortcutAction) -> &'static str {
         ShortcutAction::PerformancePanel => regular::GAUGE,
         ShortcutAction::CommandPalette => regular::COMMAND,
         ShortcutAction::TerminalPane => regular::TERMINAL_WINDOW,
+        ShortcutAction::FilterBar => regular::FUNNEL,
     }
 }
 

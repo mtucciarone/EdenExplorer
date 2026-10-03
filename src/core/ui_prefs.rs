@@ -62,6 +62,12 @@ pub struct UiPrefs {
     /// The terminal pane (`gui::windows::terminal_panel`).
     #[serde(deserialize_with = "lenient")]
     pub terminal: TerminalPrefs,
+    /// The sidebar's Folders tree is shown, and expanded.
+    pub folder_tree: bool,
+    pub folder_tree_expanded: bool,
+    /// While dragging, resting on a folder opens it after this long
+    /// (0 = spring-loaded folders off).
+    pub spring_load_ms: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -153,6 +159,9 @@ impl Default for UiPrefs {
             preview_frame: PreviewFrame::default(),
             breadcrumb_dropdowns: true,
             terminal: TerminalPrefs::default(),
+            folder_tree: true,
+            folder_tree_expanded: true,
+            spring_load_ms: 800,
         }
     }
 }

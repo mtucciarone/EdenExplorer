@@ -945,6 +945,23 @@ impl eframe::App for MainWindow {
                                             sidebar_box_size,
                                             egui::Layout::top_down(egui::Align::Min),
                                             |ui| {
+                                                let tree_current = self.tabs[self.active_tab]
+                                                    .view(self.focused_split)
+                                                    .nav
+                                                    .current
+                                                    .clone();
+                                                let current_settings = &mut self.settings_window.current_settings;
+                                                let spring_ms = current_settings.ui_prefs.spring_load_ms;
+                                                let folder_tree = current_settings.ui_prefs.folder_tree.then(|| {
+                                                    crate::gui::windows::containers::sidebar::FolderTreeSidebar {
+                                                        expanded: &mut current_settings.ui_prefs.folder_tree_expanded,
+                                                        current: &tree_current,
+                                                        show_hidden: current_settings.show_hidden_files_folders,
+                                                        spring_delay: (spring_ms > 0)
+                                                            .then(|| std::time::Duration::from_millis(spring_ms as u64)),
+                                                        middle_click_new_tab: current_settings.middle_click_opens_new_tab,
+                                                    }
+                                                });
                                                 sidebar_action = Some(draw_sidebar(
                                                     ui,
                                                     &self.i18n,
@@ -956,8 +973,9 @@ impl eframe::App for MainWindow {
                                                     &self.tags_state,
                                                     &mut self.saved_searches_state,
                                                     &self.recent_locations_state,
-                                                    self.settings_window.current_settings.tag_icon_style,
-                                                    self.settings_window.current_settings.sidebar_visibility,
+                                                    current_settings.tag_icon_style,
+                                                    current_settings.sidebar_visibility,
+                                                    folder_tree,
                                                 ));
                                             },
                                         );

@@ -1733,6 +1733,7 @@ pub fn handle_editing_file_name(
 
 pub fn handle_global_actions(
     ui: &mut egui::Ui,
+    i18n: &crate::gui::i18n::I18n,
     files: &[FileItem],
     palette: &ThemePalette,
     tabbar_action: &mut Option<ItemViewerNavBarAction>,
@@ -1809,8 +1810,14 @@ pub fn handle_global_actions(
         }
 
         let text_edit_id = ui.id().with("filter_input");
+        let border = if filter_state.error.is_some() {
+            egui::Color32::from_rgb(220, 90, 90)
+        } else {
+            palette.borders_active
+        };
+        let mut options_changed = false;
 
-        let response = egui::Frame::NONE
+        let frame = egui::Frame::NONE
             .fill(palette.input_field_bg)
             // Full-strength, opaque `borders_active` rather than the
             // low-alpha `borders_default` blend most other bordered
@@ -1822,7 +1829,7 @@ pub fn handle_global_actions(
             // except right at the anti-aliased edge. An opaque, undiluted
             // accent color plus a genuinely thicker stroke is what actually
             // reads as a real border here.
-            .stroke(egui::Stroke::new(2.0, palette.borders_active))
+            .stroke(egui::Stroke::new(2.0, border))
             .corner_radius(egui::CornerRadius::same(palette.medium_radius))
             .inner_margin(egui::Margin {
                 left: 10,
@@ -1851,20 +1858,70 @@ pub fn handle_global_actions(
                             .color(palette.icon_color),
                     );
                     ui.add_space(4.0);
-                    ui.add(
+                    let text = ui.add(
                         egui::TextEdit::singleline(&mut filter_state.query)
                             .id(text_edit_id)
                             .frame(egui::Frame::NONE)
                             .desired_width(200.0)
+                            .hint_text(i18n.tr("filter_hint"))
                             .font(FontId::new(
                                 palette.text_size,
                                 egui::FontFamily::Proportional,
                             )),
-                    )
+                    );
+                    if let Some(error) = &filter_state.error {
+                        text.clone().on_hover_text(error.as_str());
+                    }
+                    // Options: regex, hide matches, and kind chips.
+                    ui.add_space(6.0);
+                    ui.separator();
+                    let toggle = |ui: &mut egui::Ui, on: bool, label: &str, tip: String| {
+                        let text = egui::RichText::new(label).size(palette.text_size).color(if on {
+                            palette.item_viewer_row_text_selected
+                        } else {
+                            palette.icon_color
+                        });
+                        ui.add(egui::Button::selectable(on, text))
+                            .on_hover_text(tip)
+                            .clicked()
+                    };
+                    if toggle(ui, filter_state.regex, ".*", i18n.tr("filter_regex")) {
+                        filter_state.regex = !filter_state.regex;
+                        options_changed = true;
+                    }
+                    if toggle(ui, filter_state.invert, regular::EYE_SLASH, i18n.tr("filter_invert")) {
+                        filter_state.invert = !filter_state.invert;
+                        options_changed = true;
+                    }
+                    ui.separator();
+                    use crate::core::filter::KindChip;
+                    for chip in KindChip::ALL {
+                        let (icon, key) = match chip {
+                            KindChip::Folders => (regular::FOLDER, "filter_kind_folders"),
+                            KindChip::Images => (regular::IMAGE, "disk_usage_cat_images"),
+                            KindChip::Documents => (regular::FILE_TEXT, "disk_usage_cat_documents"),
+                            KindChip::Video => (regular::FILM_STRIP, "disk_usage_cat_video"),
+                            KindChip::Audio => (regular::MUSIC_NOTES, "disk_usage_cat_audio"),
+                            KindChip::Archives => (regular::FILE_ZIP, "disk_usage_cat_archives"),
+                            KindChip::Code => (regular::CODE, "disk_usage_cat_code"),
+                        };
+                        let on = filter_state.kind == Some(chip);
+                        if toggle(ui, on, icon, i18n.tr(key)) {
+                            filter_state.kind = if on { None } else { Some(chip) };
+                            options_changed = true;
+                        }
+                    }
+                    text
                 })
                 .inner
-            })
-            .inner;
+            });
+        let frame_rect = frame.response.rect;
+        let response = frame.inner;
+        if options_changed {
+            filter_state.dirty = true;
+            // Keep typing in the box after clicking an option.
+            response.request_focus();
+        }
 
         if !filter_state.focus_requested {
             response.request_focus();
@@ -1877,7 +1934,8 @@ pub fn handle_global_actions(
             let should_clear_filter = if let Some(pos) = click_pos {
                 let item_viewer_rect = ui.available_rect_before_wrap();
                 // Don't clear filter if clicking within the item viewer area
-                !item_viewer_rect.contains(pos)
+                // or on the box's own option buttons.
+                !item_viewer_rect.contains(pos) && !frame_rect.contains(pos)
             } else {
                 // If no click position, clear filter (fallback behavior)
                 true
