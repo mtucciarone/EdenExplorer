@@ -6,7 +6,9 @@
 
 use crate::core::terminal_shells::ShellProfile;
 use alacritty_terminal::event::{Event, EventListener, Notify, OnResize, WindowSize};
-use alacritty_terminal::event_loop::{EventLoop, Msg, Notifier};
+use alacritty_terminal::event_loop::{EventLoop, EventLoopSender, Msg, Notifier};
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::test::TermSize;
 use alacritty_terminal::term::{Config, Term, TermMode};
@@ -24,12 +26,32 @@ const SCROLLBACK_LINES: usize = 10_000;
 pub struct Listener {
     tx: Sender<Event>,
     repaint: Arc<dyn Fn() + Send + Sync>,
+    /// The pane is showing this terminal: only then is a repaint asked for,
+    /// so a busy shell in a hidden pane or another tab costs no redraws.
+    visible: Arc<AtomicBool>,
+    /// Lets replies to the program's queries (cursor position, ...) go
+    /// straight back from the reader thread, even while nothing is drawn.
+    pty: Arc<OnceLock<EventLoopSender>>,
 }
 
 impl EventListener for Listener {
     fn send_event(&self, event: Event) {
-        let _ = self.tx.send(event);
-        (self.repaint)();
+        match event {
+            // "Something changed" notices only matter for drawing.
+            Event::Wakeup | Event::MouseCursorDirty | Event::CursorBlinkingChange => {}
+            Event::PtyWrite(text) => {
+                if let Some(pty) = self.pty.get() {
+                    let _ = pty.send(Msg::Input(text.into_bytes().into()));
+                }
+                return;
+            }
+            other => {
+                let _ = self.tx.send(other);
+            }
+        }
+        if self.visible.load(Ordering::Relaxed) {
+            (self.repaint)();
+        }
     }
 }
 
@@ -45,6 +67,7 @@ pub struct TerminalSession {
     /// Exit code once the shell has ended.
     pub exited: Option<i32>,
     size: WindowSize,
+    visible: Arc<AtomicBool>,
 }
 
 impl TerminalSession {
@@ -73,14 +96,22 @@ impl TerminalSession {
             .map_err(|_| "Windows couldn't create a pseudo console for the terminal.".to_string())?
             .map_err(|e| format!("Couldn't start {}: {e}", profile.name))?;
         let (tx, events) = crossbeam_channel::unbounded();
-        let listener = Listener { tx, repaint };
+        let visible = Arc::new(AtomicBool::new(true));
+        let pty_sender = Arc::new(OnceLock::new());
+        let listener = Listener { tx, repaint, visible: visible.clone(), pty: pty_sender.clone() };
         let config = Config { scrolling_history: SCROLLBACK_LINES, ..Config::default() };
         let term = Term::new(config, &TermSize::new(size.num_cols as usize, size.num_lines as usize), listener.clone());
         let term = Arc::new(FairMutex::new(term));
         let event_loop = EventLoop::new(term.clone(), listener, pty, true, false).map_err(|e| e.to_string())?;
         let notifier = Notifier(event_loop.channel());
+        let _ = pty_sender.set(event_loop.channel());
         event_loop.spawn();
-        Ok(TerminalSession { profile: profile.clone(), term, notifier, events, title: None, exited: None, size })
+        Ok(TerminalSession { profile: profile.clone(), term, notifier, events, title: None, exited: None, size, visible })
+    }
+
+    /// Whether the pane shows this terminal (see `Listener::visible`).
+    pub fn set_visible(&self, visible: bool) {
+        self.visible.store(visible, Ordering::Relaxed);
     }
 
     /// Sends keyboard input to the shell.
@@ -330,6 +361,34 @@ mod tests {
         assert_eq!(key_bytes(TermKey::Letter('b'), Mods { alt: true, ..none }, false).unwrap(), b"\x1bb");
         assert_eq!(key_bytes(TermKey::Tab, Mods { shift: true, ..none }, false).unwrap(), b"\x1b[Z");
         assert!(key_bytes(TermKey::Letter('a'), none, false).is_none());
+    }
+
+    #[test]
+    fn hidden_terminals_ask_for_no_repaints_and_queue_only_real_events() {
+        use std::sync::atomic::AtomicUsize;
+        let repaints = Arc::new(AtomicUsize::new(0));
+        let (tx, rx) = crossbeam_channel::unbounded();
+        let counter = repaints.clone();
+        let listener = Listener {
+            tx,
+            repaint: Arc::new(move || {
+                counter.fetch_add(1, Ordering::Relaxed);
+            }),
+            visible: Arc::new(AtomicBool::new(false)),
+            pty: Arc::new(OnceLock::new()),
+        };
+        // Hidden: output notices neither repaint nor pile up.
+        for _ in 0..1000 {
+            listener.send_event(Event::Wakeup);
+        }
+        listener.send_event(Event::Title("pwsh".into()));
+        assert_eq!(repaints.load(Ordering::Relaxed), 0);
+        assert_eq!(rx.len(), 1);
+        // On screen: output repaints.
+        listener.visible.store(true, Ordering::Relaxed);
+        listener.send_event(Event::Wakeup);
+        assert_eq!(repaints.load(Ordering::Relaxed), 1);
+        assert_eq!(rx.len(), 1);
     }
 
     #[test]

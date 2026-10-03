@@ -227,6 +227,10 @@ static TERMINAL_FONT: std::sync::RwLock<Option<Option<String>>> = std::sync::RwL
 /// Records the terminal font setting; true when it changed (the fonts
 /// then need rebuilding with `apply_font_to_context`).
 pub fn set_terminal_font(choice: Option<&str>) -> bool {
+    // Checked every frame: compare under the read lock, without allocating.
+    if TERMINAL_FONT.read().is_ok_and(|current| current.as_ref().map(|c| c.as_deref()) == Some(choice)) {
+        return false;
+    }
     let choice = choice.map(str::to_owned);
     let Ok(mut current) = TERMINAL_FONT.write() else { return false };
     if current.as_ref() == Some(&choice) {

@@ -563,7 +563,11 @@ impl eframe::App for MainWindow {
         if std::mem::take(&mut self.terminal.toggle_requested) {
             self.toggle_terminal();
         }
-        self.terminal.retain_tabs(self.tabs.iter().map(|t| t.id));
+        if self.terminal.has_sessions() {
+            let tab_ids: Vec<u64> = self.tabs.iter().map(|t| t.id).collect();
+            let active = self.tabs[self.active_tab].id;
+            self.terminal.maintain(&tab_ids, active);
+        }
         if crate::core::utils::fonts::set_terminal_font(
             self.settings_window.current_settings.ui_prefs.terminal.font_name.as_deref(),
         ) {
@@ -1197,7 +1201,7 @@ impl eframe::App for MainWindow {
                                         // file view (under both panes of a split).
                                         let full = ui.available_rect_before_wrap();
                                         let tab_id = self.tabs[self.active_tab].id;
-                                        let prefs = self.settings_window.current_settings.ui_prefs.terminal.clone();
+                                        let prefs = &self.settings_window.current_settings.ui_prefs.terminal;
                                         if let Some(height) = self.terminal.reserved_height(tab_id, prefs.height, full.height()) {
                                             let rect = egui::Rect::from_min_max(
                                                 egui::pos2(full.left(), full.bottom() - height),
@@ -1206,7 +1210,7 @@ impl eframe::App for MainWindow {
                                             let dir = self.active_tab().view(self.focused_split).nav.current.clone();
                                             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
                                             let action = self.terminal.draw(
-                                                &mut child, rect, tab_id, &dir, height, &prefs, &palette, &self.i18n,
+                                                &mut child, rect, tab_id, &dir, height, prefs, &palette, &self.i18n,
                                             );
                                             self.handle_terminal_action(action, &dir);
                                             ui.set_max_height((full.height() - height).max(0.0));

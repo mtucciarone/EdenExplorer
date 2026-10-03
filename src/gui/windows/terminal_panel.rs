@@ -61,6 +61,10 @@ pub struct TerminalPanels {
     pub toggle_requested: bool,
     /// Focus the terminal once it's drawn (just opened).
     focus_next: bool,
+    /// Fingerprint of the open tabs when shells were last matched to them.
+    tabs_seen: u64,
+    /// The fonts already hold the terminal font family.
+    family_ready: bool,
 }
 
 impl TerminalPanels {
@@ -77,14 +81,35 @@ impl TerminalPanels {
         }
     }
 
-    /// Ends the shells of tabs that were closed.
-    pub fn retain_tabs(&mut self, tabs: impl Iterator<Item = u64>) {
-        if self.panels.is_empty() && self.open.is_empty() {
+    /// Whether any tab has (or had) a terminal; nothing to maintain if not.
+    pub fn has_sessions(&self) -> bool {
+        !self.panels.is_empty()
+    }
+
+    /// Called each frame: ends the shells of closed tabs, handles what
+    /// every shell reported (not just the one on screen, so nothing piles
+    /// up), and tells each whether it's on screen (only those ask for
+    /// repaints).
+    pub fn maintain(&mut self, tabs: &[u64], active_tab: u64) {
+        if self.panels.is_empty() {
             return;
         }
-        let alive: HashSet<u64> = tabs.collect();
-        self.panels.retain(|id, _| alive.contains(id));
-        self.open.retain(|id| alive.contains(id));
+        // Tab ids are never reused, so a changed sum means tabs closed.
+        let seen = tabs.iter().fold(tabs.len() as u64, |acc, id| acc.wrapping_mul(31).wrapping_add(*id));
+        if seen != self.tabs_seen {
+            self.tabs_seen = seen;
+            self.panels.retain(|id, _| tabs.contains(id));
+            self.open.retain(|id| tabs.contains(id));
+        }
+        for (&tab, panel) in self.panels.iter_mut() {
+            let shown = tab == active_tab && self.open.contains(&tab);
+            for (i, session) in panel.sessions.iter_mut().enumerate() {
+                session.set_visible(shown && i == panel.active);
+                session.poll_events(|text| {
+                    crate::core::utils::clipboard::copy_text_to_clipboard(&text);
+                });
+            }
+        }
     }
 
     /// Called first thing each frame: while the terminal has focus, takes
@@ -284,7 +309,9 @@ impl TerminalPanels {
         // The terminal font family (see `fonts::apply_custom_font_definitions`);
         // plain monospace until the fonts have been rebuilt with it.
         let terminal_family = egui::FontFamily::Name(crate::core::utils::fonts::TERMINAL_FAMILY.into());
-        let family = if ui.fonts_mut(|f| f.families().contains(&terminal_family)) {
+        // (`families()` builds a list, so ask only until it's there.)
+        self.family_ready = self.family_ready || ui.fonts_mut(|f| f.families().contains(&terminal_family));
+        let family = if self.family_ready {
             terminal_family
         } else {
             egui::FontFamily::Monospace
@@ -344,9 +371,6 @@ impl TerminalPanels {
             self.focused = false;
             return action;
         };
-        session.poll_events(|text| {
-            crate::core::utils::clipboard::copy_text_to_clipboard(&text);
-        });
         session.resize(cols, rows, cell);
 
         // Focus: click to focus, click elsewhere to leave.
@@ -397,7 +421,10 @@ impl TerminalPanels {
         // Mouse: wheel scrolls back, drag selects, right-click menu.
         handle_mouse(ui, &resp, session, &mut panel.scroll, inner, cell_w, cell_h, i18n);
 
-        draw_grid(ui, session, inner, &font, cell_w, cell_h, dark, focused, palette, i18n);
+        let exited_text = session
+            .exited
+            .map(|code| format!("{} {code}. {}", i18n.tr("terminal_exited"), i18n.tr("terminal_restart_hint")));
+        draw_grid(ui, &session.term, exited_text, inner, &font, cell_w, cell_h, dark, focused, palette);
         action
     }
 }
@@ -662,9 +689,10 @@ fn handle_mouse(
 /// Paints the visible screen: backgrounds, text in runs of the same style,
 /// the selection, and the cursor.
 #[allow(clippy::too_many_arguments)]
-fn draw_grid(
+fn draw_grid<T: alacritty_terminal::event::EventListener>(
     ui: &mut egui::Ui,
-    session: &TerminalSession,
+    term: &alacritty_terminal::sync::FairMutex<alacritty_terminal::Term<T>>,
+    exited_text: Option<String>,
     inner: egui::Rect,
     font: &egui::FontId,
     cell_w: f32,
@@ -672,10 +700,9 @@ fn draw_grid(
     dark: bool,
     focused: bool,
     palette: &ThemePalette,
-    i18n: &I18n,
 ) {
     let painter = ui.painter().with_clip_rect(inner.expand(1.0));
-    let term = session.term.lock();
+    let term = term.lock();
     let content = term.renderable_content();
     let colors = content.colors;
     let offset = content.display_offset as i32;
@@ -797,7 +824,7 @@ fn draw_grid(
     // Cursor.
     let cursor = content.cursor;
     let cursor_row = cursor.point.line.0 + offset;
-    if cursor.shape != CursorShape::Hidden && session.exited.is_none() && cursor_row >= 0 {
+    if cursor.shape != CursorShape::Hidden && exited_text.is_none() && cursor_row >= 0 {
         let rect = egui::Rect::from_min_size(
             egui::pos2(
                 inner.left() + cursor.point.column.0 as f32 * cell_w,
@@ -827,8 +854,7 @@ fn draw_grid(
     }
     drop(term);
 
-    if let Some(code) = session.exited {
-        let text = format!("{} {code}. {}", i18n.tr("terminal_exited"), i18n.tr("terminal_restart_hint"));
+    if let Some(text) = exited_text {
         let pos = egui::pos2(inner.left(), inner.bottom() - cell_h);
         painter.rect_filled(egui::Rect::from_min_size(pos, egui::vec2(inner.width(), cell_h)), 0.0, palette.sidebar_bg_color);
         painter.text(pos, egui::Align2::LEFT_TOP, text, font.clone(), ui.visuals().weak_text_color());
