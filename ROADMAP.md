@@ -11,7 +11,7 @@ Items marked [x] have been implemented (see the README changelog); the rest aren
 1. ~~**Disk Usage Analyzer**~~ - done: every item in section 1 is implemented.
 2. ~~**Quick Look (Space)** and a **command palette**~~ - done.
 3. ~~**Archive extraction** and **queued transfers with verify-after-copy**~~ - done, along with batch conflict rules.
-4. **Folder compare/sync** (editable shortcuts are already done).
+4. ~~**Folder compare/sync**~~ - deferred with the other multi-pane work (see Deferred below); editable shortcuts are already done.
 
 ---
 
@@ -49,8 +49,6 @@ Items marked [x] have been implemented (see the README changelog); the rest aren
 - [x] **Command palette** on Ctrl+Shift+P (File Pilot, Files App, VS Code): every action and setting searchable (M)
 - [ ] **Go To Folder with fuzzy matching** on recently visited folders (Directory Opus, File Pilot, zoxide) (S)
 - [ ] **Tree view in the sidebar** (Dolphin, Directory Opus, Windows Explorer) (M)
-- [ ] **Up to 4 panes**, plus a synchronized browsing mode for comparing two folders (Directory Opus, Total Commander) (M–L)
-- [ ] **Folder compare**: highlight files that differ, are newer, or exist on only one side, then sync left to right (Directory Opus, FreeFileSync) (L)
 - [ ] **Flat view**: every file in all subfolders as one list (Directory Opus) (S)
 - [x] **Per-folder view memory**: each folder remembers its own view mode, sort, and columns (Finder, Dolphin, Directory Opus) (S)
 - [ ] **Filter bar options**: wildcards, regex, "only images/docs" chips, hide matches (Dolphin, Directory Opus) (S)
@@ -109,6 +107,18 @@ Items marked [x] have been implemented (see the README changelog); the rest aren
 
 ## Deferred
 
-Kept out of the plan on purpose: these change Windows itself rather than the app, and a mistake could leave the system in a bad state.
+Kept out of the plan for now. The existing two-pane split view stays as it is.
+
+### Multi-pane work (to revisit later)
+
+More panes than today's two need the window's chrome rethought first - with every pane keeping its own address bar and toolbar, four panes leave each one about 800×450 px with only ~15 rows visible. When revisited, the plan is one shared toolbar acting on the focused pane, a slim one-row breadcrumb header per pane, a layout picker (1, 2 side by side, 2 stacked, 3, 2×2), and a minimum pane size. Everything that builds on it waits with it:
+
+- **Up to 4 panes** with layouts and the slim per-pane header (Directory Opus, Total Commander) (M–L)
+- **Synchronized browsing**: entering a subfolder in one pane enters the same subfolder in the others, for comparing two folders (Directory Opus, Total Commander) (S, after the panes)
+- **Folder compare**: highlight files that differ, are newer, or exist on only one side, then sync left to right (Directory Opus, FreeFileSync) (L)
+
+### Changes to Windows itself
+
+These change Windows rather than the app, and a mistake could leave the system in a bad state.
 
 - **Set as default file manager** so Win+E and folder opens use EdenExplorer (Files App, Directory Opus) (M) - it means rewriting the shell's folder-open registry keys; if that goes wrong (or the app is moved or deleted) folders stop opening from the desktop, taskbar, and other apps. Not planned.
