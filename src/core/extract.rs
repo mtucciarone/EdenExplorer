@@ -698,6 +698,12 @@ pub struct ArchiveItem {
 pub fn list(archive: &Path) -> Result<Vec<ArchiveItem>, String> {
     let name = archive.file_name().and_then(|n| n.to_str()).ok_or("no file name")?;
     let (kind, stem) = ArchiveKind::of(name).ok_or("not a known archive type")?;
+    list_as(archive, kind, stem)
+}
+
+/// `list` for an archive whose type is already known (a `.jar` or `.apk`
+/// is a zip); `stem` names the file inside a single `.gz`/`.bz2`/`.xz`.
+pub fn list_as(archive: &Path, kind: ArchiveKind, stem: &str) -> Result<Vec<ArchiveItem>, String> {
     let mut items: Vec<ArchiveItem> = Vec::new();
     let mut push = |raw: &str, is_dir: bool, size: u64, modified: Option<SystemTime>| {
         if let Some(parts) = safe_parts(raw) {
@@ -727,7 +733,11 @@ pub fn list(archive: &Path) -> Result<Vec<ArchiveItem>, String> {
             let modified = std::fs::metadata(archive).and_then(|m| m.modified()).ok();
             push(stem, false, 0, modified);
         }
-        ArchiveKind::External => return Err("only 7-Zip can open this archive".into()),
+        ArchiveKind::External => {
+            for (path, is_dir, size) in list_external(archive)? {
+                push(&path, is_dir, size, None);
+            }
+        }
     }
     // Add missing parent folders, drop duplicates.
     let mut seen: std::collections::HashSet<String> = items.iter().map(|i| i.path.clone()).collect();
@@ -745,6 +755,47 @@ pub fn list(archive: &Path) -> Result<Vec<ArchiveItem>, String> {
     items.sort_by(|a, b| a.path.cmp(&b.path));
     items.dedup_by(|a, b| a.path == b.path);
     Ok(items)
+}
+
+/// Lists an archive with 7-Zip (`7z l -slt`): path, folder or not, size.
+fn list_external(archive: &Path) -> Result<Vec<(String, bool, u64)>, String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let exe = seven_zip_exe().ok_or("7-Zip isn't installed")?;
+    let output = std::process::Command::new(exe)
+        .args(["l", "-slt", "-sccUTF-8", "--"])
+        .arg(archive)
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    Ok(parse_7z_listing(&String::from_utf8_lossy(&output.stdout)))
+}
+
+fn parse_7z_listing(text: &str) -> Vec<(String, bool, u64)> {
+    // The entries follow a "----------" line, one "Key = value" block each.
+    let Some((_, body)) = text.split_once("\n----------") else { return Vec::new() };
+    let mut out = Vec::new();
+    let mut current: Option<(String, bool, u64)> = None;
+    for line in body.lines() {
+        let line = line.trim_end_matches('\r');
+        if let Some(path) = line.strip_prefix("Path = ") {
+            out.extend(current.take());
+            current = Some((path.replace('\\', "/"), false, 0));
+        } else if let Some(entry) = current.as_mut() {
+            if let Some(size) = line.strip_prefix("Size = ") {
+                entry.2 = size.trim().parse().unwrap_or(0);
+            } else if line == "Folder = +" {
+                entry.1 = true;
+            } else if let Some(attributes) = line.strip_prefix("Attributes = ") {
+                entry.1 |= attributes.starts_with('D');
+            }
+        }
+    }
+    out.extend(current);
+    out
 }
 
 fn list_tar(input: &mut dyn Read, push: &mut dyn FnMut(&str, bool, u64, Option<SystemTime>)) -> io::Result<()> {
@@ -801,6 +852,15 @@ fn list_tar(input: &mut dyn Read, push: &mut dyn FnMut(&str, bool, u64, Option<S
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn reads_7z_listings() {
+        let text = "7-Zip 24.08\r\n\r\n--\r\nPath = C:\\x.rar\r\nType = Rar\r\n\r\n----------\r\nPath = docs\\a.txt\r\nFolder = -\r\nSize = 12\r\n\r\nPath = docs\r\nFolder = +\r\nSize = 0\r\n\r\nPath = b\r\nSize = 3\r\nAttributes = D....\r\n";
+        assert_eq!(
+            parse_7z_listing(text),
+            vec![("docs/a.txt".to_string(), false, 12), ("docs".to_string(), true, 0), ("b".to_string(), true, 3)]
+        );
+    }
 
     fn scratch(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("eden-extract-{name}-{}", std::process::id()));

@@ -1187,34 +1187,7 @@ pub(crate) fn draw_preview_content(
             // Handled above before this clone; unreachable in practice.
         }
         Some(PreviewPayload::Archive { entries, truncated }) => {
-            egui::ScrollArea::both()
-                .id_salt("preview_pane_archive")
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    for entry in &entries {
-                        ui.horizontal(|ui| {
-                            ui.add_space(entry.depth as f32 * 16.0);
-                            let icon = if entry.is_dir {
-                                regular::FOLDER_SIMPLE
-                            } else {
-                                regular::FILE
-                            };
-                            ui.colored_label(palette.icon_colored_hover, icon);
-                            ui.label(egui::RichText::new(&entry.name).size(palette.text_size));
-                            if !entry.is_dir {
-                                ui.weak(
-                                    egui::RichText::new(format_file_size(entry.size))
-                                        .size(palette.tooltip_text_size),
-                                );
-                            }
-                        });
-                    }
-
-                    if truncated {
-                        ui.add_space(8.0);
-                        ui.weak(i18n.tr("preview_archive_truncated"));
-                    }
-                });
+            draw_archive_tree(ui, i18n, palette, path, &entries, truncated);
         }
         Some(PreviewPayload::Unsupported(message)) => {
             ui.add_space(8.0);
@@ -1813,5 +1786,158 @@ mod animation_time_tests {
         assert_eq!(format_animation_time(Duration::from_millis(0)), "0:00.0");
         assert_eq!(format_animation_time(Duration::from_millis(1250)), "0:01.2");
         assert_eq!(format_animation_time(Duration::from_millis(83_400)), "1:23.4");
+    }
+}
+
+/// Which folders are collapsed in an archive preview, and the rows that
+/// leaves showing (rebuilt only when a folder is toggled or the listing
+/// changes).
+#[derive(Default)]
+struct ArchiveTreeView {
+    listing: usize,
+    collapsed: std::collections::HashSet<usize>,
+    rows: Option<Vec<usize>>,
+    /// Files, folders, and total size of the files.
+    totals: (usize, usize, u64),
+}
+
+impl ArchiveTreeView {
+    fn rows(&mut self, entries: &[crate::core::preview::ArchiveEntry]) -> &[usize] {
+        self.rows.get_or_insert_with(|| {
+            let mut rows = Vec::with_capacity(entries.len());
+            let mut i = 0;
+            while i < entries.len() {
+                rows.push(i);
+                i += if self.collapsed.contains(&i) { entries[i].descendants as usize + 1 } else { 1 };
+            }
+            rows
+        })
+    }
+}
+
+/// An archive's contents as a tree like VS Code's explorer: Material Icon
+/// Theme icons for each file type and named folder, folders first, and
+/// folders that collapse on click. Only the rows on screen are laid out.
+fn draw_archive_tree(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    palette: &ThemePalette,
+    path: &Path,
+    entries: &std::sync::Arc<Vec<crate::core::preview::ArchiveEntry>>,
+    truncated: bool,
+) {
+    use std::sync::{Arc, Mutex};
+    let id = egui::Id::new(("preview_archive_tree", path));
+    let view = ui.data_mut(|d| d.get_temp_mut_or_default::<Arc<Mutex<ArchiveTreeView>>>(id).clone());
+    let Ok(mut view) = view.lock() else { return };
+    let listing = Arc::as_ptr(entries) as usize;
+    if view.listing != listing {
+        let files = entries.iter().filter(|e| !e.is_dir).count();
+        let size = entries.iter().filter(|e| !e.is_dir).map(|e| e.size).sum();
+        *view = ArchiveTreeView { listing, totals: (files, entries.len() - files, size), ..Default::default() };
+    }
+
+    let (files, folders, size) = view.totals;
+    ui.horizontal(|ui| {
+        ui.weak(
+            egui::RichText::new(format!(
+                "{files} {} · {folders} {} · {}",
+                i18n.tr("preview_archive_files"),
+                i18n.tr("preview_archive_folders"),
+                format_file_size(size)
+            ))
+            .size(palette.tooltip_text_size),
+        );
+        if folders > 0 {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let small = |icon: &str| egui::Button::new(egui::RichText::new(icon).size(palette.tooltip_text_size)).frame(false);
+                if ui.add(small(regular::ARROWS_OUT_LINE_VERTICAL)).on_hover_text(i18n.tr("preview_archive_expand_all")).clicked() {
+                    view.collapsed.clear();
+                    view.rows = None;
+                }
+                if ui.add(small(regular::ARROWS_IN_LINE_VERTICAL)).on_hover_text(i18n.tr("preview_archive_collapse_all")).clicked() {
+                    view.collapsed = entries.iter().enumerate().filter(|(_, e)| e.is_dir).map(|(i, _)| i).collect();
+                    view.rows = None;
+                }
+            });
+        }
+    });
+    ui.add_space(2.0);
+
+    let text_size = palette.text_size;
+    let row_height = (text_size + 9.0).round();
+    let icon_size = (text_size + 3.0).round();
+    let indent = 12.0;
+    let text_color = ui.visuals().text_color();
+    let weak_color = ui.visuals().weak_text_color();
+    let hover_fill = ui.visuals().widgets.hovered.weak_bg_fill;
+    let name_font = egui::FontId::proportional(text_size);
+    let size_font = egui::FontId::proportional(palette.tooltip_text_size);
+    let mut toggled = None;
+    let row_count = view.rows(entries).len();
+    egui::ScrollArea::both()
+        .id_salt("preview_pane_archive")
+        .auto_shrink([false, false])
+        .show_rows(ui, row_height, row_count, |ui, range| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let visible = view.rows(entries)[range].to_vec();
+            for i in visible {
+                let entry = &entries[i];
+                let collapsed = view.collapsed.contains(&i);
+                let name = ui.painter().layout_no_wrap(entry.name.clone(), name_font.clone(), text_color);
+                let size_text = (!entry.is_dir)
+                    .then(|| ui.painter().layout_no_wrap(format_file_size(entry.size), size_font.clone(), weak_color));
+                let left = 4.0 + entry.depth as f32 * indent;
+                let width = left + 16.0 + icon_size + 6.0 + name.size().x + size_text.as_ref().map_or(0.0, |g| 10.0 + g.size().x) + 8.0;
+                let sense = if entry.is_dir { egui::Sense::click() } else { egui::Sense::hover() };
+                let (rect, response) = ui.allocate_exact_size(egui::vec2(width.max(ui.available_width()), row_height), sense);
+                if !ui.is_rect_visible(rect) {
+                    continue;
+                }
+                let painter = ui.painter();
+                if response.hovered() {
+                    painter.rect_filled(rect, 3.0, hover_fill);
+                }
+                // Indent guides, like VS Code's tree.
+                for level in 0..entry.depth {
+                    let x = rect.left() + 4.0 + level as f32 * indent + 7.5;
+                    painter.vline(x, rect.y_range(), egui::Stroke::new(1.0, weak_color.gamma_multiply(0.25)));
+                }
+                let mut x = rect.left() + left;
+                if entry.is_dir {
+                    let caret = if collapsed { regular::CARET_RIGHT } else { regular::CARET_DOWN };
+                    painter.text(egui::pos2(x + 7.5, rect.center().y), egui::Align2::CENTER_CENTER, caret, size_font.clone(), weak_color);
+                }
+                x += 16.0;
+                let icon = if entry.is_dir && !collapsed { entry.icon_open } else { entry.icon };
+                if let Some(image) = crate::gui::material_icons::image(ui, icon, icon_size) {
+                    let icon_rect = egui::Rect::from_min_size(egui::pos2(x, rect.center().y - icon_size / 2.0), egui::vec2(icon_size, icon_size));
+                    image.paint_at(ui, icon_rect);
+                }
+                x += icon_size + 6.0;
+                let painter = ui.painter();
+                let name_width = name.size().x;
+                painter.galley(egui::pos2(x, rect.center().y - name.size().y / 2.0), name, text_color);
+                if let Some(galley) = size_text {
+                    let pos = egui::pos2(x + name_width + 10.0, rect.center().y - galley.size().y / 2.0);
+                    painter.galley(pos, galley, weak_color);
+                }
+                if response.clicked() {
+                    toggled = Some(i);
+                }
+                if entry.is_dir {
+                    response.on_hover_cursor(egui::CursorIcon::PointingHand);
+                }
+            }
+            if truncated {
+                ui.add_space(8.0);
+                ui.weak(i18n.tr("preview_archive_truncated"));
+            }
+        });
+    if let Some(i) = toggled {
+        if !view.collapsed.remove(&i) {
+            view.collapsed.insert(i);
+        }
+        view.rows = None;
     }
 }

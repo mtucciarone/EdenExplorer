@@ -50,6 +50,12 @@ Ctrl+Shift+P, then typing `pho` jumps to the Photos folder, `gal` switches to th
 
 Right-click a zip > Extract To "Holiday Photos\\" (progress in the notifications panel, then the new folder is selected), then double-click the zip to browse it like a folder: into Beach, Gallery thumbnails straight from the archive, Quick Look on a photo, and back out with the breadcrumbs.
 
+## Archive Previews With VS Code File Icons
+
+![Archive preview with file icons](archive-preview.gif)
+
+Selecting a zip shows its contents in the preview pane as a tree with Material Icon Theme icons (as in VS Code): collapsing src and node_modules, Collapse All, opening the top folder, Expand All, then the same for a tar.gz, in the dark and light themes.
+
 ## Queued And Verified Copies
 
 ![Queued and verified copies](transfers.gif)
@@ -377,3 +383,7 @@ Copying a 180 MB folder to Documents and then to Desktop: the second copy waits 
 ### Notifications - both copies finished and verified by checksum
 
 ![Verified copies](80-verified.png)
+
+### Preview pane - a zip's contents as a VS Code-style tree with Material Icon Theme icons for each file type and named folder
+
+![Archive preview with file icons](81-archive-preview-icons.png)

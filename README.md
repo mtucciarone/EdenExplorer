@@ -82,6 +82,7 @@
   🦀 <b>Rust</b> — Safe, fast, and reliable systems programming<br>
   🎨 <a href="https://github.com/emilk/egui/"><b>egui</b></a> — Immediate mode GUI for ultra-responsive interfaces<br>
   📦 <a href="https://github.com/amPerl/egui-phosphor"><b>egui-phosphor</b></a> — <a href="https://github.com/phosphor-icons/homepage">Phosphor</a> icon set for egui<br>
+  🗂️ <a href="https://github.com/material-extensions/vscode-material-icon-theme"><b>Material Icon Theme</b></a> — VS Code's file type icons, used in archive previews (MIT)<br>
   ⚙️ <b>NT-level filesystem access</b> — Maximum performance, minimal abstraction
 </p>
 
@@ -123,7 +124,7 @@
 | ![Analyze Disk Usage](Screenshots/57-disk-usage.png) | ![Disk Usage - Largest Files](Screenshots/60-disk-usage-largest-files.png) |
 | ![Disk Usage - Treemap](Screenshots/65-disk-usage-treemap.png) | ![Disk Usage - Overview](Screenshots/71-disk-usage-overview.png) |
 
-See the [Screenshots folder](Screenshots/README.md) for all 80 feature screenshots, plus short GIFs of [Analyze Disk Usage](Screenshots/disk-usage.gif), the [Performance panel folder and drive benchmarks](Screenshots/performance-benchmark.gif), the [animated GIF preview controls](Screenshots/gif-preview-controls.gif), [selection tools and New File templates](Screenshots/selection-and-templates.gif), [Quick Look](Screenshots/quick-look.gif), the [command palette](Screenshots/command-palette.gif), [extracting and browsing archives](Screenshots/archives.gif), and [queued, verified copies](Screenshots/transfers.gif).
+See the [Screenshots folder](Screenshots/README.md) for all 81 feature screenshots, plus short GIFs of [Analyze Disk Usage](Screenshots/disk-usage.gif), the [Performance panel folder and drive benchmarks](Screenshots/performance-benchmark.gif), the [animated GIF preview controls](Screenshots/gif-preview-controls.gif), [selection tools and New File templates](Screenshots/selection-and-templates.gif), [Quick Look](Screenshots/quick-look.gif), the [command palette](Screenshots/command-palette.gif), [extracting and browsing archives](Screenshots/archives.gif), [archive previews with VS Code file icons](Screenshots/archive-preview.gif), and [queued, verified copies](Screenshots/transfers.gif).
 
 ## Star History
 
@@ -360,6 +361,7 @@ See [ROADMAP.md](ROADMAP.md) for planned and suggested features.
 - [x] **Verify after copy** - with Settings > Behavior > Verify Copies on, every finished copy is compared with its source (size, then SHA-256 of both files) in the background at low priority, and the notification ends with "Verified 3 files" or how many copies differ or are missing
 - [x] **Batch conflict rules** - the paste conflict dialog adds **Replace Only If The Pasted One Is: Newer / Larger**, which replaces only the items that are older (or smaller) than the ones being pasted and keeps the rest; Rename is now called **Keep Both** (and Keep Both For All next to Apply To All)
 - [x] **Performance fixes** - Quick Look no longer copies the folder's whole path list every frame (13 ms → under 0.1 ms per frame in a big folder), the Duplicates and Changes tabs stop re-counting and cloning their lists every frame, and listing a zip with 50,000 entries takes 0.5 s instead of 13 s (the local time zone is looked up once per hour of timestamps instead of once per entry)
+- [x] **Archive previews with VS Code file icons** - selecting an archive shows its contents in the preview pane (and Quick Look) as a tree like VS Code's explorer, with the [Material Icon Theme](https://github.com/material-extensions/vscode-material-icon-theme) icons and colors for each file type (Rust, TypeScript, React, Python, JSON, Markdown, images, ...), well-known files (package.json, README, Dockerfile, .gitignore, LICENSE, ...), and named folders (src, docs, tests, node_modules, .github, ...), with light-theme variants. Folders come first and collapse or expand on click (open and closed folder icons, indent guides), Expand All / Collapse All sit next to a files, folders, and size summary, and it now covers tar, tar.gz/.tgz, tar.bz2, tar.xz, gz, bz2, and xz as well as zip and 7z (and RAR, ISO, and CAB with 7-Zip installed). Only the rows on screen are drawn, so listings of up to 20,000 entries scroll smoothly; the 1,179 icons add about 230 KB to the app, are unpacked once off the UI thread, and each is rendered once at the screen's scale
 - [x] **Consistent Title Case** - buttons, menu items, headings, setting labels, and short tooltips all use Title Case; longer explanations stay as normal sentences
 
 

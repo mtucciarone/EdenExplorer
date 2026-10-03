@@ -10,7 +10,7 @@ use std::thread;
 const MAX_TEXT_PREVIEW_BYTES: usize = 512 * 1024;
 const MAX_PREVIEW_IMAGE_DIM: u32 = 1600;
 const PREVIEW_CACHE_CAPACITY: usize = 12;
-const MAX_ARCHIVE_ENTRIES: usize = 5000;
+const MAX_ARCHIVE_ENTRIES: usize = 20_000;
 const MAX_GIF_PREVIEW_BYTES: usize = 200 * 1024 * 1024;
 const MIN_GIF_FRAME_DELAY_MS: u64 = 20;
 /// Upper bound on how much a single compressed entry (a .docx's
@@ -69,6 +69,12 @@ pub struct ArchiveEntry {
     pub is_dir: bool,
     pub size: u64,
     pub depth: usize,
+    /// How many entries below this one are inside it (a folder's contents
+    /// follow it directly), so a collapsed folder can be skipped at once.
+    pub descendants: u32,
+    pub icon: crate::core::material_icons::MaterialIcon,
+    /// The icon for an expanded folder (the same as `icon` for files).
+    pub icon_open: crate::core::material_icons::MaterialIcon,
 }
 
 /// One decoded frame of an animated image, with how long it should be shown for.
@@ -97,9 +103,10 @@ pub enum PreviewPayload {
         size: [usize; 2],
         frames: Vec<AnimatedFrame>,
     },
-    /// The file/folder listing of a zip-format archive.
+    /// The file/folder listing of an archive, as an expanded tree.
     Archive {
-        entries: Vec<ArchiveEntry>,
+        /// Shared, so the per-frame copy of the payload doesn't copy the list.
+        entries: std::sync::Arc<Vec<ArchiveEntry>>,
         truncated: bool,
     },
     /// A file type we don't know how to preview.
@@ -417,9 +424,12 @@ fn load_preview_payload(path: &Path) -> PreviewPayload {
         "pdf" => load_pdf_preview(path),
         "md" | "markdown" => load_markdown_preview(path),
         "docx" | "doc" | "xlsx" | "xls" | "pptx" | "ppt" => load_office_preview(path),
-        "zip" | "jar" | "war" | "apk" | "xpi" => load_archive_preview(path),
+        "zip" => load_archive_preview(path, false),
+        "jar" | "war" | "apk" | "xpi" => load_archive_preview(path, true),
         "epub" => load_epub_preview(path),
-        "7z" => load_7z_preview(path),
+        "7z" | "tar" | "tgz" | "tbz" | "tbz2" | "txz" | "gz" | "bz2" | "xz" | "rar" | "iso" | "cab" => {
+            load_archive_preview(path, false)
+        }
         "ttf" | "otf" | "ttc" | "otc" => load_font_preview(path),
         "svg" => load_svg_preview(path, false),
         "svgz" => load_svg_preview(path, true),
@@ -1236,111 +1246,93 @@ fn extract_xhtml_text(xhtml: &str) -> String {
     out
 }
 
-fn load_archive_preview(path: &Path) -> PreviewPayload {
-    let file = match std::fs::File::open(path) {
-        Ok(f) => f,
-        Err(err) => return PreviewPayload::Error(format!("Couldn't open file: {err}")),
-    };
-
-    let mut archive = match zip::ZipArchive::new(file) {
-        Ok(a) => a,
-        Err(err) => return PreviewPayload::Error(format!("Couldn't read archive: {err}")),
-    };
-
-    let mut sort_keys: Vec<(String, ArchiveEntry)> = Vec::with_capacity(archive.len());
-    for i in 0..archive.len() {
-        let Ok(entry) = archive.by_index(i) else {
-            continue;
-        };
-        let raw_name = entry.name().replace('\\', "/");
-        let trimmed = raw_name.trim_end_matches('/');
-        if trimmed.is_empty() {
-            continue;
+/// Lists an archive for the preview pane: zip (and zip-based `.jar`,
+/// `.apk`, ...), 7z, tar (plain or gz/bz2/xz), single gz/bz2/xz files, and,
+/// when 7-Zip is installed, RAR, ISO, and CAB. Archives that can be browsed
+/// share the listing cache with browsing, so opening one after previewing
+/// it doesn't read it again.
+fn load_archive_preview(path: &Path, zip_based: bool) -> PreviewPayload {
+    use crate::core::extract::{ArchiveKind, list_as};
+    let listed = if zip_based {
+        list_as(path, ArchiveKind::Zip, "").map(std::sync::Arc::new)
+    } else if crate::core::archive_view::is_browsable_archive(path) {
+        crate::core::archive_view::listing(path)
+    } else {
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+        match ArchiveKind::of(name) {
+            Some((ArchiveKind::External, _)) if crate::core::extract::seven_zip_exe().is_none() => {
+                return PreviewPayload::Unsupported(
+                    "Install 7-Zip to see what's inside this archive.\nDouble-click to open it in its default program.".to_string(),
+                );
+            }
+            Some((kind, stem)) => list_as(path, kind, stem).map(std::sync::Arc::new),
+            None => Err("not a known archive type".to_string()),
         }
-        let is_dir = entry.is_dir() || raw_name.ends_with('/');
-        let depth = trimmed.matches('/').count();
-        let display_name = trimmed.rsplit('/').next().unwrap_or(trimmed).to_string();
-
-        sort_keys.push((
-            trimmed.to_string(),
-            ArchiveEntry {
-                name: display_name,
-                is_dir,
-                size: entry.size(),
-                depth,
-            },
-        ));
+    };
+    match listed {
+        Ok(items) if items.is_empty() => PreviewPayload::Unsupported("This archive appears to be empty.".to_string()),
+        Ok(items) => {
+            let (entries, truncated) = archive_tree(&items);
+            PreviewPayload::Archive { entries: std::sync::Arc::new(entries), truncated }
+        }
+        Err(err) => PreviewPayload::Error(format!("Couldn't read archive: {err}")),
     }
-
-    if sort_keys.is_empty() {
-        return PreviewPayload::Unsupported("This archive appears to be empty.".to_string());
-    }
-
-    sort_keys.sort_by(|a, b| a.0.cmp(&b.0));
-
-    let truncated = sort_keys.len() > MAX_ARCHIVE_ENTRIES;
-    let entries = sort_keys
-        .into_iter()
-        .take(MAX_ARCHIVE_ENTRIES)
-        .map(|(_, entry)| entry)
-        .collect();
-
-    PreviewPayload::Archive { entries, truncated }
 }
 
-/// Same idea as `load_archive_preview`, but for `.7z` - a completely
-/// different container format from zip, so it needs its own crate
-/// (`sevenz-rust2`, a maintained fork of the unmaintained `sevenz-rust`; RAR
-/// support was deliberately skipped instead, since the only practical crate
-/// for it wraps the non-free-licensed official UnRAR library). Only listing
-/// is needed here (no extraction), and `sevenz_rust2::Archive::open` already
-/// hands back every entry's name/size/directory-ness directly - no need to
-/// open a reader or decompress anything just to show the file tree. Builds
-/// the exact same `ArchiveEntry` shape `load_archive_preview` does, so the
-/// existing indented-by-depth rendering in `itemviewer_preview.rs` needs no
-/// changes at all for this new format.
-fn load_7z_preview(path: &Path) -> PreviewPayload {
-    let archive = match sevenz_rust2::Archive::open(path) {
-        Ok(a) => a,
-        Err(err) => return PreviewPayload::Error(format!("Couldn't read .7z archive: {err}")),
-    };
-
-    let mut sort_keys: Vec<(String, ArchiveEntry)> = Vec::with_capacity(archive.files.len());
-    for entry in &archive.files {
-        let raw_name = entry.name.replace('\\', "/");
-        let trimmed = raw_name.trim_end_matches('/');
-        if trimmed.is_empty() {
-            continue;
+/// Orders an archive listing as an expanded tree like VS Code's explorer:
+/// each folder followed by its contents, folders before files, names in
+/// natural order. `items` must hold every parent folder (as
+/// `extract::list` returns them).
+fn archive_tree(items: &[crate::core::extract::ArchiveItem]) -> (Vec<ArchiveEntry>, bool) {
+    use crate::core::material_icons::{for_file, for_folder};
+    use std::collections::HashMap;
+    let mut children: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (i, item) in items.iter().enumerate() {
+        let parent = item.path.rsplit_once('/').map_or("", |(parent, _)| parent);
+        children.entry(parent).or_default().push(i);
+    }
+    let name_of = |i: usize| items[i].path.rsplit('/').next().unwrap_or(&items[i].path);
+    let sort_keys: Vec<String> = (0..items.len()).map(|i| name_of(i).to_lowercase()).collect();
+    for list in children.values_mut() {
+        list.sort_by(|&a, &b| items[b].is_dir.cmp(&items[a].is_dir).then_with(|| sort_keys[a].cmp(&sort_keys[b])));
+    }
+    let mut entries: Vec<ArchiveEntry> = Vec::with_capacity(items.len().min(MAX_ARCHIVE_ENTRIES));
+    let mut truncated = false;
+    // (item, depth, index of its entry once pushed) - depth-first.
+    let mut stack: Vec<(usize, usize)> = children.get("").map_or(Vec::new(), |top| top.iter().rev().map(|&i| (i, 0)).collect());
+    let mut open_folders: Vec<usize> = Vec::new();
+    while let Some((i, depth)) = stack.pop() {
+        if entries.len() >= MAX_ARCHIVE_ENTRIES {
+            truncated = true;
+            break;
         }
-        let is_dir = entry.is_directory || raw_name.ends_with('/');
-        let depth = trimmed.matches('/').count();
-        let display_name = trimmed.rsplit('/').next().unwrap_or(trimmed).to_string();
-
-        sort_keys.push((
-            trimmed.to_string(),
-            ArchiveEntry {
-                name: display_name,
-                is_dir,
-                size: entry.size,
-                depth,
-            },
-        ));
+        // Folders deeper than this one are finished: record their size.
+        while open_folders.last().is_some_and(|&f| entries[f].depth >= depth) {
+            let f = open_folders.pop().unwrap_or_default();
+            entries[f].descendants = (entries.len() - f - 1) as u32;
+        }
+        let item = &items[i];
+        let name = name_of(i).to_string();
+        let (icon, icon_open) = if item.is_dir {
+            (for_folder(&name, false), for_folder(&name, true))
+        } else {
+            let icon = for_file(&name);
+            (icon, icon)
+        };
+        if item.is_dir {
+            open_folders.push(entries.len());
+            if let Some(kids) = children.get(item.path.as_str()) {
+                stack.extend(kids.iter().rev().map(|&k| (k, depth + 1)));
+            }
+        }
+        entries.push(ArchiveEntry { name, is_dir: item.is_dir, size: item.size, depth, descendants: 0, icon, icon_open });
     }
-
-    if sort_keys.is_empty() {
-        return PreviewPayload::Unsupported("This archive appears to be empty.".to_string());
+    for f in open_folders {
+        entries[f].descendants = (entries.len() - f - 1) as u32;
     }
-
-    sort_keys.sort_by(|a, b| a.0.cmp(&b.0));
-
-    let truncated = sort_keys.len() > MAX_ARCHIVE_ENTRIES;
-    let entries = sort_keys
-        .into_iter()
-        .take(MAX_ARCHIVE_ENTRIES)
-        .map(|(_, entry)| entry)
-        .collect();
-
-    PreviewPayload::Archive { entries, truncated }
+    // Unpack the icon set here, off the UI thread, the first time.
+    let _ = entries.first().map(|e| e.icon.svg());
+    (entries, truncated)
 }
 
 const SVG_PREVIEW_TARGET_LONG_EDGE: f32 = 1024.0;
@@ -1718,8 +1710,8 @@ mod sevenz_tests {
 
     /// Builds a small real `.7z` archive (one top-level file, one nested
     /// file inside a directory) via `sevenz_rust2`'s own writer, then
-    /// verifies `load_7z_preview` lists it the same way `load_archive_preview`
-    /// already lists a zip: sorted, with depth reflecting nesting.
+    /// verifies the preview lists it as a tree: folders first, with depth
+    /// reflecting nesting, and file type icons.
     #[test]
     fn lists_entries_from_a_real_7z_archive() {
         let dir = std::env::temp_dir().join(format!(
@@ -1752,18 +1744,52 @@ mod sevenz_tests {
             writer.finish().unwrap();
         }
 
-        let payload = load_7z_preview(&archive_path);
+        let payload = load_archive_preview(&archive_path, false);
         let _ = std::fs::remove_dir_all(&dir);
 
         let PreviewPayload::Archive { entries, truncated } = payload else {
             panic!("expected an Archive payload");
         };
         assert!(!truncated);
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].name, "root.txt");
-        assert_eq!(entries[0].depth, 0);
-        assert_eq!(entries[1].name, "nested.txt");
-        assert_eq!(entries[1].depth, 1);
+        let names: Vec<(&str, usize)> = entries.iter().map(|e| (e.name.as_str(), e.depth)).collect();
+        assert_eq!(names, [("subdir", 0), ("nested.txt", 1), ("root.txt", 0)]);
+        assert_eq!(entries[0].descendants, 1);
+        assert_eq!(entries[1].icon.name(), "document");
+    }
+
+    #[test]
+    fn archive_tree_puts_folders_first_and_counts_contents() {
+        use crate::core::extract::ArchiveItem;
+        let item = |path: &str, is_dir: bool| ArchiveItem { path: path.to_string(), is_dir, size: 1, modified: None };
+        // As `extract::list` returns it: sorted by path, parents included.
+        let items = [
+            item("README.md", false),
+            item("src", true),
+            item("src-old.rs", false),
+            item("src/lib.rs", false),
+            item("src/utils", true),
+            item("src/utils/a.rs", false),
+            item("Zeta", true),
+        ];
+        let (entries, truncated) = archive_tree(&items);
+        assert!(!truncated);
+        let names: Vec<(&str, usize, u32)> = entries.iter().map(|e| (e.name.as_str(), e.depth, e.descendants)).collect();
+        assert_eq!(
+            names,
+            [
+                ("src", 0, 3),
+                ("utils", 1, 1),
+                ("a.rs", 2, 0),
+                ("lib.rs", 1, 0),
+                ("Zeta", 0, 0),
+                ("README.md", 0, 0),
+                ("src-old.rs", 0, 0),
+            ]
+        );
+        assert_eq!(entries[0].icon.name(), "folder-src");
+        assert_eq!(entries[0].icon_open.name(), "folder-src-open");
+        assert_eq!(entries[2].icon.name(), "rust");
+        assert_eq!(entries[5].icon.name(), "readme");
     }
 }
 

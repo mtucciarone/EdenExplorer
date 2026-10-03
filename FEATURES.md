@@ -96,6 +96,7 @@
   <li><b>Custom Context Menu</b> commands and <b>Send To</b> destinations, with a reorderable right-click menu</li>
   <li><b>Extract archives</b> - zip, 7z, tar, tar.gz, tar.bz2, tar.xz, gz, bz2, xz (rar and more via 7-Zip): Extract Here, Extract To "name\", Extract Each To Its Own Folder, Extract To…, with progress and Cancel</li>
   <li><b>Browse archives like folders</b> - double-click a zip, 7z, or tar to look inside (read-only), with thumbnails, previews, Quick Look, and extracting single items</li>
+  <li><b>Archive previews with VS Code file icons</b> - the preview pane shows an archive's contents as a collapsible tree with Material Icon Theme icons and colors for every file type and named folder</li>
   <li><b>Queued transfers</b> - copies on the same disk run one at a time, with reorder, Cancel, and Pause All / Resume All</li>
   <li><b>Verify after copy</b> - optional SHA-256 comparison of every copied file with its source</li>
   <li><b>Paste conflict rules</b> - Replace, Skip, Keep Both, Apply To All, and Replace Only If Newer / Larger</li>
