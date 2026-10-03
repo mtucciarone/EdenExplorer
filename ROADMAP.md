@@ -89,7 +89,6 @@ Items marked [x] have been implemented (see the README changelog); the rest aren
 
 - [ ] **Built-in terminal pane** that follows the current folder (Dolphin F4, Path Finder, Files App) (M)
 - [ ] **Open With…** with recommended apps and "always use" (S)
-- [ ] **Set as default file manager** so Win+E and folder opens use EdenExplorer (Files App, Directory Opus) (M)
 - [ ] **Cloud status badges** for OneDrive, Dropbox, and Google Drive (synced / online-only), plus Free Up Space (Files App) (M)
 - [ ] **Remote locations**: FTP, SFTP, WebDAV, and S3 you can browse like folders (ForkLift, FileCommander, Directory Opus) (L)
 - [ ] **WSL filesystem browsing** (`\\wsl$`) in the sidebar (S)
@@ -107,3 +106,9 @@ Items marked [x] have been implemented (see the README changelog); the rest aren
 - [ ] **Drive health**: SMART status and temperature in This PC (M)
 - [ ] **Accessibility**: high-contrast theme, UI scaling slider, screen-reader labels (M)
 - [ ] **Update check** against GitHub Releases (notify only) (S)
+
+## Deferred
+
+Kept out of the plan on purpose: these change Windows itself rather than the app, and a mistake could leave the system in a bad state.
+
+- **Set as default file manager** so Win+E and folder opens use EdenExplorer (Files App, Directory Opus) (M) - it means rewriting the shell's folder-open registry keys; if that goes wrong (or the app is moved or deleted) folders stop opening from the desktop, taskbar, and other apps. Not planned.
