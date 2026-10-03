@@ -118,6 +118,7 @@ pub fn draw_theme_customizer_content(
             let mut sidebar_width_changed = false;
             let mut tab_gap_changed = false;
             let mut min_tab_width_changed = false;
+            let mut preview_frame_changed = false;
             let mut custom_themes_changed = false;
 
             // Two-column layout: every picker/section scrolls independently
@@ -536,6 +537,115 @@ pub fn draw_theme_customizer_content(
                                             );
                                             ui.end_row();
                                         });
+
+                                    ui.add_space(6.0);
+                                    ui.separator();
+
+                                    eden_text_label(ui, palette, &i18n.tr("theme_preview_frame"));
+                                    ui.add_space(6.0);
+                                    let frame = &mut customizer.preview_frame;
+                                    ui.horizontal(|ui| {
+                                        ui.spacing_mut().item_spacing.x = 8.0;
+                                        if crate::gui::windows::settings::setting_checkbox(
+                                            ui,
+                                            palette,
+                                            &mut frame.enabled,
+                                            egui::RichText::new(i18n.tr("theme_preview_frame_show"))
+                                                .color(palette.text_normal),
+                                            "theme_preview_frame_show",
+                                        ) {
+                                            preview_frame_changed = true;
+                                        }
+                                        crate::gui::windows::settings::info_icon(
+                                            ui,
+                                            &i18n.tr("tooltip_theme_preview_frame_show"),
+                                            palette,
+                                        );
+                                    });
+                                    ui.add_space(6.0);
+                                    ui.add_enabled_ui(frame.enabled, |ui| {
+                                        egui::Grid::new("theme_preview_frame_grid")
+                                            .num_columns(2)
+                                            .spacing([12.0, 6.0])
+                                            .show(ui, |ui| {
+                                                use crate::core::ui_prefs::PreviewFrame;
+                                                eden_text_label(ui, palette, &i18n.tr("theme_preview_frame_thickness"));
+                                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                    apply_eden_visual_overrides(ui, palette);
+                                                    let resp = ui.add_sized(
+                                                        egui::vec2(90.0, 0.0),
+                                                        egui::DragValue::new(&mut frame.thickness)
+                                                            .range(0.0..=PreviewFrame::MAX_THICKNESS)
+                                                            .speed(0.1)
+                                                            .max_decimals(1)
+                                                            .suffix(" px"),
+                                                    );
+                                                    preview_frame_changed |= resp.changed();
+                                                });
+                                                ui.end_row();
+
+                                                eden_text_label(ui, palette, &i18n.tr("theme_preview_frame_color"));
+                                                ui.horizontal(|ui| {
+                                                    apply_eden_visual_overrides(ui, palette);
+                                                    ui.spacing_mut().item_spacing.x = 8.0;
+                                                    let mut theme_color = frame.color.is_none();
+                                                    if crate::gui::windows::settings::setting_checkbox(
+                                                        ui,
+                                                        palette,
+                                                        &mut theme_color,
+                                                        egui::RichText::new(i18n.tr("theme_preview_frame_theme_color"))
+                                                            .color(palette.text_normal),
+                                                        "theme_preview_frame_theme_color",
+                                                    ) {
+                                                        frame.color = if theme_color {
+                                                            None
+                                                        } else {
+                                                            Some(palette.borders_active.to_srgba_unmultiplied())
+                                                        };
+                                                        preview_frame_changed = true;
+                                                    }
+                                                    if let Some([r, g, b, a]) = frame.color {
+                                                        let mut color = egui::Color32::from_rgba_unmultiplied(r, g, b, a);
+                                                        if rgba_color_edit_button(ui, &mut color).changed() {
+                                                            frame.color = Some(color.to_srgba_unmultiplied());
+                                                            preview_frame_changed = true;
+                                                        }
+                                                    }
+                                                });
+                                                ui.end_row();
+
+                                                eden_text_label(ui, palette, &i18n.tr("theme_preview_frame_radius"));
+                                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                    apply_eden_visual_overrides(ui, palette);
+                                                    let resp = ui.add_sized(
+                                                        egui::vec2(90.0, 0.0),
+                                                        egui::DragValue::new(&mut frame.radius)
+                                                            .range(0.0..=PreviewFrame::MAX_RADIUS)
+                                                            .speed(0.2)
+                                                            .max_decimals(0)
+                                                            .suffix(" px"),
+                                                    );
+                                                    preview_frame_changed |= resp.changed();
+                                                });
+                                                ui.end_row();
+                                            });
+                                        // The derived values, so the corner calculation is visible.
+                                        ui.add_space(4.0);
+                                        ui.horizontal_wrapped(|ui| {
+                                            ui.weak(format!(
+                                                "{} {:.0} px · {} {:.0} px",
+                                                i18n.tr("theme_preview_frame_padding"),
+                                                frame.padding(),
+                                                i18n.tr("theme_preview_frame_inner_radius"),
+                                                frame.inner_radius(),
+                                            ));
+                                            crate::gui::windows::settings::info_icon(
+                                                ui,
+                                                &i18n.tr("tooltip_theme_preview_frame_math"),
+                                                palette,
+                                            );
+                                        });
+                                    });
 
                                     ui.add_space(6.0);
                                     ui.separator();
@@ -2013,6 +2123,10 @@ pub fn draw_theme_customizer_content(
 
             if tab_gap_changed {
                 action = Some(ThemeCustomizerAction::TabGapChanged(customizer.tab_gap));
+            }
+
+            if preview_frame_changed {
+                action = Some(ThemeCustomizerAction::PreviewFrameChanged(customizer.preview_frame));
             }
 
             if min_tab_width_changed {

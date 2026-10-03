@@ -1066,6 +1066,16 @@ preview_archive_files = files
 preview_archive_folders = folders
 preview_archive_expand_all = Expand All
 preview_archive_collapse_all = Collapse All
+theme_preview_frame = Preview Frame
+theme_preview_frame_show = Show A Rounded Border Around Previews
+tooltip_theme_preview_frame_show = Draws every preview (text, images, video, audio, archives, ...) in the preview pane and Quick Look inside a rounded border with its own background.
+theme_preview_frame_thickness = Border Thickness
+theme_preview_frame_color = Border Color
+theme_preview_frame_theme_color = Theme Color
+theme_preview_frame_radius = Corner Radius
+theme_preview_frame_padding = Padding
+theme_preview_frame_inner_radius = Inner Corner Radius
+tooltip_theme_preview_frame_math = Worked out from the corner radius. Padding = corner radius × 0.29 (how far a rounded corner curves in), at least 4 px, so content never pokes past the curve. Inner corner radius = corner radius − border thickness − padding, used for images and the archive header so the inner and outer curves stay evenly spaced.
 disk_usage_col_name = Name
 disk_usage_col_size = Size
 disk_usage_col_share = % Of Parent

@@ -554,6 +554,11 @@ impl MainWindow {
 
 impl eframe::App for MainWindow {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        // Read by the preview pane and Quick Look this frame.
+        crate::gui::windows::containers::itemviewer_preview::set_preview_frame_style(
+            ui.ctx(),
+            self.settings_window.current_settings.ui_prefs.preview_frame,
+        );
         // Lets the item viewer's own keyboard handling (Ctrl+A, Delete, ...)
         // know a blocking modal is on top of it this frame, so those
         // shortcuts don't fire on the file list underneath a modal that's

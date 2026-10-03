@@ -907,7 +907,59 @@ fn arm_markdown_copy_on_right_click(ui: &mut egui::Ui) {
     }
 }
 
+fn preview_frame_id() -> egui::Id {
+    egui::Id::new("preview_frame_style")
+}
+
+/// Shares the Settings > Appearance > Preview Frame choice with this
+/// frame's preview drawing (the preview pane and Quick Look).
+pub(crate) fn set_preview_frame_style(ctx: &egui::Context, frame: crate::core::ui_prefs::PreviewFrame) {
+    ctx.data_mut(|d| d.insert_temp(preview_frame_id(), frame));
+}
+
+pub(crate) fn preview_frame_style(ctx: &egui::Context) -> crate::core::ui_prefs::PreviewFrame {
+    ctx.data(|d| d.get_temp(preview_frame_id())).unwrap_or_default()
+}
+
+/// The corner radius for images and panels inside the preview frame.
+fn preview_inner_radius(ui: &egui::Ui) -> egui::CornerRadius {
+    egui::CornerRadius::same(preview_frame_style(ui.ctx()).inner_radius().round() as u8)
+}
+
+/// Draws a file's preview inside the rounded, bordered frame set in
+/// Settings > Appearance (thickness, color, corner radius; the padding
+/// keeps content inside the rounded corners).
 pub(crate) fn draw_preview_content(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    preview_service: &mut PreviewService,
+    video_service: &mut VideoPreviewService,
+    audio_service: &mut AudioPreviewService,
+    find_in_preview: &mut FindInPreviewState,
+    path: &Path,
+    palette: &ThemePalette,
+) {
+    let style = preview_frame_style(ui.ctx());
+    if !style.enabled {
+        draw_preview_body(ui, i18n, preview_service, video_service, audio_service, find_in_preview, path, palette);
+        return;
+    }
+    let color = style
+        .color
+        .map(|[r, g, b, a]| egui::Color32::from_rgba_unmultiplied(r, g, b, a))
+        .unwrap_or(ui.visuals().widgets.noninteractive.bg_stroke.color);
+    egui::Frame::NONE
+        .fill(palette.input_field_bg)
+        .stroke(egui::Stroke::new(style.thickness(), color))
+        .corner_radius(egui::CornerRadius::same(style.radius().round() as u8))
+        .inner_margin(egui::Margin::same(style.padding().round() as i8))
+        .show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
+            draw_preview_body(ui, i18n, preview_service, video_service, audio_service, find_in_preview, path, palette);
+        });
+}
+
+fn draw_preview_body(
     ui: &mut egui::Ui,
     i18n: &I18n,
     preview_service: &mut PreviewService,
@@ -1023,6 +1075,7 @@ pub(crate) fn draw_preview_content(
                     egui::Image::new(&texture)
                         .max_size(ui.available_size())
                         .shrink_to_fit()
+                        .corner_radius(preview_inner_radius(ui))
                         .sense(egui::Sense::click()),
                 );
                 let clicked = resp.clicked();
@@ -1098,7 +1151,7 @@ pub(crate) fn draw_preview_content(
                     ui.allocate_ui_with_layout(
                         avail,
                         egui::Layout::centered_and_justified(egui::Direction::TopDown),
-                        |ui| ui.add(egui::Image::new(&texture).max_size(avail).shrink_to_fit()),
+                        |ui| ui.add(egui::Image::new(&texture).max_size(avail).shrink_to_fit().corner_radius(preview_inner_radius(ui))),
                     );
                 });
         } else {
@@ -1123,6 +1176,7 @@ pub(crate) fn draw_preview_content(
                     egui::Image::new(&texture)
                         .max_size(image_area)
                         .shrink_to_fit()
+                        .corner_radius(preview_inner_radius(ui))
                         .sense(egui::Sense::click()),
                 );
                 let clicked = resp.clicked();
@@ -1838,11 +1892,10 @@ fn draw_archive_tree(
     }
 
     let (files, folders, size) = view.totals;
-    // The listing sits in a bordered panel: a header strip with the
-    // summary and Expand/Collapse All, then the rows on their own
-    // background with faint zebra stripes.
-    let border = ui.visuals().widgets.noninteractive.bg_stroke.color;
-    let radius = palette.medium_radius.saturating_add(2);
+    // Inside the preview frame: a header strip with the summary and
+    // Expand/Collapse All (rounded to match the frame), then the rows
+    // with faint zebra stripes.
+    let header_radius = preview_inner_radius(ui);
     let stripe_fill = ui.visuals().text_color().gamma_multiply(0.035);
 
     let text_size = palette.text_size;
@@ -1855,18 +1908,11 @@ fn draw_archive_tree(
     let name_font = egui::FontId::proportional(text_size);
     let size_font = egui::FontId::proportional(palette.tooltip_text_size);
     let mut toggled = None;
-    egui::Frame::NONE
-        .fill(palette.input_field_bg)
-        .stroke(egui::Stroke::new(1.0, border))
-        .corner_radius(egui::CornerRadius::same(radius))
-        .inner_margin(egui::Margin::same(1))
-        .show(ui, |ui| {
-            ui.set_min_size(ui.available_size());
+    ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
-            let header_radius = radius.saturating_sub(1);
             egui::Frame::NONE
                 .fill(palette.sidebar_bg_color)
-                .corner_radius(egui::CornerRadius { nw: header_radius, ne: header_radius, sw: 0, se: 0 })
+                .corner_radius(header_radius)
                 .inner_margin(egui::Margin::symmetric(10, 6))
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
@@ -1895,9 +1941,7 @@ fn draw_archive_tree(
                         }
                     });
                 });
-            let line_y = ui.cursor().top();
-            ui.painter().hline(ui.max_rect().x_range(), line_y, egui::Stroke::new(1.0, border));
-            egui::Frame::NONE.inner_margin(egui::Margin::same(4)).show(ui, |ui| {
+            egui::Frame::NONE.inner_margin(egui::Margin { left: 0, right: 0, top: 4, bottom: 0 }).show(ui, |ui| {
                 // Counted after the header, whose buttons can change it.
                 let row_count = view.rows(entries).len();
                 egui::ScrollArea::both()

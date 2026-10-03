@@ -1069,6 +1069,16 @@ preview_archive_files = file
 preview_archive_folders = folder
 preview_archive_expand_all = Bentangkan Semua
 preview_archive_collapse_all = Ciutkan Semua
+theme_preview_frame = Bingkai Pratinjau
+theme_preview_frame_show = Tampilkan Bingkai Membulat Di Sekitar Pratinjau
+tooltip_theme_preview_frame_show = Menampilkan setiap pratinjau (teks, gambar, video, audio, arsip, ...) di panel pratinjau dan Quick Look di dalam bingkai membulat dengan latar belakangnya sendiri.
+theme_preview_frame_thickness = Ketebalan Bingkai
+theme_preview_frame_color = Warna Bingkai
+theme_preview_frame_theme_color = Warna Tema
+theme_preview_frame_radius = Radius Sudut
+theme_preview_frame_padding = Jarak Dalam
+theme_preview_frame_inner_radius = Radius Sudut Dalam
+tooltip_theme_preview_frame_math = Dihitung dari radius sudut. Jarak dalam = radius sudut × 0,29 (seberapa jauh sudut membulat melengkung ke dalam), minimal 4 px, agar isi tidak keluar dari lengkungan. Radius sudut dalam = radius sudut − ketebalan bingkai − jarak dalam, dipakai untuk gambar dan header arsip agar lengkungan dalam dan luar tetap berjarak sama.
 disk_usage_col_name = Nama
 disk_usage_col_size = Ukuran
 disk_usage_col_share = % Dari Induk

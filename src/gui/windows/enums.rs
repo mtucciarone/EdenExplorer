@@ -19,6 +19,9 @@ pub enum ThemeCustomizerAction {
     /// reasoning/persistence as `TabGapChanged` (own small file, not
     /// `ThemePalette`).
     MinTabWidthChanged(f32),
+    /// The Preview Frame section changed (border around previews) - saved
+    /// in `ui_prefs.json`, not `ThemePalette`, for the same reason.
+    PreviewFrameChanged(crate::core::ui_prefs::PreviewFrame),
     /// The customizer's own Dark/Light toggle was clicked - switches which
     /// palette is being *edited*, but previously never touched the live
     /// app theme (`MainWindow::theme`), so editing the mode that wasn't

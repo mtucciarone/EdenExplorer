@@ -6877,6 +6877,10 @@ impl MainWindow {
                     },
                 );
             }
+            ThemeCustomizerAction::PreviewFrameChanged(frame) => {
+                self.settings_window.current_settings.ui_prefs.preview_frame = frame;
+                crate::core::ui_prefs::save_ui_prefs(&self.settings_window.current_settings.ui_prefs);
+            }
             ThemeCustomizerAction::MinTabWidthChanged(width) => {
                 self.min_tab_width = width;
                 crate::core::indexer::save_tab_layout(

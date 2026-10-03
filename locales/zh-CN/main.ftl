@@ -1070,6 +1070,16 @@ preview_archive_files = 个文件
 preview_archive_folders = 个文件夹
 preview_archive_expand_all = 全部展开
 preview_archive_collapse_all = 全部折叠
+theme_preview_frame = 预览边框
+theme_preview_frame_show = 在预览周围显示圆角边框
+tooltip_theme_preview_frame_show = 在预览窗格和快速查看中，为每个预览（文本、图片、视频、音频、压缩包等）绘制带独立背景的圆角边框。
+theme_preview_frame_thickness = 边框粗细
+theme_preview_frame_color = 边框颜色
+theme_preview_frame_theme_color = 主题颜色
+theme_preview_frame_radius = 圆角半径
+theme_preview_frame_padding = 内边距
+theme_preview_frame_inner_radius = 内部圆角半径
+tooltip_theme_preview_frame_math = 根据圆角半径计算。内边距 = 圆角半径 × 0.29（圆角向内弯曲的距离），至少 4 像素，使内容不会超出弧线。内部圆角半径 = 圆角半径 − 边框粗细 − 内边距，用于图片和压缩包标题栏，使内外弧线间距一致。
 disk_usage_col_name = 名称
 disk_usage_col_size = 大小
 disk_usage_col_share = 占上级比例

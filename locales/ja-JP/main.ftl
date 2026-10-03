@@ -1070,6 +1070,16 @@ preview_archive_files = ファイル
 preview_archive_folders = フォルダー
 preview_archive_expand_all = すべて展開
 preview_archive_collapse_all = すべて折りたたむ
+theme_preview_frame = プレビューの枠
+theme_preview_frame_show = プレビューを角丸の枠で囲む
+tooltip_theme_preview_frame_show = プレビューペインとクイックルックのすべてのプレビュー（テキスト、画像、動画、音声、アーカイブなど）を、背景付きの角丸の枠で囲みます。
+theme_preview_frame_thickness = 枠の太さ
+theme_preview_frame_color = 枠の色
+theme_preview_frame_theme_color = テーマの色
+theme_preview_frame_radius = 角の半径
+theme_preview_frame_padding = 余白
+theme_preview_frame_inner_radius = 内側の角の半径
+tooltip_theme_preview_frame_math = 角の半径から計算します。余白 = 角の半径 × 0.29（角丸が内側に入り込む量）、最低 4 px で、内容が曲線からはみ出しません。内側の角の半径 = 角の半径 − 枠の太さ − 余白 で、画像やアーカイブのヘッダーに使い、内外の曲線の間隔をそろえます。
 disk_usage_col_name = 名前
 disk_usage_col_size = サイズ
 disk_usage_col_share = 親に占める割合

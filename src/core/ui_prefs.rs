@@ -52,6 +52,60 @@ pub struct UiPrefs {
     /// Shortcuts) - see `core::keymap`.
     #[serde(deserialize_with = "lenient")]
     pub shortcuts: crate::core::keymap::ShortcutOverrides,
+    /// The border around previews in the preview pane and Quick Look
+    /// (Settings > Appearance > Preview Frame).
+    #[serde(deserialize_with = "lenient")]
+    pub preview_frame: PreviewFrame,
+}
+
+/// The rounded border drawn around every preview.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PreviewFrame {
+    pub enabled: bool,
+    /// Border width in points (0 = no line, the background still shows).
+    pub thickness: f32,
+    /// RGBA; `None` = the theme's border color.
+    pub color: Option<[u8; 4]>,
+    /// Corner radius in points.
+    pub radius: f32,
+}
+
+impl Default for PreviewFrame {
+    fn default() -> Self {
+        Self { enabled: true, thickness: 1.0, color: None, radius: 8.0 }
+    }
+}
+
+impl PreviewFrame {
+    pub const MAX_THICKNESS: f32 = 8.0;
+    pub const MAX_RADIUS: f32 = 32.0;
+
+    pub fn thickness(&self) -> f32 {
+        if self.enabled { self.thickness.clamp(0.0, Self::MAX_THICKNESS) } else { 0.0 }
+    }
+
+    pub fn radius(&self) -> f32 {
+        if self.enabled { self.radius.clamp(0.0, Self::MAX_RADIUS) } else { 0.0 }
+    }
+
+    /// Space between the border and the content. A rounded corner curves
+    /// in by `radius × (1 − 1/√2)` (≈ 0.29 × radius) at its middle, so at
+    /// least that much keeps square content (an image, a list row) from
+    /// poking out past the curve; never less than 4.
+    pub fn padding(&self) -> f32 {
+        if !self.enabled {
+            return 0.0;
+        }
+        (self.radius() * (1.0 - std::f32::consts::FRAC_1_SQRT_2)).ceil().max(4.0)
+    }
+
+    /// Corner radius for rounded things inside the frame (images, the
+    /// archive header), so both curves share a center and the gap stays
+    /// even: radius − border − padding, never below 0.
+    pub fn inner_radius(&self) -> f32 {
+        (self.radius() - self.thickness() - self.padding()).max(0.0)
+    }
 }
 
 impl Default for UiPrefs {
@@ -69,6 +123,7 @@ impl Default for UiPrefs {
             templates_folder: None,
             toolbar: None,
             shortcuts: Default::default(),
+            preview_frame: PreviewFrame::default(),
         }
     }
 }
@@ -111,6 +166,29 @@ pub fn save_ui_prefs(prefs: &UiPrefs) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preview_frame_corner_math() {
+        let frame = PreviewFrame { enabled: true, thickness: 1.0, color: None, radius: 8.0 };
+        assert_eq!(frame.padding(), 4.0); // 8 × 0.29 = 2.3, at least 4
+        assert_eq!(frame.inner_radius(), 3.0); // 8 − 1 − 4
+        let big = PreviewFrame { radius: 24.0, thickness: 2.0, ..frame };
+        assert_eq!(big.padding(), 8.0); // ceil(24 × 0.29) = 8
+        assert_eq!(big.inner_radius(), 14.0);
+        let off = PreviewFrame { enabled: false, ..big };
+        assert_eq!((off.thickness(), off.radius(), off.padding(), off.inner_radius()), (0.0, 0.0, 0.0, 0.0));
+        let wild = PreviewFrame { thickness: 99.0, radius: -3.0, ..frame };
+        assert_eq!((wild.thickness(), wild.radius(), wild.inner_radius()), (8.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn old_files_get_the_default_preview_frame() {
+        let prefs: UiPrefs = serde_json::from_str(r#"{"quick_look": false}"#).unwrap();
+        assert_eq!(prefs.preview_frame, PreviewFrame::default());
+        let prefs: UiPrefs = serde_json::from_str(r#"{"preview_frame": {"radius": 12}}"#).unwrap();
+        assert_eq!(prefs.preview_frame.radius, 12.0);
+        assert!(prefs.preview_frame.enabled);
+    }
 
     #[test]
     fn missing_fields_take_defaults() {

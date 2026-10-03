@@ -387,3 +387,11 @@ Copying a 180 MB folder to Documents and then to Desktop: the second copy waits 
 ### Preview pane - a zip's contents in a bordered panel, as a VS Code-style tree with Material Icon Theme icons for each file type and named folder
 
 ![Archive preview with file icons](81-archive-preview-icons.png)
+
+### Settings > Appearance > Preview Frame - border thickness, border color (theme or custom), and corner radius, with the calculated padding and inner corner radius
+
+![Preview frame settings](82-preview-frame-settings.png)
+
+### A custom preview frame - 2 px purple border with 16 px corners around an archive preview
+
+![Custom preview frame](83-preview-frame-custom.png)

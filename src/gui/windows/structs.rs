@@ -32,6 +32,9 @@ pub struct ThemeCustomizer {
     /// `core::indexer::TabLayoutSnapshot::min_tab_width`) - same file as
     /// `tab_gap` above, for the same reason.
     pub min_tab_width: f32,
+    /// Draft copy of the preview frame (border around previews), saved in
+    /// `ui_prefs.json` - see `core::ui_prefs::PreviewFrame`.
+    pub preview_frame: crate::core::ui_prefs::PreviewFrame,
     /// User-created named themes (name + accent + secondary, like a
     /// built-in `ThemePresetDef`) - persisted in their own file via
     /// `core::indexer::{load_custom_themes, save_custom_themes}`, not part
@@ -80,6 +83,7 @@ impl Default for ThemeCustomizer {
             sidebar_width: crate::core::indexer::load_sidebar_sections().sidebar_width,
             tab_gap: crate::core::indexer::load_tab_layout().tab_gap,
             min_tab_width: crate::core::indexer::load_tab_layout().min_tab_width,
+            preview_frame: crate::core::ui_prefs::load_ui_prefs().preview_frame,
             custom_themes_next_id: custom_themes_snapshot.map(|s| s.next_id).unwrap_or(1),
             custom_themes,
             new_custom_theme_name,
