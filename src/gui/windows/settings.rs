@@ -1215,6 +1215,46 @@ fn draw_behavior_section(
                 }
             },
         );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        setting_row(
+            ui,
+            |ui| {
+                setting_label(
+                    ui,
+                    &i18n.tr("settings_terminal_font"),
+                    Some((&i18n.tr("tooltip_settings_terminal_font"), palette)),
+                    palette,
+                );
+            },
+            |ui| {
+                let terminal = &mut settings.current_settings.ui_prefs.terminal;
+                let automatic = match crate::core::utils::fonts::pick_terminal_font_public() {
+                    Some(name) => format!("{} ({name})", i18n.tr("settings_terminal_font_auto")),
+                    None => i18n.tr("settings_terminal_font_auto"),
+                };
+                let selected = terminal.font_name.clone().unwrap_or_else(|| automatic.clone());
+                let mut picked: Option<Option<String>> = None;
+                draw_dropdown(ui, palette, "terminal_font_selector", SETTINGS_COMBO_WIDTH + 40.0, selected, |ui| {
+                    egui::ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
+                        if ui.selectable_label(terminal.font_name.is_none(), automatic.as_str()).clicked() {
+                            picked = Some(None);
+                            ui.close();
+                        }
+                        for font in crate::core::utils::fonts::get_font_list() {
+                            let chosen = terminal.font_name.as_deref() == Some(font.as_str());
+                            if ui.selectable_label(chosen, font.as_str()).clicked() {
+                                picked = Some(Some(font.clone()));
+                                ui.close();
+                            }
+                        }
+                    });
+                });
+                if let Some(font) = picked {
+                    terminal.font_name = font;
+                    *action = Some(SettingsAction::ApplySettings);
+                }
+            },
+        );
     });
 
     settings_section(ui, palette, |ui| {

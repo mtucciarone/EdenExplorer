@@ -407,3 +407,7 @@ Copying a 180 MB folder to Documents and then to Desktop: the second copy waits 
 ### The terminal pane's + menu - every installed shell (Command Prompt, Windows PowerShell, PowerShell 7, Git Bash, each WSL distribution) and Default Shell
 
 ![Terminal shells](86-terminal-shells.png)
+
+### Terminal pane with an Oh My Posh-style prompt - powerline segments and Nerd Font icons, with Terminal Font on Automatic picking the installed Nerd Font (sample output fed to the terminal directly, as under Wine the shells can't take input)
+
+![Terminal with Oh My Posh](87-terminal-oh-my-posh.png)

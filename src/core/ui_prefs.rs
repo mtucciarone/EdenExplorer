@@ -70,6 +70,10 @@ pub struct TerminalPrefs {
     /// Shell new terminals start with (`ShellProfile::id`); `None` = the
     /// first of PowerShell 7, Windows PowerShell, Command Prompt.
     pub default_shell: Option<String>,
+    /// Font for the terminal; `None` = automatic (an installed Nerd Font,
+    /// which prompt themes like Oh My Posh need for their icons, else
+    /// Cascadia Mono or Consolas).
+    pub font_name: Option<String>,
     pub font_size: f32,
     /// Height of the pane in points.
     pub height: f32,
@@ -77,7 +81,7 @@ pub struct TerminalPrefs {
 
 impl Default for TerminalPrefs {
     fn default() -> Self {
-        Self { default_shell: None, font_size: 13.0, height: 260.0 }
+        Self { default_shell: None, font_name: None, font_size: 13.0, height: 260.0 }
     }
 }
 

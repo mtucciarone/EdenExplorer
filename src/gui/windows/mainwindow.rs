@@ -564,6 +564,11 @@ impl eframe::App for MainWindow {
             self.toggle_terminal();
         }
         self.terminal.retain_tabs(self.tabs.iter().map(|t| t.id));
+        if crate::core::utils::fonts::set_terminal_font(
+            self.settings_window.current_settings.ui_prefs.terminal.font_name.as_deref(),
+        ) {
+            self.theme_dirty = true;
+        }
         // Read by the preview pane and Quick Look this frame.
         crate::gui::windows::containers::itemviewer_preview::set_preview_frame_style(
             ui.ctx(),

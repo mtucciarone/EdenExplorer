@@ -281,7 +281,15 @@ impl TerminalPanels {
         let body = egui::Rect::from_min_max(egui::pos2(rect.left(), header.bottom()), rect.max);
         let bg = term_background(dark, palette);
         ui.painter().rect_filled(body.shrink(2.0), palette.medium_radius, bg);
-        let font = egui::FontId::monospace(prefs.font_size.clamp(8.0, 32.0));
+        // The terminal font family (see `fonts::apply_custom_font_definitions`);
+        // plain monospace until the fonts have been rebuilt with it.
+        let terminal_family = egui::FontFamily::Name(crate::core::utils::fonts::TERMINAL_FAMILY.into());
+        let family = if ui.fonts_mut(|f| f.families().contains(&terminal_family)) {
+            terminal_family
+        } else {
+            egui::FontFamily::Monospace
+        };
+        let font = egui::FontId::new(prefs.font_size.clamp(8.0, 32.0), family);
         let cell_w = ui.fonts_mut(|f| f.glyph_width(&font, 'M')).max(1.0);
         let cell_h = ui.fonts_mut(|f| f.row_height(&font)).max(1.0);
         let inner = body.shrink(PAD);

@@ -218,6 +218,64 @@ pub fn get_font_path(font_name: &str) -> Option<PathBuf> {
     None
 }
 
+/// The egui font family the terminal pane draws with.
+pub const TERMINAL_FAMILY: &str = "terminal";
+
+/// The terminal font chosen in Settings (`None` = automatic).
+static TERMINAL_FONT: std::sync::RwLock<Option<Option<String>>> = std::sync::RwLock::new(None);
+
+/// Records the terminal font setting; true when it changed (the fonts
+/// then need rebuilding with `apply_font_to_context`).
+pub fn set_terminal_font(choice: Option<&str>) -> bool {
+    let choice = choice.map(str::to_owned);
+    let Ok(mut current) = TERMINAL_FONT.write() else { return false };
+    if current.as_ref() == Some(&choice) {
+        return false;
+    }
+    *current = Some(choice);
+    true
+}
+
+/// The font the terminal uses: the chosen one, or automatically an
+/// installed Nerd Font (preferring the "Mono" variants, whose icons fit
+/// one cell), then Cascadia Mono, Cascadia Code, or Consolas.
+pub fn terminal_font_name() -> Option<String> {
+    let chosen = TERMINAL_FONT.read().ok().and_then(|c| c.clone()).flatten();
+    if chosen.is_some() {
+        return chosen;
+    }
+    pick_terminal_font(get_font_list())
+}
+
+/// What "Automatic" resolves to on this PC.
+pub fn pick_terminal_font_public() -> Option<String> {
+    pick_terminal_font(get_font_list())
+}
+
+fn pick_terminal_font(installed: &[String]) -> Option<String> {
+    let is_nerd = |name: &str| {
+        let lower = name.to_lowercase();
+        lower.contains("nerd font") || lower.ends_with(" nf") || lower.ends_with(" nfm") || lower.contains(" nf ")
+    };
+    let is_mono = |name: &str| {
+        let lower = name.to_lowercase();
+        lower.ends_with("mono") || lower.ends_with(" nfm")
+    };
+    // Oh My Posh recommends Meslo; the others are popular coding fonts.
+    let preferred = ["meslo", "caskaydia", "jetbrains", "fira", "hack"];
+    let rank = |name: &str| {
+        let lower = name.to_lowercase();
+        let family = preferred.iter().position(|p| lower.contains(p)).unwrap_or(preferred.len());
+        (!is_mono(name), family, lower)
+    };
+    if let Some(best) = installed.iter().filter(|n| is_nerd(n)).min_by_key(|n| rank(n)) {
+        return Some(best.clone());
+    }
+    ["Cascadia Mono", "Cascadia Code", "Consolas"]
+        .iter()
+        .find_map(|want| installed.iter().find(|n| n.eq_ignore_ascii_case(want)).cloned())
+}
+
 pub fn load_font_data(font_name: &str) -> Option<Vec<u8>> {
     let path = get_font_path(font_name)?;
     std::fs::read(&path).ok()
@@ -294,5 +352,47 @@ pub fn apply_custom_font_definitions(fonts: &mut egui::FontDefinitions) {
         if !family.contains(&japanese_font) {
             family.push(japanese_font.clone());
         }
+    }
+
+    // 4. The terminal's family: its own font first (so a Nerd Font's
+    // private-use icons win), then the monospace fallbacks - without the
+    // Phosphor icon layer, whose glyphs share those codepoints.
+    let mut terminal = Vec::new();
+    if let Some(name) = terminal_font_name()
+        && let Some(data) = load_font_data(&name)
+    {
+        fonts.font_data.insert("terminal_font".to_owned(), egui::FontData::from_owned(data).into());
+        terminal.push("terminal_font".to_owned());
+    }
+    if let Some(mono) = fonts.families.get(&egui::FontFamily::Monospace) {
+        terminal.extend(mono.iter().filter(|key| !key.starts_with("phosphor")).cloned());
+    }
+    fonts.families.insert(egui::FontFamily::Name(TERMINAL_FAMILY.into()), terminal);
+}
+
+#[cfg(test)]
+mod terminal_font_tests {
+    use super::pick_terminal_font;
+
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn prefers_nerd_font_mono_variants() {
+        let installed = names(&[
+            "Arial",
+            "Consolas",
+            "CaskaydiaCove Nerd Font",
+            "CaskaydiaCove Nerd Font Mono",
+            "MesloLGM Nerd Font",
+            "MesloLGM Nerd Font Mono",
+        ]);
+        assert_eq!(pick_terminal_font(&installed).as_deref(), Some("MesloLGM Nerd Font Mono"));
+        let installed = names(&["Consolas", "Hack NF"]);
+        assert_eq!(pick_terminal_font(&installed).as_deref(), Some("Hack NF"));
+        let installed = names(&["Arial", "Consolas", "Cascadia Mono"]);
+        assert_eq!(pick_terminal_font(&installed).as_deref(), Some("Cascadia Mono"));
+        assert_eq!(pick_terminal_font(&names(&["Arial"])), None);
     }
 }
