@@ -35,14 +35,25 @@ pub struct Launch {
     pub program: PathBuf,
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
+    /// `args` are already quoted for the command line (cmd's own quoting
+    /// rules, which the usual escaping would break).
+    pub raw_args: bool,
 }
 
 impl ShellProfile {
     pub fn launch(&self, dir: &Path) -> Launch {
         let mut args = Vec::new();
         let mut env = Vec::new();
+        let mut raw_args = false;
         match &self.kind {
-            ShellKind::Cmd => {}
+            // Clink loads itself through cmd's AutoRun when its autorun is
+            // installed; when it isn't, inject it here so the pane gets it too.
+            ShellKind::Cmd => {
+                if let Some(clink) = clink_to_inject() {
+                    args = clink_args(clink);
+                    raw_args = true;
+                }
+            }
             ShellKind::WindowsPowerShell | ShellKind::PowerShell7 => args.push("-NoLogo".into()),
             ShellKind::GitBash | ShellKind::Msys2 | ShellKind::Cygwin => {
                 args.extend(["--login".to_string(), "-i".to_string()]);
@@ -53,7 +64,7 @@ impl ShellProfile {
                 args.extend(["-d".to_string(), distro.clone(), "--cd".to_string(), dir.display().to_string()]);
             }
         }
-        Launch { program: self.program.clone(), args, env }
+        Launch { program: self.program.clone(), args, env, raw_args }
     }
 
     /// Text that clears the prompt's current line and changes to `dir`
@@ -86,6 +97,69 @@ impl ShellProfile {
             ShellKind::Msys2 | ShellKind::Cygwin => regular::CURRENCY_DOLLAR,
         }
     }
+}
+
+/// cmd arguments that start Clink: `/s /k ""<clink.bat>" inject"`. With
+/// `/s`, cmd strips just the outer quotes, so a path with spaces and
+/// parentheses (`C:\Program Files (x86)\clink`) survives.
+fn clink_args(clink_bat: &Path) -> Vec<String> {
+    vec!["/s".into(), "/k".into(), format!("\"\"{}\" inject\"", clink_bat.display())]
+}
+
+/// Clink's `clink.bat`, if Clink is installed but doesn't already load
+/// through cmd's AutoRun (checked once).
+fn clink_to_inject() -> Option<&'static Path> {
+    static FOUND: OnceLock<Option<PathBuf>> = OnceLock::new();
+    FOUND
+        .get_or_init(|| {
+            let autorun_has_clink = cmd_autorun().iter().any(|v| v.to_lowercase().contains("clink"));
+            if autorun_has_clink { None } else { find_clink() }
+        })
+        .as_deref()
+}
+
+/// cmd's AutoRun commands (per user and for the machine).
+fn cmd_autorun() -> Vec<String> {
+    use windows::Win32::System::Registry::*;
+    use windows::core::HSTRING;
+    let mut out = Vec::new();
+    for root in [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE] {
+        let mut buf = vec![0u16; 2048];
+        let mut len = (buf.len() * 2) as u32;
+        let status = unsafe {
+            RegGetValueW(
+                root,
+                &HSTRING::from(r"Software\Microsoft\Command Processor"),
+                &HSTRING::from("AutoRun"),
+                RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND,
+                None,
+                Some(buf.as_mut_ptr().cast()),
+                Some(&mut len),
+            )
+        };
+        if status.is_ok() {
+            let chars = (len as usize / 2).saturating_sub(1).min(buf.len());
+            out.push(String::from_utf16_lossy(&buf[..chars]));
+        }
+    }
+    out
+}
+
+/// Clink's install folder: the installer/winget default, Scoop, or PATH.
+fn find_clink() -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    for var in ["ProgramFiles(x86)", "ProgramW6432", "ProgramFiles"] {
+        if let Some(dir) = env_dir(var) {
+            candidates.push(dir.join(r"clink\clink.bat"));
+        }
+    }
+    if let Some(local) = env_dir("LOCALAPPDATA") {
+        candidates.push(local.join(r"Programs\clink\clink.bat"));
+    }
+    if let Some(home) = env_dir("USERPROFILE") {
+        candidates.push(home.join(r"scoop\apps\clink\current\clink.bat"));
+    }
+    candidates.into_iter().find(|p| p.is_file()).or_else(|| find_on_path("clink.bat"))
 }
 
 static SHELLS: OnceLock<Vec<ShellProfile>> = OnceLock::new();
@@ -276,9 +350,15 @@ mod tests {
     }
 
     #[test]
+    fn clink_is_injected_with_cmd_quoting() {
+        let args = clink_args(Path::new(r"C:\Program Files (x86)\clink\clink.bat"));
+        assert_eq!(args, ["/s", "/k", r#"""C:\Program Files (x86)\clink\clink.bat" inject""#]);
+    }
+
+    #[test]
     fn launch_arguments() {
         let dir = Path::new(r"C:\Users\Me\My Docs");
-        assert!(profile(ShellKind::Cmd).launch(dir).args.is_empty());
+        assert!(!profile(ShellKind::PowerShell7).launch(dir).raw_args);
         assert_eq!(profile(ShellKind::PowerShell7).launch(dir).args, ["-NoLogo"]);
         let bash = profile(ShellKind::GitBash).launch(dir);
         assert_eq!(bash.args, ["--login", "-i"]);

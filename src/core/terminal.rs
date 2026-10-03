@@ -64,7 +64,7 @@ impl TerminalSession {
             working_directory: dir.is_dir().then(|| dir.to_path_buf()),
             drain_on_exit: true,
             env: launch.env.into_iter().collect(),
-            escape_args: true,
+            escape_args: !launch.raw_args,
         };
         let size = WindowSize { num_lines: rows.max(1), num_cols: cols.max(2), cell_width: cell.0, cell_height: cell.1 };
         // The library asserts when the pseudo console can't be created
