@@ -49,7 +49,7 @@ Items marked [x] have been implemented (see the README changelog); the rest aren
 - [x] **Command palette** on Ctrl+Shift+P (File Pilot, Files App, VS Code): every action and setting searchable (M)
 - [ ] **Go To Folder with fuzzy matching** on recently visited folders (Directory Opus, File Pilot, zoxide) (S)
 - [x] **Tree view in the sidebar** (Dolphin, Directory Opus, Windows Explorer) (M)
-- [ ] **Flat view**: every file in all subfolders as one list (Directory Opus) (S)
+- [x] **Flat view**: every file in all subfolders as one list (Directory Opus) (S)
 - [x] **Per-folder view memory**: each folder remembers its own view mode, sort, and columns (Finder, Dolphin, Directory Opus) (S)
 - [x] **Filter bar options**: wildcards, regex, "only images/docs" chips, hide matches (Dolphin, Directory Opus) (S)
 - [x] **Spring-loaded folders**: hovering over a folder while dragging opens it (Finder) (S)
@@ -77,11 +77,11 @@ Items marked [x] have been implemented (see the README changelog); the rest aren
 ## 4. Metadata and Search
 
 - [ ] **Extra columns**: dimensions, duration, bitrate, EXIF camera/date, author, page count (Directory Opus, Dolphin, Finder) (M)
-- [ ] **Git integration**: branch in the status bar and per-file badges for modified/untracked files (Files App, Dolphin plugin) (M)
+- [x] **Git integration**: branch in the status bar and per-file badges for modified/untracked files (Files App, Dolphin plugin) (M)
 - [ ] **Smart folders**: saved searches with rules such as "tag = Work AND modified in the last 7 days" that behave like folders, building on Saved Searches (Finder, Path Finder) (M)
 - [ ] **Search results**: sort by relevance and path, and "search within results" (S)
 - [ ] **File comments / notes** (Finder, Directory Opus) (S)
-- [ ] **Portable tags**: carry tags to another PC via sidecar files or NTFS alternate data streams (S)
+- [x] **Portable tags**: carry tags to another PC via sidecar files or NTFS alternate data streams (S)
 
 ## 5. Integration and Power Users
 

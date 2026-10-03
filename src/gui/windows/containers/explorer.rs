@@ -513,6 +513,73 @@ pub fn draw_tab_content(
                                 view.item_viewer_filter_state = Default::default();
                             }
                         }
+
+                        // Flat view: how many files it lists, and a button
+                        // to go back to the normal view.
+                        if view.is_flat() {
+                            ui.add_space(COLUMN_SPACING);
+                            let truncated =
+                                view.flat_truncated.load(std::sync::atomic::Ordering::Relaxed);
+                            let chip = egui::Frame::NONE
+                                .fill(palette.primary.gamma_multiply(0.18))
+                                .stroke(egui::Stroke::new(1.0, palette.primary.gamma_multiply(0.6)))
+                                .corner_radius(egui::CornerRadius::same(palette.small_radius))
+                                .inner_margin(egui::Margin::symmetric(6, 1))
+                                .show(ui, |ui| {
+                                    ui.spacing_mut().item_spacing.x = 4.0;
+                                    let close = ui
+                                        .add(
+                                            egui::Button::new(
+                                                RichText::new(regular::X).font(font_id.clone()).color(text_color),
+                                            )
+                                            .frame(false),
+                                        )
+                                        .on_hover_text(i18n.tr("status_flat_view_off"))
+                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                        .clicked();
+                                    let mut text = format!(
+                                        "{} \u{2022} {} {}",
+                                        i18n.tr("status_flat_view"),
+                                        view.files.len(),
+                                        i18n.tr("status_flat_view_files"),
+                                    );
+                                    if truncated {
+                                        text.push_str(&format!(" ({})", i18n.tr("status_flat_view_truncated")));
+                                    }
+                                    ui.label(RichText::new(text).font(font_id.clone()).color(text_color));
+                                    ui.label(RichText::new(regular::STACK).font(font_id.clone()).color(palette.primary));
+                                    close
+                                });
+                            if chip.inner {
+                                tabbar_action.get_or_insert_with(Default::default).toolbar_command =
+                                    Some(crate::core::toolbar::ToolbarItem::FlatView);
+                            }
+                        }
+
+                        // Git: the branch, and how many files have changes.
+                        if let Some(git) = view.git.as_deref() {
+                            ui.add_space(COLUMN_SPACING);
+                            let mut tooltip = format!("{}\n{}", i18n.tr("status_git_repo"), git.workdir.display());
+                            if let Some(error) = &git.error {
+                                tooltip.push_str(&format!("\n{error}"));
+                            }
+                            if git.changed > 0 {
+                                ui.label(
+                                    RichText::new(format!("{} {}", git.changed, i18n.tr("status_git_changes")))
+                                        .font(font_id.clone())
+                                        .color(crate::gui::windows::containers::itemviewer_helper::git_state_color(
+                                            crate::core::git::GitState::Modified,
+                                            ui.visuals().dark_mode,
+                                        )),
+                                )
+                                .on_hover_text(&tooltip);
+                                ui.label(RichText::new("\u{2022}").font(font_id.clone()).color(text_color));
+                            }
+                            ui.label(RichText::new(&git.branch).font(font_id.clone()).color(text_color))
+                                .on_hover_text(&tooltip);
+                            ui.label(RichText::new(regular::GIT_BRANCH).font(font_id.clone()).color(icon_color))
+                                .on_hover_text(&tooltip);
+                        }
                     });
                         });
                 }

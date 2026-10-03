@@ -144,6 +144,7 @@ pub fn draw_itemviewer_navigation_bar(
                 can_go_forward,
                 tab.display_mode,
                 tab.search_box_editing,
+                tab.is_flat(),
             );
 
             merge_toolbar_action(&mut action, toolbar_action);
@@ -175,6 +176,7 @@ pub fn draw_itemviewer_navigation_bar(
                 can_go_forward,
                 tab.display_mode,
                 tab.search_box_editing,
+                tab.is_flat(),
             );
 
             merge_toolbar_action(&mut action, toolbar_action);
@@ -1154,6 +1156,7 @@ pub(crate) fn toolbar_item_icon_and_key(item: ToolbarItem) -> (&'static str, &'s
         ToolbarItem::ViewDetailPreview => (regular::SIDEBAR, "view_detail_preview"),
         ToolbarItem::Terminal => (regular::TERMINAL, "tooltip_open_terminal"),
         ToolbarItem::TerminalPane => (regular::TERMINAL_WINDOW, "shortcut_terminal_pane"),
+        ToolbarItem::FlatView => (regular::STACK, "shortcut_flat_view"),
         ToolbarItem::SelectAll => (regular::CHECK_SQUARE, "select_all"),
         ToolbarItem::InvertSelection => (regular::SWAP, "select_invert"),
         ToolbarItem::SelectByPattern => (regular::ASTERISK, "select_by_pattern_title"),
@@ -1177,6 +1180,7 @@ fn draw_navigation_bar_buttons(
     can_go_forward: bool,
     display_mode: ItemViewerDisplayMode,
     search_active: bool,
+    flat_active: bool,
 ) -> ItemViewerNavBarAction {
     let mut action = ItemViewerNavBarAction::default();
     let can_go_up = !is_root && !is_recycle_bin;
@@ -1233,6 +1237,14 @@ fn draw_navigation_bar_buttons(
                 });
                 if nav_icon_button_active(ui, icon, palette, true, search_active, &tooltip).clicked() {
                     action.activate_search_box = true;
+                }
+            }
+            ToolbarItem::FlatView => {
+                let enabled = display_mode_enabled && file_actions_enabled;
+                if nav_icon_button_active(ui, icon, palette, enabled, flat_active, &i18n.tr(tooltip_key)).clicked()
+                    && enabled
+                {
+                    action.toolbar_command = Some(ToolbarItem::FlatView);
                 }
             }
             _ => {

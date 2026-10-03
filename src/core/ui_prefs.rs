@@ -68,6 +68,10 @@ pub struct UiPrefs {
     /// While dragging, resting on a folder opens it after this long
     /// (0 = spring-loaded folders off).
     pub spring_load_ms: u32,
+    /// Git branch in the status bar and status badges on files.
+    pub git_status: bool,
+    /// Also store tags with the files themselves (see `core::portable_tags`).
+    pub portable_tags: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -162,6 +166,8 @@ impl Default for UiPrefs {
             folder_tree: true,
             folder_tree_expanded: true,
             spring_load_ms: 800,
+            git_status: true,
+            portable_tags: false,
         }
     }
 }

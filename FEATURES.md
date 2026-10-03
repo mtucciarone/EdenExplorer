@@ -82,6 +82,9 @@
   <li><b>Folders tree in the sidebar</b> - every drive's folders as an expandable tree, like Explorer's navigation pane: it opens down to the folder you're viewing and highlights it, reads subfolders in the background, and accepts dropped files</li>
   <li><b>Filter bar options</b> (<code>Ctrl+Shift+F</code>) - plain text, wildcards (<code>*.jpg; *.png</code>), or a regular expression, Hide Matches, and kind chips (Folders, Images, Documents, Video, Audio, Archives, Code)</li>
   <li><b>Spring-loaded folders</b> - while dragging files, rest on a folder (file list, address bar, or Folders tree) and it opens, so you can drop deeper without letting go</li>
+  <li><b>Flat view</b> (<code>Ctrl+Shift+L</code>) - every file in all subfolders as one list, with a Folder column</li>
+  <li><b>Git status</b> - the branch in the status bar and M/A/U/D/R/C letters on changed files (ignored files dimmed), read-only and without needing Git installed</li>
+  <li><b>Portable tags</b> - tags stored with the files themselves (an NTFS stream, or a hidden file on other drives), so they travel to other folders, drives, and PCs</li>
   <li><b>Command palette</b> (<code>Ctrl+Shift+P</code>) - every command, view, toggle, and Settings page, plus favorite and recent folders, with fuzzy search</li>
   <li><b>Preview frame</b> - previews sit in a rounded, bordered frame; thickness, color, and corner radius are set in Settings &gt; Appearance, with the padding and inner corners worked out automatically</li>
   <li><b>Quick Look</b> - press Space for a large preview of the selected file or folder; arrow keys move through the list, Enter opens, Space or Esc closes</li>

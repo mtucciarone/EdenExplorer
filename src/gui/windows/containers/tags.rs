@@ -79,6 +79,21 @@ pub fn draw_tags(
             changed = true;
         }
     });
+    ui.add_space(8.0);
+    // Portable tags: also store tags with the files themselves.
+    ui.horizontal(|ui| {
+        let prefs = &mut settings.current_settings.ui_prefs;
+        if crate::gui::windows::settings::setting_checkbox(
+            ui,
+            palette,
+            &mut prefs.portable_tags,
+            egui::RichText::new(i18n.tr("settings_portable_tags")).color(palette.text_normal),
+            "settings_portable_tags",
+        ) {
+            crate::core::ui_prefs::save_ui_prefs(prefs);
+        }
+        crate::gui::windows::settings::info_icon(ui, &i18n.tr("tooltip_settings_portable_tags"), palette);
+    });
     ui.add_space(10.0);
 
     if tags_state.groups.is_empty() {

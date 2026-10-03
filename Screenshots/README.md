@@ -92,6 +92,18 @@ Ctrl+Shift+F opens the filter box: `app` filters by text, `*.json; *.md` by wild
 
 Dragging Meeting Notes.txt: resting on Projects opens it, resting on Eden Demo in the address bar goes back up, and resting on Projects in the sidebar's Folders tree expands it. Under Wine a held mouse button doesn't reach the app, so the drag here was started directly.
 
+## Flat View
+
+![Flat view](flat-view.gif)
+
+The toolbar's Flat View button lists every file under Eden Demo as one list with a Folder column, and clicking that header sorts by folder; in the website project (a Git repository) Flat View keeps the Git letters and dims the ignored build output; the status bar's × goes back to the normal view.
+
+## Git Status
+
+![Git status](git-status.gif)
+
+In a Git repository: M on modified and staged files, U on untracked ones, ignored files dimmed, and the branch with the number of changes in the status bar. Editing README.md outside the app and refreshing marks it M; a new docs folder shows U; hovering the status bar shows the repository.
+
 ## Features
 
 ### Details view - tagged folders are tinted by tag color, with a Tags column showing every tag as a chip
@@ -246,7 +258,7 @@ Dragging Meeting Notes.txt: resting on Projects opens it, resting on Eden Demo i
 
 ![Settings - Tags](38-settings-tags.png)
 
-### Settings - Shortcuts, where most shortcuts can be changed: + adds a key combination, × removes one, and locked rows are fixed; the Window group now includes Terminal Pane (Ctrl+`), and Files & Selection includes Filter Bar (Ctrl+Shift+F)
+### Settings - Shortcuts, where most shortcuts can be changed: + adds a key combination, × removes one, and locked rows are fixed; the Window group now includes Terminal Pane (Ctrl+`), and Files & Selection includes Filter Bar (Ctrl+Shift+F) and Flat View (Ctrl+Shift+L)
 
 ![Settings - Shortcuts](39-settings-shortcuts.png)
 
@@ -465,3 +477,23 @@ Dragging Meeting Notes.txt: resting on Projects opens it, resting on Eden Demo i
 ### Settings - Behavior - Spring-Loaded Folders, with how long to rest on a folder before it opens
 
 ![Spring-Loaded Folders setting](93-spring-load-setting.png)
+
+### Git status - M (modified or staged), U (untracked), ignored files dimmed, a badge's tooltip, and the branch with the number of changes in the status bar
+
+![Git status](94-git-status.png)
+
+### Flat view - every file under Eden Demo as one list, sorted by the Folder column, with the Flat View chip in the status bar
+
+![Flat view](95-flat-view.png)
+
+### Settings - Tags - Portable Tags stores tags with the files themselves, so they travel to other folders, drives, and PCs
+
+![Portable Tags setting](96-portable-tags-setting.png)
+
+### Settings - Behavior - Git Status, with what the letters mean
+
+![Git Status setting](97-git-status-setting.png)
+
+### Flat view inside a Git repository - the letters stay, and the ignored build output is dimmed
+
+![Flat view in a Git repository](98-flat-view-git.png)

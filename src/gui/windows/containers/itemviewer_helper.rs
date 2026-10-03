@@ -1086,6 +1086,7 @@ pub fn handle_draw_col_name(
     font_id: &egui::FontId,
     rename_state: &mut Option<RenameState>,
     show_item_viewer_icons: bool,
+    git: Option<crate::core::git::GitState>,
 ) -> Option<ItemViewerAction> {
     const TEXT_LEFT_PADDING: f32 = 2.0;
     const ICON_HORIZONTAL_PADDING: f32 = 2.0;
@@ -1160,8 +1161,15 @@ pub fn handle_draw_col_name(
         }
     }
 
-    let text_width = available_width - text_offset_x;
-    let color = get_text_color(is_selected, is_cut, palette);
+    // Git: a letter badge at the end of the cell (M, A, U, ...); ignored
+    // items are dimmed instead, as in VS Code.
+    let badge = git.filter(|s| *s != crate::core::git::GitState::Ignored);
+    let badge_width = if badge.is_some() { 18.0 } else { 0.0 };
+    let text_width = available_width - text_offset_x - badge_width;
+    let mut color = get_text_color(is_selected, is_cut, palette);
+    if git == Some(crate::core::git::GitState::Ignored) && !is_selected {
+        color = color.gamma_multiply(0.55);
+    }
 
     let (display_name, _) = truncate_item_text(ui, &file.name, text_width, font_id, color);
 
@@ -1172,8 +1180,40 @@ pub fn handle_draw_col_name(
         font_id.clone(),
         color,
     );
+    if let Some(state) = badge {
+        let dark = ui.visuals().dark_mode;
+        ui.painter().text(
+            egui::pos2(rect.max.x - 8.0, rect.center().y),
+            egui::Align2::CENTER_CENTER,
+            state.letter(),
+            egui::FontId::new(font_id.size - 1.0, egui::FontFamily::Proportional),
+            git_state_color(state, dark),
+        );
+        let badge_rect = egui::Rect::from_center_size(
+            egui::pos2(rect.max.x - 8.0, rect.center().y),
+            egui::vec2(16.0, layout.row_height),
+        );
+        ui.interact(badge_rect, ui.id().with(("git_badge", &file.path)), egui::Sense::hover())
+            .on_hover_text(i18n.tr(state.i18n_key()));
+    }
 
     None
+}
+
+/// A Git state's badge color (VS Code's palette, darker on light themes).
+pub fn git_state_color(state: crate::core::git::GitState, dark: bool) -> egui::Color32 {
+    use crate::core::git::GitState::*;
+    let (d, l) = match state {
+        Modified => ([226, 192, 141], [168, 112, 20]),
+        Added => ([129, 184, 139], [40, 130, 60]),
+        Untracked => ([115, 201, 145], [30, 140, 70]),
+        Renamed => ([115, 201, 145], [30, 140, 70]),
+        Deleted => ([199, 78, 57], [180, 50, 35]),
+        Conflict => ([228, 103, 107], [190, 40, 50]),
+        Ignored => ([140, 140, 140], [120, 120, 120]),
+    };
+    let [r, g, b] = if dark { d } else { l };
+    egui::Color32::from_rgb(r, g, b)
 }
 
 pub fn handle_draw_col_type(
@@ -2169,9 +2209,13 @@ pub fn draw_item_viewer_header(
     for &column in ordered_columns {
         let label = match column {
             ItemViewerHeaderColumn::Name => i18n.tr("explorer_cols_name"),
-            ItemViewerHeaderColumn::OriginalDirectory => {
-                i18n.tr("explorer_cols_original_directory")
-            }
+            // Where a deleted item came from; elsewhere (search results,
+            // flat view) the folder each item is in.
+            ItemViewerHeaderColumn::OriginalDirectory => i18n.tr(if is_recycle_bin_view {
+                "explorer_cols_original_directory"
+            } else {
+                "explorer_cols_folder"
+            }),
             ItemViewerHeaderColumn::Type => i18n.tr("explorer_cols_type"),
             ItemViewerHeaderColumn::Size => i18n.tr("explorer_cols_size"),
             ItemViewerHeaderColumn::Modified => i18n.tr("explorer_cols_modified"),
@@ -2213,9 +2257,9 @@ fn draw_header_cell(
 ) {
     let column_action = match column {
         ItemViewerHeaderColumn::Name => Some(SortColumn::Name),
-        ItemViewerHeaderColumn::OriginalDirectory if is_recycle_bin_view => {
-            Some(SortColumn::OriginalDirectory)
-        }
+        // Where it was deleted from, or (search results, flat view) the
+        // folder it's in.
+        ItemViewerHeaderColumn::OriginalDirectory => Some(SortColumn::OriginalDirectory),
         ItemViewerHeaderColumn::Type => Some(SortColumn::Type),
         ItemViewerHeaderColumn::Size => Some(SortColumn::Size),
         ItemViewerHeaderColumn::Modified if !is_drive_view => Some(SortColumn::Modified),

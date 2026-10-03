@@ -990,6 +990,8 @@ pub fn load_tags() -> Option<TagsSnapshot> {
 }
 
 pub fn save_tags(snapshot: &TagsSnapshot) {
+    // Also stores the changed tags with the files, when turned on.
+    crate::core::portable_tags::on_tags_saved(snapshot);
     let path = match tags_cache_path() {
         Some(path) => path,
         None => return,

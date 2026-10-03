@@ -144,6 +144,15 @@ pub struct MainWindow {
     pub(crate) command_palette: Option<crate::gui::windows::command_palette::CommandPaletteState>,
     /// The docked terminal pane's shells, per tab.
     pub(crate) terminal: crate::gui::windows::terminal_panel::TerminalPanels,
+    /// Git status of the repositories being browsed.
+    pub(crate) git: crate::core::git::GitService,
+    /// For waking the window from background threads.
+    pub(crate) egui_ctx: Option<egui::Context>,
+    /// Portable tags found in an opened folder, waiting to be imported.
+    pub(crate) portable_tags_inbox: (
+        crossbeam_channel::Sender<crate::core::portable_tags::TagChanges>,
+        crossbeam_channel::Receiver<crate::core::portable_tags::TagChanges>,
+    ),
     /// Commands run from the palette, most recent first (this session).
     pub(crate) palette_recent: Vec<crate::gui::windows::command_palette::Command>,
     /// The last pattern used, offered again the next time the dialog opens.
@@ -432,6 +441,9 @@ impl Default for MainWindow {
             quick_look: None,
             command_palette: None,
             terminal: Default::default(),
+            git: Default::default(),
+            egui_ctx: None,
+            portable_tags_inbox: crossbeam_channel::unbounded(),
             palette_recent: Vec::new(),
             last_select_pattern: String::new(),
             saved_folder_views_revision: 0,
@@ -528,6 +540,10 @@ impl Default for MainWindow {
         } else {
             app.sidebar_state.favorites = stored;
         }
+        crate::core::portable_tags::init(
+            &app.tags_state.to_snapshot(),
+            app.settings_window.current_settings.ui_prefs.portable_tags,
+        );
         app.load_path();
         app
     }
@@ -560,6 +576,11 @@ impl eframe::App for MainWindow {
         // While the terminal has focus, its keys are taken before any
         // shortcut or the file list can react to them.
         self.terminal.capture_input(ui.ctx());
+        if self.egui_ctx.is_none() {
+            self.egui_ctx = Some(ui.ctx().clone());
+        }
+        self.refresh_git_status();
+        self.sync_portable_tags();
         if std::mem::take(&mut self.terminal.toggle_requested) {
             self.toggle_terminal();
         }

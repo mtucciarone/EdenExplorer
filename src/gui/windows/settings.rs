@@ -1190,6 +1190,16 @@ fn draw_behavior_section(
             "tooltip_settings_verify_copies",
             action,
         );
+        ui.add_space(SETTINGS_FIELD_GAP);
+        applying_checkbox(
+            ui,
+            i18n,
+            palette,
+            &mut prefs.git_status,
+            "settings_git_status",
+            "tooltip_settings_git_status",
+            action,
+        );
     });
 
     settings_section(ui, palette, |ui| {

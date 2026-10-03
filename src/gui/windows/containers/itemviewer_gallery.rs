@@ -63,8 +63,9 @@ pub fn draw_gallery_view(
     active_tab_id: u64,
     current_dir: PathBuf,
     is_loading: bool,
+    // Items come from many folders (search results, flat view).
+    is_search_view: bool,
 ) -> Option<ItemViewerAction> {
-    let is_search_view = crate::core::fs::parse_search_view_path(&current_dir).is_some();
     thumbnail_service.pump_completed(ui.ctx());
 
     // Top padding so the Sort By/thumbnail-size row doesn't sit flush

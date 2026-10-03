@@ -123,6 +123,17 @@ pub struct TabView {
     pub item_viewer_filter_state: FilterState,
     /// Spring-loaded folders: how long a folder has been hovered mid-drag.
     pub spring: crate::core::spring_load::SpringLoad,
+    /// Flat view: the folder whose files (in all subfolders) are listed as
+    /// one list. Only applies while `nav.current` is this folder.
+    pub flat: Option<PathBuf>,
+    /// Set when the flat view stopped at `FLAT_VIEW_MAX_FILES`.
+    pub flat_truncated: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// The Git working tree the current folder is in, if any (found when
+    /// the folder loads).
+    pub git_repo: Option<PathBuf>,
+    /// That repository's latest status, refreshed each frame from the
+    /// shared Git service (an `Arc`, so it's cheap).
+    pub git: Option<std::sync::Arc<crate::core::git::RepoStatus>>,
     pub column_state: ItemViewerColumnState,
     pub display_mode: ItemViewerDisplayMode,
     pub gallery_state: GalleryState,
@@ -186,6 +197,11 @@ pub struct TabView {
 }
 
 impl TabView {
+    /// Whether the flat view is showing (for the folder being viewed).
+    pub fn is_flat(&self) -> bool {
+        self.flat.as_ref() == Some(&self.nav.current)
+    }
+
     pub fn new(
         nav: Navigation,
         default_sort_column: crate::gui::utils::SortColumn,
@@ -208,6 +224,10 @@ impl TabView {
             explorer_state: ExplorerState::default(),
             item_viewer_filter_state: FilterState::default(),
             spring: Default::default(),
+            flat: None,
+            flat_truncated: Default::default(),
+            git_repo: None,
+            git: None,
             column_state: ItemViewerColumnState::default(),
             display_mode: ItemViewerDisplayMode::Details,
             gallery_state: GalleryState::default(),
@@ -1753,6 +1773,29 @@ impl TagsState {
         let before = group.items.len();
         group.items.retain(|item| !paths.contains(item));
         group.items.len() != before
+    }
+
+    /// Adds tags found stored with a file (portable tags) to `path`: each
+    /// goes into the tag of the same name (ignoring case), or a new tag with
+    /// the stored color. Returns whether anything changed.
+    pub fn import_portable(&mut self, path: &Path, tags: &[crate::core::portable_tags::PortableTag]) -> bool {
+        let mut changed = false;
+        for tag in tags {
+            if let Some(group) = self.groups.iter_mut().find(|g| g.name.eq_ignore_ascii_case(&tag.name)) {
+                if !group.items.iter().any(|p| p == path) {
+                    group.items.push(path.to_path_buf());
+                    changed = true;
+                }
+            } else {
+                let [r, g, b, a] = tag.color;
+                changed |= self.create_group_and_add(
+                    tag.name.clone(),
+                    egui::Color32::from_rgba_unmultiplied(r, g, b, a),
+                    &[path.to_path_buf()],
+                );
+            }
+        }
+        changed
     }
 
     pub fn create_group_and_add(

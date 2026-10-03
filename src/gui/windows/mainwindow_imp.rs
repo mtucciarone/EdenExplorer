@@ -1260,6 +1260,13 @@ impl MainWindow {
             view.item_viewer_filter_state.dirty = true;
             view.item_viewer_filter_state.cached_indices.clear();
             view.columns_view_state.needs_reload = true;
+            // Flat view belongs to the folder it was turned on in.
+            if view.flat.as_ref().is_some_and(|f| f != &current_path) {
+                view.flat = None;
+            }
+            view.flat_truncated = Default::default();
+            view.git_repo = None;
+            view.git = None;
         }
         // Folder sizes are shared by both panes of a split: keep the other
         // pane's (its folder isn't being reloaded), drop everything else.
@@ -1407,6 +1414,39 @@ impl MainWindow {
         {
             self.recent_locations_state.record_visit(current_path.clone());
             self.persist_recent_locations();
+        }
+
+        // Git: which repository this folder is in, and its status.
+        let git_repo = if self.settings_window.current_settings.ui_prefs.git_status {
+            crate::core::git::find_workdir(&current_path)
+        } else {
+            None
+        };
+        if let Some(workdir) = &git_repo {
+            self.request_git_status(workdir);
+        }
+        self.tabs[self.active_tab].view_mut(side).git_repo = git_repo;
+        self.scan_portable_tags(&current_path);
+
+        // Flat view: every file in all subfolders, walked in the background.
+        if self.active_tab().view(side).is_flat() {
+            let (tx, rx) = unbounded();
+            let settings = &self.settings_window.current_settings;
+            let view = self.tabs[self.active_tab].view_mut(side);
+            crate::core::fs::flat_scan_async(
+                current_path,
+                tx,
+                Arc::downgrade(&view.scan_token),
+                settings.show_hidden_files_folders,
+                Arc::clone(&view.flat_truncated),
+                settings.date_style,
+                settings.time_format_24h,
+                settings.custom_date_format.clone(),
+            );
+            view.rx = Some(rx);
+            view.is_loading = true;
+            view.load_started_at = Some(std::time::Instant::now());
+            return;
         }
 
         // Async directory listing
@@ -4544,6 +4584,10 @@ impl MainWindow {
                     self.toggle_performance_panel();
                     None
                 }
+                ToolbarItem::FlatView => {
+                    self.toggle_flat_view();
+                    None
+                }
                 ToolbarItem::TerminalPane => {
                     self.toggle_terminal();
                     None
@@ -5418,6 +5462,102 @@ impl MainWindow {
 
     /// Shows/hides the Performance panel (Ctrl+K, or its close
     /// button) and remembers the choice, same as the Settings checkbox.
+    /// Turns the flat view (every file in all subfolders, as one list) on
+    /// or off for the focused pane's folder. Only real folders have one:
+    /// This PC, the Recycle Bin, search and tag views, and archives don't.
+    pub(crate) fn toggle_flat_view(&mut self) {
+        let side = self.focused_split;
+        let view = self.tabs[self.active_tab].view_mut(side);
+        let current = view.nav.current.clone();
+        let real_folder = current.is_absolute()
+            && !view.nav.is_root()
+            && !view.nav.is_recycle_bin()
+            && !view.nav.is_settings()
+            && !view.nav.is_tag_view()
+            && !view.nav.is_search_view()
+            && crate::core::archive_view::split(&current).is_none();
+        if !real_folder && !view.is_flat() {
+            return;
+        }
+        view.flat = if view.is_flat() { None } else { Some(current) };
+        self.load_view(side);
+    }
+
+    /// Starts reading `workdir`'s Git status in the background.
+    fn request_git_status(&mut self, workdir: &std::path::Path) {
+        let ctx = self.egui_ctx.clone();
+        self.git.request(workdir, move || {
+            if let Some(ctx) = &ctx {
+                ctx.request_repaint();
+            }
+        });
+    }
+
+    /// Each frame: picks up finished Git status reads and hands the active
+    /// tab's views their repository's latest status (an `Arc` clone).
+    pub(crate) fn refresh_git_status(&mut self) {
+        for workdir in self.git.poll() {
+            self.request_git_status(&workdir);
+        }
+        let enabled = self.settings_window.current_settings.ui_prefs.git_status;
+        let tab = &mut self.tabs[self.active_tab];
+        let git = &self.git;
+        let set = |view: &mut crate::gui::windows::containers::structs::TabView| {
+            view.git = view.git_repo.as_deref().filter(|_| enabled).and_then(|w| git.status(w));
+        };
+        set(&mut tab.primary_view);
+        if let Some(split) = tab.split_view.as_mut() {
+            set(split);
+        }
+    }
+
+    /// Each frame: follows the Portable Tags setting, and imports tags found
+    /// stored with files in an opened folder.
+    pub(crate) fn sync_portable_tags(&mut self) {
+        let wanted = self.settings_window.current_settings.ui_prefs.portable_tags;
+        if wanted != crate::core::portable_tags::is_enabled() {
+            crate::core::portable_tags::set_enabled(wanted, &self.tags_state.to_snapshot());
+        }
+        let mut changed = false;
+        while let Ok(found) = self.portable_tags_inbox.1.try_recv() {
+            for (path, tags) in found {
+                if !self.tags_state.is_tagged(&path) {
+                    crate::core::portable_tags::mark_synced(&path, &tags);
+                    changed |= self.tags_state.import_portable(&path, &tags);
+                }
+            }
+        }
+        if changed {
+            self.persist_tags();
+        }
+    }
+
+    /// Looks for files in `dir` carrying tags this PC doesn't know yet
+    /// (portable tags), in the background.
+    fn scan_portable_tags(&self, dir: &std::path::Path) {
+        if !crate::core::portable_tags::is_enabled() || dir.to_string_lossy().starts_with(r"\\") {
+            return;
+        }
+        let known: std::collections::HashSet<PathBuf> = self
+            .tags_state
+            .groups
+            .iter()
+            .flat_map(|g| g.items.iter())
+            .filter(|p| p.parent() == Some(dir))
+            .cloned()
+            .collect();
+        let (dir, tx, ctx) = (dir.to_path_buf(), self.portable_tags_inbox.0.clone(), self.egui_ctx.clone());
+        std::thread::spawn(move || {
+            let found = crate::core::portable_tags::read_folder(&dir, &known);
+            if !found.is_empty()
+                && tx.send(found).is_ok()
+                && let Some(ctx) = ctx
+            {
+                ctx.request_repaint();
+            }
+        });
+    }
+
     /// Shows or hides the active tab's terminal pane.
     pub(crate) fn toggle_terminal(&mut self) {
         let tab = self.tabs[self.active_tab].id;
@@ -5594,6 +5734,7 @@ impl MainWindow {
             ShortcutAction::CommandPalette,
             ShortcutAction::TerminalPane,
             ShortcutAction::FilterBar,
+            ShortcutAction::FlatView,
         ] {
             if matches!(action, ShortcutAction::Undo | ShortcutAction::Redo) && text_focused {
                 continue;
@@ -5692,6 +5833,7 @@ impl MainWindow {
             ShortcutAction::PerformancePanel => self.toggle_performance_panel(),
             ShortcutAction::CommandPalette => self.toggle_command_palette(),
             ShortcutAction::TerminalPane => self.toggle_terminal(),
+            ShortcutAction::FlatView => self.toggle_flat_view(),
             // Opens the filter box (empty) so its options can be used
             // without typing first.
             ShortcutAction::FilterBar => {

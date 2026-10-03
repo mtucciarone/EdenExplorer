@@ -23,6 +23,8 @@ pub enum ToolbarItem {
     Terminal,
     /// Shows or hides the docked terminal pane.
     TerminalPane,
+    /// Turns the flat view (all files in all subfolders) on or off.
+    FlatView,
     SelectAll,
     InvertSelection,
     SelectByPattern,
@@ -34,7 +36,7 @@ pub enum ToolbarItem {
 
 impl ToolbarItem {
     /// The layout the app has always had.
-    pub const DEFAULT: [ToolbarItem; 18] = [
+    pub const DEFAULT: [ToolbarItem; 19] = [
         ToolbarItem::Back,
         ToolbarItem::Forward,
         ToolbarItem::Up,
@@ -50,6 +52,7 @@ impl ToolbarItem {
         ToolbarItem::ViewColumnPreview,
         ToolbarItem::ViewPreview,
         ToolbarItem::ViewDetailPreview,
+        ToolbarItem::FlatView,
         ToolbarItem::Separator,
         ToolbarItem::Terminal,
         ToolbarItem::TerminalPane,
@@ -57,7 +60,7 @@ impl ToolbarItem {
 
     /// Every button that can be placed (separators aside), in the order
     /// the Settings page lists them.
-    pub const BUTTONS: [ToolbarItem; 21] = [
+    pub const BUTTONS: [ToolbarItem; 22] = [
         ToolbarItem::Back,
         ToolbarItem::Forward,
         ToolbarItem::Up,
@@ -72,6 +75,7 @@ impl ToolbarItem {
         ToolbarItem::ViewColumnPreview,
         ToolbarItem::ViewPreview,
         ToolbarItem::ViewDetailPreview,
+        ToolbarItem::FlatView,
         ToolbarItem::Terminal,
         ToolbarItem::TerminalPane,
         ToolbarItem::SelectAll,

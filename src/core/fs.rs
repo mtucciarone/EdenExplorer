@@ -1145,6 +1145,89 @@ pub fn search_builtin_async(
     });
 }
 
+/// The most files a flat view lists; past this, the walk stops and the view
+/// says the list is incomplete.
+pub const FLAT_VIEW_MAX_FILES: usize = 100_000;
+
+/// Flat view: every file under `root`, in all its subfolders, as one list.
+/// Each item's `original_directory` is its folder relative to `root` (empty
+/// for files directly in it), shown in the Folder column. Folders themselves
+/// aren't listed; hidden folders are skipped unless hidden items are shown,
+/// version control folders (`.git`, ...) always, and links/junctions are
+/// never followed. Stops when `still_wanted` is
+/// dropped (the view moved on) or after `FLAT_VIEW_MAX_FILES`, setting
+/// `truncated`.
+#[allow(clippy::too_many_arguments)]
+pub fn flat_scan_async(
+    root: PathBuf,
+    tx: Sender<FileItem>,
+    still_wanted: std::sync::Weak<()>,
+    show_hidden: bool,
+    truncated: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    date_style: DateStyle,
+    time_format_24h: bool,
+    custom_date_format: String,
+) {
+    use std::os::windows::fs::MetadataExt;
+
+    thread::spawn(move || {
+        let mut sent = 0usize;
+        let mut stack = vec![root.clone()];
+        'walk: while let Some(dir) = stack.pop() {
+            if still_wanted.strong_count() == 0 {
+                break;
+            }
+            let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+            let relative = dir
+                .strip_prefix(&root)
+                .map(|r| r.to_string_lossy().to_string())
+                .unwrap_or_default();
+            for entry in entries.flatten() {
+                let Ok(metadata) = entry.metadata() else { continue };
+                let attributes = metadata.file_attributes();
+                let is_dir = attributes & FILE_ATTRIBUTE_DIRECTORY.0 != 0;
+                let is_hidden = attributes & FILE_ATTRIBUTE_HIDDEN.0 != 0;
+                if is_dir {
+                    let is_reparse = attributes & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0;
+                    // Version control internals are never wanted here.
+                    let is_vcs = matches!(entry.file_name().to_str(), Some(".git" | ".svn" | ".hg"));
+                    if !is_reparse && !is_vcs && (show_hidden || !is_hidden) {
+                        stack.push(entry.path());
+                    }
+                    continue;
+                }
+                let modified_raw = metadata.modified().ok().and_then(system_time_to_filetime_raw);
+                let created_raw = metadata.created().ok().and_then(system_time_to_filetime_raw);
+                let item = FileItem::new(
+                    entry.file_name().to_string_lossy().to_string(),
+                    entry.path(),
+                    false,
+                    is_hidden,
+                    None,
+                    Some(metadata.len()),
+                    modified_raw
+                        .and_then(|raw| filetime_to_string(raw, date_style, time_format_24h, &custom_date_format)),
+                    created_raw
+                        .and_then(|raw| filetime_to_string(raw, date_style, time_format_24h, &custom_date_format)),
+                    None,
+                    modified_raw,
+                    created_raw,
+                    None,
+                    Some(relative.clone()),
+                );
+                if tx.send(item).is_err() {
+                    break 'walk;
+                }
+                sent += 1;
+                if sent >= FLAT_VIEW_MAX_FILES {
+                    truncated.store(true, std::sync::atomic::Ordering::Relaxed);
+                    break 'walk;
+                }
+            }
+        }
+    });
+}
+
 /// Source: Windows SDK propkey.h
 pub const PKEY_SIZE: PROPERTYKEY = PROPERTYKEY {
     fmtid: GUID::from_u128(0xB725F130_47EF_101A_A5F1_02608C9EEBAC),

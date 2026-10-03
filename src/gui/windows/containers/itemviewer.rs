@@ -85,6 +85,8 @@ pub fn draw_item_viewer(
     viewport_width: f32,
 ) -> Option<ItemViewerAction> {
     let display_mode = view.display_mode;
+    let is_flat = view.is_flat();
+    let git_status = view.git.clone();
     let files = &view.files;
     let sort_column = view.sort_column;
     let sort_ascending = view.sort_ascending;
@@ -103,7 +105,9 @@ pub fn draw_item_viewer(
     let current_dir = view.nav.current.clone();
     let is_loading = view.is_loading;
     let network_share_error = *view.network_share_error.lock().unwrap();
-    let is_search_view = crate::core::fs::parse_search_view_path(&current_dir).is_some();
+    // A flat view lists files from many folders, like search results, so
+    // it shows the same Folder column and Open File Location.
+    let is_search_view = crate::core::fs::parse_search_view_path(&current_dir).is_some() || is_flat;
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let mut hovered_drop_target: Option<PathBuf> = None;
     let mut hovered_drop_target_rect: Option<egui::Rect> = None;
@@ -413,6 +417,7 @@ pub fn draw_item_viewer(
             active_tab_id,
             current_dir,
             is_loading,
+            is_search_view,
         )
         .or(action);
     }
@@ -802,6 +807,7 @@ pub fn draw_item_viewer(
                                         folder_size_text_cache,
                                         drive_size_text_cache,
                                         tags_state,
+                                        git_status.as_deref(),
                                         &mut action,
                                     );
                                 });
@@ -1260,6 +1266,32 @@ pub fn draw_item_viewer(
                                     }
 
                                     ui.separator();
+                                    // Flat view: every file in all subfolders.
+                                    let flat_color = if is_flat {
+                                        palette.primary
+                                    } else {
+                                        ui.visuals().text_color()
+                                    };
+                                    let flat_check = if is_flat { regular::CHECK } else { "" };
+                                    if ui
+                                        .add(
+                                            egui::Button::new(
+                                                egui::RichText::new(format!(
+                                                    "{flat_check:<2}{}",
+                                                    i18n.tr("shortcut_flat_view")
+                                                ))
+                                                .color(flat_color),
+                                            )
+                                            .fill(egui::Color32::TRANSPARENT)
+                                            .stroke(egui::Stroke::NONE),
+                                        )
+                                        .clicked()
+                                    {
+                                        tabbar_action.get_or_insert_with(Default::default).toolbar_command =
+                                            Some(crate::core::toolbar::ToolbarItem::FlatView);
+                                        ui.close();
+                                    }
+                                    ui.separator();
                                     if ui.button(i18n.tr("view_reset_folder_view")).clicked() {
                                         action = Some(ItemViewerAction::ResetFolderView);
                                         ui.close();
@@ -1438,6 +1470,7 @@ fn draw_item_viewer_row_column(
     folder_size_text_cache: &mut HashMap<PathBuf, (u64, bool, String)>,
     drive_size_text_cache: &mut HashMap<PathBuf, (u64, u64, String)>,
     tags_state: &TagsState,
+    git_status: Option<&crate::core::git::RepoStatus>,
     action: &mut Option<ItemViewerAction>,
 ) {
     match column {
@@ -1454,6 +1487,7 @@ fn draw_item_viewer_row_column(
                 font_id,
                 rename_state,
                 show_item_viewer_icons,
+                git_status.and_then(|g| g.state_of(&file.path, file.is_dir)),
             ) {
                 *action = Some(a);
             }

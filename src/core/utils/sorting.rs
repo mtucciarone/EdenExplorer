@@ -32,7 +32,10 @@ pub fn sort_files_by_keys(files: &mut Vec<FileItem>, keys: &[SortKey]) {
                 SortColumn::Modified => a.modified_time_raw.cmp(&b.modified_time_raw),
                 SortColumn::Created => a.created_time_raw.cmp(&b.created_time_raw),
                 SortColumn::Deleted => a.deleted_time_raw.cmp(&b.deleted_time_raw),
-                SortColumn::OriginalDirectory => a.original_directory.cmp(&b.original_directory),
+                SortColumn::OriginalDirectory => {
+                    let folder = |f: &FileItem| f.original_directory.as_deref().map(str::to_lowercase);
+                    folder(a).cmp(&folder(b))
+                }
                 SortColumn::Type => match (a.is_dir, b.is_dir) {
                     (true, false) => Less,
                     (false, true) => Greater,
@@ -60,6 +63,7 @@ pub fn sort_files_by_keys(files: &mut Vec<FileItem>, keys: &[SortKey]) {
             }
         }
 
-        Equal
+        // Ties (same folder, size, date, ...) in name order.
+        a.name.to_lowercase().cmp(&b.name.to_lowercase())
     });
 }
