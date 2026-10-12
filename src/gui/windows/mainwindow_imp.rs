@@ -373,7 +373,12 @@ impl MainWindow {
             view.sort_keys.clone()
         };
 
-        sort_files_by_keys(&mut self.active_tab_mut().view_mut(side).files, &sort_keys);
+        let tag_counts = self.tag_counts_for_sort_keys(&sort_keys);
+        sort_files_by_keys(
+            &mut self.active_tab_mut().view_mut(side).files,
+            &sort_keys,
+            &tag_counts,
+        );
 
         let snapshot = directory_settings_snapshot_for_view(self.active_tab().view(side));
         let _ = persist_directory_settings_snapshot(
@@ -434,6 +439,17 @@ impl MainWindow {
                 .recycle_bin_column_sizes,
             &self.settings_window.current_settings.directory_settings,
         );
+    }
+
+    pub(crate) fn tag_counts_for_sort_keys(
+        &self,
+        keys: &[SortKey],
+    ) -> std::collections::HashMap<PathBuf, usize> {
+        if keys.iter().any(|key| key.column == SortColumn::Tags) {
+            self.tags_state.tag_count_map()
+        } else {
+            std::collections::HashMap::new()
+        }
     }
 
     fn apply_item_viewer_column_order(
@@ -499,6 +515,8 @@ impl MainWindow {
         }
 
         if is_root {
+            let sort_keys = self.active_tab().view(side).sort_keys.clone();
+            let tag_counts = self.tag_counts_for_sort_keys(&sort_keys);
             let view = self.active_tab_mut().view_mut(side);
             for d in get_drive_infos() {
                 let label = d.display;
@@ -516,7 +534,7 @@ impl MainWindow {
                 }
             }
 
-            sort_files_by_keys(&mut view.files, &view.sort_keys);
+            sort_files_by_keys(&mut view.files, &sort_keys, &tag_counts);
             return;
         }
 
@@ -686,9 +704,11 @@ impl MainWindow {
             CoTaskMemFree(Some(recycle_pidl as _));
         }
 
+        let sort_keys = self.active_tab().view(side).sort_keys.clone();
+        let tag_counts = self.tag_counts_for_sort_keys(&sort_keys);
         let view = self.active_tab_mut().view_mut(side);
         view.files = recycle_items;
-        sort_files_by_keys(&mut view.files, &view.sort_keys);
+        sort_files_by_keys(&mut view.files, &sort_keys, &tag_counts);
     }
 
     pub fn create_new_folder(&mut self) {
@@ -905,13 +925,8 @@ impl MainWindow {
 
                 self.load_path();
             }
-            ItemViewerContextAction::AddTag(paths) => {
+            ItemViewerContextAction::ManageTags(paths) => {
                 self.tags_state.open_picker(paths);
-            }
-            ItemViewerContextAction::RemoveTag(paths) => {
-                if self.tags_state.remove_paths(&paths) {
-                    self.persist_tags();
-                }
             }
             ItemViewerContextAction::RenameRequest(path, new_name) => {
                 let trimmed = new_name.trim();
@@ -1934,8 +1949,13 @@ impl MainWindow {
         }
 
         if updated {
-            let view = self.active_tab_mut().view_mut(side);
-            sort_files_by_keys(&mut view.files, &view.sort_keys);
+            let sort_keys = self.active_tab().view(side).sort_keys.clone();
+            let tag_counts = self.tag_counts_for_sort_keys(&sort_keys);
+            sort_files_by_keys(
+                &mut self.active_tab_mut().view_mut(side).files,
+                &sort_keys,
+                &tag_counts,
+            );
         }
         updated
     }
@@ -1995,9 +2015,11 @@ impl MainWindow {
                 }
             }
 
+            let sort_keys = self.active_tab().view(side).sort_keys.clone();
+            let tag_counts = self.tag_counts_for_sort_keys(&sort_keys);
             let view = self.active_tab_mut().view_mut(side);
             view.files.extend(batch);
-            sort_files_by_keys(&mut view.files, &view.sort_keys);
+            sort_files_by_keys(&mut view.files, &sort_keys, &tag_counts);
             any_change = true;
         }
 
@@ -2145,8 +2167,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 | ItemViewerAction::Context(ItemViewerContextAction::Copy(_))
                 | ItemViewerAction::Context(ItemViewerContextAction::CopyPath(_))
                 | ItemViewerAction::Context(ItemViewerContextAction::Paste)
-                | ItemViewerAction::Context(ItemViewerContextAction::AddTag(_))
-                | ItemViewerAction::Context(ItemViewerContextAction::RemoveTag(_))
+                | ItemViewerAction::Context(ItemViewerContextAction::ManageTags(_))
                 | ItemViewerAction::Context(ItemViewerContextAction::RenameRequest(_, _))
                 | ItemViewerAction::Context(ItemViewerContextAction::RenameCancel) => {
                     return;
@@ -2194,6 +2215,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                         &mut explorer.settings_window.current_settings.directory_settings,
                         snapshot,
                     );
+                    explorer.save_app_settings_to_disk();
                 }
             }
             ItemViewerAction::FitColumn(column) => {
@@ -2248,6 +2270,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                         &mut explorer.settings_window.current_settings.directory_settings,
                         snapshot,
                     );
+                    explorer.save_app_settings_to_disk();
                 }
             }
             ItemViewerAction::MoveColumnRight(column) => {
@@ -2275,6 +2298,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                         &mut explorer.settings_window.current_settings.directory_settings,
                         snapshot,
                     );
+                    explorer.save_app_settings_to_disk();
                 }
             }
             ItemViewerAction::MoveColumnToStart(column) => {
@@ -2306,6 +2330,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                         &mut explorer.settings_window.current_settings.directory_settings,
                         snapshot,
                     );
+                    explorer.save_app_settings_to_disk();
                 }
             }
             ItemViewerAction::MoveColumnToEnd(column) => {
@@ -2337,6 +2362,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                         &mut explorer.settings_window.current_settings.directory_settings,
                         snapshot,
                     );
+                    explorer.save_app_settings_to_disk();
                 }
             }
             ItemViewerAction::Select(path) => {

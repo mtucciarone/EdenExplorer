@@ -1,6 +1,8 @@
 use crate::core::fs::FileItem;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering::{Equal, Greater, Less};
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 #[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum SortColumn {
@@ -11,6 +13,8 @@ pub enum SortColumn {
     Type,
     Deleted,
     OriginalDirectory,
+    // NOTE: appended last so existing serialized variant indices stay stable.
+    Tags,
 }
 
 #[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
@@ -19,7 +23,11 @@ pub struct SortKey {
     pub ascending: bool,
 }
 
-pub fn sort_files_by_keys(files: &mut Vec<FileItem>, keys: &[SortKey]) {
+pub fn sort_files_by_keys(
+    files: &mut Vec<FileItem>,
+    keys: &[SortKey],
+    tag_counts: &HashMap<PathBuf, usize>,
+) {
     files.sort_by(|a, b| {
         if a.is_dir != b.is_dir {
             return if a.is_dir { Less } else { Greater };
@@ -33,6 +41,11 @@ pub fn sort_files_by_keys(files: &mut Vec<FileItem>, keys: &[SortKey]) {
                 SortColumn::Created => a.created_time_raw.cmp(&b.created_time_raw),
                 SortColumn::Deleted => a.deleted_time_raw.cmp(&b.deleted_time_raw),
                 SortColumn::OriginalDirectory => a.original_directory.cmp(&b.original_directory),
+                SortColumn::Tags => tag_counts
+                    .get(&a.path)
+                    .copied()
+                    .unwrap_or(0)
+                    .cmp(&tag_counts.get(&b.path).copied().unwrap_or(0)),
                 SortColumn::Type => match (a.is_dir, b.is_dir) {
                     (true, false) => Less,
                     (false, true) => Greater,

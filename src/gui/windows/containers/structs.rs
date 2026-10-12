@@ -356,8 +356,9 @@ impl ItemViewerColumnState {
                 ItemViewerHeaderColumn::Name => 0,
                 ItemViewerHeaderColumn::Type => 1,
                 ItemViewerHeaderColumn::Size => 2,
-                ItemViewerHeaderColumn::Modified => 3,
-                ItemViewerHeaderColumn::Created => 4,
+                ItemViewerHeaderColumn::Tags => 3,
+                ItemViewerHeaderColumn::Modified => 4,
+                ItemViewerHeaderColumn::Created => 5,
                 _ => return None,
             }
         };
@@ -402,8 +403,9 @@ impl ItemViewerColumnState {
                 ItemViewerHeaderColumn::Name => 0,
                 ItemViewerHeaderColumn::Type => 1,
                 ItemViewerHeaderColumn::Size => 2,
-                ItemViewerHeaderColumn::Modified => 3,
-                ItemViewerHeaderColumn::Created => 4,
+                ItemViewerHeaderColumn::Tags => 3,
+                ItemViewerHeaderColumn::Modified => 4,
+                ItemViewerHeaderColumn::Created => 5,
                 _ => return,
             }
         };
@@ -445,6 +447,13 @@ impl ItemViewerColumnState {
             is_recycle_bin_view,
             ItemViewerHeaderColumn::Size,
             widths.size_width,
+        );
+
+        self.set_column_width(
+            is_drive_view,
+            is_recycle_bin_view,
+            ItemViewerHeaderColumn::Tags,
+            widths.tags_width,
         );
 
         self.set_column_width(
@@ -617,6 +626,7 @@ impl ItemViewerColumnState {
                 ItemViewerHeaderColumn::Name,
                 ItemViewerHeaderColumn::Type,
                 ItemViewerHeaderColumn::Size,
+                ItemViewerHeaderColumn::Tags,
                 ItemViewerHeaderColumn::Modified,
                 ItemViewerHeaderColumn::Created,
             ]
@@ -660,6 +670,7 @@ fn default_file_column_order() -> Vec<ItemViewerHeaderColumn> {
         ItemViewerHeaderColumn::Name,
         ItemViewerHeaderColumn::Type,
         ItemViewerHeaderColumn::Size,
+        ItemViewerHeaderColumn::Tags,
         ItemViewerHeaderColumn::Modified,
         ItemViewerHeaderColumn::Created,
     ]
@@ -876,6 +887,12 @@ pub struct TagGroup {
     pub items: Vec<PathBuf>,
 }
 
+#[derive(Clone)]
+pub struct TagInfo {
+    pub name: String,
+    pub color: egui::Color32,
+}
+
 pub struct TagPickerState {
     pub paths: Vec<PathBuf>,
     pub new_group_name: String,
@@ -937,6 +954,9 @@ impl TagsState {
             groups: snapshot
                 .groups
                 .into_iter()
+                // Drop empty tags on load so the "no empty tags" invariant holds
+                // even for snapshots written before auto-pruning existed.
+                .filter(|group| !group.items.is_empty())
                 .map(|group| TagGroup {
                     id: group.id,
                     name: group.name,
@@ -986,17 +1006,63 @@ impl TagsState {
         self.picker = Some(TagPickerState::new(paths));
     }
 
-    pub fn is_tagged(&self, path: &Path) -> bool {
+    pub fn tags_for_path(&self, path: &Path) -> Vec<TagInfo> {
         self.groups
             .iter()
-            .any(|group| group.items.iter().any(|item| item == path))
+            .filter(|group| group.items.iter().any(|item| item == path))
+            .map(|group| TagInfo {
+                name: group.name.clone(),
+                color: group.color,
+            })
+            .collect()
     }
 
-    pub fn tag_color_for_path(&self, path: &Path) -> Option<egui::Color32> {
+    pub fn tags_for_paths(&self, paths: &[PathBuf]) -> Vec<TagInfo> {
+        if paths.is_empty() {
+            return Vec::new();
+        }
         self.groups
             .iter()
-            .find(|group| group.items.iter().any(|item| item == path))
-            .map(|group| group.color)
+            .filter(|group| {
+                paths
+                    .iter()
+                    .any(|path| group.items.iter().any(|item| item == path))
+            })
+            .map(|group| TagInfo {
+                name: group.name.clone(),
+                color: group.color,
+            })
+            .collect()
+    }
+
+    pub fn remove_paths_from_group(&mut self, group_id: u64, paths: &[PathBuf]) -> bool {
+        let Some(target_index) = self.groups.iter().position(|group| group.id == group_id) else {
+            return false;
+        };
+
+        let paths_set: HashSet<&PathBuf> = paths.iter().collect();
+        let changed = {
+            let target_group = &mut self.groups[target_index];
+            let before = target_group.items.len();
+            target_group.items.retain(|item| !paths_set.contains(item));
+            target_group.items.len() != before
+        };
+
+        if changed {
+            self.prune_empty_groups();
+        }
+
+        changed
+    }
+
+    pub fn tag_count_map(&self) -> HashMap<PathBuf, usize> {
+        let mut map: HashMap<PathBuf, usize> = HashMap::new();
+        for group in &self.groups {
+            for path in &group.items {
+                *map.entry(path.clone()).or_insert(0) += 1;
+            }
+        }
+        map
     }
 
     pub fn add_paths_to_group(&mut self, group_id: u64, paths: &[PathBuf]) -> bool {
@@ -1009,10 +1075,6 @@ impl TagsState {
         paths.dedup();
 
         let mut changed = false;
-        for path in &paths {
-            changed |= self.remove_path(path);
-        }
-
         let target_group = &mut self.groups[target_index];
         for path in paths {
             if !target_group.items.contains(&path) {
@@ -1049,10 +1111,6 @@ impl TagsState {
         paths.sort();
         paths.dedup();
 
-        for path in &paths {
-            self.remove_path(path);
-        }
-
         for path in paths {
             if !group.items.contains(&path) {
                 group.items.push(path);
@@ -1061,31 +1119,6 @@ impl TagsState {
 
         self.groups.push(group);
         true
-    }
-
-    pub fn remove_path(&mut self, path: &Path) -> bool {
-        let mut changed = false;
-
-        for group in &mut self.groups {
-            let before = group.items.len();
-            group.items.retain(|item| item != path);
-            changed |= group.items.len() != before;
-        }
-
-        changed
-    }
-
-    pub fn remove_paths(&mut self, paths: &[PathBuf]) -> bool {
-        let paths: HashSet<PathBuf> = paths.iter().cloned().collect();
-        let mut changed = false;
-
-        for group in &mut self.groups {
-            let before = group.items.len();
-            group.items.retain(|item| !paths.contains(item));
-            changed |= group.items.len() != before;
-        }
-
-        changed
     }
 
     pub fn remap_path_prefix(&mut self, source_root: &Path, target_root: &Path) -> bool {
@@ -1122,7 +1155,19 @@ impl TagsState {
             changed |= group.items.len() != before;
         }
 
+        if changed {
+            self.prune_empty_groups();
+        }
+
         changed
+    }
+
+    /// Drops any tag that no longer contains objects, so empty tags disappear
+    /// automatically instead of lingering in the sidebar and picker.
+    fn prune_empty_groups(&mut self) -> bool {
+        let before = self.groups.len();
+        self.groups.retain(|group| !group.items.is_empty());
+        self.groups.len() != before
     }
 }
 
@@ -1136,6 +1181,7 @@ pub struct ItemViewerColumnLayout {
     pub name_width: f32,
     pub type_width: f32,
     pub size_width: f32,
+    pub tags_width: f32,
     pub usage_width: f32,
     pub modified_width: f32,
     pub created_width: f32,
@@ -1149,9 +1195,99 @@ pub struct ItemViewerColumnWidths {
     pub name: f32,
     pub type_width: f32,
     pub size_width: f32,
+    pub tags_width: f32,
     pub modified_width: f32,
     pub created_width: f32,
     pub usage_width: f32,
     pub deleted_width: f32,
     pub original_directory_width: f32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state_with_two_tags() -> TagsState {
+        let mut state = TagsState::default();
+        state.create_group_and_add(
+            "Alpha".to_string(),
+            Color32::RED,
+            &[PathBuf::from("C:/data/one.txt")],
+        );
+        state.create_group_and_add(
+            "Beta".to_string(),
+            Color32::BLUE,
+            &[
+                PathBuf::from("C:/data/two.txt"),
+                PathBuf::from("C:/data/three.txt"),
+            ],
+        );
+        state
+    }
+
+    #[test]
+    fn removing_last_object_deletes_the_tag() {
+        let mut state = state_with_two_tags();
+        assert_eq!(state.groups.len(), 2);
+
+        let alpha_id = state.groups[0].id;
+        let changed = state.remove_paths_from_group(alpha_id, &[PathBuf::from("C:/data/one.txt")]);
+
+        assert!(changed);
+        assert_eq!(state.groups.len(), 1, "emptied tag should be auto-deleted");
+        assert_eq!(state.groups[0].name, "Beta");
+    }
+
+    #[test]
+    fn removing_some_objects_keeps_a_non_empty_tag() {
+        let mut state = state_with_two_tags();
+        let beta_id = state.groups[1].id;
+
+        let changed = state.remove_paths_from_group(beta_id, &[PathBuf::from("C:/data/two.txt")]);
+
+        assert!(changed);
+        assert_eq!(state.groups.len(), 2, "non-empty tag must be kept");
+        assert_eq!(state.groups[1].items.len(), 1);
+    }
+
+    #[test]
+    fn deleting_objects_by_prefix_deletes_emptied_tags() {
+        let mut state = state_with_two_tags();
+        assert_eq!(state.groups.len(), 2);
+
+        let changed = state.remove_path_prefix(Path::new("C:/data"));
+
+        assert!(changed);
+        assert!(
+            state.groups.is_empty(),
+            "both tags emptied by the prefix removal should be auto-deleted"
+        );
+    }
+
+    #[test]
+    fn loading_a_snapshot_drops_empty_tags() {
+        let snapshot = TagsSnapshot {
+            version: 1,
+            next_group_id: 3,
+            groups: vec![
+                crate::core::indexer::TagGroupSnapshot {
+                    id: 1,
+                    name: "Kept".to_string(),
+                    color: [255, 0, 0, 255],
+                    items: vec![PathBuf::from("C:/data/one.txt")],
+                },
+                crate::core::indexer::TagGroupSnapshot {
+                    id: 2,
+                    name: "Empty".to_string(),
+                    color: [0, 0, 255, 255],
+                    items: vec![],
+                },
+            ],
+        };
+
+        let state = TagsState::from_snapshot(snapshot);
+
+        assert_eq!(state.groups.len(), 1, "empty tag should be dropped on load");
+        assert_eq!(state.groups[0].name, "Kept");
+    }
 }

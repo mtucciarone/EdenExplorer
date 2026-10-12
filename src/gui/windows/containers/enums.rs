@@ -18,6 +18,7 @@ pub enum ItemViewerHeaderColumn {
     Usage,
     Deleted,
     OriginalDirectory,
+    Tags,
 }
 
 pub enum ItemViewerAction {
@@ -64,8 +65,7 @@ pub enum ItemViewerContextAction {
     Cut(Vec<PathBuf>),
     Paste,
     Restore(Vec<PathBuf>),
-    AddTag(Vec<PathBuf>),
-    RemoveTag(Vec<PathBuf>),
+    ManageTags(Vec<PathBuf>),
     RenameRequest(PathBuf, String),
     RenameCancel,
     Delete(Vec<PathBuf>),

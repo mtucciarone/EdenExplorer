@@ -18,7 +18,7 @@ use crate::gui::windows::containers::enums::{
 use crate::gui::windows::containers::structs::{
     DragState, ExplorerState, FilterState, ItemViewerColumnFitRequest, ItemViewerColumnLayout,
     ItemViewerColumnState, ItemViewerColumnWidths, ItemViewerFolderSizeState, ItemViewerLayout,
-    ItemViewerNavBarAction, RenameState, TagsState,
+    ItemViewerNavBarAction, RenameState,
 };
 use crate::gui::windows::shell_context_menu::ShellContextMenu;
 use crate::gui::windows::structs::{SettingsWindow, ThemeCustomizer};
@@ -88,7 +88,6 @@ pub fn handle_context_menu_actions(
     action: &mut Option<ItemViewerAction>,
     _palette: &ThemePalette,
     explorer_state: &mut ExplorerState,
-    tags_state: &mut TagsState,
     settings_window: &SettingsWindow,
     hwnd: Option<HWND>,
 ) {
@@ -196,19 +195,10 @@ pub fn handle_context_menu_actions(
         i18n.tr("open_files_default_program")
     };
 
-    let has_tag = context_paths.iter().any(|path| tags_state.is_tagged(path));
-    let tag_label = if has_tag {
-        i18n.tr("tag_remove")
-    } else {
-        i18n.tr("tag_add")
-    };
-
-    if ui.button(tag_label).clicked() {
-        *action = Some(ItemViewerAction::Context(if has_tag {
-            ItemViewerContextAction::RemoveTag(context_paths.clone())
-        } else {
-            ItemViewerContextAction::AddTag(context_paths.clone())
-        }));
+    if ui.button(i18n.tr("tag_manage")).clicked() {
+        *action = Some(ItemViewerAction::Context(
+            ItemViewerContextAction::ManageTags(context_paths.clone()),
+        ));
         ui.close();
     }
 
@@ -1183,6 +1173,7 @@ pub fn draw_item_viewer_header(
             ItemViewerHeaderColumn::Created => i18n.tr("explorer_cols_created"),
             ItemViewerHeaderColumn::Usage => i18n.tr("explorer_cols_usage"),
             ItemViewerHeaderColumn::Deleted => i18n.tr("explorer_cols_deleted"),
+            ItemViewerHeaderColumn::Tags => i18n.tr("explorer_cols_tags"),
         };
         draw_header_cell(
             header,
@@ -1225,6 +1216,9 @@ fn draw_header_cell(
         ItemViewerHeaderColumn::Modified if !is_drive_view => Some(SortColumn::Modified),
         ItemViewerHeaderColumn::Created if !is_drive_view => Some(SortColumn::Created),
         ItemViewerHeaderColumn::Deleted if is_recycle_bin_view => Some(SortColumn::Deleted),
+        ItemViewerHeaderColumn::Tags if !is_drive_view && !is_recycle_bin_view => {
+            Some(SortColumn::Tags)
+        }
         _ => None,
     };
 
@@ -1446,6 +1440,19 @@ fn draw_header_context_menu(
         if draw_visibility_checkbox(ui, i18n.tr("explorer_cols_created"), created_visible) {
             *action = Some(ItemViewerAction::ToggleColumnVisibility(
                 ItemViewerHeaderColumn::Created,
+            ));
+            ui.close();
+        }
+
+        let tags_visible = column_state.is_column_visible(
+            is_drive_view,
+            is_recycle_bin_view,
+            ItemViewerHeaderColumn::Tags,
+        );
+
+        if draw_visibility_checkbox(ui, i18n.tr("explorer_cols_tags"), tags_visible) {
+            *action = Some(ItemViewerAction::ToggleColumnVisibility(
+                ItemViewerHeaderColumn::Tags,
             ));
             ui.close();
         }
@@ -1812,6 +1819,7 @@ pub fn compute_item_viewer_column_layout(
                     ItemViewerHeaderColumn::OriginalDirectory => widths.original_directory_width,
                     ItemViewerHeaderColumn::Type => widths.type_width,
                     ItemViewerHeaderColumn::Size => widths.size_width,
+                    ItemViewerHeaderColumn::Tags => widths.tags_width,
                     ItemViewerHeaderColumn::Modified => widths.modified_width,
                     ItemViewerHeaderColumn::Created => widths.created_width,
                     ItemViewerHeaderColumn::Deleted => widths.deleted_width,
@@ -1843,6 +1851,7 @@ pub fn compute_item_viewer_column_layout(
     let default_deleted_width = (current_width * 0.20).max(100.0);
     let default_usage_width = (current_width * 0.20).max(150.0);
     let default_original_directory_width = (current_width * 0.20).max(200.0);
+    let default_tags_width = (current_width * 0.14).max(140.0);
 
     let name_width = column_state
         .column_width(
@@ -1885,6 +1894,18 @@ pub fn compute_item_viewer_column_layout(
                 ItemViewerHeaderColumn::Size,
             )
             .unwrap_or(default_size_width)
+    } else {
+        0.0
+    };
+
+    let tags_width = if ordered_columns.contains(&ItemViewerHeaderColumn::Tags) {
+        column_state
+            .column_width(
+                is_drive_view,
+                is_recycle_bin_view,
+                ItemViewerHeaderColumn::Tags,
+            )
+            .unwrap_or(default_tags_width)
     } else {
         0.0
     };
@@ -1942,6 +1963,7 @@ pub fn compute_item_viewer_column_layout(
         name_width,
         type_width,
         size_width,
+        tags_width,
         usage_width,
         modified_width,
         created_width,
@@ -1988,6 +2010,12 @@ fn compute_item_viewer_column_widths(
         size_width: measure_text_width(
             ui,
             &i18n.tr("explorer_cols_size"),
+            font_id,
+            palette.text_header_section,
+        ),
+        tags_width: measure_text_width(
+            ui,
+            &i18n.tr("explorer_cols_tags"),
             font_id,
             palette.text_header_section,
         ),
@@ -2086,6 +2114,7 @@ fn compute_item_viewer_column_widths(
     widths.name = widths.name.max(220.0);
     widths.type_width = widths.type_width.max(60.0);
     widths.size_width = widths.size_width.max(75.0);
+    widths.tags_width = widths.tags_width.max(140.0);
     widths.modified_width = widths.modified_width.max(120.0);
     widths.created_width = widths.created_width.max(120.0);
     widths.usage_width = widths.usage_width.max(150.0);

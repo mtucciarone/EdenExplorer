@@ -37,6 +37,7 @@ impl Default for AppSettings {
             item_viewer_file_column_order: vec![
                 ItemViewerHeaderColumn::Type,
                 ItemViewerHeaderColumn::Size,
+                ItemViewerHeaderColumn::Tags,
                 ItemViewerHeaderColumn::Modified,
                 ItemViewerHeaderColumn::Created,
             ],

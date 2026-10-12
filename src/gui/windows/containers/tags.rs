@@ -80,10 +80,6 @@ pub fn draw_tags(
                         let mut should_clear_drag = false;
                         let mut clear_rename_state = false;
 
-                        // Pre-compute is_tagged status for all items to avoid borrow conflict
-                        let item_tagged_status: std::collections::HashMap<std::path::PathBuf, bool> =
-                            group_items.iter().map(|path| (path.clone(), tags_state.is_tagged(path))).collect();
-
                         let group = &mut tags_state.groups[group_index];
 
                         let group_frame = egui::Frame::NONE
@@ -285,7 +281,6 @@ pub fn draw_tags(
                                             }
                                         }
 
-                                        let is_tagged = item_tagged_status.get(path).copied().unwrap_or(false);
                                         Popup::context_menu(&resp)
                                             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                                             .show(|ui| {
@@ -313,7 +308,6 @@ pub fn draw_tags(
                                                     &file_item,
                                                     &mut action,
                                                     palette,
-                                                    is_tagged,
                                                 );
                                                 if let Some(a) = action {
                                                     tags_state.pending_action = Some(a);
@@ -530,7 +524,7 @@ pub fn draw_tag_picker_popup(
                 .rect_filled(rect, 0.0, palette.modal_background_effect_color);
         });
 
-    egui::Window::new(i18n.tr("tag_add"))
+    egui::Window::new(i18n.tr("tag_manage"))
         .collapsible(false)
         .resizable(false)
         .default_width(360.0)
@@ -562,10 +556,21 @@ pub fn draw_tag_picker_popup(
             ui.label(egui::RichText::new(i18n.tr("tag_add_to_existing_group")).strong());
             ui.add_space(6.0);
 
-            let group_choices: Vec<(u64, String, egui::Color32, usize)> = tags_state
+            let all_tags: Vec<crate::gui::windows::containers::structs::TagInfo> =
+                tags_state.tags_for_paths(&picker.paths);
+            let group_choices: Vec<(u64, String, egui::Color32, usize, bool)> = tags_state
                 .groups
                 .iter()
-                .map(|group| (group.id, group.name.clone(), group.color, group.items.len()))
+                .map(|group| {
+                    let is_member = all_tags.iter().any(|t| t.name == group.name);
+                    (
+                        group.id,
+                        group.name.clone(),
+                        group.color,
+                        group.items.len(),
+                        is_member,
+                    )
+                })
                 .collect();
 
             if group_choices.is_empty() {
@@ -577,10 +582,12 @@ pub fn draw_tag_picker_popup(
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
 
-                    for (group_id, group_name, group_color, item_count) in &group_choices {
-                        let button_label = format!("{} ({})", group_name, item_count);
+                    for (group_id, group_name, group_color, item_count, is_member) in &group_choices
+                    {
+                        let prefix = if *is_member { "✓ " } else { "" };
+                        let button_label = format!("{}{} ({})", prefix, group_name, item_count);
                         let button = egui::Button::new(button_label)
-                            .fill(group_color.gamma_multiply(0.25))
+                            .fill(group_color.gamma_multiply(if *is_member { 0.45 } else { 0.25 }))
                             .stroke(egui::Stroke::new(1.0, group_color.gamma_multiply(0.6)));
 
                         if ui
@@ -588,10 +595,15 @@ pub fn draw_tag_picker_popup(
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .clicked()
                         {
-                            if tags_state.add_paths_to_group(*group_id, &picker.paths) {
-                                changed = true;
+                            if *is_member {
+                                if tags_state.remove_paths_from_group(*group_id, &picker.paths) {
+                                    changed = true;
+                                }
+                            } else {
+                                if tags_state.add_paths_to_group(*group_id, &picker.paths) {
+                                    changed = true;
+                                }
                             }
-                            close_requested = true;
                         }
                     }
                 });
@@ -601,39 +613,38 @@ pub fn draw_tag_picker_popup(
             ui.separator();
             ui.add_space(8.0);
 
-            ui.label(egui::RichText::new(i18n.tr("tag_create_new_group")).strong());
-            ui.add_space(6.0);
+            ui.collapsing(i18n.tr("tag_create_new_group"), |ui| {
+                ui.horizontal(|ui| {
+                    let name_id = ui.id().with("tag_group_name_input");
+                    let name_response = ui.add(
+                        egui::TextEdit::singleline(&mut picker.new_group_name)
+                            .id(name_id)
+                            .hint_text(i18n.tr("tag_group_name"))
+                            .desired_width(200.0)
+                            .font(egui::FontId::new(
+                                palette.text_size,
+                                egui::FontFamily::Proportional,
+                            )),
+                    );
 
-            ui.label(i18n.tr("tag_group_name"));
-            let name_id = ui.id().with("tag_group_name_input");
-            let name_response = ui.add(
-                egui::TextEdit::singleline(&mut picker.new_group_name)
-                    .id(name_id)
-                    .desired_width(240.0)
-                    .font(egui::FontId::new(
-                        palette.text_size,
-                        egui::FontFamily::Proportional,
-                    )),
-            );
+                    if picker.focus_requested {
+                        ui.memory_mut(|mem| mem.request_focus(name_id));
+                        name_response.request_focus();
+                        if name_response.has_focus() {
+                            picker.focus_requested = false;
+                        }
+                    }
 
-            if picker.focus_requested {
-                ui.memory_mut(|mem| mem.request_focus(name_id));
-                name_response.request_focus();
-                if name_response.has_focus() {
-                    picker.focus_requested = false;
-                }
-            }
+                    if rgba_color_edit_button(ui, &mut picker.new_group_color)
+                        .on_hover_text(i18n.tr("tag_group_color"))
+                        .changed()
+                    {
+                        changed = true;
+                    }
+                });
 
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                ui.label(i18n.tr("tag_group_color"));
-                if rgba_color_edit_button(ui, &mut picker.new_group_color).changed() {
-                    changed = true;
-                }
-            });
+                ui.add_space(6.0);
 
-            ui.add_space(8.0);
-            ui.horizontal(|ui| {
                 if ui
                     .add_enabled(
                         !picker.new_group_name.trim().is_empty(),
@@ -650,7 +661,10 @@ pub fn draw_tag_picker_popup(
                     }
                     close_requested = true;
                 }
+            });
 
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
                 if ui.button(i18n.tr("close")).clicked() {
                     close_requested = true;
                 }
@@ -776,7 +790,6 @@ fn handle_context_menu_actions_tags(
     file: &FileItem,
     action: &mut Option<ItemViewerAction>,
     _palette: &ThemePalette,
-    is_tagged: bool,
 ) {
     // Apply context-menu-specific typography
     let mut style = (**ui.style()).clone();
@@ -845,18 +858,10 @@ fn handle_context_menu_actions_tags(
         ui.close();
     }
 
-    let tag_label = if is_tagged {
-        i18n.tr("tag_remove")
-    } else {
-        i18n.tr("tag_add")
-    };
-
-    if ui.button(tag_label).clicked() {
-        *action = Some(ItemViewerAction::Context(if is_tagged {
-            ItemViewerContextAction::RemoveTag(context_paths.clone())
-        } else {
-            ItemViewerContextAction::AddTag(context_paths.clone())
-        }));
+    if ui.button(i18n.tr("tag_manage")).clicked() {
+        *action = Some(ItemViewerAction::Context(
+            ItemViewerContextAction::ManageTags(context_paths.clone()),
+        ));
         ui.close();
     }
 }

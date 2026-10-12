@@ -5,7 +5,7 @@ use crate::core::utils::widgets::draw_checkbox;
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
-use crate::gui::utils::{draw_object_drag_ghost, fuzzy_match};
+use crate::gui::utils::{draw_object_drag_ghost, fuzzy_match, truncate_item_text};
 use crate::gui::windows::containers::enums::{
     ItemViewerAction, ItemViewerContextAction, ItemViewerHeaderColumn,
 };
@@ -13,7 +13,7 @@ use crate::gui::windows::containers::itemviewer_gallery::draw_gallery_view;
 use crate::gui::windows::containers::itemviewer_helper::*;
 use crate::gui::windows::containers::structs::{
     ItemViewerDisplayMode, ItemViewerFolderSizeState, ItemViewerLayout, ItemViewerNavBarAction,
-    RenameState, TabView, TagsState,
+    RenameState, TabView, TagInfo, TagsState,
 };
 use crate::gui::windows::structs::{SettingsWindow, ThemeCustomizer};
 use eframe::egui;
@@ -178,7 +178,6 @@ pub fn draw_item_viewer(
             drag_hover_target,
             hovered_drop_target_out,
             hovered_drop_target_rect_out,
-            tags_state,
             theme_customizer_window,
             settings_window,
             hwnd,
@@ -258,7 +257,6 @@ pub fn draw_item_viewer(
         let available_height = ui.available_height();
         // IMPORTANT: register background interaction before TableBuilder.
         let bg_response = table_background_response(ui);
-        let ctx = ui.ctx().clone();
         let table_rect = ui.available_rect_before_wrap();
         let left_margin = if layout.is_drive_view { 4.0 } else { 0.0 };
         let table_rect = egui::Rect::from_min_max(
@@ -378,6 +376,10 @@ pub fn draw_item_viewer(
                         .at_least(if is_drive_view { 120.0 } else { 75.0 })
                         .resizable(true),
 
+                    ItemViewerHeaderColumn::Tags => Column::initial(column_layout.tags_width)
+                        .at_least(140.0)
+                        .resizable(true),
+
                     ItemViewerHeaderColumn::Modified => {
                         Column::initial(column_layout.modified_width)
                             .at_least(100.0)
@@ -421,7 +423,6 @@ pub fn draw_item_viewer(
                     }
                 })
                 .body(|body| {
-                    let table_body_rect = body.max_rect();
                     // Capture the actual widths after TableBuilder has applied any
                     // user-driven column resizing.
                     actual_column_widths.extend_from_slice(body.widths());
@@ -434,7 +435,6 @@ pub fn draw_item_viewer(
                         let is_non_ntfs_drive =
                             layout.is_drive_view && is_raw_physical_drive_path(&file.path);
                         let is_selected = explorer_state.selected_paths.contains(&file.path);
-                        let tag_color = tags_state.tag_color_for_path(&file.path);
                         row.set_selected(is_selected);
                         let is_cut = is_cut_mode && clipboard_set.contains(&file.path);
 
@@ -473,23 +473,13 @@ pub fn draw_item_viewer(
                                     file_size_text_cache,
                                     folder_size_text_cache,
                                     drive_size_text_cache,
+                                    tags_state,
                                     &mut action,
                                 );
                             });
                         }
 
                         let row_resp = row.response();
-
-                        draw_tag_row_background(
-                            row_resp.rect,
-                            table_body_rect,
-                            layout.row_height,
-                            tag_color,
-                            palette,
-                            &ctx,
-                            active_tab_id,
-                            &file.path,
-                        );
 
                         if drag_hover_active {
                             if let Some(target) = hovered_target_ref {
@@ -595,7 +585,6 @@ pub fn draw_item_viewer(
                                         &mut action,
                                         palette,
                                         explorer_state,
-                                        tags_state,
                                         settings_window,
                                         hwnd,
                                     );
@@ -855,6 +844,7 @@ fn draw_item_viewer_row_column(
     file_size_text_cache: &mut HashMap<PathBuf, (u64, String)>,
     folder_size_text_cache: &mut HashMap<PathBuf, (u64, bool, String)>,
     drive_size_text_cache: &mut HashMap<PathBuf, (u64, u64, String)>,
+    tags_state: &TagsState,
     action: &mut Option<ItemViewerAction>,
 ) {
     match column {
@@ -917,6 +907,11 @@ fn draw_item_viewer_row_column(
             );
         }
 
+        ItemViewerHeaderColumn::Tags => {
+            let tags = tags_state.tags_for_path(&file.path);
+            draw_tag_chips(ui, layout, &tags, palette, font_id);
+        }
+
         ItemViewerHeaderColumn::Modified => {
             handle_draw_col_modified(ui, file, layout, is_selected, is_cut, palette, font_id);
         }
@@ -935,33 +930,194 @@ fn draw_item_viewer_row_column(
     }
 }
 
-fn draw_tag_row_background(
-    row_rect: egui::Rect,
-    table_clip_rect: egui::Rect,
-    row_height: f32,
-    tag_color: Option<egui::Color32>,
+fn draw_tag_chips(
+    ui: &mut egui::Ui,
+    layout: &ItemViewerLayout,
+    tags: &[TagInfo],
     palette: &ThemePalette,
-    ctx: &egui::Context,
-    active_tab_id: u64,
-    path: &std::path::Path,
+    font_id: &FontId,
 ) {
-    let Some(tag_color) = tag_color else {
-        return;
-    };
-
-    let tag_rect =
-        egui::Rect::from_min_size(row_rect.min, egui::vec2(row_rect.width(), row_height))
-            .shrink2(egui::vec2(0.0, 1.0))
-            .intersect(table_clip_rect);
-
-    let painter = ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Background,
-        egui::Id::new(("tag_row_bg", active_tab_id, path)),
-    ));
-
-    painter.rect_filled(
-        tag_rect,
-        egui::CornerRadius::same(palette.medium_radius),
-        tag_color.linear_multiply(0.18),
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), layout.row_height),
+        egui::Sense::hover(),
     );
+    response.on_hover_cursor(egui::CursorIcon::Default);
+
+    if tags.is_empty() {
+        return;
+    }
+
+    let chip_height = (layout.row_height - 6.0).max(14.0);
+    let chip_radius = ((chip_height * 0.5).min(palette.medium_radius as f32)) as u8;
+    let chip_gap = 4.0;
+    let hpad = 8.0;
+    let available = rect.width();
+    let y = rect.center().y - chip_height * 0.5;
+    let left = rect.left();
+    let n = tags.len();
+
+    // Natural width of each chip (label + horizontal padding on both sides).
+    let mut chip_widths: Vec<f32> = Vec::with_capacity(n);
+    for tag in tags {
+        chip_widths.push(measure_tag_text(ui, &tag.name, font_id) + hpad * 2.0);
+    }
+
+    // A lone tag is always shown; its label is ellipsized if it overflows.
+    if n == 1 {
+        draw_truncated_tag_chip(
+            ui,
+            &tags[0],
+            chip_widths[0],
+            available,
+            left,
+            y,
+            chip_height,
+            chip_radius,
+            hpad,
+            font_id,
+        );
+        return;
+    }
+
+    // prefix[k] = width of the first k chips laid out side by side (gaps included).
+    let mut prefix = vec![0.0f32; n + 1];
+    for i in 0..n {
+        prefix[i + 1] = prefix[i] + chip_widths[i] + if i > 0 { chip_gap } else { 0.0 };
+    }
+
+    // Decide how many whole chips fit, reserving room for a "+N" badge whenever
+    // some tags would otherwise be hidden.
+    let mut visible = 0usize;
+    if prefix[n] <= available {
+        visible = n;
+    } else {
+        for k in (1..n).rev() {
+            let badge_w = measure_tag_text(ui, &format!("+{}", n - k), font_id) + hpad * 2.0;
+            if prefix[k] + chip_gap + badge_w <= available {
+                visible = k;
+                break;
+            }
+        }
+    }
+
+    // Column too narrow for even one chip plus a badge: ellipsize the first tag.
+    if visible == 0 {
+        draw_truncated_tag_chip(
+            ui,
+            &tags[0],
+            chip_widths[0],
+            available,
+            left,
+            y,
+            chip_height,
+            chip_radius,
+            hpad,
+            font_id,
+        );
+        return;
+    }
+
+    let mut x = left;
+    for (i, tag) in tags.iter().enumerate().take(visible) {
+        let chip_rect =
+            egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(chip_widths[i], chip_height));
+        paint_tag_chip(
+            ui,
+            chip_rect,
+            chip_radius,
+            tag.color,
+            &tag.name,
+            font_id,
+            hpad,
+        );
+        x = chip_rect.right() + chip_gap;
+    }
+
+    if visible < n {
+        let label = format!("+{}", n - visible);
+        let badge_w = measure_tag_text(ui, &label, font_id) + hpad * 2.0;
+        let badge_rect =
+            egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(badge_w, chip_height));
+        paint_tag_chip(
+            ui,
+            badge_rect,
+            chip_radius,
+            egui::Color32::from_gray(120),
+            &label,
+            font_id,
+            hpad,
+        );
+    }
+}
+
+fn chip_text_color(fill: egui::Color32) -> egui::Color32 {
+    let luminance =
+        (fill.r() as f32 * 0.299) + (fill.g() as f32 * 0.587) + (fill.b() as f32 * 0.114);
+    if luminance > 155.0 {
+        egui::Color32::from_rgb(24, 24, 24)
+    } else {
+        egui::Color32::WHITE
+    }
+}
+
+fn measure_tag_text(ui: &mut egui::Ui, text: &str, font_id: &FontId) -> f32 {
+    ui.fonts_mut(|fonts| {
+        fonts
+            .layout_no_wrap(text.to_owned(), font_id.clone(), egui::Color32::WHITE)
+            .size()
+            .x
+    })
+}
+
+fn paint_tag_chip(
+    ui: &mut egui::Ui,
+    chip_rect: egui::Rect,
+    radius: u8,
+    fill: egui::Color32,
+    text: &str,
+    font_id: &FontId,
+    hpad: f32,
+) {
+    let text_color = chip_text_color(fill);
+    let galley =
+        ui.fonts_mut(|fonts| fonts.layout_no_wrap(text.to_owned(), font_id.clone(), text_color));
+    let painter = ui.painter();
+    painter.rect_filled(chip_rect, egui::CornerRadius::same(radius), fill);
+    painter
+        .with_clip_rect(chip_rect.shrink2(egui::vec2(2.0, 0.0)))
+        .galley(
+            egui::pos2(
+                chip_rect.left() + hpad,
+                chip_rect.center().y - galley.size().y * 0.5,
+            ),
+            galley,
+            text_color,
+        );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_truncated_tag_chip(
+    ui: &mut egui::Ui,
+    tag: &TagInfo,
+    natural_width: f32,
+    available: f32,
+    left: f32,
+    y: f32,
+    chip_height: f32,
+    radius: u8,
+    hpad: f32,
+    font_id: &FontId,
+) {
+    let chip_w = natural_width.min(available).max(0.0);
+    let chip_rect = egui::Rect::from_min_size(egui::pos2(left, y), egui::vec2(chip_w, chip_height));
+    let max_text_w = (chip_w - hpad * 2.0).max(0.0);
+    let label = truncate_item_text(
+        ui,
+        &tag.name,
+        max_text_w,
+        font_id,
+        chip_text_color(tag.color),
+    )
+    .0;
+    paint_tag_chip(ui, chip_rect, radius, tag.color, &label, font_id, hpad);
 }

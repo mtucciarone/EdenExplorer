@@ -15,7 +15,7 @@ use crate::gui::windows::containers::itemviewer_helper::{
     handle_keyboard_navigation, handle_row_click,
 };
 use crate::gui::windows::containers::structs::{
-    DragState, ExplorerState, GalleryState, GalleryThumbnailSize, RenameState, TagsState,
+    DragState, ExplorerState, GalleryState, GalleryThumbnailSize, RenameState,
 };
 use crate::gui::windows::structs::{SettingsWindow, ThemeCustomizer};
 use eframe::egui;
@@ -54,7 +54,6 @@ pub fn draw_gallery_view(
     drag_hover_target: Option<PathBuf>,
     hovered_drop_target_out: &mut Option<PathBuf>,
     hovered_drop_target_rect_out: &mut Option<egui::Rect>,
-    tags_state: &mut TagsState,
     _theme_customizer_window: &mut ThemeCustomizer,
     settings_window: &mut SettingsWindow,
     hwnd: Option<HWND>,
@@ -290,7 +289,6 @@ pub fn draw_gallery_view(
                                     &mut action,
                                     palette,
                                     explorer_state,
-                                    tags_state,
                                     settings_window,
                                     hwnd,
                                 );
@@ -673,5 +671,6 @@ fn sort_label(i18n: &I18n, column: SortColumn) -> String {
         SortColumn::Created => i18n.tr("explorer_cols_created"),
         SortColumn::Deleted => i18n.tr("explorer_cols_deleted"),
         SortColumn::OriginalDirectory => i18n.tr("explorer_cols_original_directory"),
+        SortColumn::Tags => i18n.tr("explorer_cols_tags"),
     }
 }

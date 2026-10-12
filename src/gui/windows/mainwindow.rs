@@ -7,6 +7,7 @@ use crate::gui::icons::IconCache;
 use crate::gui::theme::{
     ThemeMode, apply_font_to_context, apply_theme, get_default_palette, get_palette, set_palette,
 };
+use crate::gui::utils::{SortColumn, sort_files_by_keys};
 use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::explorer::draw_tab_content;
 use crate::gui::windows::containers::sidebar::draw_sidebar;
@@ -1159,6 +1160,23 @@ impl eframe::App for MainWindow {
 
         if tags_changed {
             self.persist_tags();
+
+            // Re-sort views if they're sorted by Tags
+            for side in [SplitSide::Primary, SplitSide::Secondary] {
+                if side == SplitSide::Secondary && self.active_tab().split_view.is_none() {
+                    continue;
+                }
+
+                let sort_keys = self.active_tab().view(side).sort_keys.clone();
+                if sort_keys.iter().any(|key| key.column == SortColumn::Tags) {
+                    let tag_counts = self.tag_counts_for_sort_keys(&sort_keys);
+                    sort_files_by_keys(
+                        &mut self.active_tab_mut().view_mut(side).files,
+                        &sort_keys,
+                        &tag_counts,
+                    );
+                }
+            }
         }
 
         // ✅ Step 5: Apply Deferred Refresh (IMPORTANT)
