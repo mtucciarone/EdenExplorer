@@ -12,7 +12,7 @@ use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::explorer::draw_tab_content;
 use crate::gui::windows::containers::sidebar::draw_sidebar;
 use crate::gui::windows::containers::structs::{
-    DeleteProgressState, FavoriteItem, ItemViewerColumnState, ItemViewerFolderSizeState,
+    FavoriteItem, FileOpState, ItemViewerColumnState, ItemViewerFolderSizeState,
     ItemViewerNavBarAction, RenameState, SidebarAction, SplitSide, TabInfo, TabState, TabsAction,
     TagsState,
 };
@@ -22,9 +22,8 @@ use crate::gui::windows::containers::tags::{
 };
 use crate::gui::windows::containers::topbar::draw_topbar;
 use crate::gui::windows::mainwindow_imp::{
-    apply_directory_settings_to_view, directory_settings_snapshot_for_view,
-    draw_delete_progress_window, handle_draw_customizetheme_window, handle_pending_actions,
-    persist_directory_settings_snapshot,
+    apply_directory_settings_to_view, directory_settings_snapshot_for_view, draw_file_op_window,
+    handle_draw_customizetheme_window, handle_pending_actions, persist_directory_settings_snapshot,
 };
 use crate::gui::windows::structs::{
     AboutWindow, AppSettings, Navigation, SettingsWindow, SidebarState, ThemeCustomizer,
@@ -73,7 +72,7 @@ pub struct MainWindow {
     pub(crate) dragdrop: Option<Box<dyn DragDropBackend>>,
     pub(crate) file_type_cache: HashMap<String, String>,
     pub(crate) tags_state: TagsState,
-    pub(crate) delete_progress: Option<DeleteProgressState>,
+    pub(crate) file_op: Option<FileOpState>,
     pub(crate) clipboard_paths: Vec<PathBuf>,
     pub(crate) clipboard_set: HashSet<PathBuf>,
     pub(crate) clipboard_is_cut: bool,
@@ -221,7 +220,7 @@ impl Default for MainWindow {
             tags_state: load_tags()
                 .map(TagsState::from_snapshot)
                 .unwrap_or_default(),
-            delete_progress: None,
+            file_op: None,
             theme_customizer: Default::default(),
             settings_window: Default::default(),
             about_window: Default::default(),
@@ -1083,7 +1082,7 @@ impl eframe::App for MainWindow {
             .is_some();
 
         self.handle_directory_batch_recieve(ui.ctx());
-        self.handle_delete_progress(ui.ctx());
+        self.handle_file_op_progress(ui.ctx());
         self.handle_directory_size_updates(ui.ctx());
         self.handle_throttle_size_requests(ui.ctx());
         self.handle_topbar_action(topbar_action);
@@ -1151,9 +1150,9 @@ impl eframe::App for MainWindow {
         if draw_tag_picker_popup(ui.ctx(), &self.i18n, &palette, &mut self.tags_state) {
             tags_changed = true;
         }
-        if let Some(state) = &self.delete_progress {
+        if let Some(state) = &self.file_op {
             if state.started {
-                draw_delete_progress_window(ui.ctx(), &self.i18n, &palette, state);
+                draw_file_op_window(ui.ctx(), &self.i18n, &palette, state);
             }
         }
         handle_draw_customizetheme_window(

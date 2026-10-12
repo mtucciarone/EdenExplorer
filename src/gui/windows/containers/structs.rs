@@ -5,7 +5,7 @@ use crate::core::indexer::{
     default_recycle_bin_column_size,
 };
 use crate::core::utils::thumbnails::ThumbnailService;
-use crate::gui::utils::{DeleteProgress, SortKey, hsl_to_color32};
+use crate::gui::utils::{FileOpProgress, SortKey, hsl_to_color32};
 use crate::gui::windows::containers::enums::{
     ItemViewerAction, ItemViewerHeaderColumn, ItemViewerNavAction,
 };
@@ -895,12 +895,28 @@ pub struct TagInfo {
     pub color: egui::Color32,
 }
 
-/// UI-side state for an in-flight background delete and its progress window.
-pub struct DeleteProgressState {
-    pub rx: Receiver<DeleteProgress>,
+/// What to do once a background file operation finishes. Each variant carries the
+/// data its completion step needs; the work runs on the UI thread in
+/// `handle_file_op_progress`.
+pub enum FileOpCompletion {
+    /// Delete: prune tags for paths that are actually gone, then reload.
+    Delete { paths: Vec<PathBuf> },
+    /// Clipboard paste: remap tags if it was a cut, reselect the pasted items.
+    Paste {
+        sources: Vec<PathBuf>,
+        target_dir: PathBuf,
+        before_entries: HashSet<PathBuf>,
+        is_cut: bool,
+    },
+}
+
+/// UI-side state for an in-flight background file operation and its progress window.
+pub struct FileOpState {
+    pub rx: Receiver<FileOpProgress>,
     pub cancel: Arc<AtomicBool>,
-    /// Paths originally requested for deletion; used for tag pruning on completion.
-    pub paths: Vec<PathBuf>,
+    /// i18n key for the window title (e.g. `delete_progress_title`).
+    pub title_key: &'static str,
+    pub completion: FileOpCompletion,
     pub started: bool,
     pub total: u32,
     pub done: u32,

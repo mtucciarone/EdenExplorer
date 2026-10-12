@@ -11,8 +11,8 @@ use crate::gui::theme::{
     ThemeMode, ThemePalette, apply_font_to_context, get_default_palette, set_palette,
 };
 use crate::gui::utils::{
-    ClipboardFileRead, DeleteProgress, SortColumn, SortKey, delete_paths_async,
-    directory_child_paths, is_clipboard_cut, read_clipboard_files, restore_paths_native,
+    ClipboardFileRead, FileOpKind, FileOpProgress, SortColumn, SortKey, directory_child_paths,
+    file_op_async, is_clipboard_cut, read_clipboard_files, restore_paths_native,
     selection_paths_after_paste, set_clipboard_files, show_copy_move_dialog, sort_files_by_keys,
 };
 use crate::gui::windows::about::draw_about_window;
@@ -21,7 +21,7 @@ use crate::gui::windows::containers::enums::{
 };
 use crate::gui::windows::containers::itemviewer_navbar::open_default_terminal;
 use crate::gui::windows::containers::structs::{
-    DeleteProgressState, FavoriteItem, FilterState, GalleryThumbnailSize,
+    FavoriteItem, FileOpCompletion, FileOpState, FilterState, GalleryThumbnailSize,
     ItemViewerColumnFitRequest, ItemViewerColumnState, ItemViewerDisplayMode,
     ItemViewerFolderSizeState, ItemViewerNavBarAction, RenameState, SidebarAction, SplitSide,
     TabState, TabView, TabsAction, TopbarAction,
@@ -452,41 +452,36 @@ impl MainWindow {
         }
     }
 
-    /// Polls the background delete worker, updates the progress window state, and
-    /// on completion prunes tags for paths that are actually gone and reloads.
-    pub fn handle_delete_progress(&mut self, ctx: &egui::Context) {
+    /// Polls the background file-operation worker, updates the progress window
+    /// state, and on completion runs the operation's post-step and reloads.
+    pub fn handle_file_op_progress(&mut self, ctx: &egui::Context) {
         enum Outcome {
             Running {
                 started: bool,
             },
             Done {
-                paths: Vec<PathBuf>,
                 cancelled: bool,
                 error: Option<String>,
             },
         }
 
-        let outcome = if let Some(state) = self.delete_progress.as_mut() {
+        let outcome = if let Some(state) = self.file_op.as_mut() {
             let mut finished = None;
             while let Ok(msg) = state.rx.try_recv() {
                 match msg {
-                    DeleteProgress::Started => state.started = true,
-                    DeleteProgress::Progress { total, done } => {
+                    FileOpProgress::Started => state.started = true,
+                    FileOpProgress::Progress { total, done } => {
                         state.total = total;
                         state.done = done;
                     }
-                    DeleteProgress::Item { name } => state.current_item = name,
-                    DeleteProgress::Finished { cancelled, error } => {
+                    FileOpProgress::Item { name } => state.current_item = name,
+                    FileOpProgress::Finished { cancelled, error } => {
                         finished = Some((cancelled, error))
                     }
                 }
             }
             match finished {
-                Some((cancelled, error)) => Outcome::Done {
-                    paths: std::mem::take(&mut state.paths),
-                    cancelled,
-                    error,
-                },
+                Some((cancelled, error)) => Outcome::Done { cancelled, error },
                 None => Outcome::Running {
                     started: state.started,
                 },
@@ -496,19 +491,32 @@ impl MainWindow {
         };
 
         match outcome {
-            Outcome::Done {
-                paths,
-                cancelled,
-                error,
-            } => {
-                self.delete_progress = None;
+            Outcome::Done { cancelled, error } => {
+                let state = self.file_op.take().expect("file_op present");
                 if let Some(e) = error {
                     if cancelled {
-                        eprintln!("Delete cancelled: {}", e);
+                        eprintln!("File operation cancelled: {}", e);
                     } else {
-                        eprintln!("Native delete failed: {}", e);
+                        eprintln!("File operation failed: {}", e);
                     }
                 }
+                self.run_file_op_completion(state.completion);
+                ctx.request_repaint();
+            }
+            Outcome::Running { started } => {
+                // Keep the progress window animating while it's visible.
+                if started {
+                    ctx.request_repaint();
+                }
+            }
+        }
+    }
+
+    /// Post-processing after a background file operation completes (UI thread).
+    /// Tag bookkeeping differs per operation; the view is always reloaded.
+    fn run_file_op_completion(&mut self, completion: FileOpCompletion) {
+        match completion {
+            FileOpCompletion::Delete { paths } => {
                 // Prune tags only for paths that are actually gone, so a partial
                 // delete or cancellation doesn't drop tags for surviving files.
                 let mut tags_changed = false;
@@ -520,16 +528,27 @@ impl MainWindow {
                 if tags_changed {
                     self.persist_tags();
                 }
-                self.load_path();
-                ctx.request_repaint();
             }
-            Outcome::Running { started } => {
-                // Keep the progress window animating while it's visible.
-                if started {
-                    ctx.request_repaint();
+            FileOpCompletion::Paste {
+                sources,
+                target_dir,
+                before_entries,
+                is_cut,
+            } => {
+                if is_cut && self.move_tagged_paths_to_dir(&sources, &target_dir) {
+                    self.persist_tags();
+                }
+                let pasted = selection_paths_after_paste(&target_dir, &before_entries, &sources);
+                if !pasted.is_empty() {
+                    let side = self.focused_split;
+                    self.active_tab_mut()
+                        .view_mut(side)
+                        .explorer_state
+                        .pending_selection_paths = Some(pasted);
                 }
             }
         }
+        self.load_path();
     }
 
     fn apply_item_viewer_column_order(
@@ -981,9 +1000,7 @@ impl MainWindow {
                 let _ = copy_text_to_clipboard(self.hwnd, &text);
             }
             ItemViewerContextAction::Paste => {
-                if let Err(e) = self.paste_clipboard_native() {
-                    eprintln!("Paste failed: {}", e);
-                }
+                self.paste_clipboard_native();
             }
             ItemViewerContextAction::Restore(paths) => {
                 let recycle_bin_pidls: Vec<Vec<u8>> = {
@@ -1080,8 +1097,8 @@ impl MainWindow {
                 self.rename_state = None;
             }
             ItemViewerContextAction::Delete(paths) => {
-                // Ignore a second delete while one is already in flight.
-                if self.delete_progress.is_some() {
+                // Ignore a second operation while one is already in flight.
+                if self.file_op.is_some() {
                     return;
                 }
 
@@ -1092,19 +1109,20 @@ impl MainWindow {
                 let notify: Arc<dyn Fn() + Send + Sync> =
                     Arc::new(|| crate::gui::windows::windowsoverrides::request_repaint());
 
-                delete_paths_async(
+                file_op_async(
+                    FileOpKind::Delete { allow_undo },
                     paths.clone(),
-                    allow_undo,
                     owner_hwnd,
                     tx,
                     cancel.clone(),
                     notify,
                 );
 
-                self.delete_progress = Some(DeleteProgressState {
+                self.file_op = Some(FileOpState {
                     rx,
                     cancel,
-                    paths,
+                    title_key: "delete_progress_title",
+                    completion: FileOpCompletion::Delete { paths },
                     started: false,
                     total: 0,
                     done: 0,
@@ -1117,70 +1135,65 @@ impl MainWindow {
         }
     }
 
-    pub fn paste_clipboard_native(&mut self) -> windows::core::Result<()> {
-        use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
-        use windows::Win32::UI::Shell::{
-            FOF_ALLOWUNDO, FileOperation, IFileOperation, IShellItem, SHCreateItemFromParsingName,
-        };
-        use windows::core::HSTRING;
+    pub fn paste_clipboard_native(&mut self) {
+        // One file operation at a time.
+        if self.file_op.is_some() {
+            return;
+        }
 
         let paths = match read_clipboard_files() {
             ClipboardFileRead::Files(paths) if !paths.is_empty() => paths,
-            _ => return Ok(()),
+            _ => return,
         };
 
         if self.current_nav().is_recycle_bin() {
-            return Ok(());
+            return;
         }
 
         let is_cut = is_clipboard_cut();
         let target_dir = self.current_nav().current.clone();
         let before_entries = directory_child_paths(&target_dir);
 
-        unsafe {
-            let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
+        let (tx, rx) = unbounded();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let owner_hwnd = self.hwnd.map(|h| h.0 as isize).unwrap_or(0);
+        let notify: Arc<dyn Fn() + Send + Sync> =
+            Arc::new(|| crate::gui::windows::windowsoverrides::request_repaint());
 
-            // Leave collision handling to the Windows shell. In particular, a folder with the
-            // same name in the target should produce Explorer's merge confirmation instead of
-            // silently creating a " - Copy" sibling.
-            file_op.SetOperationFlags(FOF_ALLOWUNDO)?;
-
-            let target_item: IShellItem = SHCreateItemFromParsingName(
-                &HSTRING::from(self.current_nav().current.to_string_lossy().to_string()),
-                None,
-            )?;
-
-            for path in &paths {
-                let source_item: IShellItem = SHCreateItemFromParsingName(
-                    &HSTRING::from(path.to_string_lossy().to_string()),
-                    None,
-                )?;
-
-                if is_cut {
-                    file_op.MoveItem(&source_item, &target_item, None, None)?;
-                } else {
-                    file_op.CopyItem(&source_item, &target_item, None, None)?;
-                }
+        // Collision handling stays with the shell: FOF_SILENT hides only the
+        // progress dialog, not the merge/rename confirmations.
+        let kind = if is_cut {
+            FileOpKind::Move {
+                dest: target_dir.clone(),
             }
+        } else {
+            FileOpKind::Copy {
+                dest: target_dir.clone(),
+            }
+        };
+        let title_key = if is_cut {
+            "move_progress_title"
+        } else {
+            "copy_progress_title"
+        };
 
-            file_op.PerformOperations()?;
-        }
+        file_op_async(kind, paths.clone(), owner_hwnd, tx, cancel.clone(), notify);
 
-        if is_cut && self.move_tagged_paths_to_dir(&paths, &target_dir) {
-            self.persist_tags();
-        }
-
-        let pasted_paths = selection_paths_after_paste(&target_dir, &before_entries, &paths);
-        if !pasted_paths.is_empty() {
-            let side = self.focused_split;
-            self.active_tab_mut()
-                .view_mut(side)
-                .explorer_state
-                .pending_selection_paths = Some(pasted_paths);
-        }
-
-        self.load_path();
-        Ok(())
+        self.file_op = Some(FileOpState {
+            rx,
+            cancel,
+            title_key,
+            completion: FileOpCompletion::Paste {
+                sources: paths,
+                target_dir,
+                before_entries,
+                is_cut,
+            },
+            started: false,
+            total: 0,
+            done: 0,
+            current_item: String::new(),
+        });
     }
 
     pub fn open_properties_multi(&self, paths: &[PathBuf]) {
@@ -2781,15 +2794,16 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
     }
 }
 
-/// Modal progress window for an in-flight background delete. Mirrors the tag
-/// popups: a dimming backdrop plus a centered, non-collapsible window.
-pub fn draw_delete_progress_window(
+/// Modal progress window for an in-flight background file operation (delete /
+/// move / copy). Mirrors the tag popups: a dimming backdrop plus a centered,
+/// non-collapsible window. The title comes from `state.title_key`.
+pub fn draw_file_op_window(
     ctx: &egui::Context,
     i18n: &I18n,
     palette: &ThemePalette,
-    state: &DeleteProgressState,
+    state: &FileOpState,
 ) {
-    egui::Area::new(egui::Id::new("delete_progress_modal_bg"))
+    egui::Area::new(egui::Id::new("file_op_modal_bg"))
         .order(egui::Order::Middle)
         .interactable(true)
         .show(ctx, |ui| {
@@ -2798,7 +2812,7 @@ pub fn draw_delete_progress_window(
                 .rect_filled(rect, 0.0, palette.modal_background_effect_color);
         });
 
-    egui::Window::new(i18n.tr("delete_progress_title"))
+    egui::Window::new(i18n.tr(state.title_key))
         .collapsible(false)
         .resizable(false)
         .default_width(420.0)

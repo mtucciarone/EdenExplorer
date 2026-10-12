@@ -134,14 +134,15 @@ pub fn filename_has_valid_characters_realtime(name: &str) -> bool {
     true
 }
 
-/// Progress messages streamed from the background delete worker to the UI thread.
+/// Progress messages streamed from a background shell file-operation worker to
+/// the UI thread.
 #[derive(Clone, Debug)]
-pub enum DeleteProgress {
+pub enum FileOpProgress {
     /// The shell operation began (fires after any confirmation prompt is accepted).
     Started,
     /// Overall work counters reported by the shell.
     Progress { total: u32, done: u32 },
-    /// Absolute path of the item currently being deleted.
+    /// Absolute path of the item currently being processed.
     Item { name: String },
     /// The operation finished. `cancelled` reflects a user-initiated abort.
     Finished {
@@ -150,22 +151,32 @@ pub enum DeleteProgress {
     },
 }
 
+/// Which shell operation `file_op_async` should perform on the given sources.
+pub enum FileOpKind {
+    /// Delete to the recycle bin (`allow_undo`) or permanently.
+    Delete { allow_undo: bool },
+    /// Move every source into `dest`.
+    Move { dest: PathBuf },
+    /// Copy every source into `dest`.
+    Copy { dest: PathBuf },
+}
+
 #[implement(IFileOperationProgressSink)]
-struct DeleteProgressSink {
-    tx: Sender<DeleteProgress>,
+struct FileOpProgressSink {
+    tx: Sender<FileOpProgress>,
     cancel: Arc<AtomicBool>,
     notify: Arc<dyn Fn() + Send + Sync>,
-    /// Number of top-level items we asked the shell to delete.
+    /// Number of top-level items we asked the shell to process.
     base_total: u32,
-    /// Items confirmed deleted via `PostDeleteItem` — the reliable per-item signal.
+    /// Items confirmed done via a `Post*Item` callback — the reliable per-item signal.
     post_count: AtomicU32,
     /// Latest figures from the shell's `UpdateProgress` (may count sub-items).
     work_total: AtomicU32,
     work_sofar: AtomicU32,
 }
 
-impl DeleteProgressSink {
-    fn emit(&self, msg: DeleteProgress) {
+impl FileOpProgressSink {
+    fn emit(&self, msg: FileOpProgress) {
         let _ = self.tx.send(msg);
         (self.notify)();
     }
@@ -174,7 +185,7 @@ impl DeleteProgressSink {
         self.cancel.load(Ordering::Relaxed)
     }
 
-    /// Progress is driven mainly by `PostDeleteItem` counts; the shell's
+    /// Progress is driven mainly by `Post*Item` counts; the shell's
     /// `UpdateProgress` figures are folded in as a secondary signal (whichever is
     /// further along wins), because `iWorkSoFar` frequently stays 0 for deletes.
     fn emit_progress(&self) {
@@ -184,7 +195,28 @@ impl DeleteProgressSink {
             .load(Ordering::Relaxed)
             .max(self.work_sofar.load(Ordering::Relaxed))
             .min(total);
-        self.emit(DeleteProgress::Progress { total, done });
+        self.emit(FileOpProgress::Progress { total, done });
+    }
+
+    /// Shared `Pre*Item` body: abort if cancelled, else report the current item.
+    fn report_item(&self, psiitem: Ref<'_, IShellItem>) -> windows::core::Result<()> {
+        if self.cancelled() {
+            return cancel_abort();
+        }
+        if let Some(name) = shell_item_path(psiitem) {
+            self.emit(FileOpProgress::Item { name });
+        }
+        Ok(())
+    }
+
+    /// Shared `Post*Item` body: abort if cancelled, else advance the counter.
+    fn report_post(&self) -> windows::core::Result<()> {
+        if self.cancelled() {
+            return cancel_abort();
+        }
+        self.post_count.fetch_add(1, Ordering::Relaxed);
+        self.emit_progress();
+        Ok(())
     }
 }
 
@@ -219,9 +251,9 @@ unsafe fn pwstr_to_string(pw: PWSTR) -> String {
     String::from_utf16_lossy(slice)
 }
 
-impl IFileOperationProgressSink_Impl for DeleteProgressSink_Impl {
+impl IFileOperationProgressSink_Impl for FileOpProgressSink_Impl {
     fn StartOperations(&self) -> windows::core::Result<()> {
-        self.emit(DeleteProgress::Started);
+        self.emit(FileOpProgress::Started);
         // Seed the total so the bar shows "0 / N" immediately instead of a spinner.
         self.emit_progress();
         Ok(())
@@ -254,11 +286,11 @@ impl IFileOperationProgressSink_Impl for DeleteProgressSink_Impl {
     fn PreMoveItem(
         &self,
         _dwflags: u32,
-        _psiitem: Ref<'_, IShellItem>,
+        psiitem: Ref<'_, IShellItem>,
         _psidestinationfolder: Ref<'_, IShellItem>,
         _psznewname: &PCWSTR,
     ) -> windows::core::Result<()> {
-        Ok(())
+        self.report_item(psiitem)
     }
 
     fn PostMoveItem(
@@ -270,17 +302,17 @@ impl IFileOperationProgressSink_Impl for DeleteProgressSink_Impl {
         _hrmove: HRESULT,
         _psinewlycreated: Ref<'_, IShellItem>,
     ) -> windows::core::Result<()> {
-        Ok(())
+        self.report_post()
     }
 
     fn PreCopyItem(
         &self,
         _dwflags: u32,
-        _psiitem: Ref<'_, IShellItem>,
+        psiitem: Ref<'_, IShellItem>,
         _psidestinationfolder: Ref<'_, IShellItem>,
         _psznewname: &PCWSTR,
     ) -> windows::core::Result<()> {
-        Ok(())
+        self.report_item(psiitem)
     }
 
     fn PostCopyItem(
@@ -292,7 +324,7 @@ impl IFileOperationProgressSink_Impl for DeleteProgressSink_Impl {
         _hrcopy: HRESULT,
         _psinewlycreated: Ref<'_, IShellItem>,
     ) -> windows::core::Result<()> {
-        Ok(())
+        self.report_post()
     }
 
     fn PreDeleteItem(
@@ -300,13 +332,7 @@ impl IFileOperationProgressSink_Impl for DeleteProgressSink_Impl {
         _dwflags: u32,
         psiitem: Ref<'_, IShellItem>,
     ) -> windows::core::Result<()> {
-        if self.cancelled() {
-            return cancel_abort();
-        }
-        if let Some(name) = shell_item_path(psiitem) {
-            self.emit(DeleteProgress::Item { name });
-        }
-        Ok(())
+        self.report_item(psiitem)
     }
 
     fn PostDeleteItem(
@@ -316,12 +342,7 @@ impl IFileOperationProgressSink_Impl for DeleteProgressSink_Impl {
         _hrdelete: HRESULT,
         _psinewlycreated: Ref<'_, IShellItem>,
     ) -> windows::core::Result<()> {
-        if self.cancelled() {
-            return cancel_abort();
-        }
-        self.post_count.fetch_add(1, Ordering::Relaxed);
-        self.emit_progress();
-        Ok(())
+        self.report_post()
     }
 
     fn PreNewItem(
@@ -371,24 +392,34 @@ impl IFileOperationProgressSink_Impl for DeleteProgressSink_Impl {
     }
 }
 
-/// Runs a shell delete on a background STA thread so the UI thread never blocks
-/// (blocking it previously made Windows flag EdenExplorer as "Not Responding" on
-/// large deletes). Progress is streamed to `tx`; `notify` requests a UI repaint
-/// from the worker so updates appear without busy-polling.
+/// Runs a shell file operation (delete/move/copy) on a background STA thread so
+/// the UI thread never blocks (blocking it previously made Windows flag
+/// EdenExplorer as "Not Responding" on large operations). Progress is streamed to
+/// `tx`; `notify` requests a UI repaint from the worker so updates appear without
+/// busy-polling.
 ///
 /// Windows' own progress dialog is suppressed (`FOF_SILENT`) in favor of the
-/// caller's UI, while the recycle-bin confirmation prompt is preserved (we do not
-/// set `FOF_NOCONFIRMATION`). `owner_hwnd` is the raw pointer value of the window
-/// that should own any shell dialog (0 for none). Setting `cancel` aborts the
-/// operation at the next item boundary.
-pub fn delete_paths_async(
-    paths: Vec<PathBuf>,
-    allow_undo: bool,
+/// caller's UI, while confirmation prompts (recycle-bin / merge collisions) are
+/// preserved (we do not set `FOF_NOCONFIRMATION`). `owner_hwnd` is the raw pointer
+/// value of the window that should own any shell dialog (0 for none). Setting
+/// `cancel` aborts the operation at the next item boundary.
+pub fn file_op_async(
+    kind: FileOpKind,
+    sources: Vec<PathBuf>,
     owner_hwnd: isize,
-    tx: Sender<DeleteProgress>,
+    tx: Sender<FileOpProgress>,
     cancel: Arc<AtomicBool>,
     notify: Arc<dyn Fn() + Send + Sync>,
 ) {
+    if sources.is_empty() {
+        let _ = tx.send(FileOpProgress::Finished {
+            cancelled: false,
+            error: None,
+        });
+        notify();
+        return;
+    }
+
     thread::spawn(move || {
         use windows::Win32::System::Com::{
             CLSCTX_ALL, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize,
@@ -408,7 +439,11 @@ pub fn delete_paths_async(
                 let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
 
                 // FOF_SILENT hides Windows' progress dialog (we render our own);
-                // omitting FOF_NOCONFIRMATION keeps the confirmation prompt.
+                // omitting FOF_NOCONFIRMATION keeps confirmation prompts.
+                let allow_undo = match &kind {
+                    FileOpKind::Delete { allow_undo } => *allow_undo,
+                    FileOpKind::Move { .. } | FileOpKind::Copy { .. } => true,
+                };
                 let undo = if allow_undo { FOF_ALLOWUNDO.0 } else { 0 };
                 file_op.SetOperationFlags(FILEOPERATION_FLAGS(FOF_SILENT.0 | undo))?;
 
@@ -416,8 +451,8 @@ pub fn delete_paths_async(
                     file_op.SetOwnerWindow(HWND(owner_hwnd as *mut core::ffi::c_void))?;
                 }
 
-                let base_total = paths.len() as u32;
-                let sink: IFileOperationProgressSink = DeleteProgressSink {
+                let base_total = sources.len() as u32;
+                let sink: IFileOperationProgressSink = FileOpProgressSink {
                     tx: tx.clone(),
                     cancel: cancel.clone(),
                     notify: notify.clone(),
@@ -429,10 +464,29 @@ pub fn delete_paths_async(
                 .into();
                 let cookie = file_op.Advise(&sink)?;
 
-                for path in &paths {
+                // Build the destination item once for move/copy operations.
+                let dest_item: Option<IShellItem> = match &kind {
+                    FileOpKind::Delete { .. } => None,
+                    FileOpKind::Move { dest } | FileOpKind::Copy { dest } => {
+                        let hdest = HSTRING::from(dest.to_string_lossy().as_ref());
+                        Some(SHCreateItemFromParsingName(&hdest, None)?)
+                    }
+                };
+
+                for path in &sources {
                     let hpath = HSTRING::from(path.to_string_lossy().as_ref());
                     let item: IShellItem = SHCreateItemFromParsingName(&hpath, None)?;
-                    file_op.DeleteItem(&item, None)?;
+                    match &kind {
+                        FileOpKind::Delete { .. } => {
+                            file_op.DeleteItem(&item, None)?;
+                        }
+                        FileOpKind::Move { .. } => {
+                            file_op.MoveItem(&item, dest_item.as_ref().unwrap(), None, None)?;
+                        }
+                        FileOpKind::Copy { .. } => {
+                            file_op.CopyItem(&item, dest_item.as_ref().unwrap(), None, None)?;
+                        }
+                    }
                 }
 
                 file_op.PerformOperations()?;
@@ -440,7 +494,7 @@ pub fn delete_paths_async(
                 Ok(())
             })();
 
-            let _ = tx.send(DeleteProgress::Finished {
+            let _ = tx.send(FileOpProgress::Finished {
                 cancelled: cancel.load(Ordering::Relaxed),
                 error: result.err().map(|e| e.to_string()),
             });
