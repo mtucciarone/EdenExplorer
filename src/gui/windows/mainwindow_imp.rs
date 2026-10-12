@@ -11,9 +11,9 @@ use crate::gui::theme::{
     ThemeMode, ThemePalette, apply_font_to_context, get_default_palette, set_palette,
 };
 use crate::gui::utils::{
-    ClipboardFileRead, SortColumn, SortKey, delete_paths_native, directory_child_paths,
-    is_clipboard_cut, read_clipboard_files, restore_paths_native, selection_paths_after_paste,
-    set_clipboard_files, show_copy_move_dialog, sort_files_by_keys,
+    ClipboardFileRead, DeleteProgress, SortColumn, SortKey, delete_paths_async,
+    directory_child_paths, is_clipboard_cut, read_clipboard_files, restore_paths_native,
+    selection_paths_after_paste, set_clipboard_files, show_copy_move_dialog, sort_files_by_keys,
 };
 use crate::gui::windows::about::draw_about_window;
 use crate::gui::windows::containers::enums::{
@@ -21,10 +21,10 @@ use crate::gui::windows::containers::enums::{
 };
 use crate::gui::windows::containers::itemviewer_navbar::open_default_terminal;
 use crate::gui::windows::containers::structs::{
-    FavoriteItem, FilterState, GalleryThumbnailSize, ItemViewerColumnFitRequest,
-    ItemViewerColumnState, ItemViewerDisplayMode, ItemViewerFolderSizeState,
-    ItemViewerNavBarAction, RenameState, SidebarAction, SplitSide, TabState, TabView, TabsAction,
-    TopbarAction,
+    DeleteProgressState, FavoriteItem, FilterState, GalleryThumbnailSize,
+    ItemViewerColumnFitRequest, ItemViewerColumnState, ItemViewerDisplayMode,
+    ItemViewerFolderSizeState, ItemViewerNavBarAction, RenameState, SidebarAction, SplitSide,
+    TabState, TabView, TabsAction, TopbarAction,
 };
 use crate::gui::windows::customizetheme::draw_theme_customizer;
 use crate::gui::windows::enums::{SettingsAction, ThemeCustomizerAction};
@@ -449,6 +449,86 @@ impl MainWindow {
             self.tags_state.tag_count_map()
         } else {
             std::collections::HashMap::new()
+        }
+    }
+
+    /// Polls the background delete worker, updates the progress window state, and
+    /// on completion prunes tags for paths that are actually gone and reloads.
+    pub fn handle_delete_progress(&mut self, ctx: &egui::Context) {
+        enum Outcome {
+            Running {
+                started: bool,
+            },
+            Done {
+                paths: Vec<PathBuf>,
+                cancelled: bool,
+                error: Option<String>,
+            },
+        }
+
+        let outcome = if let Some(state) = self.delete_progress.as_mut() {
+            let mut finished = None;
+            while let Ok(msg) = state.rx.try_recv() {
+                match msg {
+                    DeleteProgress::Started => state.started = true,
+                    DeleteProgress::Progress { total, done } => {
+                        state.total = total;
+                        state.done = done;
+                    }
+                    DeleteProgress::Item { name } => state.current_item = name,
+                    DeleteProgress::Finished { cancelled, error } => {
+                        finished = Some((cancelled, error))
+                    }
+                }
+            }
+            match finished {
+                Some((cancelled, error)) => Outcome::Done {
+                    paths: std::mem::take(&mut state.paths),
+                    cancelled,
+                    error,
+                },
+                None => Outcome::Running {
+                    started: state.started,
+                },
+            }
+        } else {
+            return;
+        };
+
+        match outcome {
+            Outcome::Done {
+                paths,
+                cancelled,
+                error,
+            } => {
+                self.delete_progress = None;
+                if let Some(e) = error {
+                    if cancelled {
+                        eprintln!("Delete cancelled: {}", e);
+                    } else {
+                        eprintln!("Native delete failed: {}", e);
+                    }
+                }
+                // Prune tags only for paths that are actually gone, so a partial
+                // delete or cancellation doesn't drop tags for surviving files.
+                let mut tags_changed = false;
+                for path in &paths {
+                    if !path.exists() {
+                        tags_changed |= self.tags_state.remove_path_prefix(path);
+                    }
+                }
+                if tags_changed {
+                    self.persist_tags();
+                }
+                self.load_path();
+                ctx.request_repaint();
+            }
+            Outcome::Running { started } => {
+                // Keep the progress window animating while it's visible.
+                if started {
+                    ctx.request_repaint();
+                }
+            }
         }
     }
 
@@ -1000,23 +1080,36 @@ impl MainWindow {
                 self.rename_state = None;
             }
             ItemViewerContextAction::Delete(paths) => {
-                let allow_undo = !self.current_nav().is_recycle_bin();
-
-                if let Err(e) = delete_paths_native(paths.clone(), allow_undo) {
-                    eprintln!("Native delete failed: {:?}", e);
+                // Ignore a second delete while one is already in flight.
+                if self.delete_progress.is_some() {
                     return;
                 }
 
-                let mut tags_changed = false;
-                for path in &paths {
-                    tags_changed |= self.tags_state.remove_path_prefix(path);
-                }
+                let allow_undo = !self.current_nav().is_recycle_bin();
+                let (tx, rx) = unbounded();
+                let cancel = Arc::new(AtomicBool::new(false));
+                let owner_hwnd = self.hwnd.map(|h| h.0 as isize).unwrap_or(0);
+                let notify: Arc<dyn Fn() + Send + Sync> =
+                    Arc::new(|| crate::gui::windows::windowsoverrides::request_repaint());
 
-                if tags_changed {
-                    self.persist_tags();
-                }
+                delete_paths_async(
+                    paths.clone(),
+                    allow_undo,
+                    owner_hwnd,
+                    tx,
+                    cancel.clone(),
+                    notify,
+                );
 
-                self.load_path();
+                self.delete_progress = Some(DeleteProgressState {
+                    rx,
+                    cancel,
+                    paths,
+                    started: false,
+                    total: 0,
+                    done: 0,
+                    current_item: String::new(),
+                });
             }
             ItemViewerContextAction::Properties(paths) => {
                 self.open_properties_multi(&paths);
@@ -2686,6 +2779,87 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             }
         }
     }
+}
+
+/// Modal progress window for an in-flight background delete. Mirrors the tag
+/// popups: a dimming backdrop plus a centered, non-collapsible window.
+pub fn draw_delete_progress_window(
+    ctx: &egui::Context,
+    i18n: &I18n,
+    palette: &ThemePalette,
+    state: &DeleteProgressState,
+) {
+    egui::Area::new(egui::Id::new("delete_progress_modal_bg"))
+        .order(egui::Order::Middle)
+        .interactable(true)
+        .show(ctx, |ui| {
+            let rect = ctx.content_rect();
+            ui.painter()
+                .rect_filled(rect, 0.0, palette.modal_background_effect_color);
+        });
+
+    egui::Window::new(i18n.tr("delete_progress_title"))
+        .collapsible(false)
+        .resizable(false)
+        .default_width(420.0)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .frame(
+            egui::Frame::popup(&ctx.style_of(ctx.theme()))
+                .corner_radius(egui::CornerRadius::same(8)),
+        )
+        .show(ctx, |ui| {
+            let mut style = (**ui.style()).clone();
+            style.text_styles = [
+                (egui::TextStyle::Heading, egui::FontId::proportional(14.0)),
+                (
+                    egui::TextStyle::Body,
+                    egui::FontId::proportional(palette.text_size),
+                ),
+                (
+                    egui::TextStyle::Button,
+                    egui::FontId::proportional(palette.text_size),
+                ),
+                (
+                    egui::TextStyle::Small,
+                    egui::FontId::proportional(palette.text_size),
+                ),
+            ]
+            .into();
+            ui.set_style(style);
+            ui.set_width(380.0);
+
+            if state.total > 0 {
+                let fraction = (state.done as f32 / state.total as f32).clamp(0.0, 1.0);
+                ui.add(
+                    egui::ProgressBar::new(fraction)
+                        .desired_height(20.0)
+                        .text(format!("{} / {}", state.done, state.total)),
+                );
+            } else {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(i18n.tr("delete_progress_working"));
+                });
+            }
+
+            if !state.current_item.is_empty() {
+                ui.add_space(6.0);
+                let name = Path::new(&state.current_item)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| state.current_item.clone());
+                ui.label(
+                    egui::RichText::new(name)
+                        .size(palette.text_size)
+                        .color(palette.text_normal.linear_multiply(0.85)),
+                );
+            }
+
+            ui.add_space(12.0);
+            if ui.button(i18n.tr("cancel")).clicked() {
+                state.cancel.store(true, Ordering::Relaxed);
+            }
+        });
 }
 
 pub fn handle_draw_customizetheme_window(

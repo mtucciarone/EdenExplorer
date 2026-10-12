@@ -5,7 +5,7 @@ use crate::core::indexer::{
     default_recycle_bin_column_size,
 };
 use crate::core::utils::thumbnails::ThumbnailService;
-use crate::gui::utils::{SortKey, hsl_to_color32};
+use crate::gui::utils::{DeleteProgress, SortKey, hsl_to_color32};
 use crate::gui::windows::containers::enums::{
     ItemViewerAction, ItemViewerHeaderColumn, ItemViewerNavAction,
 };
@@ -19,6 +19,8 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 #[derive(Default)]
 pub struct ExplorerState {
@@ -891,6 +893,18 @@ pub struct TagGroup {
 pub struct TagInfo {
     pub name: String,
     pub color: egui::Color32,
+}
+
+/// UI-side state for an in-flight background delete and its progress window.
+pub struct DeleteProgressState {
+    pub rx: Receiver<DeleteProgress>,
+    pub cancel: Arc<AtomicBool>,
+    /// Paths originally requested for deletion; used for tag pruning on completion.
+    pub paths: Vec<PathBuf>,
+    pub started: bool,
+    pub total: u32,
+    pub done: u32,
+    pub current_item: String,
 }
 
 pub struct TagPickerState {
