@@ -277,21 +277,25 @@ pub fn draw_gallery_view(
                         Popup::context_menu(&response)
                             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                             .show(|ui| {
-                                handle_context_menu_actions(
-                                    ui,
-                                    i18n,
-                                    file,
-                                    explorer_state.selected_paths.contains(&file.path),
-                                    paste_enabled,
-                                    false,
-                                    false,
-                                    is_cut_mode && clipboard_set.contains(&file.path),
-                                    &mut action,
-                                    palette,
-                                    explorer_state,
-                                    settings_window,
-                                    hwnd,
-                                );
+                                egui::ScrollArea::vertical()
+                                    .max_height(ui.ctx().viewport_rect().height() * 0.75)
+                                    .show(ui, |ui| {
+                                        handle_context_menu_actions(
+                                            ui,
+                                            i18n,
+                                            file,
+                                            explorer_state.selected_paths.contains(&file.path),
+                                            paste_enabled,
+                                            false,
+                                            false,
+                                            is_cut_mode && clipboard_set.contains(&file.path),
+                                            &mut action,
+                                            palette,
+                                            explorer_state,
+                                            settings_window,
+                                            hwnd,
+                                        );
+                                    });
                             });
                     }
                 }

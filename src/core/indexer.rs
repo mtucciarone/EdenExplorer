@@ -259,7 +259,7 @@ fn default_recycle_bin_column_order() -> Vec<ItemViewerHeaderColumn> {
 }
 
 pub fn default_item_viewer_file_column_size() -> Vec<f32> {
-    vec![180.0, 60.0, 75.0, 160.0, 100.0, 100.0]
+    vec![180.0, 60.0, 75.0, 100.0, 100.0, 100.0]
 }
 
 pub fn default_item_viewer_drive_column_size() -> Vec<f32> {

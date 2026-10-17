@@ -573,21 +573,25 @@ pub fn draw_item_viewer(
                             Popup::context_menu(&row_resp)
                                 .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                                 .show(|ui| {
-                                    handle_context_menu_actions(
-                                        ui,
-                                        i18n,
-                                        file,
-                                        is_selected,
-                                        paste_enabled,
-                                        layout.is_drive_view,
-                                        is_recycle_bin_view,
-                                        is_cut,
-                                        &mut action,
-                                        palette,
-                                        explorer_state,
-                                        settings_window,
-                                        hwnd,
-                                    );
+                                    egui::ScrollArea::vertical()
+                                        .max_height(ui.ctx().viewport_rect().height() * 0.75)
+                                        .show(ui, |ui| {
+                                            handle_context_menu_actions(
+                                                ui,
+                                                i18n,
+                                                file,
+                                                is_selected,
+                                                paste_enabled,
+                                                layout.is_drive_view,
+                                                is_recycle_bin_view,
+                                                is_cut,
+                                                &mut action,
+                                                palette,
+                                                explorer_state,
+                                                settings_window,
+                                                hwnd,
+                                            );
+                                        });
                                 });
                         }
                     });

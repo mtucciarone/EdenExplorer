@@ -2,9 +2,7 @@ use crate::core::drives::is_raw_physical_drive_path;
 use crate::core::fs::FileItem;
 use crate::core::utils::files::filename_has_valid_characters_realtime;
 use crate::core::utils::text::apply_eden_text_overrides;
-use crate::core::utils::widgets::{
-    apply_eden_visual_color_overrides, apply_eden_visual_overrides, draw_checkbox,
-};
+use crate::core::utils::widgets::{apply_eden_visual_overrides, draw_checkbox};
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::{ThemePalette, apply_checkbox_colors};
@@ -23,7 +21,6 @@ use crate::gui::windows::containers::structs::{
 use crate::gui::windows::shell_context_menu::ShellContextMenu;
 use crate::gui::windows::structs::{SettingsWindow, ThemeCustomizer};
 use eframe::egui;
-use egui::ScrollArea;
 use egui::containers::{Popup, PopupCloseBehavior};
 use egui::{FontFamily, FontId};
 use egui_phosphor::regular;
@@ -264,77 +261,71 @@ pub fn handle_context_menu_actions(
         ui.close();
     }
 
+    let selected_paths = context_paths.clone();
+    let cache_miss = explorer_state
+        .windows_context_menu_cache
+        .as_ref()
+        .map(|cache| cache.selection != selected_paths)
+        .unwrap_or(true);
+
+    if cache_miss {
+        if let Some(hwnd) = hwnd {
+            explorer_state.windows_context_menu_cache =
+                ShellContextMenu::for_paths(&selected_paths, hwnd)
+                    .map(
+                        |menu| crate::gui::windows::containers::structs::WindowsContextMenuCache {
+                            selection: selected_paths.clone(),
+                            menu,
+                        },
+                    )
+                    .map(Some)
+                    .unwrap_or_else(|err| {
+                        eprintln!("Windows menu load failed: {}", err);
+                        None
+                    });
+        } else {
+            explorer_state.windows_context_menu_cache = None;
+        }
+    }
+
     if settings_window
         .current_settings
         .windows_context_menu_enabled
     {
-        ui.separator();
-        let selected_paths = context_paths.clone();
-        let toggle_label = if explorer_state.windows_context_menu_cache.is_some() {
-            i18n.tr("contextmenu_hide_windows_menu_items")
-        } else {
-            i18n.tr("contextmenu_show_windows_menu_items")
-        };
-
-        ui.menu_button(toggle_label, |ui| {
-            apply_eden_visual_overrides(ui, _palette);
-            apply_eden_visual_color_overrides(ui, _palette);
-            apply_eden_text_overrides(ui, _palette);
-
-            if let Some(hwnd) = hwnd {
-                let cache_miss = explorer_state
-                    .windows_context_menu_cache
-                    .as_ref()
-                    .map(|cache| cache.selection != selected_paths)
-                    .unwrap_or(true);
-
-                if cache_miss {
-                    explorer_state.windows_context_menu_cache =
-                        ShellContextMenu::for_paths(&selected_paths, hwnd)
-                            .map(|menu| {
-                                crate::gui::windows::containers::structs::WindowsContextMenuCache {
-                                    selection: selected_paths.clone(),
-                                    menu,
-                                }
-                            })
-                            .map(Some)
-                            .unwrap_or_else(|err| {
-                                eprintln!("Windows menu load failed: {}", err);
-                                None
-                            });
-                }
-
-                if let Some(cache) = explorer_state.windows_context_menu_cache.as_ref() {
-                    if cache.menu.items().is_empty() {
-                        ui.label("No Windows menu items for this selection.");
-                    } else {
-                        let row_height = _palette.text_size + 6.0;
-                        let min_height = (row_height * 6.0) + (ui.spacing().item_spacing.y * 5.0);
-                        let max_height = ui.ctx().viewport_rect().height() * 0.8;
-                        ScrollArea::vertical()
-                            .max_height(max_height)
-                            .min_scrolled_height(min_height)
-                            .show(ui, |ui| {
-                                for item in cache.menu.items() {
-                                    if ui
-                                        .add_enabled(!item.disabled, egui::Button::new(&item.label))
-                                        .clicked()
-                                    {
-                                        if let Err(err) = cache.menu.invoke(hwnd, item.id) {
-                                            eprintln!("Windows menu invoke failed: {}", err);
-                                        }
-                                        ui.close();
-                                    }
-                                }
-                            });
-                    }
-                } else {
-                    ui.label(i18n.tr("contextmenu_windows_menu_unavailable"));
-                }
-            } else {
-                ui.label(i18n.tr("contextmenu_windows_menu_available_missing"));
+        // The native mode owns the complete context menu. Close the egui
+        // popup after the shell menu returns so only one menu is visible.
+        if let (Some(hwnd), Some(cache)) =
+            (hwnd, explorer_state.windows_context_menu_cache.as_ref())
+        {
+            if let Err(err) = cache.menu.show_native(hwnd) {
+                eprintln!("Windows native menu failed: {}", err);
             }
-        });
+        }
+        ui.close();
+        return;
+    }
+
+    // Compatibility mode keeps Eden's menu and appends every Windows shell
+    // command directly below it, without a submenu or hover toggle.
+    ui.separator();
+    if let Some(cache) = explorer_state.windows_context_menu_cache.as_ref() {
+        for item in cache.menu.items() {
+            if ui
+                .add_enabled(!item.disabled, egui::Button::new(&item.label))
+                .clicked()
+            {
+                if let Some(hwnd) = hwnd {
+                    if let Err(err) = cache.menu.invoke(hwnd, item.id) {
+                        eprintln!("Windows menu invoke failed: {}", err);
+                    }
+                }
+                ui.close();
+            }
+        }
+    } else if hwnd.is_none() {
+        ui.label(i18n.tr("contextmenu_windows_menu_available_missing"));
+    } else {
+        ui.label(i18n.tr("contextmenu_windows_menu_unavailable"));
     }
 }
 
@@ -1851,7 +1842,7 @@ pub fn compute_item_viewer_column_layout(
     let default_deleted_width = (current_width * 0.20).max(100.0);
     let default_usage_width = (current_width * 0.20).max(150.0);
     let default_original_directory_width = (current_width * 0.20).max(200.0);
-    let default_tags_width = (current_width * 0.14).max(140.0);
+    let default_tags_width = (current_width * 0.035).max(35.0);
 
     let name_width = column_state
         .column_width(
@@ -2114,7 +2105,7 @@ fn compute_item_viewer_column_widths(
     widths.name = widths.name.max(220.0);
     widths.type_width = widths.type_width.max(60.0);
     widths.size_width = widths.size_width.max(75.0);
-    widths.tags_width = widths.tags_width.max(140.0);
+    widths.tags_width = widths.tags_width.max(35.0);
     widths.modified_width = widths.modified_width.max(120.0);
     widths.created_width = widths.created_width.max(120.0);
     widths.usage_width = widths.usage_width.max(150.0);

@@ -11,7 +11,7 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::{
     CreatePopupMenu, DestroyMenu, GetMenuItemCount, GetMenuItemInfoW, HMENU, MENUITEMINFOW,
     MFS_DISABLED, MFS_GRAYED, MFT_SEPARATOR, MIIM_FTYPE, MIIM_ID, MIIM_STATE, MIIM_STRING,
-    MIIM_SUBMENU,
+    MIIM_SUBMENU, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenuEx,
 };
 use windows::core::{Error, HRESULT, PCSTR, PCWSTR, PWSTR};
 
@@ -111,6 +111,28 @@ impl ShellContextMenu {
             self.context_menu
                 .InvokeCommand(&info as *const _ as *const CMINVOKECOMMANDINFO)
         }
+    }
+
+    /// Displays the complete shell-provided menu at the current pointer
+    /// position and invokes the command selected by the user.
+    pub fn show_native(&self, hwnd: HWND) -> windows::core::Result<()> {
+        let mut point = windows::Win32::Foundation::POINT::default();
+        unsafe {
+            windows::Win32::UI::WindowsAndMessaging::GetCursorPos(&mut point)?;
+            let command = TrackPopupMenuEx(
+                self.menu,
+                (TPM_RETURNCMD | TPM_RIGHTBUTTON).0,
+                point.x,
+                point.y,
+                hwnd,
+                None,
+            );
+            let command = command.0 as u32;
+            if command != 0 {
+                self.invoke(hwnd, command)?;
+            }
+        }
+        Ok(())
     }
 }
 
