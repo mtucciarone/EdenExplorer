@@ -7,6 +7,7 @@ use std::ffi::OsString;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
@@ -344,13 +345,22 @@ pub fn scan_dir_async(
     });
 }
 
-// ⚡ Fast, accurate folder size calculation with progress updates
-pub fn parallel_directory_scan(path: PathBuf, tx: Sender<(PathBuf, u64, bool)>) {
+// ⚡ Fast, accurate folder size calculation with progress updates.
+// Returns false if it stopped early because of shutdown or because the
+// receiver was dropped (the view navigated away, or its tab was closed).
+pub fn parallel_directory_scan(
+    path: PathBuf,
+    tx: Sender<(PathBuf, u64, bool)>,
+    shutdown: &AtomicBool,
+) -> bool {
     let mut total_size = 0u64;
     let mut stack = vec![path.clone()];
     let mut last_emit = Instant::now();
 
     while let Some(dir) = stack.pop() {
+        if shutdown.load(Ordering::Relaxed) {
+            return false;
+        }
         if let Some(handle) = open_directory_handle(&dir) {
             unsafe {
                 let mut buffer = vec![0u8; 64 * 1024];
@@ -410,7 +420,10 @@ pub fn parallel_directory_scan(path: PathBuf, tx: Sender<(PathBuf, u64, bool)>) 
 
                     // Emit progress every 100ms
                     if last_emit.elapsed() > Duration::from_millis(100) {
-                        let _ = tx.send((path.clone(), total_size, false));
+                        if tx.send((path.clone(), total_size, false)).is_err() {
+                            let _ = CloseHandle(handle);
+                            return false;
+                        }
                         last_emit = Instant::now();
                     }
                 }
@@ -421,7 +434,7 @@ pub fn parallel_directory_scan(path: PathBuf, tx: Sender<(PathBuf, u64, bool)>) 
     }
 
     // Final emit
-    let _ = tx.send((path, total_size, true));
+    tx.send((path, total_size, true)).is_ok()
 }
 
 #[derive(Clone, Debug)]

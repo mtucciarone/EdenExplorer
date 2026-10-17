@@ -2233,16 +2233,12 @@ pub fn calculate_folder_sizes_parallel(
                     Err(_) => break, // Channel closed
                 };
 
-                // Optional: check shutdown inside heavy work
-                if shutdown.load(Ordering::Relaxed) {
+                // Stop on shutdown, or once nobody is listening for results
+                // (the view navigated away or was closed). Otherwise the scan
+                // keeps walking the whole tree in the background.
+                if !parallel_directory_scan(path, tx.clone(), &shutdown) {
                     break;
                 }
-
-                parallel_directory_scan(path, tx.clone());
-
-                // Optional: if parallel_directory_scan is very CPU heavy,
-                // you can add a small yield:
-                // thread::yield_now();
             }
         });
 
