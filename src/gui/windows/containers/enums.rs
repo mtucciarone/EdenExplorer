@@ -55,7 +55,9 @@ pub enum ItemViewerAction {
         sources: Vec<PathBuf>,
         target_dir: PathBuf,
     },
-    ColumnSizesChanged,
+    ColumnSizesChanged {
+        finished: bool,
+    },
 }
 
 #[derive(Clone, Debug)]

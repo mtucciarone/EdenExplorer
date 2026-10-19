@@ -168,6 +168,39 @@ fn color32_to_dwm(color: egui::Color32) -> u32 {
     (b << 16) | (g << 8) | r
 }
 
+fn apply_window_colors(hwnd: HWND, palette: &ThemePalette) {
+    unsafe {
+        let border_color = color32_to_dwm(palette.borders_default);
+        let caption_color = color32_to_dwm(palette.application_bg_color);
+        let text_color = color32_to_dwm(palette.application_bg_color);
+
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWINDOWATTRIBUTE(34),
+            &border_color as *const _ as _,
+            std::mem::size_of::<u32>() as u32,
+        );
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWINDOWATTRIBUTE(35),
+            &caption_color as *const _ as _,
+            std::mem::size_of::<u32>() as u32,
+        );
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWINDOWATTRIBUTE(36),
+            &text_color as *const _ as _,
+            std::mem::size_of::<u32>() as u32,
+        );
+    }
+}
+
+/// Update DWM colors without changing the window frame or triggering a new
+/// non-client-area calculation.
+pub fn apply_window_theme(hwnd: HWND, palette: &ThemePalette) {
+    apply_window_colors(hwnd, palette);
+}
+
 pub fn apply_window_override(hwnd: HWND, palette: &ThemePalette) {
     unsafe {
         let style = GetWindowLongW(hwnd, GWL_STYLE);
@@ -205,28 +238,7 @@ pub fn apply_window_override(hwnd: HWND, palette: &ThemePalette) {
             cyBottomHeight: 0,
         };
 
-        let border_color = color32_to_dwm(palette.borders_default);
-        let caption_color = color32_to_dwm(palette.application_bg_color);
-        let text_color = color32_to_dwm(palette.application_bg_color);
-
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWINDOWATTRIBUTE(34),
-            &border_color as *const _ as _,
-            std::mem::size_of::<u32>() as u32,
-        );
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWINDOWATTRIBUTE(35),
-            &caption_color as *const _ as _,
-            std::mem::size_of::<u32>() as u32,
-        );
-        let _ = DwmSetWindowAttribute(
-            hwnd,
-            DWMWINDOWATTRIBUTE(36),
-            &text_color as *const _ as _,
-            std::mem::size_of::<u32>() as u32,
-        );
+        apply_window_colors(hwnd, palette);
 
         let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
 
@@ -359,9 +371,23 @@ unsafe extern "system" fn custom_wndproc(
         }
 
         // Keep the custom borderless frame's client area aligned with the
-        // window. Without this, Windows 10 may retain a non-client top inset
-        // after WS_THICKFRAME is added, offsetting both painting and input.
-        WM_NCCALCSIZE if wparam.0 != 0 => LRESULT(0),
+        // window. A maximized WS_THICKFRAME window is positioned with the
+        // native frame's thickness outside the monitor; because our frame is
+        // hidden, that overhang would otherwise clip the outer edge of the UI.
+        WM_NCCALCSIZE if wparam.0 != 0 => {
+            unsafe {
+                if IsZoomed(hwnd).as_bool() {
+                    let params = &mut *(lparam.0 as *mut NCCALCSIZE_PARAMS);
+                    let border = resize_border_thickness();
+                    let rect = &mut params.rgrc[0];
+                    rect.left += border;
+                    rect.top += border;
+                    rect.right -= border;
+                    rect.bottom -= border;
+                }
+            }
+            LRESULT(0)
+        }
 
         WM_NCHITTEST => {
             let x = get_x_lparam(lparam);

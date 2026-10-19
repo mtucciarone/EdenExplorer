@@ -251,7 +251,7 @@ pub fn draw_item_viewer(
         );
 
         if column_layout.column_sizes_changed {
-            action = Some(ItemViewerAction::ColumnSizesChanged);
+            action = Some(ItemViewerAction::ColumnSizesChanged { finished: true });
         }
 
         let available_height = ui.available_height();
@@ -276,6 +276,14 @@ pub fn draw_item_viewer(
                 column_state.layout_generation,
             ));
             let table_state_id = ui.id().with(table_id_salt);
+            let checkbox_column_count = if layout.is_drive_view { 0 } else { 1 };
+            let resize_handle_count = column_layout.ordered_columns.len() + checkbox_column_count;
+            let column_resize_active = (0..resize_handle_count).any(|index| {
+                ui.ctx()
+                    .is_being_dragged(table_state_id.with("resize_column").with(index))
+            });
+            set_item_viewer_column_resize_active(ui, column_resize_active);
+
             let mut table = TableBuilder::new(ui)
                 .vscroll(true)
                 .max_scroll_height(available_height)
@@ -569,7 +577,15 @@ pub fn draw_item_viewer(
                             action = Some(ItemViewerAction::OpenInNewTab(file.path.clone()));
                         }
 
-                        if !is_non_ntfs_drive {
+                        let context_menu_open = Popup::is_id_open(
+                            &row_resp.ctx,
+                            Popup::default_response_id(&row_resp),
+                        );
+                        if !is_non_ntfs_drive
+                            && (row_resp.secondary_clicked()
+                                || row_resp.clicked()
+                                || context_menu_open)
+                        {
                             Popup::context_menu(&row_resp)
                                 .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                                 .show(|ui| {
@@ -610,7 +626,12 @@ pub fn draw_item_viewer(
                 });
 
             // ------------------- END OF TABLE VIEW -------------------
-            let checkbox_column_count = if layout.is_drive_view { 0 } else { 1 };
+            let column_resize_finished = (0..actual_column_widths.len()).any(|index| {
+                let resize_id = table_state_id.with("resize_column").with(index);
+                ui.ctx()
+                    .read_response(resize_id)
+                    .is_some_and(|response| response.drag_stopped())
+            });
 
             for (column_index, &column) in column_layout.ordered_columns.iter().enumerate() {
                 let table_index = column_index + checkbox_column_count;
@@ -630,8 +651,14 @@ pub fn draw_item_viewer(
                         actual_width,
                     );
 
-                    action = Some(ItemViewerAction::ColumnSizesChanged);
+                    action = Some(ItemViewerAction::ColumnSizesChanged {
+                        finished: column_resize_finished,
+                    });
                 }
+            }
+
+            if column_resize_finished {
+                action = Some(ItemViewerAction::ColumnSizesChanged { finished: true });
             }
 
             let divider_tolerance = ui.style().interaction.resize_grab_radius_side + 3.0;
@@ -961,9 +988,13 @@ fn draw_tag_chips(
     let n = tags.len();
 
     // Natural width of each chip (label + horizontal padding on both sides).
-    let mut chip_widths: Vec<f32> = Vec::with_capacity(n);
+    let mut chip_galleys = Vec::with_capacity(n);
+    let mut chip_widths = Vec::with_capacity(n);
     for tag in tags {
-        chip_widths.push(measure_tag_text(ui, &tag.name, font_id) + hpad * 2.0);
+        let text_color = chip_text_color(tag.color);
+        let galley = layout_tag_text(ui, &tag.name, font_id, text_color);
+        chip_widths.push(galley.size().x + hpad * 2.0);
+        chip_galleys.push(galley);
     }
 
     // A lone tag is always shown; its label is ellipsized if it overflows.
@@ -996,7 +1027,11 @@ fn draw_tag_chips(
         visible = n;
     } else {
         for k in (1..n).rev() {
-            let badge_w = measure_tag_text(ui, &format!("+{}", n - k), font_id) + hpad * 2.0;
+            let badge_label = format!("+{}", n - k);
+            let badge_w = layout_tag_text(ui, &badge_label, font_id, egui::Color32::WHITE)
+                .size()
+                .x
+                + hpad * 2.0;
             if prefix[k] + chip_gap + badge_w <= available {
                 visible = k;
                 break;
@@ -1030,8 +1065,7 @@ fn draw_tag_chips(
             chip_rect,
             chip_radius,
             tag.color,
-            &tag.name,
-            font_id,
+            chip_galleys[i].clone(),
             hpad,
         );
         x = chip_rect.right() + chip_gap;
@@ -1039,7 +1073,8 @@ fn draw_tag_chips(
 
     if visible < n {
         let label = format!("+{}", n - visible);
-        let badge_w = measure_tag_text(ui, &label, font_id) + hpad * 2.0;
+        let galley = layout_tag_text(ui, &label, font_id, egui::Color32::WHITE);
+        let badge_w = galley.size().x + hpad * 2.0;
         let badge_rect =
             egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(badge_w, chip_height));
         paint_tag_chip(
@@ -1047,8 +1082,7 @@ fn draw_tag_chips(
             badge_rect,
             chip_radius,
             egui::Color32::from_gray(120),
-            &label,
-            font_id,
+            galley,
             hpad,
         );
     }
@@ -1064,13 +1098,13 @@ fn chip_text_color(fill: egui::Color32) -> egui::Color32 {
     }
 }
 
-fn measure_tag_text(ui: &mut egui::Ui, text: &str, font_id: &FontId) -> f32 {
-    ui.fonts_mut(|fonts| {
-        fonts
-            .layout_no_wrap(text.to_owned(), font_id.clone(), egui::Color32::WHITE)
-            .size()
-            .x
-    })
+fn layout_tag_text(
+    ui: &mut egui::Ui,
+    text: &str,
+    font_id: &FontId,
+    color: egui::Color32,
+) -> std::sync::Arc<egui::Galley> {
+    ui.fonts_mut(|fonts| fonts.layout_no_wrap(text.to_owned(), font_id.clone(), color))
 }
 
 fn paint_tag_chip(
@@ -1078,13 +1112,10 @@ fn paint_tag_chip(
     chip_rect: egui::Rect,
     radius: u8,
     fill: egui::Color32,
-    text: &str,
-    font_id: &FontId,
+    galley: std::sync::Arc<egui::Galley>,
     hpad: f32,
 ) {
     let text_color = chip_text_color(fill);
-    let galley =
-        ui.fonts_mut(|fonts| fonts.layout_no_wrap(text.to_owned(), font_id.clone(), text_color));
     let painter = ui.painter();
     painter.rect_filled(chip_rect, egui::CornerRadius::same(radius), fill);
     painter
@@ -1123,5 +1154,6 @@ fn draw_truncated_tag_chip(
         chip_text_color(tag.color),
     )
     .0;
-    paint_tag_chip(ui, chip_rect, radius, tag.color, &label, font_id, hpad);
+    let galley = layout_tag_text(ui, &label, font_id, chip_text_color(tag.color));
+    paint_tag_chip(ui, chip_rect, radius, tag.color, galley, hpad);
 }

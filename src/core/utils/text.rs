@@ -1,6 +1,7 @@
 use crate::gui::theme::ThemePalette;
 use eframe::egui;
 use egui::FontId;
+use egui::text::{LayoutJob, TextFormat, TextWrapping};
 use lazy_static::lazy_static;
 use lru::LruCache;
 use std::env;
@@ -10,7 +11,7 @@ use std::sync::RwLock;
 type TruncKey = (String, u32, u32); // (text, width_bucket, font_size_bucket)
 
 lazy_static! {
-    static ref TRUNCATION_CACHE: RwLock<LruCache<TruncKey, String>> =
+    static ref TRUNCATION_CACHE: RwLock<LruCache<TruncKey, (String, bool)>> =
         RwLock::new(LruCache::new(NonZeroUsize::new(1024).unwrap()));
 }
 
@@ -71,8 +72,8 @@ fn width_bucket(width: f32) -> u32 {
     (width / 8.0).round() as u32
 }
 
-/// The fast binary search truncation algorithm.
-fn truncate_text_binary_search(
+/// Truncate text using egui's native single-pass text wrapping.
+fn truncate_text_native(
     ui: &mut egui::Ui,
     text: &str,
     max_width: f32,
@@ -80,53 +81,53 @@ fn truncate_text_binary_search(
     color: egui::Color32,
 ) -> (String, bool) {
     ui.fonts_mut(|f| {
-        let full = f.layout_no_wrap(text.to_owned(), font_id.clone(), color);
+        let mut job =
+            LayoutJob::single_section(text.to_owned(), TextFormat::simple(font_id.clone(), color));
+        job.wrap = TextWrapping::truncate_at_width(max_width.max(0.0));
+        job.break_on_newline = false;
 
-        if full.size().x <= max_width {
+        let galley = f.layout_job(job);
+        if !galley.elided {
             return (text.to_string(), false);
         }
 
-        let ellipsis = "...";
-        let ellipsis_width = f
-            .layout_no_wrap(ellipsis.to_string(), font_id.clone(), color)
-            .size()
-            .x;
-        let target_width = max_width - ellipsis_width;
+        let display_text = galley
+            .rows
+            .first()
+            .map(|row| row.text())
+            .unwrap_or_default();
 
-        let chars: Vec<char> = text.chars().collect();
-        let mut low = 0;
-        let mut high = chars.len();
-        let mut buffer = String::with_capacity(text.len());
-
-        while low < high {
-            let mid = (low + high) / 2;
-
-            buffer.clear();
-            for ch in &chars[..mid] {
-                buffer.push(*ch);
-            }
-
-            let width = f
-                .layout_no_wrap(buffer.clone(), font_id.clone(), color)
-                .size()
-                .x;
-
-            if width <= target_width {
-                low = mid + 1;
-            } else {
-                high = mid;
-            }
-        }
-
-        let final_len = low.saturating_sub(1);
-        buffer.clear();
-        for ch in &chars[..final_len] {
-            buffer.push(*ch);
-        }
-        buffer.push_str(ellipsis);
-
-        (buffer, true)
+        (display_text, true)
     })
+}
+
+pub fn paint_truncated_text(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    text: &str,
+    font_id: &egui::FontId,
+    color: egui::Color32,
+    truncate: bool,
+) -> bool {
+    let galley = ui.fonts_mut(|f| {
+        if truncate {
+            let mut job = LayoutJob::single_section(
+                text.to_owned(),
+                TextFormat::simple(font_id.clone(), color),
+            );
+            job.wrap = TextWrapping::truncate_at_width(rect.width().max(0.0));
+            job.break_on_newline = false;
+            f.layout_job(job)
+        } else {
+            f.layout_no_wrap(text.to_owned(), font_id.clone(), color)
+        }
+    });
+
+    let truncated = truncate && galley.elided;
+    let pos = egui::pos2(rect.left(), rect.center().y - galley.size().y * 0.5);
+    ui.painter().with_clip_rect(rect).galley(pos, galley, color);
+
+    truncated
 }
 
 /// Truncates text to fit within `max_width`, caching results for performance.
@@ -143,17 +144,17 @@ pub fn truncate_item_text(
 
     if let Ok(mut cache) = TRUNCATION_CACHE.write() {
         if let Some(cached) = cache.get(&key) {
-            return (cached.clone(), cached.ends_with("..."));
+            return cached.clone();
         }
 
-        let (result, truncated) = truncate_text_binary_search(ui, text, max_width, font_id, color);
+        let (result, truncated) = truncate_text_native(ui, text, max_width, font_id, color);
 
-        cache.put(key, result.clone());
+        cache.put(key, (result.clone(), truncated));
 
         return (result, truncated);
     }
 
-    truncate_text_binary_search(ui, text, max_width, font_id, color)
+    truncate_text_native(ui, text, max_width, font_id, color)
 }
 
 #[cfg(test)]

@@ -29,7 +29,8 @@ use crate::gui::windows::structs::{
     AboutWindow, AppSettings, Navigation, SettingsWindow, SidebarState, ThemeCustomizer,
 };
 use crate::gui::windows::windowsoverrides::{
-    apply_window_override, consume_clipboard_dirty, handle_draw_windows_buttons, install_wndproc,
+    apply_window_override, apply_window_theme, consume_clipboard_dirty,
+    handle_draw_windows_buttons, install_wndproc,
 };
 use eframe::egui;
 use std::collections::HashMap;
@@ -37,6 +38,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::time::Instant;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Foundation::{POINT, RECT};
 use windows::Win32::Graphics::Gdi::ClientToScreen;
@@ -80,6 +82,7 @@ pub struct MainWindow {
     pub(crate) file_size_text_cache: HashMap<PathBuf, (u64, String)>,
     pub(crate) folder_size_text_cache: HashMap<PathBuf, (u64, bool, String)>,
     pub(crate) drive_size_text_cache: HashMap<PathBuf, (u64, u64, String)>,
+    pub(crate) column_settings_save_due: Option<Instant>,
 
     // Sidebar Variables
     pub(crate) sidebar_state: SidebarState,
@@ -237,6 +240,7 @@ impl Default for MainWindow {
             file_size_text_cache: HashMap::new(),
             folder_size_text_cache: HashMap::new(),
             drive_size_text_cache: HashMap::new(),
+            column_settings_save_due: None,
 
             i18n: I18n::new(default_locale),
         };
@@ -392,7 +396,7 @@ impl eframe::App for MainWindow {
             apply_theme(ui.ctx(), self.theme);
             apply_font_to_context(ui.ctx(), &palette);
             if let Some(hwnd) = self.hwnd {
-                apply_window_override(hwnd, &palette);
+                apply_window_theme(hwnd, &palette);
             }
             self.theme_dirty = false;
         }
@@ -1193,6 +1197,8 @@ impl eframe::App for MainWindow {
             self.load_path();
             self.dropped_files_pending_ui_refresh = false;
         }
+
+        self.flush_pending_column_settings_save(ui.ctx());
 
         self.icon_cache = Some(icon_cache);
     }

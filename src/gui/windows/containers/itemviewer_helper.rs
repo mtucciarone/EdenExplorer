@@ -1,7 +1,7 @@
 use crate::core::drives::is_raw_physical_drive_path;
 use crate::core::fs::FileItem;
 use crate::core::utils::files::filename_has_valid_characters_realtime;
-use crate::core::utils::text::apply_eden_text_overrides;
+use crate::core::utils::text::{apply_eden_text_overrides, paint_truncated_text};
 use crate::core::utils::widgets::{apply_eden_visual_overrides, draw_checkbox};
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
@@ -27,6 +27,23 @@ use egui_phosphor::regular;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use windows::Win32::Foundation::HWND;
+
+const ITEM_VIEWER_COLUMN_RESIZE_ACTIVE_ID: &str = "item_viewer_column_resize_active";
+
+pub fn set_item_viewer_column_resize_active(ui: &mut egui::Ui, active: bool) {
+    ui.memory_mut(|mem| {
+        mem.data
+            .insert_temp(egui::Id::new(ITEM_VIEWER_COLUMN_RESIZE_ACTIVE_ID), active);
+    });
+}
+
+fn item_viewer_column_resize_active(ui: &egui::Ui) -> bool {
+    ui.memory(|mem| {
+        mem.data
+            .get_temp::<bool>(egui::Id::new(ITEM_VIEWER_COLUMN_RESIZE_ACTIVE_ID))
+            .unwrap_or(false)
+    })
+}
 
 pub fn draw_external_to_internal_drag_overlay(
     ui: &mut egui::Ui,
@@ -417,16 +434,24 @@ pub fn handle_draw_col_name(
 
     let text_width = available_width - text_offset_x;
     let color = get_text_color(is_selected, is_cut, palette);
-
-    let (display_name, _) = truncate_item_text(ui, &file.name, text_width, font_id, color);
-
-    ui.painter().text(
-        egui::pos2(rect.min.x + text_offset_x, rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        display_name,
-        font_id.clone(),
-        color,
+    let resizing_column = item_viewer_column_resize_active(ui);
+    let text_rect = egui::Rect::from_min_max(
+        egui::pos2(rect.min.x + text_offset_x, rect.min.y),
+        egui::pos2(rect.min.x + text_offset_x + text_width.max(0.0), rect.max.y),
     );
+
+    if resizing_column {
+        paint_truncated_text(ui, text_rect, &file.name, font_id, color, false);
+    } else {
+        let (display_name, _) = truncate_item_text(ui, &file.name, text_width, font_id, color);
+        ui.painter().text(
+            egui::pos2(text_rect.left(), text_rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            display_name,
+            font_id.clone(),
+            color,
+        );
+    }
 
     None
 }
@@ -1740,15 +1765,18 @@ pub fn draw_table_text(
         egui::Sense::hover(),
     );
 
-    let (display_text, _) = truncate_item_text(ui, text, rect.width(), font_id, color);
-
-    ui.painter().text(
-        egui::pos2(rect.left(), rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        display_text,
-        font_id.clone(),
-        color,
-    );
+    if item_viewer_column_resize_active(ui) {
+        paint_truncated_text(ui, rect, text, font_id, color, false);
+    } else {
+        let (display_text, _) = truncate_item_text(ui, text, rect.width(), font_id, color);
+        ui.painter().text(
+            egui::pos2(rect.left(), rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            display_text,
+            font_id.clone(),
+            color,
+        );
+    }
 
     response.on_hover_cursor(egui::CursorIcon::Default)
 }

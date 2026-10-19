@@ -168,11 +168,11 @@ struct FileOpProgressSink {
     notify: Arc<dyn Fn() + Send + Sync>,
     /// Number of top-level items we asked the shell to process.
     base_total: u32,
+    /// Items announced by a `Pre*Item` callback. This can grow for recursive
+    /// operations where the shell discovers children after the operation starts.
+    pre_count: AtomicU32,
     /// Items confirmed done via a `Post*Item` callback — the reliable per-item signal.
     post_count: AtomicU32,
-    /// Latest figures from the shell's `UpdateProgress` (may count sub-items).
-    work_total: AtomicU32,
-    work_sofar: AtomicU32,
 }
 
 impl FileOpProgressSink {
@@ -185,16 +185,14 @@ impl FileOpProgressSink {
         self.cancel.load(Ordering::Relaxed)
     }
 
-    /// Progress is driven mainly by `Post*Item` counts; the shell's
-    /// `UpdateProgress` figures are folded in as a secondary signal (whichever is
-    /// further along wins), because `iWorkSoFar` frequently stays 0 for deletes.
+    /// Report item counts from callbacks rather than the shell's
+    /// `UpdateProgress` figures. Those figures represent shell work units and
+    /// can make the UI reach X/X while callbacks are still arriving.
     fn emit_progress(&self) {
-        let total = self.base_total.max(self.work_total.load(Ordering::Relaxed));
-        let done = self
-            .post_count
-            .load(Ordering::Relaxed)
-            .max(self.work_sofar.load(Ordering::Relaxed))
-            .min(total);
+        let total = self
+            .base_total
+            .max(self.pre_count.load(Ordering::Relaxed));
+        let done = self.post_count.load(Ordering::Relaxed).min(total);
         self.emit(FileOpProgress::Progress { total, done });
     }
 
@@ -203,6 +201,7 @@ impl FileOpProgressSink {
         if self.cancelled() {
             return cancel_abort();
         }
+        self.pre_count.fetch_add(1, Ordering::Relaxed);
         if let Some(name) = shell_item_path(psiitem) {
             self.emit(FileOpProgress::Item { name });
         }
@@ -367,14 +366,10 @@ impl IFileOperationProgressSink_Impl for FileOpProgressSink_Impl {
         Ok(())
     }
 
-    fn UpdateProgress(&self, iworktotal: u32, iworksofar: u32) -> windows::core::Result<()> {
+    fn UpdateProgress(&self, _iworktotal: u32, _iworksofar: u32) -> windows::core::Result<()> {
         if self.cancelled() {
             return cancel_abort();
         }
-        if iworktotal > 0 {
-            self.work_total.store(iworktotal, Ordering::Relaxed);
-        }
-        self.work_sofar.store(iworksofar, Ordering::Relaxed);
         self.emit_progress();
         Ok(())
     }
@@ -457,9 +452,8 @@ pub fn file_op_async(
                     cancel: cancel.clone(),
                     notify: notify.clone(),
                     base_total,
+                    pre_count: AtomicU32::new(0),
                     post_count: AtomicU32::new(0),
-                    work_total: AtomicU32::new(0),
-                    work_sofar: AtomicU32::new(0),
                 }
                 .into();
                 let cookie = file_op.Advise(&sink)?;
