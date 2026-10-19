@@ -3,6 +3,7 @@ use crate::core::{
     indexer::WindowSizeMode,
     utils::widgets::{
         apply_eden_visual_overrides, draw_checkbox, draw_dropdown, eden_button, eden_text_label,
+        eden_toggle_button,
     },
 };
 use crate::gui::i18n::I18n;
@@ -10,7 +11,7 @@ use crate::gui::theme::ThemePalette;
 use crate::gui::utils::SortColumn;
 use crate::gui::windows::containers::enums::ItemViewerHeaderColumn;
 use crate::gui::windows::enums::SettingsAction;
-use crate::gui::windows::structs::{AppSettings, SettingsWindow};
+use crate::gui::windows::structs::{AppSettings, SettingsTab, SettingsWindow};
 use eframe::egui;
 use egui::RichText;
 use egui_phosphor::regular;
@@ -18,6 +19,233 @@ use std::path::PathBuf;
 
 const SETTINGS_COMBO_WIDTH: f32 = 180.0;
 const SETTINGS_VALUE_WIDTH: f32 = 92.0;
+
+const HOTKEYS: &[(&str, &str)] = &[
+    ("F1", "Toggle fullscreen"),
+    ("Ctrl+Shift+C", "Copy selected path"),
+    ("Ctrl+W", "Close current tab"),
+    ("Ctrl+T", "New tab"),
+    ("Ctrl+Tab", "Next tab"),
+    ("Ctrl+Shift+Tab", "Previous tab"),
+    ("Ctrl+Shift+N", "Create new folder in current directory"),
+    ("Ctrl+R (F5)", "Refresh current directory"),
+    ("Alt+D", "Select the address bar / current directory path"),
+    ("F2", "Rename current selected file"),
+    ("Alt+Enter", "Open properties of the current selection"),
+    (
+        "Home / End",
+        "Scroll to the top or bottom and select the first or last object",
+    ),
+    ("Alt+Left Arrow (Backspace)", "Navigate backwards"),
+    ("Alt+Right Arrow", "Navigate forwards (Mouse Button 4)"),
+    ("Alt+Up Arrow", "Navigate upwards (Mouse Button 5)"),
+    ("Enter", "Run the default program for the selected file"),
+];
+
+const HOTKEY_GROUPS: &[(&str, &[usize])] = &[
+    ("Application", &[0]),
+    ("Tabs", &[2, 3, 4, 5]),
+    ("Files and folders", &[1, 6, 9, 10, 15]),
+    ("Navigation", &[7, 8, 11, 12, 13, 14]),
+];
+
+fn format_recorded_hotkey(key: egui::Key, modifiers: egui::Modifiers) -> Option<String> {
+    let mut parts = Vec::new();
+    if modifiers.ctrl {
+        parts.push("Ctrl");
+    }
+    if modifiers.alt {
+        parts.push("Alt");
+    }
+    if modifiers.shift {
+        parts.push("Shift");
+    }
+    if modifiers.command && !modifiers.ctrl {
+        parts.push("Cmd");
+    }
+    let key_name = match key {
+        egui::Key::ArrowDown => "Arrow Down",
+        egui::Key::ArrowLeft => "Arrow Left",
+        egui::Key::ArrowRight => "Arrow Right",
+        egui::Key::ArrowUp => "Arrow Up",
+        egui::Key::Backspace => "Backspace",
+        egui::Key::Delete => "Delete",
+        egui::Key::End => "End",
+        egui::Key::Enter => "Enter",
+        egui::Key::Escape => "Escape",
+        egui::Key::F1 => "F1",
+        egui::Key::F2 => "F2",
+        egui::Key::F3 => "F3",
+        egui::Key::F4 => "F4",
+        egui::Key::F5 => "F5",
+        egui::Key::F6 => "F6",
+        egui::Key::F7 => "F7",
+        egui::Key::F8 => "F8",
+        egui::Key::F9 => "F9",
+        egui::Key::F10 => "F10",
+        egui::Key::F11 => "F11",
+        egui::Key::F12 => "F12",
+        egui::Key::Home => "Home",
+        egui::Key::Tab => "Tab",
+        egui::Key::A => "A",
+        egui::Key::B => "B",
+        egui::Key::C => "C",
+        egui::Key::D => "D",
+        egui::Key::E => "E",
+        egui::Key::F => "F",
+        egui::Key::G => "G",
+        egui::Key::H => "H",
+        egui::Key::I => "I",
+        egui::Key::J => "J",
+        egui::Key::K => "K",
+        egui::Key::L => "L",
+        egui::Key::M => "M",
+        egui::Key::N => "N",
+        egui::Key::O => "O",
+        egui::Key::P => "P",
+        egui::Key::Q => "Q",
+        egui::Key::R => "R",
+        egui::Key::S => "S",
+        egui::Key::T => "T",
+        egui::Key::U => "U",
+        egui::Key::V => "V",
+        egui::Key::W => "W",
+        egui::Key::X => "X",
+        egui::Key::Y => "Y",
+        egui::Key::Z => "Z",
+        _ => return None,
+    };
+    parts.push(key_name);
+    Some(parts.join("+"))
+}
+
+fn draw_hotkeys_tab(ui: &mut egui::Ui, settings: &mut SettingsWindow, palette: &ThemePalette) {
+    ui.spacing_mut().item_spacing.y = 0.0;
+    ui.vertical(|ui| {
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new("Keyboard shortcuts")
+                    .strong()
+                    .color(palette.text_normal),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if eden_button(ui, palette, "Reset all to defaults").clicked() {
+                    settings.hotkey_values = HOTKEYS
+                        .iter()
+                        .map(|(shortcut, _)| (*shortcut).to_string())
+                        .collect();
+                    settings.recording_hotkey = None;
+                }
+            });
+        });
+        ui.add_space(2.0);
+
+        for (group_name, indices) in HOTKEY_GROUPS {
+            ui.add_space(8.0);
+            ui.label(
+                RichText::new(*group_name)
+                    .strong()
+                    .color(palette.text_header_section),
+            );
+            ui.add_space(3.0);
+
+            for index in *indices {
+                let (default_shortcut, description) = HOTKEYS[*index];
+                let is_recording = settings.recording_hotkey == Some(*index);
+                let can_rebind = !default_shortcut.contains("Mouse Button");
+                let is_customized = settings
+                    .hotkey_values
+                    .get(*index)
+                    .is_some_and(|shortcut| shortcut != default_shortcut);
+                let shortcut = if is_recording {
+                    "Record new hotkey"
+                } else {
+                    settings
+                        .hotkey_values
+                        .get(*index)
+                        .map(String::as_str)
+                        .unwrap_or(default_shortcut)
+                };
+                let shortcut_color = if is_recording {
+                    egui::Color32::RED
+                } else if is_customized {
+                    egui::Color32::WHITE
+                } else if can_rebind {
+                    palette.primary
+                } else {
+                    palette.borders_default
+                };
+                let mut shortcut_double_clicked = false;
+
+                ui.horizontal(|ui| {
+                    let (rect, response) =
+                        ui.allocate_exact_size(egui::vec2(205.0, 22.0), egui::Sense::click());
+                    let fill = if is_recording {
+                        shortcut_color.gamma_multiply(0.12)
+                    } else {
+                        egui::Color32::TRANSPARENT
+                    };
+                    ui.painter().rect_filled(rect, 4.0, fill);
+                    ui.painter().rect_stroke(
+                        rect,
+                        4.0,
+                        egui::Stroke::new(if is_recording { 2.0 } else { 1.0 }, shortcut_color),
+                        egui::StrokeKind::Inside,
+                    );
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        shortcut,
+                        egui::FontId::monospace(palette.text_size),
+                        shortcut_color,
+                    );
+                    shortcut_double_clicked = can_rebind && response.double_clicked();
+                    ui.label(RichText::new(description).color(palette.text_normal));
+                });
+
+                if shortcut_double_clicked {
+                    settings.recording_hotkey = Some(*index);
+                }
+                ui.add_space(4.0);
+            }
+        }
+    });
+
+    if let Some(index) = settings.recording_hotkey {
+        let mut recorded = None;
+        let mut reset_to_default = false;
+
+        ui.ctx().input(|input| {
+            for event in &input.events {
+                if let egui::Event::Key {
+                    key,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } = event
+                {
+                    if *key == egui::Key::Escape {
+                        settings.recording_hotkey = None;
+                        return;
+                    }
+                    if *key == egui::Key::Backspace {
+                        reset_to_default = true;
+                    } else {
+                        recorded = format_recorded_hotkey(*key, *modifiers);
+                    }
+                }
+            }
+        });
+
+        if reset_to_default {
+            settings.hotkey_values[index] = HOTKEYS[index].0.to_string();
+            settings.recording_hotkey = None;
+        } else if let Some(hotkey) = recorded {
+            settings.hotkey_values[index] = hotkey;
+            settings.recording_hotkey = None;
+        }
+    }
+}
 
 impl Default for AppSettings {
     fn default() -> Self {
@@ -235,12 +463,14 @@ pub fn draw_settings_window(
         should_close = true;
     }
 
+    let mut settings_open = settings.open;
+
     egui::Window::new(i18n.tr("settings"))
         .collapsible(false)
         .resizable(false)
         .fixed_size([600.0, 550.0])
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-        .open(&mut settings.open)
+        .open(&mut settings_open)
         .frame(
             egui::Frame::popup(&ctx.style_of(ctx.theme()))
                 .corner_radius(egui::CornerRadius::same(8)),
@@ -262,15 +492,54 @@ pub fn draw_settings_window(
                     egui::TextStyle::Small,
                     egui::FontId::proportional(palette.text_size),
                 ),
+                (
+                    egui::TextStyle::Monospace,
+                    egui::FontId::monospace(palette.text_size),
+                ),
             ]
             .into();
             style.override_text_valign = Some(egui::Align::Center);
             ui.set_style(style);
 
+            ui.horizontal(|ui| {
+                if eden_toggle_button(
+                    ui,
+                    palette,
+                    settings.selected_tab == SettingsTab::General,
+                    "General",
+                )
+                .clicked()
+                {
+                    settings.selected_tab = SettingsTab::General;
+                }
+                if eden_toggle_button(
+                    ui,
+                    palette,
+                    settings.selected_tab == SettingsTab::Hotkeys,
+                    "Hotkeys",
+                )
+                .clicked()
+                {
+                    settings.selected_tab = SettingsTab::Hotkeys;
+                }
+            });
+            ui.separator();
+
             // SCROLLABLE CONTENT
             egui::ScrollArea::vertical()
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
+                    if settings.selected_tab == SettingsTab::Hotkeys {
+                        if settings.hotkey_values.len() != HOTKEYS.len() {
+                            settings.hotkey_values = HOTKEYS
+                                .iter()
+                                .map(|(shortcut, _)| (*shortcut).to_string())
+                                .collect();
+                        }
+                        draw_hotkeys_tab(ui, settings, palette);
+                        return;
+                    }
+
                     ui.horizontal(|ui| {
                         if eden_button(ui, palette, &i18n.tr("settings_reset")).clicked() {
                             action = Some(SettingsAction::ResetToDefaults);
@@ -720,7 +989,7 @@ pub fn draw_settings_window(
                     }
                 });
         });
-    if should_close {
+    if should_close || !settings_open {
         settings.open = false;
     }
     action

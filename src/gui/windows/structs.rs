@@ -66,6 +66,16 @@ pub struct SettingsWindow {
     pub open: bool,
     pub current_settings: AppSettings,
     pub show_reset_favorites_confirmation: bool,
+    pub selected_tab: SettingsTab,
+    pub hotkey_values: Vec<String>,
+    pub recording_hotkey: Option<usize>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SettingsTab {
+    #[default]
+    General,
+    Hotkeys,
 }
 
 pub struct SidebarState {
