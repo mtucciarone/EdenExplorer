@@ -2371,9 +2371,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             }
             ItemViewerAction::CreateFolder => explorer.create_new_folder(),
             ItemViewerAction::CreateFile => explorer.create_new_file(),
-            ItemViewerAction::RefreshCurrentDirectory => {
-                explorer.load_path();
-            }
+            ItemViewerAction::RefreshCurrentDirectory => explorer.load_path(),
             ItemViewerAction::OpenTerminal => {
                 let current_dir = explorer.current_nav().current.clone();
                 open_default_terminal(&current_dir);
@@ -2805,7 +2803,13 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     view.explorer_state.selection_anchor = None;
                     view.explorer_state.selection_focus = None;
                 }
-                explorer.load_path();
+                // A drag between split panes is handled with focus temporarily
+                // pinned to the primary view. Refresh every visible pane so a
+                // file moved into the secondary pane appears immediately too.
+                explorer.load_view(SplitSide::Primary);
+                if explorer.active_tab().split_view.is_some() {
+                    explorer.load_view(SplitSide::Secondary);
+                }
             }
             ItemViewerAction::ColumnSizesChanged { finished } => {
                 let snapshot =

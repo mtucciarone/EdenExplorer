@@ -10,6 +10,7 @@ pub struct DropTargetRegion {
 #[derive(Clone, Debug, Default)]
 pub struct DropTargets {
     pub item_target: DropTargetRegion,
+    pub item_background_targets: Vec<DropTargetRegion>,
     pub tab_target: DropTargetRegion,
     pub breadcrumb_target: DropTargetRegion,
 }

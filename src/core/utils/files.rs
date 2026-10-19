@@ -438,6 +438,10 @@ pub fn file_op_async(
                     FileOpKind::Move { .. } | FileOpKind::Copy { .. } => true,
                 };
                 let undo = if allow_undo { FOF_ALLOWUNDO.0 } else { 0 };
+                // Keep collision confirmation enabled. In particular, do not
+                // set FOF_RENAMEONCOLLISION: that flag silently chooses a new
+                // name, while omitting it lets IFileOperation show the Shell's
+                // conflict dialog with the user's available choices.
                 file_op.SetOperationFlags(FILEOPERATION_FLAGS(FOF_SILENT.0 | undo))?;
 
                 if owner_hwnd != 0 {

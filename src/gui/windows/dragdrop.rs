@@ -173,6 +173,14 @@ fn hit_test_target_at(pt: windows::Win32::Foundation::POINTL) -> Option<PathBuf>
         }
     }
 
+    for region in &targets.item_background_targets {
+        if let (Some(target), Some(rect)) = (&region.target, region.rect) {
+            if rect.contains(pos) {
+                return Some(target.clone());
+            }
+        }
+    }
+
     None
 }
 

@@ -75,6 +75,7 @@ pub fn draw_tab_content(
 
     let old_spacing = ui.spacing().item_spacing.y;
     ui.spacing_mut().item_spacing.y = 0.0;
+    let content_rect = ui.available_rect_before_wrap();
 
     StripBuilder::new(ui)
         .size(Size::exact(tabbar_height)) // Tabbar
@@ -175,14 +176,31 @@ pub fn draw_tab_content(
                 }
             });
 
-            drop_targets.item_target.target = hovered_drop_target.clone();
-            drop_targets.item_target.rect = hovered_drop_target_rect;
-            drop_targets.breadcrumb_target.target = tabbar_action
+            // A split view renders both panes into the same DropTargets value.
+            // Keep an already detected target so rendering the other pane does
+            // not erase the first pane's drop region.
+            if hovered_drop_target.is_some() {
+                drop_targets.item_target.target = hovered_drop_target.clone();
+                drop_targets.item_target.rect = hovered_drop_target_rect;
+            }
+            drop_targets
+                .item_background_targets
+                .push(crate::gui::dragdrop::DropTargetRegion {
+                    target: Some(view.nav.current.clone()),
+                    rect: Some(egui::Rect::from_min_max(
+                        egui::pos2(content_rect.left(), content_rect.top() + tabbar_height),
+                        content_rect.right_bottom(),
+                    )),
+                });
+            if let Some(target) = tabbar_action
                 .as_ref()
-                .and_then(|a| a.move_files_to_breadcrumb_dir.clone());
-            drop_targets.breadcrumb_target.rect = tabbar_action
-                .as_ref()
-                .and_then(|a| a.move_files_to_breadcrumb_dir_rect);
+                .and_then(|a| a.move_files_to_breadcrumb_dir.clone())
+            {
+                drop_targets.breadcrumb_target.target = Some(target);
+                drop_targets.breadcrumb_target.rect = tabbar_action
+                    .as_ref()
+                    .and_then(|a| a.move_files_to_breadcrumb_dir_rect);
+            }
 
             strip.cell(|ui| {
                 let rect = ui.max_rect();

@@ -969,7 +969,71 @@ impl eframe::App for MainWindow {
         });
 
         if let Some(backend) = self.dragdrop.as_ref() {
-            backend.update_drop_targets(drop_targets);
+            backend.update_drop_targets(drop_targets.clone());
+        }
+
+        // ItemViewer emits the drop action itself when the source and target
+        // are the same view. For split views, the target pane has a different
+        // DragState, so handle the cross-pane release here using the shared
+        // drop target collected from both panes.
+        if !native_drag_active && ui.ctx().input(|input| input.pointer.primary_released()) {
+            let source_items = if self.tabs[self.active_tab].primary_view.drag_state.active {
+                self.tabs[self.active_tab]
+                    .primary_view
+                    .drag_state
+                    .source_items
+                    .clone()
+            } else if self.tabs[self.active_tab]
+                .split_view
+                .as_ref()
+                .is_some_and(|view| view.drag_state.active)
+            {
+                self.tabs[self.active_tab]
+                    .split_view
+                    .as_ref()
+                    .map(|view| view.drag_state.source_items.clone())
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+
+            if !source_items.is_empty() {
+                let pointer_pos = ui.ctx().input(|input| input.pointer.interact_pos());
+                let target_dir = drop_targets.item_target.target.clone().or_else(|| {
+                    drop_targets
+                        .item_background_targets
+                        .iter()
+                        .find(|region| {
+                            pointer_pos
+                                .zip(region.rect)
+                                .is_some_and(|(pos, rect)| rect.contains(pos))
+                        })
+                        .and_then(|region| region.target.clone())
+                });
+
+                if let Some(target_dir) = target_dir {
+                    pending_action = Some(ItemViewerAction::MoveItems {
+                        sources: source_items,
+                        target_dir,
+                    });
+                }
+
+                // The release belongs to the internal drag even when target
+                // hit-testing missed the second pane. Always clear both states
+                // so a failed drop cannot leave the drag ghost stuck forever.
+                self.tabs[self.active_tab].primary_view.drag_state.active = false;
+                self.tabs[self.active_tab].primary_view.drag_state.start_pos = None;
+                self.tabs[self.active_tab]
+                    .primary_view
+                    .drag_state
+                    .source_items
+                    .clear();
+                if let Some(split) = self.tabs[self.active_tab].split_view.as_mut() {
+                    split.drag_state.active = false;
+                    split.drag_state.start_pos = None;
+                    split.drag_state.source_items.clear();
+                }
+            }
         }
 
         if pending_action.is_none() {
