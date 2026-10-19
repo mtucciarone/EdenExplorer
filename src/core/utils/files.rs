@@ -189,9 +189,7 @@ impl FileOpProgressSink {
     /// `UpdateProgress` figures. Those figures represent shell work units and
     /// can make the UI reach X/X while callbacks are still arriving.
     fn emit_progress(&self) {
-        let total = self
-            .base_total
-            .max(self.pre_count.load(Ordering::Relaxed));
+        let total = self.base_total.max(self.pre_count.load(Ordering::Relaxed));
         let done = self.post_count.load(Ordering::Relaxed).min(total);
         self.emit(FileOpProgress::Progress { total, done });
     }

@@ -577,10 +577,8 @@ pub fn draw_item_viewer(
                             action = Some(ItemViewerAction::OpenInNewTab(file.path.clone()));
                         }
 
-                        let context_menu_open = Popup::is_id_open(
-                            &row_resp.ctx,
-                            Popup::default_response_id(&row_resp),
-                        );
+                        let context_menu_open =
+                            Popup::is_id_open(&row_resp.ctx, Popup::default_response_id(&row_resp));
                         if !is_non_ntfs_drive
                             && (row_resp.secondary_clicked()
                                 || row_resp.clicked()

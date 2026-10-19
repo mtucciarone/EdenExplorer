@@ -2875,8 +2875,7 @@ pub fn draw_file_op_window(
                 let progress = egui::ProgressBar::new(fraction)
                     .desired_height(20.0)
                     .text(format!("{} / {}", displayed_done, state.total));
-                let bar_width =
-                    (ui.available_width() - ui.spacing().item_spacing.x * 2.0).max(0.0);
+                let bar_width = (ui.available_width() - ui.spacing().item_spacing.x * 2.0).max(0.0);
                 ui.horizontal_centered(|ui| {
                     ui.add_sized([bar_width, 20.0], progress);
                 });
