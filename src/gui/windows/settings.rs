@@ -21,32 +21,29 @@ const SETTINGS_COMBO_WIDTH: f32 = 180.0;
 const SETTINGS_VALUE_WIDTH: f32 = 92.0;
 
 const HOTKEYS: &[(&str, &str)] = &[
-    ("F1", "Toggle fullscreen"),
-    ("Ctrl+Shift+C", "Copy selected path"),
-    ("Ctrl+W", "Close current tab"),
-    ("Ctrl+T", "New tab"),
-    ("Ctrl+Tab", "Next tab"),
-    ("Ctrl+Shift+Tab", "Previous tab"),
-    ("Ctrl+Shift+N", "Create new folder in current directory"),
-    ("Ctrl+R (F5)", "Refresh current directory"),
-    ("Alt+D", "Select the address bar / current directory path"),
-    ("F2", "Rename current selected file"),
-    ("Alt+Enter", "Open properties of the current selection"),
-    (
-        "Home / End",
-        "Scroll to the top or bottom and select the first or last object",
-    ),
-    ("Alt+Left Arrow (Backspace)", "Navigate backwards"),
-    ("Alt+Right Arrow", "Navigate forwards (Mouse Button 4)"),
-    ("Alt+Up Arrow", "Navigate upwards (Mouse Button 5)"),
-    ("Enter", "Run the default program for the selected file"),
+    ("F1", "hotkey_toggle_fullscreen"),
+    ("Ctrl+Shift+C", "hotkey_copy_selected_path"),
+    ("Ctrl+W", "hotkey_close_current_tab"),
+    ("Ctrl+T", "hotkey_new_tab"),
+    ("Ctrl+Tab", "hotkey_next_tab"),
+    ("Ctrl+Shift+Tab", "hotkey_previous_tab"),
+    ("Ctrl+Shift+N", "hotkey_new_folder"),
+    ("Ctrl+R (F5)", "hotkey_refresh_directory"),
+    ("Alt+D", "hotkey_select_address_bar"),
+    ("F2", "hotkey_rename_file"),
+    ("Alt+Enter", "hotkey_open_properties"),
+    ("Home / End", "hotkey_scroll_and_select_edges"),
+    ("Alt+Left Arrow (Backspace)", "hotkey_navigate_back"),
+    ("Alt+Right Arrow", "hotkey_navigate_forward"),
+    ("Alt+Up Arrow", "hotkey_navigate_up"),
+    ("Enter", "hotkey_run_default_program"),
 ];
 
 const HOTKEY_GROUPS: &[(&str, &[usize])] = &[
-    ("Application", &[0]),
-    ("Tabs", &[2, 3, 4, 5]),
-    ("Files and folders", &[1, 6, 9, 10, 15]),
-    ("Navigation", &[7, 8, 11, 12, 13, 14]),
+    ("hotkey_group_application", &[0]),
+    ("hotkey_group_tabs", &[2, 3, 4, 5]),
+    ("hotkey_group_files_folders", &[1, 6, 9, 10, 15]),
+    ("hotkey_group_navigation", &[7, 8, 11, 12, 13, 14]),
 ];
 
 fn format_recorded_hotkey(key: egui::Key, modifiers: egui::Modifiers) -> Option<String> {
@@ -119,17 +116,22 @@ fn format_recorded_hotkey(key: egui::Key, modifiers: egui::Modifiers) -> Option<
     Some(parts.join("+"))
 }
 
-fn draw_hotkeys_tab(ui: &mut egui::Ui, settings: &mut SettingsWindow, palette: &ThemePalette) {
+fn draw_hotkeys_tab(
+    ui: &mut egui::Ui,
+    settings: &mut SettingsWindow,
+    palette: &ThemePalette,
+    i18n: &I18n,
+) {
     ui.spacing_mut().item_spacing.y = 0.0;
     ui.vertical(|ui| {
         ui.horizontal(|ui| {
             ui.label(
-                RichText::new("Keyboard shortcuts")
+                RichText::new(i18n.tr("hotkeys_title"))
                     .strong()
                     .color(palette.text_normal),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if eden_button(ui, palette, "Reset all to defaults").clicked() {
+                if eden_button(ui, palette, &i18n.tr("hotkeys_reset")).clicked() {
                     settings.hotkey_values = HOTKEYS
                         .iter()
                         .map(|(shortcut, _)| (*shortcut).to_string())
@@ -143,14 +145,15 @@ fn draw_hotkeys_tab(ui: &mut egui::Ui, settings: &mut SettingsWindow, palette: &
         for (group_name, indices) in HOTKEY_GROUPS {
             ui.add_space(8.0);
             ui.label(
-                RichText::new(*group_name)
+                RichText::new(i18n.tr(group_name))
                     .strong()
                     .color(palette.text_header_section),
             );
             ui.add_space(3.0);
 
             for index in *indices {
-                let (default_shortcut, description) = HOTKEYS[*index];
+                let (default_shortcut, description_key) = HOTKEYS[*index];
+                let description = i18n.tr(description_key);
                 let is_recording = settings.recording_hotkey == Some(*index);
                 let can_rebind = !default_shortcut.contains("Mouse Button");
                 let is_customized = settings
@@ -158,13 +161,14 @@ fn draw_hotkeys_tab(ui: &mut egui::Ui, settings: &mut SettingsWindow, palette: &
                     .get(*index)
                     .is_some_and(|shortcut| shortcut != default_shortcut);
                 let shortcut = if is_recording {
-                    "Record new hotkey"
+                    i18n.tr("hotkeys_record")
                 } else {
                     settings
                         .hotkey_values
                         .get(*index)
                         .map(String::as_str)
                         .unwrap_or(default_shortcut)
+                        .to_string()
                 };
                 let shortcut_color = if is_recording {
                     egui::Color32::RED
@@ -195,7 +199,7 @@ fn draw_hotkeys_tab(ui: &mut egui::Ui, settings: &mut SettingsWindow, palette: &
                     ui.painter().text(
                         rect.center(),
                         egui::Align2::CENTER_CENTER,
-                        shortcut,
+                        &shortcut,
                         egui::FontId::monospace(palette.text_size),
                         shortcut_color,
                     );
@@ -506,7 +510,7 @@ pub fn draw_settings_window(
                     ui,
                     palette,
                     settings.selected_tab == SettingsTab::General,
-                    "General",
+                    &i18n.tr("settings_tab_general"),
                 )
                 .clicked()
                 {
@@ -516,7 +520,7 @@ pub fn draw_settings_window(
                     ui,
                     palette,
                     settings.selected_tab == SettingsTab::Hotkeys,
-                    "Hotkeys",
+                    &i18n.tr("settings_tab_hotkeys"),
                 )
                 .clicked()
                 {
@@ -536,7 +540,7 @@ pub fn draw_settings_window(
                                 .map(|(shortcut, _)| (*shortcut).to_string())
                                 .collect();
                         }
-                        draw_hotkeys_tab(ui, settings, palette);
+                        draw_hotkeys_tab(ui, settings, palette, i18n);
                         return;
                     }
 
