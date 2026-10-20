@@ -237,6 +237,31 @@ pub fn apply_custom_font_definitions(fonts: &mut egui::FontDefinitions) {
         vec!["phosphor_fill".to_owned()],
     );
 
+    // 2.5 PUA-only icon font placed FIRST in every family. The system's
+    //     "Segoe UI" file can be a merged/custom font on machines where the
+    //     default fonts were replaced (DirectWrite resolves the family to a
+    //     different file) that also covers Phosphor's private-use icon
+    //     codepoints, shadowing them with CJK glyphs. This copy contains
+    //     ONLY U+E000+ icon codepoints (ASCII stripped), so it can sit at
+    //     position 0 without stealing any real text glyphs: icon codepoints
+    //     always resolve here first, everything else falls through to the
+    //     regular font stack below.
+    fonts.font_data.insert(
+        "phosphor_icons_only".to_owned(),
+        egui::FontData::from_static(include_bytes!("../../assets/PhosphorIcons.ttf")).into(),
+    );
+    for family in [
+        egui::FontFamily::Proportional,
+        egui::FontFamily::Monospace,
+        egui::FontFamily::Name("phosphor_fill".into()),
+    ] {
+        fonts
+            .families
+            .entry(family)
+            .or_default()
+            .insert(0, "phosphor_icons_only".to_owned());
+    }
+
     // 3. Japanese Font (adds to ALL families as a fallback)
     let japanese_font = "japanese_font".to_owned();
     fonts.font_data.insert(
