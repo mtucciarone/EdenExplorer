@@ -5,6 +5,7 @@ use crate::core::indexer::{
     DirectorySettingsSnapshot, WindowSizeMode, load_app_settings, save_app_settings,
     save_favorites, save_tags, save_theme_settings,
 };
+use crate::core::utils::widgets::request_animation_frame;
 use crate::gui::MainWindow;
 use crate::gui::i18n::I18n;
 use crate::gui::theme::{
@@ -533,7 +534,7 @@ impl MainWindow {
             Outcome::Running { started } => {
                 // Keep the progress window animating while it's visible.
                 if started {
-                    ctx.request_repaint();
+                    request_animation_frame(ctx);
                 }
             }
         }
@@ -1134,7 +1135,7 @@ impl MainWindow {
                 let cancel = Arc::new(AtomicBool::new(false));
                 let owner_hwnd = self.hwnd.map(|h| h.0 as isize).unwrap_or(0);
                 let notify: Arc<dyn Fn() + Send + Sync> =
-                    Arc::new(|| crate::gui::windows::windowsoverrides::request_repaint());
+                    Arc::new(crate::gui::windows::windowsoverrides::request_animation_frame);
 
                 file_op_async(
                     FileOpKind::Delete { allow_undo },
@@ -1185,7 +1186,7 @@ impl MainWindow {
         let cancel = Arc::new(AtomicBool::new(false));
         let owner_hwnd = self.hwnd.map(|h| h.0 as isize).unwrap_or(0);
         let notify: Arc<dyn Fn() + Send + Sync> =
-            Arc::new(|| crate::gui::windows::windowsoverrides::request_repaint());
+            Arc::new(crate::gui::windows::windowsoverrides::request_animation_frame);
 
         // Collision handling stays with the shell: FOF_SILENT hides only the
         // progress dialog, not the merge/rename confirmations.

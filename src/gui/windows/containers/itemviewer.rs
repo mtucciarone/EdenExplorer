@@ -430,12 +430,19 @@ pub fn draw_item_viewer(
                         action = Some(a);
                     }
                 })
-                .body(|body| {
+                .body(|mut body| {
                     // Capture the actual widths after TableBuilder has applied any
                     // user-driven column resizing.
                     actual_column_widths.extend_from_slice(body.widths());
                     let hovered_drop_target = &mut hovered_drop_target;
                     let filtered_indices = &filter_state.cached_indices;
+
+                    // egui_extras highlights the row that was hovered on the previous
+                    // frame, so the highlight trails the cursor. Paint it ourselves from
+                    // this frame's hover instead, into a slot reserved under the cells.
+                    let row_hover_painter = body.ui_mut().painter().clone();
+                    let row_hover_fill = body.ui_mut().visuals().widgets.hovered.bg_fill;
+                    let row_hover_expand = 0.5 * body.ui_mut().spacing().item_spacing;
 
                     body.rows(layout.row_height, filtered_indices.len(), |mut row| {
                         let idx = row.index();
@@ -444,6 +451,8 @@ pub fn draw_item_viewer(
                             layout.is_drive_view && is_raw_physical_drive_path(&file.path);
                         let is_selected = explorer_state.selected_paths.contains(&file.path);
                         row.set_selected(is_selected);
+                        row.set_hovered(false);
+                        let row_hover_slot = row_hover_painter.add(egui::Shape::Noop);
                         let is_cut = is_cut_mode && clipboard_set.contains(&file.path);
 
                         if !layout.is_drive_view {
@@ -488,6 +497,25 @@ pub fn draw_item_viewer(
                         }
 
                         let row_resp = row.response();
+
+                        if row_resp.hovered() && !is_selected {
+                            // The row response can be taller than the row, so cap it at
+                            // the row height (same as the drop target rect below).
+                            let row_rect = egui::Rect::from_min_size(
+                                row_resp.rect.min,
+                                egui::vec2(row_resp.rect.width(), layout.row_height),
+                            );
+                            row_hover_painter.set(
+                                row_hover_slot,
+                                egui::epaint::RectShape::filled(
+                                    egui::emath::GuiRounding::round_ui(
+                                        row_rect.expand2(row_hover_expand),
+                                    ),
+                                    egui::CornerRadius::ZERO,
+                                    row_hover_fill,
+                                ),
+                            );
+                        }
 
                         if drag_hover_active {
                             if let Some(target) = hovered_target_ref {

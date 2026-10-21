@@ -3,6 +3,49 @@ use crate::core::utils::text::apply_eden_text_overrides;
 use crate::gui::theme::ThemePalette;
 use eframe::egui::*;
 use egui_phosphor::regular::DOTS_SIX_VERTICAL;
+use std::time::Duration;
+
+/// How often an animation (spinner, progress window) asks for its next frame.
+/// Eden presents without vsync, so `request_repaint()` every frame would run as
+/// fast as the GPU allows.
+pub const ANIMATION_FRAME_INTERVAL: Duration = Duration::from_millis(16);
+
+/// Ask for the next animation frame ANIMATION_FRAME_INTERVAL from now.
+///
+/// egui subtracts its predicted frame time (`predicted_dt`, 1/60 s unless the
+/// integration sets it, and eframe doesn't) from every `request_repaint_after`
+/// delay, so a bare 16 ms request becomes an immediate repaint. Add it back.
+pub fn request_animation_frame(ctx: &Context) {
+    let predicted_dt = ctx.input(|i| i.predicted_dt);
+    let predicted_dt = Duration::try_from_secs_f32(predicted_dt).unwrap_or_default();
+    ctx.request_repaint_after(ANIMATION_FRAME_INTERVAL + predicted_dt);
+}
+
+/// A loading spinner like `egui::Spinner`, which repaints every frame, but
+/// capped at ANIMATION_FRAME_INTERVAL.
+pub fn loading_spinner(ui: &mut Ui, size: f32) -> Response {
+    let (rect, response) = ui.allocate_exact_size(vec2(size, size), Sense::hover());
+    if ui.is_rect_visible(rect) {
+        request_animation_frame(ui.ctx());
+
+        let color = ui.visuals().strong_text_color();
+        let radius = (rect.height().min(rect.width()) / 2.0) - 2.0;
+        let n_points = (radius.round() as u32).clamp(8, 128);
+        let time = ui.input(|i| i.time);
+        let start_angle = time * std::f64::consts::TAU;
+        let end_angle = start_angle + 240f64.to_radians() * time.sin();
+        let points: Vec<Pos2> = (0..n_points)
+            .map(|i| {
+                let angle = emath::lerp(start_angle..=end_angle, i as f64 / n_points as f64);
+                let (sin, cos) = angle.sin_cos();
+                rect.center() + radius * vec2(cos as f32, sin as f32)
+            })
+            .collect();
+        ui.painter()
+            .add(Shape::line(points, Stroke::new(3.0, color)));
+    }
+    response
+}
 
 pub fn clickable_active_icon(
     ui: &mut Ui,
@@ -367,4 +410,53 @@ pub fn eden_toggle_button(
         }))
         .selected(selected),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    fn requested_delays(ctx: &Context) -> Arc<Mutex<Vec<Duration>>> {
+        let delays = Arc::new(Mutex::new(Vec::new()));
+        let sink = delays.clone();
+        ctx.set_request_repaint_callback(move |info| sink.lock().unwrap().push(info.delay));
+        delays
+    }
+
+    #[test]
+    fn animation_frame_waits_the_full_interval() {
+        // A bare request_repaint_after(ANIMATION_FRAME_INTERVAL) reaches the
+        // integration as a zero delay, because egui subtracts predicted_dt.
+        let ctx = Context::default();
+        let delays = requested_delays(&ctx);
+        request_animation_frame(&ctx);
+        let delays = delays.lock().unwrap();
+        assert_eq!(delays.len(), 1);
+        assert!(
+            delays[0] + Duration::from_millis(1) >= ANIMATION_FRAME_INTERVAL,
+            "next frame requested after {:?}",
+            delays[0]
+        );
+    }
+
+    #[test]
+    fn spinner_does_not_ask_for_an_immediate_repaint() {
+        let ctx = Context::default();
+        let delays = requested_delays(&ctx);
+        // The first pass lays out fonts and may repaint for its own reasons.
+        let _ = ctx.run_ui(RawInput::default(), |_| {});
+        delays.lock().unwrap().clear();
+        let _ = ctx.run_ui(RawInput::default(), |ui| {
+            loading_spinner(ui, 28.0);
+        });
+        let delays = delays.lock().unwrap();
+        assert!(!delays.is_empty(), "the spinner asked for no next frame");
+        assert!(
+            delays
+                .iter()
+                .all(|d| *d + Duration::from_millis(1) >= ANIMATION_FRAME_INTERVAL),
+            "requested delays: {delays:?}"
+        );
+    }
 }
