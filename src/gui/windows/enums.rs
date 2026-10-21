@@ -10,5 +10,6 @@ pub enum ThemeCustomizerAction {
 pub enum SettingsAction {
     ResetToDefaults,
     ResetFavourites,
+    ClearDirectoryCache,
     ApplySettings,
 }

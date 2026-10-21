@@ -66,6 +66,9 @@ pub struct SettingsWindow {
     pub open: bool,
     pub current_settings: AppSettings,
     pub show_reset_favorites_confirmation: bool,
+    pub show_reset_confirmation: bool,
+    pub show_reset_hotkeys_confirmation: bool,
+    pub show_clear_directory_cache_confirmation: bool,
     pub selected_tab: SettingsTab,
     pub hotkey_values: Vec<String>,
     pub recording_hotkey: Option<usize>,
@@ -75,6 +78,7 @@ pub struct SettingsWindow {
 pub enum SettingsTab {
     #[default]
     General,
+    ViewDefaults,
     Hotkeys,
 }
 

@@ -51,7 +51,7 @@ use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, SW_SHOW, SW_SHOWNORM
 use windows::{Win32::System::Com::*, Win32::UI::Shell::*, core::*};
 
 pub(crate) fn default_column_state(settings: &AppSettings) -> ItemViewerColumnState {
-    ItemViewerColumnState::from_orders(
+    ItemViewerColumnState::from_saved_orders(
         settings.item_viewer_file_column_order.clone(),
         settings.item_viewer_drive_column_order.clone(),
         settings.recycle_bin_column_order.clone(),
@@ -109,7 +109,7 @@ pub(crate) fn apply_directory_settings_to_view(view: &mut TabView, settings: &Ap
         .find(|entry| entry.directory == view.nav.current);
 
     if let Some(snapshot) = snapshot {
-        view.column_state = ItemViewerColumnState::from_orders(
+        view.column_state = ItemViewerColumnState::from_saved_orders(
             snapshot.item_viewer_file_column_order.clone(),
             snapshot.item_viewer_drive_column_order.clone(),
             snapshot.recycle_bin_column_order.clone(),
@@ -1293,6 +1293,21 @@ impl MainWindow {
                 SettingsAction::ApplySettings => {
                     self.save_app_settings_to_disk();
 
+                    let settings = self.settings_window.current_settings.clone();
+                    for tab in &mut self.tabs {
+                        for view in
+                            std::iter::once(&mut tab.primary_view).chain(tab.split_view.iter_mut())
+                        {
+                            if !settings
+                                .directory_settings
+                                .iter()
+                                .any(|entry| entry.directory == view.nav.current)
+                            {
+                                view.column_state = default_column_state(&settings);
+                            }
+                        }
+                    }
+
                     if let Some(hwnd) = self.hwnd {
                         match &self.settings_window.current_settings.window_size_mode {
                             WindowSizeMode::Custom { width, height } => {
@@ -1323,6 +1338,22 @@ impl MainWindow {
                 SettingsAction::ResetFavourites => {
                     self.sidebar_state.favorites = self.default_favorites();
                     self.persist_favorites();
+                }
+                SettingsAction::ClearDirectoryCache => {
+                    self.settings_window
+                        .current_settings
+                        .directory_settings
+                        .clear();
+                    self.save_app_settings_to_disk();
+
+                    let settings = self.settings_window.current_settings.clone();
+                    for tab in &mut self.tabs {
+                        for view in
+                            std::iter::once(&mut tab.primary_view).chain(tab.split_view.iter_mut())
+                        {
+                            apply_directory_settings_to_view(view, &settings);
+                        }
+                    }
                 }
             }
         }
@@ -2282,9 +2313,8 @@ pub fn calculate_folder_sizes_parallel(
 pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer: &mut MainWindow) {
     if let Some(action) = pending_action {
         let side = explorer.focused_split;
-        let is_drive_view = explorer.current_nav().is_root();
-        let is_recycle_bin_view = explorer.current_nav().is_recycle_bin();
-
+        let is_drive_view = explorer.active_tab().view(side).nav.is_root();
+        let is_recycle_bin_view = explorer.active_tab().view(side).nav.is_recycle_bin();
         if is_recycle_bin_view {
             match &action {
                 ItemViewerAction::CreateFolder
@@ -2316,23 +2346,27 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 remove,
             } => explorer.toggle_sort(column, additive, remove),
             ItemViewerAction::ToggleColumnVisibility(column) => {
-                let new_order = {
+                let (new_order, is_drive_view, is_recycle_bin_view, snapshot) = {
                     let view = explorer.active_tab_mut().view_mut(side);
-                    let column_state = &mut view.column_state;
+                    // Derive the view kind from the view that produced the action. The
+                    // focused split can differ from the view being processed here, and
+                    // using global navigation state can otherwise persist the wrong
+                    // column collection for directory views.
+                    let is_drive_view = view.nav.is_root();
+                    let is_recycle_bin_view = view.nav.is_recycle_bin();
 
-                    if column_state.toggle_column_visibility(
+                    let changed = view.column_state.toggle_column_visibility(
                         is_drive_view,
                         is_recycle_bin_view,
                         column,
-                    ) {
-                        Some(
-                            column_state
-                                .order(is_drive_view, is_recycle_bin_view)
-                                .to_vec(),
-                        )
-                    } else {
-                        None
-                    }
+                    );
+                    let new_order = changed.then(|| {
+                        view.column_state
+                            .order(is_drive_view, is_recycle_bin_view)
+                            .to_vec()
+                    });
+                    let snapshot = changed.then(|| directory_settings_snapshot_for_view(view));
+                    (new_order, is_drive_view, is_recycle_bin_view, snapshot)
                 };
 
                 if let Some(order) = new_order {
@@ -2342,11 +2376,9 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                         is_recycle_bin_view,
                         &order,
                     );
-                    let snapshot =
-                        directory_settings_snapshot_for_view(explorer.active_tab().view(side));
                     let _ = persist_directory_settings_snapshot(
                         &mut explorer.settings_window.current_settings.directory_settings,
-                        snapshot,
+                        snapshot.expect("changed column visibility must have a snapshot"),
                     );
                     explorer.save_app_settings_to_disk();
                 }
@@ -2851,7 +2883,10 @@ pub fn draw_file_op_window(
 ) {
     egui::Area::new(egui::Id::new("file_op_modal_bg"))
         .order(egui::Order::Middle)
-        .interactable(true)
+        // Keep the progress backdrop visual only. The operation runs on a
+        // worker thread, so users can continue browsing while it is active;
+        // the centered progress window remains the only interactive part.
+        .interactable(false)
         .show(ctx, |ui| {
             let rect = ctx.content_rect();
             ui.painter()

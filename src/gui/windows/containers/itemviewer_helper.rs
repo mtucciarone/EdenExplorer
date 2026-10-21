@@ -1122,10 +1122,26 @@ pub fn handle_global_actions(
         if i.modifiers.command || i.modifiers.ctrl || i.modifiers.alt {
             return;
         }
+
+        // IME integrations may emit both a regular Text event and an IME Commit
+        // event for the same input. Prefer the commit event so the first filter
+        // frame cannot append the same text twice or in a different order.
+        let mut has_ime_commit = false;
         for event in &i.events {
-            if let egui::Event::Text(text) = event {
+            if let egui::Event::Ime(egui::ImeEvent::Commit(text)) = event {
                 if text.chars().all(|c| !c.is_control()) {
                     start_filter.push_str(text);
+                }
+                has_ime_commit = true;
+            }
+        }
+
+        if !has_ime_commit {
+            for event in &i.events {
+                if let egui::Event::Text(text) = event {
+                    if text.chars().all(|c| !c.is_control()) {
+                        start_filter.push_str(text);
+                    }
                 }
             }
         }

@@ -512,6 +512,36 @@ impl ItemViewerColumnState {
         state
     }
 
+    /// Restore a directory-specific layout without adding columns that the user
+    /// intentionally hid. Global settings use `from_orders`, which migrates
+    /// newly introduced columns into older settings; directory snapshots must
+    /// preserve omitted columns as hidden.
+    pub fn from_saved_orders(
+        file_column_order: Vec<ItemViewerHeaderColumn>,
+        drive_column_order: Vec<ItemViewerHeaderColumn>,
+        recycle_bin_column_order: Vec<ItemViewerHeaderColumn>,
+        file_column_sizes: Vec<f32>,
+        drive_column_sizes: Vec<f32>,
+        recycle_bin_column_sizes: Vec<f32>,
+    ) -> Self {
+        let mut state = Self::default();
+        state.file_column_order =
+            sanitize_saved_column_order(file_column_order, &default_file_column_order());
+        state.drive_column_order =
+            sanitize_saved_column_order(drive_column_order, &default_drive_column_order());
+        state.recycle_bin_column_order = sanitize_saved_column_order(
+            recycle_bin_column_order,
+            &default_recycle_bin_column_order(),
+        );
+        state.file_column_sizes =
+            sanitize_column_sizes(file_column_sizes, &default_item_viewer_file_column_size());
+        state.drive_column_sizes =
+            sanitize_column_sizes(drive_column_sizes, &default_item_viewer_drive_column_size());
+        state.recycle_bin_column_sizes =
+            sanitize_column_sizes(recycle_bin_column_sizes, &default_recycle_bin_column_size());
+        state
+    }
+
     pub fn order_mut(
         &mut self,
         is_drive_view: bool,
@@ -725,6 +755,27 @@ fn sanitize_column_order(
             .count();
 
         sanitized.insert(insert_index, column);
+    }
+
+    sanitized
+}
+
+fn sanitize_saved_column_order(
+    order: Vec<ItemViewerHeaderColumn>,
+    default_order: &[ItemViewerHeaderColumn],
+) -> Vec<ItemViewerHeaderColumn> {
+    let mut sanitized = Vec::with_capacity(order.len());
+
+    for column in order {
+        if default_order.contains(&column) && !sanitized.contains(&column) {
+            sanitized.push(column);
+        }
+    }
+
+    // Name is the only mandatory column and is normally already present in a
+    // snapshot. Add it for compatibility with older snapshots that omitted it.
+    if !sanitized.contains(&ItemViewerHeaderColumn::Name) {
+        sanitized.insert(0, ItemViewerHeaderColumn::Name);
     }
 
     sanitized
@@ -1253,6 +1304,35 @@ mod tests {
             ],
         );
         state
+    }
+
+    #[test]
+    fn saved_column_orders_preserve_hidden_columns() {
+        let state = ItemViewerColumnState::from_saved_orders(
+            vec![
+                ItemViewerHeaderColumn::Name,
+                ItemViewerHeaderColumn::Type,
+                ItemViewerHeaderColumn::Modified,
+                ItemViewerHeaderColumn::Created,
+            ],
+            default_drive_column_order(),
+            default_recycle_bin_column_order(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
+
+        assert!(
+            !state
+                .file_column_order
+                .contains(&ItemViewerHeaderColumn::Size)
+        );
+        assert!(
+            !state
+                .file_column_order
+                .contains(&ItemViewerHeaderColumn::Tags)
+        );
+        assert_eq!(state.file_column_order[0], ItemViewerHeaderColumn::Name);
     }
 
     #[test]
