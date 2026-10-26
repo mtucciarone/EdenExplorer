@@ -218,3 +218,4 @@ hotkey_navigate_back = 向后导航
 hotkey_navigate_forward = 向前导航（鼠标按钮4）
 hotkey_navigate_up = 向上导航（鼠标按钮5）
 hotkey_run_default_program = 使用默认程序运行选中的文件
+hotkey_permanent_delete = 永久删除选中的项目（跳过回收站）

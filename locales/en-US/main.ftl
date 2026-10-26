@@ -220,3 +220,4 @@ hotkey_navigate_back = Navigate backwards
 hotkey_navigate_forward = Navigate forwards (Mouse Button 4)
 hotkey_navigate_up = Navigate upwards (Mouse Button 5)
 hotkey_run_default_program = Run the default program for the selected file
+hotkey_permanent_delete = Permanently delete the selected items (skips the Recycle Bin)

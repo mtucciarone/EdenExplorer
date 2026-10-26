@@ -70,6 +70,9 @@ pub enum ItemViewerContextAction {
     ManageTags(Vec<PathBuf>),
     RenameRequest(PathBuf, String),
     RenameCancel,
-    Delete(Vec<PathBuf>),
+    Delete {
+        paths: Vec<PathBuf>,
+        permanent: bool,
+    },
     Properties(Vec<PathBuf>),
 }

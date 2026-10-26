@@ -218,3 +218,4 @@ hotkey_navigate_back = Navigasi mundur
 hotkey_navigate_forward = Navigasi maju (Tombol Mouse 4)
 hotkey_navigate_up = Navigasi ke atas (Tombol Mouse 5)
 hotkey_run_default_program = Jalankan program default untuk file yang dipilih
+hotkey_permanent_delete = Hapus item yang dipilih secara permanen (melewati Recycle Bin)

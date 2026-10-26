@@ -132,6 +132,7 @@
 - Ctrl+R (F5) - Refresh current directory
 - Alt+D - Select the address bar / current directory path
 - F2 - Rename current selected file (if any is selected inside the explorer)
+- Ctrl+Delete - Permanently delete the current selection (skips the Recycle Bin)
 - Alt-Enter - Open current properties of current selected file  (if any is selected inside the explorer)
 - Home/End - Scroll to the top or bottom of the current explorer directory and select the first/last object
 - Alt + Left Arrow (Backspace) - Navigate backwards

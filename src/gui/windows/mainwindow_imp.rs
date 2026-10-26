@@ -1123,13 +1123,13 @@ impl MainWindow {
             ItemViewerContextAction::RenameCancel => {
                 self.rename_state = None;
             }
-            ItemViewerContextAction::Delete(paths) => {
+            ItemViewerContextAction::Delete { paths, permanent } => {
                 // Ignore a second operation while one is already in flight.
                 if self.file_op.is_some() {
                     return;
                 }
 
-                let allow_undo = !self.current_nav().is_recycle_bin();
+                let allow_undo = !permanent && !self.current_nav().is_recycle_bin();
                 let (tx, rx) = unbounded();
                 let cancel = Arc::new(AtomicBool::new(false));
                 let owner_hwnd = self.hwnd.map(|h| h.0 as isize).unwrap_or(0);

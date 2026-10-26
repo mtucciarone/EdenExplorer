@@ -218,3 +218,4 @@ hotkey_navigate_back = 戻る
 hotkey_navigate_forward = 進む（マウスボタン4）
 hotkey_navigate_up = 上へ移動（マウスボタン5）
 hotkey_run_default_program = 選択したファイルを既定のプログラムで実行
+hotkey_permanent_delete = 選択した項目を完全に削除（ごみ箱をスキップ）

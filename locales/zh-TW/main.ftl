@@ -218,3 +218,4 @@ hotkey_navigate_back = 向後瀏覽
 hotkey_navigate_forward = 向前瀏覽（滑鼠按鈕4）
 hotkey_navigate_up = 向上瀏覽（滑鼠按鈕5）
 hotkey_run_default_program = 使用預設程式執行選取的檔案
+hotkey_permanent_delete = 永久刪除選取的項目（略過資源回收筒）

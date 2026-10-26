@@ -24,29 +24,30 @@ use std::path::PathBuf;
 const SETTINGS_COMBO_WIDTH: f32 = 180.0;
 const SETTINGS_VALUE_WIDTH: f32 = 92.0;
 
-const HOTKEYS: &[(&str, &str)] = &[
-    ("F1", "hotkey_toggle_fullscreen"),
-    ("Ctrl+Shift+C", "hotkey_copy_selected_path"),
-    ("Ctrl+W", "hotkey_close_current_tab"),
-    ("Ctrl+T", "hotkey_new_tab"),
-    ("Ctrl+Tab", "hotkey_next_tab"),
-    ("Ctrl+Shift+Tab", "hotkey_previous_tab"),
-    ("Ctrl+Shift+N", "hotkey_new_folder"),
-    ("Ctrl+R (F5)", "hotkey_refresh_directory"),
-    ("Alt+D", "hotkey_select_address_bar"),
-    ("F2", "hotkey_rename_file"),
-    ("Alt+Enter", "hotkey_open_properties"),
-    ("Home / End", "hotkey_scroll_and_select_edges"),
-    ("Alt+Left Arrow (Backspace)", "hotkey_navigate_back"),
-    ("Alt+Right Arrow", "hotkey_navigate_forward"),
-    ("Alt+Up Arrow", "hotkey_navigate_up"),
-    ("Enter", "hotkey_run_default_program"),
+const HOTKEYS: &[(&str, &str, bool)] = &[
+    ("F1", "hotkey_toggle_fullscreen", true),
+    ("Ctrl+Shift+C", "hotkey_copy_selected_path", true),
+    ("Ctrl+W", "hotkey_close_current_tab", true),
+    ("Ctrl+T", "hotkey_new_tab", true),
+    ("Ctrl+Tab", "hotkey_next_tab", true),
+    ("Ctrl+Shift+Tab", "hotkey_previous_tab", true),
+    ("Ctrl+Shift+N", "hotkey_new_folder", true),
+    ("Ctrl+R (F5)", "hotkey_refresh_directory", true),
+    ("Alt+D", "hotkey_select_address_bar", true),
+    ("F2", "hotkey_rename_file", true),
+    ("Alt+Enter", "hotkey_open_properties", true),
+    ("Home / End", "hotkey_scroll_and_select_edges", true),
+    ("Alt+Left Arrow (Backspace)", "hotkey_navigate_back", true),
+    ("Alt+Right Arrow", "hotkey_navigate_forward", true),
+    ("Alt+Up Arrow", "hotkey_navigate_up", true),
+    ("Enter", "hotkey_run_default_program", true),
+    ("Ctrl+Delete", "hotkey_permanent_delete", false),
 ];
 
 const HOTKEY_GROUPS: &[(&str, &[usize])] = &[
     ("hotkey_group_application", &[0]),
     ("hotkey_group_tabs", &[2, 3, 4, 5]),
-    ("hotkey_group_files_folders", &[1, 6, 9, 10, 15]),
+    ("hotkey_group_files_folders", &[1, 6, 9, 10, 15, 16]),
     ("hotkey_group_navigation", &[7, 8, 11, 12, 13, 14]),
 ];
 
@@ -145,10 +146,9 @@ fn draw_hotkeys_tab(
             ui.add_space(3.0);
 
             for index in *indices {
-                let (default_shortcut, description_key) = HOTKEYS[*index];
+                let (default_shortcut, description_key, can_rebind) = HOTKEYS[*index];
                 let description = i18n.tr(description_key);
                 let is_recording = settings.recording_hotkey == Some(*index);
-                let can_rebind = !default_shortcut.contains("Mouse Button");
                 let is_customized = settings
                     .hotkey_values
                     .get(*index)
@@ -1122,7 +1122,7 @@ pub fn draw_settings_window(
                         if settings.hotkey_values.len() != HOTKEYS.len() {
                             settings.hotkey_values = HOTKEYS
                                 .iter()
-                                .map(|(shortcut, _)| (*shortcut).to_string())
+                                .map(|(shortcut, _, _)| (*shortcut).to_string())
                                 .collect();
                         }
                         draw_hotkeys_tab(ui, settings, palette, i18n);
@@ -1190,7 +1190,7 @@ pub fn draw_settings_window(
                     if confirmed {
                         settings.hotkey_values = HOTKEYS
                             .iter()
-                            .map(|(shortcut, _)| (*shortcut).to_string())
+                            .map(|(shortcut, _, _)| (*shortcut).to_string())
                             .collect();
                         settings.recording_hotkey = None;
                     }
