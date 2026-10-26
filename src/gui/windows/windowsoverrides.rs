@@ -8,8 +8,8 @@ use eframe::egui;
 use egui::Context;
 use egui_phosphor::regular;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
+use std::sync::{Mutex, RwLock};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Dwm::*;
@@ -24,6 +24,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 const MIN_WIDTH: i32 = 600;
 const MIN_HEIGHT: i32 = 400;
+const REAPPLY_DPI_MESSAGE: u32 = WM_APP + 1;
 /// Width of the client-area region reserved for native window resizing.
 const RESIZE_BORDER_FALLBACK: i32 = 8;
 
@@ -45,6 +46,11 @@ fn resize_border_thickness() -> i32 {
 }
 
 static ORIGINAL_WNDPROC: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
+static IN_SIZE_MOVE: AtomicBool = AtomicBool::new(false);
+
+lazy_static::lazy_static! {
+    static ref PENDING_DPI: Mutex<Option<WPARAM>> = Mutex::new(None);
+}
 
 fn get_original_wndproc() -> Option<WNDPROC> {
     let ptr = ORIGINAL_WNDPROC.load(Ordering::SeqCst);
@@ -310,11 +316,38 @@ unsafe extern "system" fn custom_wndproc(
             }
         },
 
-        // 拖拽跨屏时保持物理尺寸不变:吞掉 WM_DPICHANGED,不让 winit 按
-        // "建议矩形"重设窗口大小。多显示器 DPI 不同时,winit 的自动缩放
-        // 会在拖拽进行中改变窗口尺寸,导致跨屏拖拽被打断/界面突然缩放。
-        // 缩放系数保持当前值,界面保持用户选择的物理大小,指针映射依然自洽。
-        WM_DPICHANGED => LRESULT(0),
+        // Let winit update the scale factor, but avoid its resize while the
+        // user is dragging the window across monitors. Replaying the latest
+        // DPI value after the drag avoids the boundary oscillation/flicker.
+        WM_DPICHANGED if IN_SIZE_MOVE.load(Ordering::Acquire) => {
+            if let Ok(mut pending) = PENDING_DPI.lock() {
+                *pending = Some(wparam);
+            }
+            LRESULT(0)
+        }
+
+        REAPPLY_DPI_MESSAGE => unsafe {
+            let pending_dpi = PENDING_DPI
+                .lock()
+                .ok()
+                .and_then(|mut pending| pending.take());
+            if let Some(pending_wparam) = pending_dpi {
+                let mut current_rect = RECT::default();
+                if GetWindowRect(hwnd, &mut current_rect).is_ok() {
+                    let pending_lparam = LPARAM((&current_rect as *const RECT) as isize);
+                    if let Some(orig) = get_original_wndproc() {
+                        return CallWindowProcW(
+                            orig,
+                            hwnd,
+                            WM_DPICHANGED,
+                            pending_wparam,
+                            pending_lparam,
+                        );
+                    }
+                }
+            }
+            LRESULT(0)
+        },
 
         WM_CLOSE => {
             // Persist the final size before closing: this is the single
@@ -334,6 +367,29 @@ unsafe extern "system" fn custom_wndproc(
         WM_EXITSIZEMOVE => {
             save_manual_window_size(hwnd);
 
+            unsafe {
+                if let Some(orig) = get_original_wndproc() {
+                    let result = CallWindowProcW(orig, hwnd, msg, wparam, lparam);
+                    IN_SIZE_MOVE.store(false, Ordering::Release);
+
+                    if PENDING_DPI
+                        .lock()
+                        .map(|pending| pending.is_some())
+                        .unwrap_or(false)
+                    {
+                        let _ = PostMessageW(Some(hwnd), REAPPLY_DPI_MESSAGE, WPARAM(0), LPARAM(0));
+                    }
+
+                    result
+                } else {
+                    IN_SIZE_MOVE.store(false, Ordering::Release);
+                    DefWindowProcW(hwnd, msg, wparam, lparam)
+                }
+            }
+        }
+
+        WM_ENTERSIZEMOVE => {
+            IN_SIZE_MOVE.store(true, Ordering::Release);
             unsafe {
                 if let Some(orig) = get_original_wndproc() {
                     CallWindowProcW(orig, hwnd, msg, wparam, lparam)
