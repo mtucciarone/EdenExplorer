@@ -613,11 +613,14 @@ fn build_breadcrumbs(path: &Path) -> Vec<Breadcrumb> {
 
     let mut breadcrumbs = Vec::new();
     let mut current = PathBuf::new();
+    let mut drive_prefix = None;
 
     for component in path.components() {
         match component {
             Component::Prefix(prefix) => {
+                let prefix_text = prefix.as_os_str().to_string_lossy().into_owned();
                 current.push(prefix.as_os_str());
+                drive_prefix = Some(prefix_text);
 
                 breadcrumbs.push(Breadcrumb {
                     label: prefix.as_os_str().to_string_lossy().into_owned(),
@@ -626,7 +629,14 @@ fn build_breadcrumbs(path: &Path) -> Vec<Breadcrumb> {
             }
 
             Component::RootDir => {
-                current.push(Path::new("\\"));
+                // A drive prefix by itself (for example `C:`) is drive-relative
+                // on Windows. Build the root explicitly as `C:\\` so clicking
+                // the drive breadcrumb cannot resolve against the process cwd.
+                if let Some(prefix) = &drive_prefix {
+                    current = PathBuf::from(format!("{prefix}\\"));
+                } else {
+                    current.push(Path::new("\\"));
+                }
             }
 
             Component::Normal(name) => {
