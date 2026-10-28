@@ -28,7 +28,13 @@ pub fn update_tab_infos_cache(
                     .current_settings
                     .pinned_tabs
                     .iter()
-                    .any(|p| p == &tab.primary_view.nav.current),
+                    .any(|p| p == &tab.primary_view.nav.current)
+                    || (settings_window.current_settings.remember_open_tabs
+                        && !settings_window
+                            .current_settings
+                            .unremembered_tabs
+                            .iter()
+                            .any(|p| p == &tab.primary_view.nav.current)),
             })
             .collect();
         *tab_infos_dirty = false;

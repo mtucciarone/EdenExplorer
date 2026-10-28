@@ -106,6 +106,8 @@ impl Default for MainWindow {
             start_path,
             saved_theme,
             pinned_tabs,
+            remember_open_tabs,
+            unremembered_tabs,
             time_format_24h,
             sort_column,
             sort_ascending,
@@ -127,6 +129,8 @@ impl Default for MainWindow {
             window_size_mode: window_size_mode.clone(),
             start_path: Some(start_path.clone()), // important
             pinned_tabs: pinned_tabs.clone(),
+            remember_open_tabs,
+            unremembered_tabs,
             time_format_24h,
             date_style,
             sort_column,

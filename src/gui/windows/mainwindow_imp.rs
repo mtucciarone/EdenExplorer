@@ -259,6 +259,10 @@ impl MainWindow {
     }
 
     pub fn open_new_tab(&mut self, path: PathBuf) {
+        self.settings_window
+            .current_settings
+            .unremembered_tabs
+            .retain(|excluded| excluded != &path);
         let nav = Navigation::new(path);
         let id = self.next_tab_id;
         self.next_tab_id += 1;
@@ -393,6 +397,22 @@ impl MainWindow {
     }
 
     fn save_app_settings_to_disk(&self) {
+        let tabs_to_save = if self.settings_window.current_settings.remember_open_tabs {
+            self.tabs
+                .iter()
+                .map(|tab| tab.primary_view.nav.current.clone())
+                .filter(|path| {
+                    !self
+                        .settings_window
+                        .current_settings
+                        .unremembered_tabs
+                        .iter()
+                        .any(|excluded| excluded == path)
+                })
+                .collect::<Vec<_>>()
+        } else {
+            self.settings_window.current_settings.pinned_tabs.clone()
+        };
         save_app_settings(
             self.settings_window
                 .current_settings
@@ -410,7 +430,9 @@ impl MainWindow {
                 ThemeMode::Dark => "dark",
                 ThemeMode::Light => "light",
             }),
-            &self.settings_window.current_settings.pinned_tabs,
+            &tabs_to_save,
+            self.settings_window.current_settings.remember_open_tabs,
+            &self.settings_window.current_settings.unremembered_tabs,
             self.settings_window.current_settings.time_format_24h,
             self.settings_window.current_settings.sort_column,
             self.settings_window.current_settings.sort_ascending,
@@ -442,6 +464,12 @@ impl MainWindow {
                 .recycle_bin_column_sizes,
             &self.settings_window.current_settings.directory_settings,
         );
+    }
+
+    fn save_remembered_tabs_if_enabled(&self) {
+        if self.settings_window.current_settings.remember_open_tabs {
+            self.save_app_settings_to_disk();
+        }
     }
 
     fn save_or_defer_column_settings_to_disk(&mut self, finished: bool) {
@@ -1263,7 +1291,9 @@ impl MainWindow {
     fn cleanup_resources(&mut self) {
         println!("Cleaning up resources...");
 
-        if self.column_settings_save_due.take().is_some() {
+        if self.column_settings_save_due.take().is_some()
+            || self.settings_window.current_settings.remember_open_tabs
+        {
             self.save_app_settings_to_disk();
         }
 
@@ -1292,6 +1322,7 @@ impl MainWindow {
             match action {
                 SettingsAction::ApplySettings => {
                     self.save_app_settings_to_disk();
+                    self.mark_tab_infos_dirty();
 
                     let settings = self.settings_window.current_settings.clone();
                     for tab in &mut self.tabs {
@@ -1553,6 +1584,7 @@ impl MainWindow {
                 self.pending_tab_scroll_id = Some(id);
                 self.mark_tab_infos_dirty();
                 self.load_path();
+                self.save_remembered_tabs_if_enabled();
             }
             if let Some(id) = action.close {
                 if self.tabs.len() > 1 {
@@ -1581,6 +1613,7 @@ impl MainWindow {
                         }
                         self.mark_tab_infos_dirty();
                         self.load_path();
+                        self.save_remembered_tabs_if_enabled();
                     }
                 } else {
                     let snapshot = directory_settings_snapshot_for_view(&self.tabs[0].primary_view);
@@ -1597,6 +1630,8 @@ impl MainWindow {
                         start_path,
                         _saved_theme,
                         _pinned_tabs,
+                        _remember_open_tabs,
+                        _unremembered_tabs,
                         _time_format_24h,
                         _sort_column,
                         _sort_ascending,
@@ -1616,22 +1651,47 @@ impl MainWindow {
                     self.focused_split = SplitSide::Primary;
                     self.mark_tab_infos_dirty();
                     self.load_path();
+                    self.save_remembered_tabs_if_enabled();
                 }
             }
             if let Some(path) = action.toggle_pin {
-                if self
-                    .settings_window
-                    .current_settings
-                    .pinned_tabs
-                    .iter()
-                    .any(|p| p == &path)
-                {
-                    self.settings_window
+                if self.settings_window.current_settings.remember_open_tabs {
+                    let excluded = self
+                        .settings_window
+                        .current_settings
+                        .unremembered_tabs
+                        .iter()
+                        .any(|p| p == &path);
+                    if excluded {
+                        self.settings_window
+                            .current_settings
+                            .unremembered_tabs
+                            .retain(|p| p != &path);
+                    } else {
+                        self.settings_window
+                            .current_settings
+                            .unremembered_tabs
+                            .push(path.clone());
+                        self.settings_window
+                            .current_settings
+                            .pinned_tabs
+                            .retain(|p| p != &path);
+                    }
+                } else {
+                    if self
+                        .settings_window
                         .current_settings
                         .pinned_tabs
-                        .retain(|p| p != &path);
-                } else {
-                    self.settings_window.current_settings.pinned_tabs.push(path);
+                        .iter()
+                        .any(|p| p == &path)
+                    {
+                        self.settings_window
+                            .current_settings
+                            .pinned_tabs
+                            .retain(|p| p != &path);
+                    } else {
+                        self.settings_window.current_settings.pinned_tabs.push(path);
+                    }
                 }
 
                 self.save_app_settings_to_disk();
@@ -1773,10 +1833,12 @@ impl MainWindow {
                 self.current_nav_mut().go_to(path);
                 self.mark_tab_infos_dirty();
                 self.load_path();
+                self.save_remembered_tabs_if_enabled();
             }
             if let Some(path) = action.open_new_tab {
                 self.open_new_tab(path);
                 self.load_path();
+                self.save_remembered_tabs_if_enabled();
             }
             if let Some(path) = action.select_favorite {
                 self.sidebar_state.item_clicked = Some(path);

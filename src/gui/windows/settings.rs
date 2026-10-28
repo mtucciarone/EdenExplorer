@@ -262,6 +262,8 @@ impl Default for AppSettings {
             start_path: Some(PathBuf::from(MY_PC_PATH)),
             window_size_mode: WindowSizeMode::default(),
             pinned_tabs: Vec::new(),
+            remember_open_tabs: false,
+            unremembered_tabs: Vec::new(),
             time_format_24h: false,
             date_style: DateStyle::default(),
             sort_column: SortColumn::Name,
@@ -530,6 +532,25 @@ fn draw_general_tab(
                 &i18n.tr("tooltip_settings_show_hidden_files_folders"),
                 palette,
             );
+        });
+        ui.add_space(8.0);
+        // Remember Open Tabs
+        ui.horizontal(|ui| {
+            if setting_checkbox(
+                ui,
+                palette,
+                &mut settings.current_settings.remember_open_tabs,
+                RichText::new(&i18n.tr("settings_remember_open_tabs")).color(palette.text_normal),
+                "settings_remember_open_tabs",
+            ) {
+                if settings.current_settings.remember_open_tabs {
+                    // Enabling the global setting takes precedence over any
+                    // per-tab opt-outs that were saved previously.
+                    settings.current_settings.unremembered_tabs.clear();
+                }
+                action = Some(SettingsAction::ApplySettings);
+            }
+            info_icon(ui, &i18n.tr("tooltip_settings_remember_open_tabs"), palette);
         });
         ui.add_space(8.0);
         // Show/Hide Item Viewer File Icons
