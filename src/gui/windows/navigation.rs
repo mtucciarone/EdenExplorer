@@ -14,6 +14,10 @@ impl Navigation {
     pub fn go_to(&mut self, path: PathBuf) {
         let target = if path.as_os_str().is_empty() {
             PathBuf::from(MY_PC_PATH)
+        } else if is_bare_drive_path(&path) {
+            // On Windows, `C:` is drive-relative and resolves against the
+            // process working directory. Normalize it to the drive root.
+            PathBuf::from(format!("{}\\", path.to_string_lossy()))
         } else {
             path
         };
@@ -104,4 +108,9 @@ impl Navigation {
     pub fn can_go_forward(&self) -> bool {
         !self.forward.is_empty()
     }
+}
+
+fn is_bare_drive_path(path: &std::path::Path) -> bool {
+    let text = path.to_string_lossy();
+    text.len() == 2 && text.as_bytes()[1] == b':'
 }

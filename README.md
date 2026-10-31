@@ -180,6 +180,9 @@
 - [x] Lexicographic multi-column sorting using Shift+Click to add columns to sort rows or Ctrl+Click to remove column sorting
 - [x] Directory column sorting, sizing, and view changes persist across sessions
 - [x] Add multi-tagging of objects
+- [x] Customize default directory view settings
+- [x] Customize shortcut keys for various actions
+- [x] Remember opened tabs global setting
 
 ## License
 This project is FOSS, released under the MIT License.
