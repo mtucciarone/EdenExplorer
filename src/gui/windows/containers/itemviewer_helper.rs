@@ -22,6 +22,7 @@ use crate::gui::windows::shell_context_menu::ShellContextMenu;
 use crate::gui::windows::structs::{SettingsWindow, ThemeCustomizer};
 use eframe::egui;
 use egui::containers::{Popup, PopupCloseBehavior};
+use egui::text::{CCursor, CCursorRange};
 use egui::{FontFamily, FontId};
 use egui_phosphor::regular;
 use std::collections::HashMap;
@@ -875,7 +876,6 @@ pub fn handle_global_actions(
     settings_windows: &mut SettingsWindow,
     hwnd: Option<HWND>,
 ) -> Option<ItemViewerAction> {
-    let filtered_indices = &filter_state.cached_indices;
     let mut action: Option<ItemViewerAction> = None;
 
     let is_text_edit_active = tabbar_action
@@ -972,6 +972,19 @@ pub fn handle_global_actions(
 
         if !filter_state.focus_requested {
             response.request_focus();
+
+            // The first typed character can seed the filter before this
+            // TextEdit exists. Initialize the cursor after that seed so the
+            // next characters continue at the end instead of being inserted
+            // before it (e.g. "windows" becoming "indowsw").
+            let mut state = egui::widgets::text_edit::TextEditState::load(ui.ctx(), text_edit_id)
+                .unwrap_or_default();
+            let cursor_end = CCursor::new(filter_state.query.chars().count());
+            state
+                .cursor
+                .set_char_range(Some(CCursorRange::two(cursor_end, cursor_end)));
+            state.store(ui.ctx(), text_edit_id);
+
             filter_state.focus_requested = true;
         }
 
@@ -995,13 +1008,7 @@ pub fn handle_global_actions(
             )
         });
         if (delete || permanent) && !is_drive_view {
-            let paths: Vec<PathBuf> = if !explorer_state.selected_paths.is_empty() {
-                explorer_state.selected_paths.iter().cloned().collect()
-            } else if let Some(&index) = filter_state.cached_indices.first() {
-                vec![files[index].path.clone()]
-            } else {
-                Vec::new()
-            };
+            let paths: Vec<PathBuf> = explorer_state.selected_paths.iter().cloned().collect();
 
             if !paths.is_empty() {
                 return Some(ItemViewerAction::Context(ItemViewerContextAction::Delete {
@@ -1111,13 +1118,11 @@ pub fn handle_global_actions(
             if is_drive_view {
                 return;
             }
-            let paths: Vec<PathBuf> = if !explorer_state.selected_paths.is_empty() {
-                explorer_state.selected_paths.iter().cloned().collect()
-            } else if !filtered_indices.is_empty() {
-                vec![files[filtered_indices[0]].path.clone()]
-            } else {
+            let paths: Vec<PathBuf> = explorer_state.selected_paths.iter().cloned().collect();
+
+            if paths.is_empty() {
                 return;
-            };
+            }
 
             action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete {
                 paths,
