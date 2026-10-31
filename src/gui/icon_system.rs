@@ -274,7 +274,12 @@ pub fn paint_icon(ui: &mut Ui, rect: Rect, icon: StyledIcon, size: f32, color: C
         color_key
     );
     let image = Image::from_bytes(uri, color_svg.into_bytes()).fit_to_exact_size(Vec2::splat(size));
-    ui.put(rect, image);
+    // This renderer is also used after callers have already allocated their
+    // layout rect (for example sidebar rows). Paint directly into the
+    // requested icon-sized rect so the icon does not advance egui's layout
+    // cursor a second time or stretch across a larger button hitbox.
+    let icon_rect = Rect::from_center_size(rect.center(), Vec2::splat(size));
+    image.paint_at(ui, icon_rect);
 }
 
 #[cfg(test)]
