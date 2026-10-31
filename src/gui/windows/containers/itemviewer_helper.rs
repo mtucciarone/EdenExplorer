@@ -385,7 +385,7 @@ pub fn handle_draw_col_name(
             palette.icon_colored_hover
         };
 
-        // Use a custom Phosphor icon for recognized folder names.
+        // Use a custom application icon for recognized folder names.
         if let Some(glyph) = icon_cache.get_custom_folder_icon(&file.path, file.is_dir) {
             paint_icon(ui, icon_area, glyph.regular(), icon_size.x, icon_color);
         } else if let Some(icon) = icon_cache.get(&file.path, file.is_dir) {

@@ -1,6 +1,6 @@
 use crate::core::utils::colors::drive_usage_color;
 use crate::core::utils::text::apply_eden_text_overrides;
-use crate::gui::icon_system::{AppIcon, IconBackend, StyledIcon, icon_backend, paint_icon};
+use crate::gui::icon_system::{AppIcon, StyledIcon, paint_icon};
 use crate::gui::theme::ThemePalette;
 use eframe::egui::*;
 use std::time::Duration;
@@ -236,32 +236,19 @@ pub fn draw_object_drag_ghost(
                 vec2(handle_width, ghost_rect.height()),
             );
 
-            match icon_backend() {
-                IconBackend::Phosphor => {
-                    painter.text(
-                        handle_rect.center(),
-                        Align2::CENTER_CENTER,
-                        AppIcon::DotsSixVertical.regular().phosphor_glyph(),
-                        FontId::new(16.0, FontFamily::Proportional),
+            egui::Area::new(egui::Id::new("drag_ghost_handle_icon"))
+                .order(Order::Foreground)
+                .fixed_pos(handle_rect.min)
+                .show(ui.ctx(), |icon_ui| {
+                    icon_ui.set_min_size(handle_rect.size());
+                    paint_icon(
+                        icon_ui,
+                        icon_ui.max_rect(),
+                        AppIcon::DotsSixVertical.regular(),
+                        16.0,
                         palette.icon_color,
                     );
-                }
-                IconBackend::Lucide => {
-                    egui::Area::new(egui::Id::new("drag_ghost_handle_icon"))
-                        .order(Order::Foreground)
-                        .fixed_pos(handle_rect.min)
-                        .show(ui.ctx(), |icon_ui| {
-                            icon_ui.set_min_size(handle_rect.size());
-                            paint_icon(
-                                icon_ui,
-                                icon_ui.max_rect(),
-                                AppIcon::DotsSixVertical.regular(),
-                                16.0,
-                                palette.icon_color,
-                            );
-                        });
-                }
-            }
+                });
         }
     }
 }

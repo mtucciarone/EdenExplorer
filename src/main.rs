@@ -5,7 +5,6 @@ mod gui;
 use crate::core::indexer::{WindowSizeMode, load_windows_size_mode_on_start};
 use crate::core::launch::{LaunchError, acquire_or_forward, existing_directories, parse_args};
 use crate::core::utils::fonts::apply_custom_font_definitions;
-use crate::gui::icon_system::{IconBackend, set_icon_backend};
 use crate::gui::windows::windowsoverrides::set_egui_ctx;
 use eframe::{NativeOptions, egui};
 use std::os::windows::ffi::OsStrExt;
@@ -80,9 +79,6 @@ fn main() -> eframe::Result<()> {
         "EdenExplorer",
         options,
         Box::new(|cc| {
-            // Keep the backend choice in one place for compatibility testing
-            // and rollback to IconBackend::Phosphor if ever needed.
-            set_icon_backend(IconBackend::Lucide);
             let mut fonts = egui::FontDefinitions::default();
 
             apply_custom_font_definitions(&mut fonts);

@@ -2,37 +2,10 @@
 //!
 //! UI code should use [`AppIcon`] and the helpers in this module rather than
 //! depending on a particular icon set, font, or egui integration crate. The
-//! default backend remains Phosphor while the SVG backend is migrated in.
+//! Icons are rendered from vendored Lucide SVG assets and do not use egui font
+//! glyphs.
 
-use eframe::egui;
-use egui::{Align2, Color32, FontId, Image, Rect, Response, Sense, Ui, Vec2};
-use std::fmt;
-use std::sync::atomic::{AtomicU8, Ordering};
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum IconBackend {
-    Phosphor = 0,
-    Lucide = 1,
-}
-
-// Lucide is the production backend. Phosphor remains available for an
-// immediate compatibility rollback while the SVG migration settles.
-static ACTIVE_BACKEND: AtomicU8 = AtomicU8::new(IconBackend::Lucide as u8);
-
-pub fn icon_backend() -> IconBackend {
-    match ACTIVE_BACKEND.load(Ordering::Relaxed) {
-        1 => IconBackend::Lucide,
-        _ => IconBackend::Phosphor,
-    }
-}
-
-pub fn set_icon_backend(backend: IconBackend) {
-    ACTIVE_BACKEND.store(backend as u8, Ordering::Relaxed);
-}
-
-pub fn uses_phosphor_backend() -> bool {
-    icon_backend() == IconBackend::Phosphor
-}
+use egui::{Color32, Image, Rect, Response, Sense, Ui, Vec2};
 
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -162,66 +135,6 @@ impl AppIcon {
         }
     }
 
-    fn phosphor_glyph(self, style: IconStyle) -> &'static str {
-        use egui_phosphor::fill;
-        use egui_phosphor::regular;
-
-        match style {
-            IconStyle::Filled => match self {
-                Self::PushPin => fill::PUSH_PIN,
-                Self::Star => fill::STAR,
-                _ => self.phosphor_glyph(IconStyle::Regular),
-            },
-            IconStyle::Regular => match self {
-                Self::ArrowLeft => regular::ARROW_LEFT,
-                Self::ArrowRight => regular::ARROW_RIGHT,
-                Self::ArrowUp => regular::ARROW_UP,
-                Self::ArrowCounterClockwise => regular::ARROW_COUNTER_CLOCKWISE,
-                Self::ArrowsClockwise => regular::ARROWS_CLOCKWISE,
-                Self::ArrowsInLineHorizontal => regular::ARROWS_IN_LINE_HORIZONTAL,
-                Self::CaretDown => regular::CARET_DOWN,
-                Self::CaretLeft => regular::CARET_LEFT,
-                Self::CaretRight => regular::CARET_RIGHT,
-                Self::CaretUp => regular::CARET_UP,
-                Self::Check => regular::CHECK,
-                Self::Copy => regular::COPY,
-                Self::DotsSixVertical => regular::DOTS_SIX_VERTICAL,
-                Self::File => regular::FILE,
-                Self::FilePlus => regular::FILE_PLUS,
-                Self::FileText => regular::FILE_TEXT,
-                Self::FolderOpen => regular::FOLDER_OPEN,
-                Self::FolderPlus => regular::FOLDER_PLUS,
-                Self::FolderSimple => regular::FOLDER_SIMPLE,
-                Self::Image => regular::IMAGE,
-                Self::ImageSquare => regular::IMAGE_SQUARE,
-                Self::ImagesSquare => regular::IMAGES_SQUARE,
-                Self::Info => regular::INFO,
-                Self::List => regular::LIST,
-                Self::Minus => regular::MINUS,
-                Self::Moon => regular::MOON,
-                Self::MusicNotes => regular::MUSIC_NOTES,
-                Self::Palette => regular::PALETTE,
-                Self::PencilSimple => regular::PENCIL_SIMPLE,
-                Self::Plus => regular::PLUS,
-                Self::PushPin => regular::PUSH_PIN,
-                Self::Question => regular::QUESTION,
-                Self::SidebarSimple => regular::SIDEBAR_SIMPLE,
-                Self::Sliders => regular::SLIDERS,
-                Self::SplitHorizontal => regular::SPLIT_HORIZONTAL,
-                Self::Square => regular::SQUARE,
-                Self::Star => regular::STAR,
-                Self::Sun => regular::SUN,
-                Self::Tabs => regular::TABS,
-                Self::Tag => regular::TAG,
-                Self::Terminal => regular::TERMINAL,
-                Self::Trash => regular::TRASH,
-                Self::VideoCamera => regular::VIDEO_CAMERA,
-                Self::X => regular::X,
-                Self::DownloadSimple => regular::DOWNLOAD_SIMPLE,
-            },
-        }
-    }
-
     fn lucide_name(self) -> &'static str {
         match self {
             Self::ArrowLeft => "arrow-left",
@@ -330,20 +243,6 @@ pub struct StyledIcon {
     pub style: IconStyle,
 }
 
-impl StyledIcon {
-    /// Compatibility access for painter-only overlays that cannot host an
-    /// egui image widget. Normal UI code should use `paint_icon` instead.
-    pub fn phosphor_glyph(self) -> &'static str {
-        self.icon.phosphor_glyph(self.style)
-    }
-}
-
-impl fmt::Display for StyledIcon {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.icon.phosphor_glyph(self.style))
-    }
-}
-
 fn icon_rect(ui: &mut Ui, size: f32) -> (Rect, Response) {
     ui.allocate_exact_size(Vec2::splat(size), Sense::click())
 }
@@ -355,42 +254,27 @@ pub fn draw_icon(ui: &mut Ui, icon: StyledIcon, size: f32, color: Color32) -> Re
 }
 
 pub fn paint_icon(ui: &mut Ui, rect: Rect, icon: StyledIcon, size: f32, color: Color32) {
-    match icon_backend() {
-        IconBackend::Phosphor => {
-            let font = FontId::proportional(size);
-            ui.painter().text(
-                rect.center(),
-                Align2::CENTER_CENTER,
-                icon.icon.phosphor_glyph(icon.style),
-                font,
-                color,
-            );
-        }
-        IconBackend::Lucide => {
-            // Lucide SVGs use `currentColor`. An SVG loaded as an image has
-            // no inherited CSS color, so replace it before handing the bytes
-            // to the loader. Tinting black SVG pixels would remain black.
-            let color_key = format!(
-                "{:02x}{:02x}{:02x}{:02x}",
-                color.r(),
-                color.g(),
-                color.b(),
-                color.a()
-            );
-            let color_svg = icon
-                .icon
-                .lucide_svg()
-                .replace("currentColor", &format!("#{color_key}"));
-            let uri = format!(
-                "bytes://eden-icon/{}-{}.svg",
-                icon.icon.lucide_name(),
-                color_key
-            );
-            let image =
-                Image::from_bytes(uri, color_svg.into_bytes()).fit_to_exact_size(Vec2::splat(size));
-            ui.put(rect, image);
-        }
-    }
+    // Lucide SVGs use `currentColor`. An SVG loaded as an image has no
+    // inherited CSS color, so replace it before handing the bytes to the
+    // loader. Tinting black SVG pixels would remain black.
+    let color_key = format!(
+        "{:02x}{:02x}{:02x}{:02x}",
+        color.r(),
+        color.g(),
+        color.b(),
+        color.a()
+    );
+    let color_svg = icon
+        .icon
+        .lucide_svg()
+        .replace("currentColor", &format!("#{color_key}"));
+    let uri = format!(
+        "bytes://eden-icon/{}-{}.svg",
+        icon.icon.lucide_name(),
+        color_key
+    );
+    let image = Image::from_bytes(uri, color_svg.into_bytes()).fit_to_exact_size(Vec2::splat(size));
+    ui.put(rect, image);
 }
 
 #[cfg(test)]

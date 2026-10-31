@@ -140,7 +140,7 @@ impl IconCache {
         None
     }
 
-    /// Returns a custom Phosphor icon for folders with a recognized name.
+    /// Returns a custom application icon for folders with a recognized name.
     pub fn get_custom_folder_icon(&self, path: &Path, is_dir: bool) -> Option<AppIcon> {
         if !is_dir {
             return None;

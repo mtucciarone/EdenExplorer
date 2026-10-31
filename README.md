@@ -81,7 +81,7 @@
 <p align="center">
   🦀 <b>Rust</b> — Safe, fast, and reliable systems programming<br>
   🎨 <a href="https://github.com/emilk/egui/"><b>egui</b></a> — Immediate mode GUI for ultra-responsive interfaces<br>
-  📦 <a href="https://github.com/amPerl/egui-phosphor"><b>egui-phosphor</b></a> — <a href="https://github.com/phosphor-icons/homepage">Phosphor</a> icon set for egui<br>
+  🧩 <a href="https://lucide.dev/"><b>Lucide</b></a> — Vendored SVG icons rendered independently of egui fonts<br>
   ⚙️ <b>NT-level filesystem access</b> — Maximum performance, minimal abstraction
 </p>
 

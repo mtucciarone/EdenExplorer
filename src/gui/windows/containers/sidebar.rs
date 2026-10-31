@@ -475,7 +475,7 @@ pub fn draw_sidebar_item(
 
         palette.text_size + icon_size.x + icon_padding
     } else if let Some(glyph) = icon_cache.get_custom_folder_icon(path, is_dir) {
-        // Custom Phosphor icon for recognized folders.
+        // Custom application icon for recognized folders.
         paint_icon(
             ui,
             egui::Rect::from_min_size(icon_pos, icon_size),
