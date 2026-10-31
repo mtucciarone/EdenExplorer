@@ -2,7 +2,7 @@ use crate::core::drives::is_raw_physical_drive_path;
 use crate::core::fs::FileItem;
 use crate::core::utils::files::filename_has_valid_characters_realtime;
 use crate::core::utils::text::{apply_eden_text_overrides, paint_truncated_text};
-use crate::core::utils::widgets::{apply_eden_visual_overrides, draw_checkbox};
+use crate::core::utils::widgets::{apply_eden_visual_overrides, draw_checkbox, loading_spinner};
 use crate::gui::i18n::I18n;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::{ThemePalette, apply_checkbox_colors};
@@ -2268,7 +2268,7 @@ pub fn draw_empty_item_viewer_area(
     ui.scope_builder(egui::UiBuilder::new().max_rect(empty_rect), |ui| {
         ui.centered_and_justified(|ui| {
             if show_loading_spinner {
-                ui.add(egui::Spinner::new().size(28.0));
+                loading_spinner(ui, 28.0);
             } else {
                 ui.label(i18n.tr("folder_is_empty"));
             }

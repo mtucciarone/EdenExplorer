@@ -89,6 +89,14 @@ pub fn request_repaint() {
     }
 }
 
+/// For workers that report progress many times a second: wait for the next
+/// animation frame instead of repainting on every report.
+pub fn request_animation_frame() {
+    if let Some(ctx) = EGUI_CTX.read().ok().and_then(|guard| guard.clone()) {
+        crate::core::utils::widgets::request_animation_frame(&ctx);
+    }
+}
+
 pub fn consume_clipboard_dirty() -> bool {
     CLIPBOARD_DIRTY.swap(false, Ordering::AcqRel)
 }
