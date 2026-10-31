@@ -1,8 +1,8 @@
 use crate::core::utils::colors::drive_usage_color;
 use crate::core::utils::text::apply_eden_text_overrides;
+use crate::gui::icon_system::{AppIcon, IconBackend, StyledIcon, icon_backend, paint_icon};
 use crate::gui::theme::ThemePalette;
 use eframe::egui::*;
-use egui_phosphor::regular::DOTS_SIX_VERTICAL;
 use std::time::Duration;
 
 /// How often an animation (spinner, progress window) asks for its next frame.
@@ -51,18 +51,13 @@ pub fn loading_spinner(ui: &mut Ui, size: f32) -> Response {
 
 pub fn clickable_active_icon(
     ui: &mut Ui,
-    icon: &str,
+    icon: StyledIcon,
     default_color: Color32,
     is_active: bool,
     palette: &ThemePalette,
 ) -> Response {
-    let font_id = FontId::default();
-
-    let galley = ui
-        .painter()
-        .layout_no_wrap(icon.to_string(), font_id.clone(), default_color);
-
-    let (rect, resp) = ui.allocate_exact_size(galley.size(), Sense::click());
+    let size = palette.text_size + 2.0;
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size), Sense::click());
 
     let color = if is_active {
         palette.primary
@@ -74,20 +69,14 @@ pub fn clickable_active_icon(
         }
     };
 
-    ui.painter()
-        .text(rect.center(), Align2::CENTER_CENTER, icon, font_id, color);
+    paint_icon(ui, rect, icon, size, color);
 
     resp
 }
 
-pub fn clickable_icon(ui: &mut Ui, icon: &str, palette: &ThemePalette) -> Response {
-    let font_id = FontId::default();
-
-    let galley =
-        ui.painter()
-            .layout_no_wrap(icon.to_string(), font_id.clone(), ui.visuals().text_color());
-
-    let (rect, resp) = ui.allocate_exact_size(galley.size(), Sense::click());
+pub fn clickable_icon(ui: &mut Ui, icon: StyledIcon, palette: &ThemePalette) -> Response {
+    let size = palette.text_size + 2.0;
+    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size), Sense::click());
 
     let color = if resp.hovered() {
         palette.primary
@@ -95,21 +84,20 @@ pub fn clickable_icon(ui: &mut Ui, icon: &str, palette: &ThemePalette) -> Respon
         ui.visuals().text_color()
     };
 
-    ui.painter()
-        .text(rect.center(), Align2::CENTER_CENTER, icon, font_id, color);
+    paint_icon(ui, rect, icon, size, color);
 
     resp
 }
 
 pub fn clickable_windows_icon(
     ui: &mut Ui,
-    icon: &str,
+    icon: StyledIcon,
     hover_bg: Color32,
     palette: &ThemePalette,
 ) -> Response {
     const BUTTON_WIDTH: f32 = 45.0;
     const BUTTON_HEIGHT: f32 = 26.0;
-    const ICON_SIZE: f32 = 14.0;
+    const ICON_SIZE: f32 = 16.0;
 
     let (rect, resp) =
         ui.allocate_exact_size(egui::vec2(BUTTON_WIDTH, BUTTON_HEIGHT), Sense::click());
@@ -118,13 +106,7 @@ pub fn clickable_windows_icon(
         ui.painter().rect_filled(rect, 0.0, hover_bg);
     }
 
-    ui.painter().text(
-        rect.center(),
-        Align2::CENTER_CENTER,
-        icon,
-        FontId::proportional(ICON_SIZE),
-        palette.icon_color,
-    );
+    paint_icon(ui, rect, icon, ICON_SIZE, palette.icon_color);
 
     resp
 }
@@ -213,7 +195,7 @@ pub fn drive_usage_bar(ui: &mut Ui, total: u64, free: u64, height: f32, palette:
 }
 
 pub fn draw_object_drag_ghost(
-    ui: &Ui,
+    ui: &mut Ui,
     palette: &ThemePalette,
     label: &str,
     show_reordering_handle: bool,
@@ -254,13 +236,32 @@ pub fn draw_object_drag_ghost(
                 vec2(handle_width, ghost_rect.height()),
             );
 
-            painter.text(
-                handle_rect.center(),
-                Align2::CENTER_CENTER,
-                DOTS_SIX_VERTICAL,
-                FontId::new(14.0, FontFamily::Proportional),
-                palette.icon_color,
-            );
+            match icon_backend() {
+                IconBackend::Phosphor => {
+                    painter.text(
+                        handle_rect.center(),
+                        Align2::CENTER_CENTER,
+                        AppIcon::DotsSixVertical.regular().phosphor_glyph(),
+                        FontId::new(16.0, FontFamily::Proportional),
+                        palette.icon_color,
+                    );
+                }
+                IconBackend::Lucide => {
+                    egui::Area::new(egui::Id::new("drag_ghost_handle_icon"))
+                        .order(Order::Foreground)
+                        .fixed_pos(handle_rect.min)
+                        .show(ui.ctx(), |icon_ui| {
+                            icon_ui.set_min_size(handle_rect.size());
+                            paint_icon(
+                                icon_ui,
+                                icon_ui.max_rect(),
+                                AppIcon::DotsSixVertical.regular(),
+                                16.0,
+                                palette.icon_color,
+                            );
+                        });
+                }
+            }
         }
     }
 }
@@ -394,6 +395,37 @@ pub fn eden_button(ui: &mut egui::Ui, palette: &ThemePalette, text: &str) -> egu
     apply_eden_visual_overrides(ui, palette);
     apply_eden_text_overrides(ui, palette);
     ui.button(egui::RichText::new(text).color(palette.text_normal))
+}
+
+pub fn eden_icon_button(
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+    icon: StyledIcon,
+) -> egui::Response {
+    apply_eden_visual_overrides(ui, palette);
+    let size = ui.spacing().interact_size.y;
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::click());
+
+    if response.hovered() {
+        ui.painter().rect_filled(
+            rect,
+            ui.visuals().widgets.hovered.corner_radius,
+            ui.visuals().widgets.hovered.bg_fill,
+        );
+    }
+
+    paint_icon(
+        ui,
+        rect,
+        icon,
+        palette.text_size + 2.0,
+        if response.hovered() {
+            palette.primary
+        } else {
+            palette.text_normal
+        },
+    );
+    response
 }
 
 pub fn eden_toggle_button(

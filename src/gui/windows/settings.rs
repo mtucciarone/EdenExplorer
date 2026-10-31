@@ -6,11 +6,12 @@ use crate::core::{
     },
     utils::text::apply_eden_text_overrides,
     utils::widgets::{
-        apply_eden_visual_overrides, draw_checkbox, draw_dropdown, eden_button, eden_text_label,
-        eden_toggle_button,
+        apply_eden_visual_overrides, draw_checkbox, draw_dropdown, eden_button, eden_icon_button,
+        eden_text_label, eden_toggle_button,
     },
 };
 use crate::gui::i18n::I18n;
+use crate::gui::icon_system::{AppIcon, draw_icon, paint_icon};
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::SortColumn;
 use crate::gui::windows::containers::enums::ItemViewerHeaderColumn;
@@ -18,7 +19,6 @@ use crate::gui::windows::enums::SettingsAction;
 use crate::gui::windows::structs::{AppSettings, SettingsTab, SettingsWindow};
 use eframe::egui;
 use egui::RichText;
-use egui_phosphor::regular;
 use std::path::PathBuf;
 
 const SETTINGS_COMBO_WIDTH: f32 = 180.0;
@@ -193,7 +193,7 @@ fn draw_hotkeys_tab(
                         rect.center(),
                         egui::Align2::CENTER_CENTER,
                         &shortcut,
-                        egui::FontId::monospace(palette.text_size),
+                        egui::FontId::proportional(palette.text_size),
                         shortcut_color,
                     );
                     shortcut_double_clicked = can_rebind && response.double_clicked();
@@ -654,7 +654,7 @@ fn draw_general_tab(
                 setting_label(ui, &i18n.tr("settings_startpath"), None, palette);
             },
             |ui| {
-                if eden_button(ui, palette, regular::ARROW_COUNTER_CLOCKWISE)
+                if eden_icon_button(ui, palette, AppIcon::ArrowCounterClockwise.regular())
                     .on_hover_text(i18n.tr("settings_startpath_reset_hover"))
                     .clicked()
                 {
@@ -662,7 +662,7 @@ fn draw_general_tab(
                     action = Some(SettingsAction::ApplySettings);
                 }
 
-                if eden_button(ui, palette, regular::FOLDER_OPEN)
+                if eden_icon_button(ui, palette, AppIcon::FolderOpen.regular())
                     .on_hover_text(i18n.tr("settings_startpath_choose_hover"))
                     .clicked()
                 {
@@ -765,7 +765,7 @@ fn draw_general_tab(
                     },
                 );
 
-                if eden_button(ui, palette, regular::ARROW_COUNTER_CLOCKWISE)
+                if eden_icon_button(ui, palette, AppIcon::ArrowCounterClockwise.regular())
                     .on_hover_text(i18n.tr("settings_windowsize_reset_hover"))
                     .clicked()
                 {
@@ -820,17 +820,13 @@ fn draw_general_tab(
         ui.add_space(8.0);
         // Favorites Reset
         ui.horizontal(|ui| {
-            if eden_button(
-                ui,
-                palette,
-                &format!("{} {}", regular::TRASH, i18n.tr("settings_favorites_reset")),
-            )
-            .on_hover_text(
-                egui::RichText::new(&i18n.tr("tooltip_settings_favorites_reset"))
-                    .size(palette.tooltip_text_size)
-                    .color(palette.tooltip_text_color),
-            )
-            .clicked()
+            if eden_button(ui, palette, &i18n.tr("settings_favorites_reset"))
+                .on_hover_text(
+                    egui::RichText::new(&i18n.tr("tooltip_settings_favorites_reset"))
+                        .size(palette.tooltip_text_size)
+                        .color(palette.tooltip_text_color),
+                )
+                .clicked()
             {
                 settings.show_reset_favorites_confirmation = true;
             }
@@ -890,14 +886,19 @@ fn draw_confirmation_dialog(
 }
 
 fn info_icon(ui: &mut egui::Ui, hover_text: &str, palette: &ThemePalette) -> egui::Response {
-    let resp = ui.add(egui::Label::new(regular::QUESTION).sense(egui::Sense::hover()));
+    let resp = draw_icon(
+        ui,
+        AppIcon::Question.regular(),
+        palette.text_size + 2.0,
+        palette.text_normal,
+    );
 
     if resp.hovered() {
-        ui.painter().text(
-            resp.rect.center(),
-            egui::Align2::CENTER_CENTER,
-            regular::QUESTION,
-            egui::FontId::default(),
+        paint_icon(
+            ui,
+            resp.rect,
+            AppIcon::Question.regular(),
+            palette.text_size + 2.0,
             palette.primary,
         );
     }
@@ -1091,10 +1092,6 @@ pub fn draw_settings_window(
                 (
                     egui::TextStyle::Small,
                     egui::FontId::proportional(palette.text_size),
-                ),
-                (
-                    egui::TextStyle::Monospace,
-                    egui::FontId::monospace(palette.text_size),
                 ),
             ]
             .into();

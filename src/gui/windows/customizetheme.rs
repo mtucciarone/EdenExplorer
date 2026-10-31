@@ -275,24 +275,6 @@ pub fn draw_theme_customizer(
                                     },
                                 );
                                 ui.end_row();
-
-                                eden_text_label(ui, palette, &i18n.tr("theme_mono_font"));
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        if let Some(new_font) = font_selector(
-                                            ui,
-                                            palette,
-                                            "theme_mono_font_selector",
-                                            &editing_palette.mono_font_name,
-                                        ) {
-                                            editing_palette.mono_font_name = new_font;
-                                            apply_font_to_context(ctx, &editing_palette);
-                                            changed = true;
-                                        }
-                                    },
-                                );
-                                ui.end_row();
                             });
 
                         ui.add_space(6.0);

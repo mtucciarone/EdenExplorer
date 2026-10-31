@@ -3,7 +3,6 @@ use crate::gui::theme::ThemePalette;
 use crate::gui::windows::structs::AboutWindow;
 use eframe::egui;
 use egui::FontId;
-use egui_phosphor::regular;
 
 pub fn draw_about_window(
     i18n: &I18n,
@@ -38,7 +37,7 @@ pub fn draw_about_window(
         should_close = true;
     }
 
-    egui::Window::new(format!("{} {}", &i18n.tr("about"), regular::INFO))
+    egui::Window::new(i18n.tr("about"))
         .collapsible(false)
         .resizable(false)
         .fixed_size([400.0, 400.0])
@@ -129,10 +128,7 @@ pub fn draw_about_window(
                 // Footer
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .button(format!("{} {}", regular::X, &i18n.tr("close")))
-                            .clicked()
-                        {
+                        if ui.button(i18n.tr("close")).clicked() {
                             should_close = true;
                         }
                     });

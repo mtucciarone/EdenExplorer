@@ -6,6 +6,7 @@ use crate::core::utils::widgets::{
     apply_eden_dropdown_visual_color_overrides, apply_eden_visual_overrides, draw_dropdown,
 };
 use crate::gui::i18n::I18n;
+use crate::gui::icon_system::{AppIcon, paint_icon};
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{SortColumn, truncate_item_text};
@@ -21,7 +22,6 @@ use crate::gui::windows::structs::{SettingsWindow, ThemeCustomizer};
 use eframe::egui;
 use egui::containers::{Popup, PopupCloseBehavior};
 use egui::{FontFamily, FontId};
-use egui_phosphor::regular;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use windows::Win32::Foundation::HWND;
@@ -445,11 +445,7 @@ fn draw_gallery_toolbar(
                     "{}: {} {}",
                     i18n.tr("gallery_sort_by"),
                     sort_label(i18n, sort_column),
-                    if sort_ascending {
-                        regular::CARET_UP
-                    } else {
-                        regular::CARET_DOWN
-                    }
+                    if sort_ascending { "↑" } else { "↓" }
                 ),
                 |ui| {
                     for (column, label) in [
@@ -582,7 +578,7 @@ fn draw_gallery_tile(
             },
         );
     } else if let Some(icon) = icon_cache.get(&file.path, file.is_dir) {
-        let icon_size = (thumb_size * 0.35).clamp(24.0, 80.0);
+        let icon_size = (thumb_size * 0.35).clamp(26.0, 80.0);
 
         let icon_rect =
             egui::Rect::from_center_size(preview_rect.center(), egui::vec2(icon_size, icon_size));
@@ -598,13 +594,16 @@ fn draw_gallery_tile(
             },
         );
     } else {
-        preview_painter.text(
-            preview_rect.center(),
-            egui::Align2::CENTER_CENTER,
-            regular::IMAGE_SQUARE,
-            FontId::proportional(thumb_size * 0.35),
-            palette.text_header_section,
-        );
+        ui.scope_builder(egui::UiBuilder::new().max_rect(preview_rect), |icon_ui| {
+            let size = (thumb_size * 0.35).clamp(24.0, 80.0);
+            paint_icon(
+                icon_ui,
+                icon_ui.max_rect(),
+                AppIcon::ImageSquare.regular(),
+                size,
+                palette.text_header_section,
+            );
+        });
     }
 
     let text_rect = egui::Rect::from_min_max(

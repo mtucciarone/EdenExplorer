@@ -20,7 +20,6 @@ use eframe::egui;
 use egui::containers::{Popup, PopupCloseBehavior};
 use egui::{FontFamily, FontId};
 use egui_extras::{Column, TableBuilder};
-use egui_phosphor::regular;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use windows::Win32::Foundation::HWND;
@@ -861,10 +860,7 @@ pub fn draw_item_viewer(
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
-                                    if ui
-                                        .button(format!("{} {}", regular::CHECK, i18n.tr("ok")))
-                                        .clicked()
-                                    {
+                                    if ui.button(i18n.tr("ok")).clicked() {
                                         explorer_state.non_ntfs_popup_path = None;
                                     }
                                 },

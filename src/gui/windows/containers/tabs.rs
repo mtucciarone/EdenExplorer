@@ -1,12 +1,12 @@
 use crate::core::fs::{MY_PC_PATH, MY_RECYCLE_BIN_PATH};
 use crate::gui::i18n::I18n;
+use crate::gui::icon_system::{AppIcon, paint_icon};
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::truncate_item_text;
 use crate::gui::windows::containers::structs::{TabInfo, TabsAction};
 use crate::gui::windows::windowsoverrides::toggle_window_fullscreen;
 use eframe::egui;
 use egui::{FontFamily, FontId};
-use egui_phosphor::{fill, regular};
 use std::path::PathBuf;
 use windows::Win32::Foundation::HWND;
 
@@ -236,7 +236,6 @@ fn handle_draw_tab_new_allocated(
 
     // --- Font and colors ---
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
-    let icon_font_id = FontId::new(palette.tab_icon_size, FontFamily::Proportional);
     let label_color = if is_active {
         palette.tab_text_selected
     } else {
@@ -272,22 +271,17 @@ fn handle_draw_tab_new_allocated(
     );
     let icon_glyph = if tab.is_pinned {
         if icon_resp.hovered() {
-            regular::FOLDER_SIMPLE
+            AppIcon::FolderSimple.regular()
         } else {
-            fill::PUSH_PIN
+            AppIcon::PushPin.filled()
         }
     } else if icon_resp.hovered() {
-        regular::PUSH_PIN
+        AppIcon::PushPin.regular()
     } else {
-        regular::FOLDER_SIMPLE
+        AppIcon::FolderSimple.regular()
     };
 
-    let icon_glyph_width = ui
-        .painter()
-        .layout_no_wrap(icon_glyph.to_string(), icon_font_id.clone(), icon_color)
-        .size()
-        .x;
-    let icon_draw_width = icon_size.max(icon_glyph_width);
+    let icon_draw_width = icon_size;
     let text_pos = egui::pos2(
         rect.left() + padding + icon_draw_width + spacing,
         rect.center().y,
@@ -298,8 +292,6 @@ fn handle_draw_tab_new_allocated(
         truncate_item_text(ui, &tab.title, text_width, &font_id, label_color);
 
     // --- NOW safe to use painter ---
-    let painter = ui.painter();
-
     // --- Paint background ---
     let rect = egui::Rect::from_min_max(rect.min.round(), rect.max.round());
 
@@ -310,15 +302,11 @@ fn handle_draw_tab_new_allocated(
         se: 0,
     };
 
-    painter.rect_filled(rect, rounding, tab_fill);
+    ui.painter().rect_filled(rect, rounding, tab_fill);
 
-    painter.text(
-        icon_rect.left_center(),
-        egui::Align2::LEFT_CENTER,
-        icon_glyph,
-        icon_font_id,
-        icon_color,
-    );
+    paint_icon(ui, icon_rect, icon_glyph, icon_size, icon_color);
+
+    let painter = ui.painter();
 
     painter.text(
         text_pos,
@@ -507,15 +495,7 @@ fn tab_close_button(
         palette.tab_close_normal
     };
 
-    let font_id = FontId::new(palette.tab_icon_size, FontFamily::Proportional);
-
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        regular::X,
-        font_id,
-        color,
-    );
+    paint_icon(ui, rect, AppIcon::X.regular(), palette.tab_icon_size, color);
 
     if resp.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -549,13 +529,11 @@ fn tab_add_button(
         palette.icon_color
     };
 
-    let font_id = FontId::new(palette.tab_icon_size, FontFamily::Proportional);
-
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        regular::PLUS,
-        font_id,
+    paint_icon(
+        ui,
+        rect,
+        AppIcon::Plus.regular(),
+        palette.tab_icon_size,
         color,
     );
 
@@ -592,19 +570,12 @@ fn tab_nav_button(
         palette.icon_color
     };
 
-    let font_id = FontId::new(palette.tab_icon_size, FontFamily::Proportional);
-
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        if direction == "left" {
-            regular::CARET_LEFT
-        } else {
-            regular::CARET_RIGHT
-        },
-        font_id,
-        color,
-    );
+    let icon = if direction == "left" {
+        AppIcon::CaretLeft.regular()
+    } else {
+        AppIcon::CaretRight.regular()
+    };
+    paint_icon(ui, rect, icon, palette.tab_icon_size, color);
 
     if hovered {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);

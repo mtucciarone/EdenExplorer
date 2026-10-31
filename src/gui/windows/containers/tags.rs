@@ -1,5 +1,6 @@
 use crate::core::fs::FileItem;
 use crate::gui::i18n::I18n;
+use crate::gui::icon_system::AppIcon;
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{clickable_icon, draw_object_drag_ghost, rgba_color_edit_button};
@@ -11,7 +12,6 @@ use eframe::egui;
 use egui::FontId;
 use egui::ScrollArea;
 use egui::containers::{Popup, PopupCloseBehavior};
-use egui_phosphor::regular;
 use std::path::PathBuf;
 use windows::Win32::Foundation::HWND;
 
@@ -157,14 +157,14 @@ pub fn draw_tags(
                                                 .size(palette.text_size)
                                                 .color(palette.tooltip_text_color),
                                         );
-                                        if clickable_icon(ui, regular::TRASH, palette)
+                                        if clickable_icon(ui, AppIcon::Trash.regular(), palette)
                                             .on_hover_text(i18n.tr("tag_delete_group"))
                                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                                             .clicked()
                                         {
                                             delete_confirmation = Some(group_id);
                                         }
-                                        if clickable_icon(ui, regular::PENCIL_SIMPLE, palette)
+                                        if clickable_icon(ui, AppIcon::PencilSimple.regular(), palette)
                                             .on_hover_text(i18n.tr("inputs_rename"))
                                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                                             .clicked()

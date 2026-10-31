@@ -1,5 +1,6 @@
 use crate::gui::dragdrop::DropTargets;
 use crate::gui::i18n::I18n;
+use crate::gui::icon_system::{AppIcon, StyledIcon, paint_icon};
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::windows::containers::enums::ItemViewerAction;
@@ -12,7 +13,6 @@ use crate::gui::windows::structs::{SettingsWindow, ThemeCustomizer};
 use eframe::egui;
 use egui::ScrollArea;
 use egui_extras::{Size, StripBuilder};
-use egui_phosphor::regular;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -227,17 +227,16 @@ pub fn draw_tab_content(
                         i18n.tr("items_capital")
                     };
 
-                    let painter = ui.painter();
                     let center_y = rect.center().y;
 
                     let mut right = rect.right() - RIGHT_MARGIN;
 
                     // Files
                     draw_status_counter(
-                        painter,
+                        ui,
                         right,
                         center_y,
-                        regular::FILE,
+                        AppIcon::File.regular(),
                         file_count,
                         &font_id,
                         text_color,
@@ -247,10 +246,10 @@ pub fn draw_tab_content(
 
                     // Folders
                     draw_status_counter(
-                        painter,
+                        ui,
                         right,
                         center_y,
-                        regular::FOLDER_SIMPLE,
+                        AppIcon::FolderSimple.regular(),
                         dir_count,
                         &font_id,
                         text_color,
@@ -264,7 +263,7 @@ pub fn draw_tab_content(
                             format!("{selected_count} {selected_label} {}", i18n.tr("selected"));
 
                         draw_status_selected(
-                            painter,
+                            ui.painter(),
                             right,
                             center_y,
                             &selected_text,
@@ -282,10 +281,10 @@ pub fn draw_tab_content(
 }
 
 fn draw_status_counter(
-    painter: &egui::Painter,
+    ui: &mut egui::Ui,
     right: f32,
     center_y: f32,
-    icon: &str,
+    icon: StyledIcon,
     count: usize,
     font_id: &egui::FontId,
     color: egui::Color32,
@@ -293,7 +292,7 @@ fn draw_status_counter(
     let number_right = right;
     let icon_left = number_right + STATUS_ICON_GAP;
 
-    painter.text(
+    ui.painter().text(
         egui::pos2(number_right, center_y),
         egui::Align2::RIGHT_CENTER,
         count.to_string(),
@@ -301,13 +300,12 @@ fn draw_status_counter(
         color,
     );
 
-    painter.text(
-        egui::pos2(icon_left, center_y),
-        egui::Align2::LEFT_CENTER,
-        icon,
-        font_id.clone(),
-        color,
+    let icon_size = font_id.size + 2.0;
+    let icon_rect = egui::Rect::from_center_size(
+        egui::pos2(icon_left + icon_size * 0.5, center_y),
+        egui::vec2(icon_size, icon_size),
     );
+    paint_icon(ui, icon_rect, icon, icon_size, color);
 }
 
 fn draw_status_selected(

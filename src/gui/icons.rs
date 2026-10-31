@@ -1,7 +1,7 @@
 use crate::core::portable;
+use crate::gui::icon_system::AppIcon;
 use crossbeam_channel::{Sender, unbounded};
 use eframe::egui;
-use egui_phosphor::regular;
 use std::os::windows::ffi::OsStrExt;
 use std::{
     collections::HashMap,
@@ -141,7 +141,7 @@ impl IconCache {
     }
 
     /// Returns a custom Phosphor icon for folders with a recognized name.
-    pub fn get_custom_folder_icon(&self, path: &Path, is_dir: bool) -> Option<&'static str> {
+    pub fn get_custom_folder_icon(&self, path: &Path, is_dir: bool) -> Option<AppIcon> {
         if !is_dir {
             return None;
         }
@@ -296,17 +296,17 @@ fn icon_to_rgba(icon: HICON) -> Option<(Vec<u8>, u32, u32)> {
     }
 }
 
-fn custom_folder_icon(name: &str) -> Option<&'static str> {
+fn custom_folder_icon(name: &str) -> Option<AppIcon> {
     if name.eq_ignore_ascii_case("Music") {
-        Some(regular::MUSIC_NOTES)
+        Some(AppIcon::MusicNotes)
     } else if name.eq_ignore_ascii_case("Pictures") {
-        Some(regular::IMAGE)
+        Some(AppIcon::Image)
     } else if name.eq_ignore_ascii_case("Videos") {
-        Some(regular::VIDEO_CAMERA)
+        Some(AppIcon::VideoCamera)
     } else if name.eq_ignore_ascii_case("Downloads") {
-        Some(regular::DOWNLOAD_SIMPLE)
+        Some(AppIcon::DownloadSimple)
     } else if name.eq_ignore_ascii_case("Documents") {
-        Some(regular::FILE_TEXT)
+        Some(AppIcon::FileText)
     } else {
         None
     }

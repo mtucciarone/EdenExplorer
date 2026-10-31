@@ -1,10 +1,10 @@
 use crate::gui::i18n::I18n;
+use crate::gui::icon_system::{AppIcon, paint_icon};
 use crate::gui::utils::{clickable_active_icon, clickable_icon};
 use crate::gui::windows::containers::structs::TopbarAction;
 use crate::gui::windows::windowsoverrides::toggle_window_fullscreen;
 use eframe::egui;
 use egui::Pos2;
-use egui_phosphor::regular;
 use windows::Win32::Foundation::HWND;
 
 pub fn draw_topbar(
@@ -73,7 +73,7 @@ fn draw_hamburger_menu(
 
     let menu_open = ui.memory(|mem| mem.data.get_temp::<bool>(menu_id).unwrap_or(false));
 
-    if clickable_icon(ui, regular::LIST, palette)
+    if clickable_icon(ui, AppIcon::List.regular(), palette)
         .on_hover_text(
             egui::RichText::new(&i18n.tr("tooltip_mainmenu"))
                 .size(palette.tooltip_text_size)
@@ -95,22 +95,33 @@ fn draw_hamburger_menu(
                 egui::containers::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.set_min_width(120.0);
 
-                    if menu_item(ui, regular::PALETTE, &i18n.tr("theme"), palette).clicked() {
+                    if menu_item(ui, AppIcon::Palette.regular(), &i18n.tr("theme"), palette)
+                        .clicked()
+                    {
                         action.customize_theme = true;
                         ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
                     }
 
-                    if menu_item(ui, regular::SLIDERS, &i18n.tr("settings"), palette).clicked() {
+                    if menu_item(
+                        ui,
+                        AppIcon::Sliders.regular(),
+                        &i18n.tr("settings"),
+                        palette,
+                    )
+                    .clicked()
+                    {
                         action.open_settings = true;
                         ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
                     }
 
-                    if menu_item(ui, regular::QUESTION, &i18n.tr("about"), palette).clicked() {
+                    if menu_item(ui, AppIcon::Question.regular(), &i18n.tr("about"), palette)
+                        .clicked()
+                    {
                         action.about = true;
                         ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
                     }
 
-                    if menu_item(ui, regular::X, &i18n.tr("exit"), palette).clicked() {
+                    if menu_item(ui, AppIcon::X.regular(), &i18n.tr("exit"), palette).clicked() {
                         action.exit = true;
                         ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
                     }
@@ -142,7 +153,7 @@ fn draw_mode_icons(
     };
     if clickable_active_icon(
         ui,
-        regular::SIDEBAR_SIMPLE,
+        AppIcon::SidebarSimple.regular(),
         ui.visuals().text_color(),
         !sidebar_collapsed,
         palette,
@@ -158,7 +169,11 @@ fn draw_mode_icons(
         action.toggle_sidebar = true;
     }
 
-    let icon = if is_dark { regular::SUN } else { regular::MOON };
+    let icon = if is_dark {
+        AppIcon::Sun.regular()
+    } else {
+        AppIcon::Moon.regular()
+    };
 
     if clickable_icon(ui, icon, palette)
         .on_hover_text(
@@ -175,9 +190,9 @@ fn draw_mode_icons(
     ui.separator();
 
     let file_explorer_icon = if is_file_explorer {
-        regular::TABS
+        AppIcon::Tabs.regular()
     } else {
-        regular::TABS
+        AppIcon::Tabs.regular()
     };
 
     if clickable_active_icon(
@@ -200,7 +215,7 @@ fn draw_mode_icons(
 
     if clickable_active_icon(
         ui,
-        regular::TAG,
+        AppIcon::Tag.regular(),
         ui.visuals().text_color(),
         !is_file_explorer,
         palette,
@@ -218,9 +233,12 @@ fn draw_mode_icons(
 
     if is_file_explorer {
         let (icon, tooltip_key) = if has_split {
-            (regular::ARROWS_IN_LINE_HORIZONTAL, "tooltip_close_split")
+            (
+                AppIcon::ArrowsInLineHorizontal.regular(),
+                "tooltip_close_split",
+            )
         } else {
-            (regular::SPLIT_HORIZONTAL, "tooltip_open_split")
+            (AppIcon::SplitHorizontal.regular(), "tooltip_open_split")
         };
         if clickable_icon(ui, icon, palette)
             .on_hover_text(
@@ -257,7 +275,7 @@ fn draw_drag_region(ui: &mut egui::Ui, hwnd: Option<HWND>) {
 
 fn menu_item(
     ui: &mut egui::Ui,
-    icon: &str,
+    icon: crate::gui::icon_system::StyledIcon,
     label: &str,
     palette: &crate::gui::theme::ThemePalette,
 ) -> egui::Response {
@@ -269,8 +287,8 @@ fn menu_item(
         )
     });
     let text_width = text_galley.size().x;
-    let row_height = 18.0;
-    let icon_width = 18.0;
+    let row_height = 20.0;
+    let icon_width = palette.text_size + 2.0;
     let spacing = 4.0;
 
     let total_size = egui::vec2(icon_width + spacing + text_width, row_height);
@@ -284,13 +302,11 @@ fn menu_item(
     } else {
         ui.visuals().text_color()
     };
-    ui.painter().text(
-        egui::pos2(x, center_y),
-        egui::Align2::LEFT_CENTER,
-        icon,
-        egui::FontId::default(),
-        icon_color,
+    let icon_rect = egui::Rect::from_min_size(
+        egui::pos2(x, center_y - icon_width / 2.0),
+        egui::vec2(icon_width, icon_width),
     );
+    paint_icon(ui, icon_rect, icon, icon_width, icon_color);
     x += icon_width + spacing;
 
     let text_color = if response.hovered() {

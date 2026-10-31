@@ -224,18 +224,19 @@ pub fn load_font_data(font_name: &str) -> Option<Vec<u8>> {
 }
 
 pub fn apply_custom_font_definitions(fonts: &mut egui::FontDefinitions) {
-    // 1. Phosphor Regular (adds to Proportional/Monospace)
-    egui_phosphor::add_to_fonts(fonts, egui_phosphor::Variant::Regular);
-
-    // 2. Phosphor Fill (Custom named family)
-    fonts.font_data.insert(
-        "phosphor_fill".to_owned(),
-        egui_phosphor::Variant::Fill.font_data().into(),
-    );
-    fonts.families.insert(
-        egui::FontFamily::Name("phosphor_fill".into()),
-        vec!["phosphor_fill".to_owned()],
-    );
+    if crate::gui::icon_system::uses_phosphor_backend() {
+        // Compatibility backend only: SVG icons do not touch EdenExplorer's
+        // font definitions or participate in font fallback.
+        egui_phosphor::add_to_fonts(fonts, egui_phosphor::Variant::Regular);
+        fonts.font_data.insert(
+            "phosphor_fill".to_owned(),
+            egui_phosphor::Variant::Fill.font_data().into(),
+        );
+        fonts.families.insert(
+            egui::FontFamily::Name("phosphor_fill".into()),
+            vec!["phosphor_fill".to_owned()],
+        );
+    }
 
     // 3. Japanese Font (adds to ALL families as a fallback)
     let japanese_font = "japanese_font".to_owned();

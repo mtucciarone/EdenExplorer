@@ -11,11 +11,11 @@ fn default_itemviewer_row_height() -> f32 {
 }
 
 fn default_sidebar_icon_size() -> f32 {
-    20.0
+    18.0
 }
 
 fn default_tab_icon_size() -> f32 {
-    12.0
+    16.0
 }
 
 fn default_text_size() -> f32 {
@@ -24,10 +24,6 @@ fn default_text_size() -> f32 {
 
 fn default_font_name() -> String {
     "Segoe UI".to_string()
-}
-
-fn default_mono_font_name() -> String {
-    "Hack".to_string()
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
@@ -54,8 +50,6 @@ pub struct ThemePalette {
     pub tab_icon_size: f32,
     #[serde(default = "default_font_name")]
     pub font_name: String,
-    #[serde(default = "default_mono_font_name")]
-    pub mono_font_name: String,
 
     // 🎯 Brand / primary colors
     pub primary: Color32,
@@ -135,10 +129,9 @@ pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
         // 🔤 Typography
         text_size: 12.0,
         tooltip_text_size: 13.0,
-        sidebar_icon_size: 20.0,
-        tab_icon_size: 12.0,
+        sidebar_icon_size: default_sidebar_icon_size(),
+        tab_icon_size: default_tab_icon_size(),
         font_name: default_font_name(),
-        mono_font_name: default_mono_font_name(),
 
         // 🎯 Brand / primary colors
         primary: base,
@@ -223,10 +216,9 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         // 🔤 Typography
         text_size: 12.0,
         tooltip_text_size: 13.0,
-        sidebar_icon_size: 20.0,
-        tab_icon_size: 12.0,
+        sidebar_icon_size: default_sidebar_icon_size(),
+        tab_icon_size: default_tab_icon_size(),
         font_name: default_font_name(),
-        mono_font_name: default_mono_font_name(),
 
         // 🎯 Brand / primary colors
         primary: base,
@@ -512,20 +504,6 @@ pub fn apply_font_to_context(ctx: &egui::Context, palette: &ThemePalette) {
             .entry(egui::FontFamily::Proportional)
             .or_default()
             .insert(0, "custom_proportional".to_string());
-    }
-
-    // Load monospace font
-    if let Some(font_data) = load_font_data(&palette.mono_font_name) {
-        fonts.font_data.insert(
-            "custom_monospace".to_string(),
-            Arc::new(egui::FontData::from_owned(font_data)),
-        );
-
-        fonts
-            .families
-            .entry(egui::FontFamily::Monospace)
-            .or_default()
-            .insert(0, "custom_monospace".to_string());
     }
 
     apply_custom_font_definitions(&mut fonts);

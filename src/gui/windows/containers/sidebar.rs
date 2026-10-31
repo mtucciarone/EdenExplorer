@@ -4,6 +4,7 @@ use crate::core::drives::{
 use crate::core::fs::{MY_PC_PATH, MY_RECYCLE_BIN_PATH};
 use crate::core::utils::text::apply_eden_text_overrides;
 use crate::gui::i18n::I18n;
+use crate::gui::icon_system::{AppIcon, paint_icon};
 use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{draw_object_drag_ghost, drive_usage_color, truncate_item_text};
@@ -12,7 +13,6 @@ use crate::gui::windows::structs::SidebarState;
 use eframe::egui;
 use egui::containers::{Popup, PopupCloseBehavior};
 use egui::{FontFamily, FontId, ScrollArea};
-use egui_phosphor::regular;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -447,39 +447,40 @@ pub fn draw_sidebar_item(
                 egui::vec2(handle_width, rect.height()),
             );
 
-            ui.painter().text(
-                handle_rect.center(),
-                egui::Align2::CENTER_CENTER,
-                regular::DOTS_SIX_VERTICAL,
-                egui::FontId::new(14.0, egui::FontFamily::Proportional),
+            paint_icon(
+                ui,
+                handle_rect,
+                AppIcon::DotsSixVertical.regular(),
+                14.0,
                 palette.icon_color,
             );
         }
     }
 
     // --- Icon ---
-    let icon_size = egui::vec2(palette.sidebar_icon_size, palette.sidebar_icon_size);
+    let scaled_sidebar_icon_size = palette.sidebar_icon_size * (palette.text_size / 12.0);
+    let icon_size = egui::vec2(scaled_sidebar_icon_size, scaled_sidebar_icon_size);
     let icon_padding = 4.0;
 
     let icon_pos = egui::pos2(rect.min.x + 4.0, rect.center().y - icon_size.y / 2.0);
 
     let text_offset_x = if is_recycle_bin {
-        ui.painter().text(
-            egui::pos2(icon_pos.x + icon_size.x * 0.5, rect.center().y),
-            egui::Align2::CENTER_CENTER,
-            regular::TRASH,
-            egui::FontId::new(icon_size.y * 0.85, egui::FontFamily::Proportional),
+        paint_icon(
+            ui,
+            egui::Rect::from_min_size(icon_pos, icon_size),
+            AppIcon::Trash.regular(),
+            icon_size.y * 0.85,
             palette.icon_color,
         );
 
         palette.text_size + icon_size.x + icon_padding
     } else if let Some(glyph) = icon_cache.get_custom_folder_icon(path, is_dir) {
         // Custom Phosphor icon for recognized folders.
-        ui.painter().text(
-            egui::pos2(icon_pos.x + icon_size.x * 0.5, rect.center().y),
-            egui::Align2::CENTER_CENTER,
-            glyph,
-            egui::FontId::new(icon_size.y, egui::FontFamily::Proportional),
+        paint_icon(
+            ui,
+            egui::Rect::from_min_size(icon_pos, icon_size),
+            glyph.regular(),
+            icon_size.y,
             palette.icon_color,
         );
 
@@ -593,7 +594,8 @@ fn sidebar_drive_item(
     }
 
     // --- Top row: icon + label ---
-    let icon_size = egui::vec2(palette.sidebar_icon_size, palette.sidebar_icon_size);
+    let scaled_sidebar_icon_size = palette.sidebar_icon_size * (palette.text_size / 12.0);
+    let icon_size = egui::vec2(scaled_sidebar_icon_size, scaled_sidebar_icon_size);
     let icon_padding = 4.0;
 
     let text_offset_x = if let Some(icon) = icon_cache.get(&drive.path, true) {
