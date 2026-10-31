@@ -47,6 +47,8 @@ pub struct AppSettings {
     pub start_path: Option<PathBuf>,
     pub window_size_mode: WindowSizeMode,
     pub pinned_tabs: Vec<PathBuf>,
+    pub remember_open_tabs: bool,
+    pub unremembered_tabs: Vec<PathBuf>,
     pub time_format_24h: bool,
     pub date_style: crate::core::fs::DateStyle,
     pub sort_column: SortColumn,
@@ -66,6 +68,9 @@ pub struct SettingsWindow {
     pub open: bool,
     pub current_settings: AppSettings,
     pub show_reset_favorites_confirmation: bool,
+    pub show_reset_confirmation: bool,
+    pub show_reset_hotkeys_confirmation: bool,
+    pub show_clear_directory_cache_confirmation: bool,
     pub selected_tab: SettingsTab,
     pub hotkey_values: Vec<String>,
     pub recording_hotkey: Option<usize>,
@@ -75,6 +80,7 @@ pub struct SettingsWindow {
 pub enum SettingsTab {
     #[default]
     General,
+    ViewDefaults,
     Hotkeys,
 }
 

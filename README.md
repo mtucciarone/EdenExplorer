@@ -132,6 +132,7 @@
 - Ctrl+R (F5) - Refresh current directory
 - Alt+D - Select the address bar / current directory path
 - F2 - Rename current selected file (if any is selected inside the explorer)
+- Ctrl+Delete - Permanently delete the current selection (skips the Recycle Bin)
 - Alt-Enter - Open current properties of current selected file  (if any is selected inside the explorer)
 - Home/End - Scroll to the top or bottom of the current explorer directory and select the first/last object
 - Alt + Left Arrow (Backspace) - Navigate backwards
@@ -179,6 +180,9 @@
 - [x] Lexicographic multi-column sorting using Shift+Click to add columns to sort rows or Ctrl+Click to remove column sorting
 - [x] Directory column sorting, sizing, and view changes persist across sessions
 - [x] Add multi-tagging of objects
+- [x] Customize default directory view settings
+- [x] Customize shortcut keys for various actions
+- [x] Remember opened tabs global setting
 
 ## License
 This project is FOSS, released under the MIT License.

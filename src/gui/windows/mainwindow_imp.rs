@@ -52,7 +52,7 @@ use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, SW_SHOW, SW_SHOWNORM
 use windows::{Win32::System::Com::*, Win32::UI::Shell::*, core::*};
 
 pub(crate) fn default_column_state(settings: &AppSettings) -> ItemViewerColumnState {
-    ItemViewerColumnState::from_orders(
+    ItemViewerColumnState::from_saved_orders(
         settings.item_viewer_file_column_order.clone(),
         settings.item_viewer_drive_column_order.clone(),
         settings.recycle_bin_column_order.clone(),
@@ -110,7 +110,7 @@ pub(crate) fn apply_directory_settings_to_view(view: &mut TabView, settings: &Ap
         .find(|entry| entry.directory == view.nav.current);
 
     if let Some(snapshot) = snapshot {
-        view.column_state = ItemViewerColumnState::from_orders(
+        view.column_state = ItemViewerColumnState::from_saved_orders(
             snapshot.item_viewer_file_column_order.clone(),
             snapshot.item_viewer_drive_column_order.clone(),
             snapshot.recycle_bin_column_order.clone(),
@@ -260,6 +260,10 @@ impl MainWindow {
     }
 
     pub fn open_new_tab(&mut self, path: PathBuf) {
+        self.settings_window
+            .current_settings
+            .unremembered_tabs
+            .retain(|excluded| excluded != &path);
         let nav = Navigation::new(path);
         let id = self.next_tab_id;
         self.next_tab_id += 1;
@@ -394,6 +398,22 @@ impl MainWindow {
     }
 
     fn save_app_settings_to_disk(&self) {
+        let tabs_to_save = if self.settings_window.current_settings.remember_open_tabs {
+            self.tabs
+                .iter()
+                .map(|tab| tab.primary_view.nav.current.clone())
+                .filter(|path| {
+                    !self
+                        .settings_window
+                        .current_settings
+                        .unremembered_tabs
+                        .iter()
+                        .any(|excluded| excluded == path)
+                })
+                .collect::<Vec<_>>()
+        } else {
+            self.settings_window.current_settings.pinned_tabs.clone()
+        };
         save_app_settings(
             self.settings_window
                 .current_settings
@@ -411,7 +431,9 @@ impl MainWindow {
                 ThemeMode::Dark => "dark",
                 ThemeMode::Light => "light",
             }),
-            &self.settings_window.current_settings.pinned_tabs,
+            &tabs_to_save,
+            self.settings_window.current_settings.remember_open_tabs,
+            &self.settings_window.current_settings.unremembered_tabs,
             self.settings_window.current_settings.time_format_24h,
             self.settings_window.current_settings.sort_column,
             self.settings_window.current_settings.sort_ascending,
@@ -443,6 +465,12 @@ impl MainWindow {
                 .recycle_bin_column_sizes,
             &self.settings_window.current_settings.directory_settings,
         );
+    }
+
+    fn save_remembered_tabs_if_enabled(&self) {
+        if self.settings_window.current_settings.remember_open_tabs {
+            self.save_app_settings_to_disk();
+        }
     }
 
     fn save_or_defer_column_settings_to_disk(&mut self, finished: bool) {
@@ -1124,13 +1152,13 @@ impl MainWindow {
             ItemViewerContextAction::RenameCancel => {
                 self.rename_state = None;
             }
-            ItemViewerContextAction::Delete(paths) => {
+            ItemViewerContextAction::Delete { paths, permanent } => {
                 // Ignore a second operation while one is already in flight.
                 if self.file_op.is_some() {
                     return;
                 }
 
-                let allow_undo = !self.current_nav().is_recycle_bin();
+                let allow_undo = !permanent && !self.current_nav().is_recycle_bin();
                 let (tx, rx) = unbounded();
                 let cancel = Arc::new(AtomicBool::new(false));
                 let owner_hwnd = self.hwnd.map(|h| h.0 as isize).unwrap_or(0);
@@ -1264,7 +1292,9 @@ impl MainWindow {
     fn cleanup_resources(&mut self) {
         println!("Cleaning up resources...");
 
-        if self.column_settings_save_due.take().is_some() {
+        if self.column_settings_save_due.take().is_some()
+            || self.settings_window.current_settings.remember_open_tabs
+        {
             self.save_app_settings_to_disk();
         }
 
@@ -1293,6 +1323,22 @@ impl MainWindow {
             match action {
                 SettingsAction::ApplySettings => {
                     self.save_app_settings_to_disk();
+                    self.mark_tab_infos_dirty();
+
+                    let settings = self.settings_window.current_settings.clone();
+                    for tab in &mut self.tabs {
+                        for view in
+                            std::iter::once(&mut tab.primary_view).chain(tab.split_view.iter_mut())
+                        {
+                            if !settings
+                                .directory_settings
+                                .iter()
+                                .any(|entry| entry.directory == view.nav.current)
+                            {
+                                view.column_state = default_column_state(&settings);
+                            }
+                        }
+                    }
 
                     if let Some(hwnd) = self.hwnd {
                         match &self.settings_window.current_settings.window_size_mode {
@@ -1324,6 +1370,22 @@ impl MainWindow {
                 SettingsAction::ResetFavourites => {
                     self.sidebar_state.favorites = self.default_favorites();
                     self.persist_favorites();
+                }
+                SettingsAction::ClearDirectoryCache => {
+                    self.settings_window
+                        .current_settings
+                        .directory_settings
+                        .clear();
+                    self.save_app_settings_to_disk();
+
+                    let settings = self.settings_window.current_settings.clone();
+                    for tab in &mut self.tabs {
+                        for view in
+                            std::iter::once(&mut tab.primary_view).chain(tab.split_view.iter_mut())
+                        {
+                            apply_directory_settings_to_view(view, &settings);
+                        }
+                    }
                 }
             }
         }
@@ -1523,6 +1585,7 @@ impl MainWindow {
                 self.pending_tab_scroll_id = Some(id);
                 self.mark_tab_infos_dirty();
                 self.load_path();
+                self.save_remembered_tabs_if_enabled();
             }
             if let Some(id) = action.close {
                 if self.tabs.len() > 1 {
@@ -1551,6 +1614,7 @@ impl MainWindow {
                         }
                         self.mark_tab_infos_dirty();
                         self.load_path();
+                        self.save_remembered_tabs_if_enabled();
                     }
                 } else {
                     let snapshot = directory_settings_snapshot_for_view(&self.tabs[0].primary_view);
@@ -1567,6 +1631,8 @@ impl MainWindow {
                         start_path,
                         _saved_theme,
                         _pinned_tabs,
+                        _remember_open_tabs,
+                        _unremembered_tabs,
                         _time_format_24h,
                         _sort_column,
                         _sort_ascending,
@@ -1586,22 +1652,47 @@ impl MainWindow {
                     self.focused_split = SplitSide::Primary;
                     self.mark_tab_infos_dirty();
                     self.load_path();
+                    self.save_remembered_tabs_if_enabled();
                 }
             }
             if let Some(path) = action.toggle_pin {
-                if self
-                    .settings_window
-                    .current_settings
-                    .pinned_tabs
-                    .iter()
-                    .any(|p| p == &path)
-                {
-                    self.settings_window
+                if self.settings_window.current_settings.remember_open_tabs {
+                    let excluded = self
+                        .settings_window
+                        .current_settings
+                        .unremembered_tabs
+                        .iter()
+                        .any(|p| p == &path);
+                    if excluded {
+                        self.settings_window
+                            .current_settings
+                            .unremembered_tabs
+                            .retain(|p| p != &path);
+                    } else {
+                        self.settings_window
+                            .current_settings
+                            .unremembered_tabs
+                            .push(path.clone());
+                        self.settings_window
+                            .current_settings
+                            .pinned_tabs
+                            .retain(|p| p != &path);
+                    }
+                } else {
+                    if self
+                        .settings_window
                         .current_settings
                         .pinned_tabs
-                        .retain(|p| p != &path);
-                } else {
-                    self.settings_window.current_settings.pinned_tabs.push(path);
+                        .iter()
+                        .any(|p| p == &path)
+                    {
+                        self.settings_window
+                            .current_settings
+                            .pinned_tabs
+                            .retain(|p| p != &path);
+                    } else {
+                        self.settings_window.current_settings.pinned_tabs.push(path);
+                    }
                 }
 
                 self.save_app_settings_to_disk();
@@ -1743,10 +1834,12 @@ impl MainWindow {
                 self.current_nav_mut().go_to(path);
                 self.mark_tab_infos_dirty();
                 self.load_path();
+                self.save_remembered_tabs_if_enabled();
             }
             if let Some(path) = action.open_new_tab {
                 self.open_new_tab(path);
                 self.load_path();
+                self.save_remembered_tabs_if_enabled();
             }
             if let Some(path) = action.select_favorite {
                 self.sidebar_state.item_clicked = Some(path);
@@ -2283,9 +2376,8 @@ pub fn calculate_folder_sizes_parallel(
 pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer: &mut MainWindow) {
     if let Some(action) = pending_action {
         let side = explorer.focused_split;
-        let is_drive_view = explorer.current_nav().is_root();
-        let is_recycle_bin_view = explorer.current_nav().is_recycle_bin();
-
+        let is_drive_view = explorer.active_tab().view(side).nav.is_root();
+        let is_recycle_bin_view = explorer.active_tab().view(side).nav.is_recycle_bin();
         if is_recycle_bin_view {
             match &action {
                 ItemViewerAction::CreateFolder
@@ -2317,23 +2409,27 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 remove,
             } => explorer.toggle_sort(column, additive, remove),
             ItemViewerAction::ToggleColumnVisibility(column) => {
-                let new_order = {
+                let (new_order, is_drive_view, is_recycle_bin_view, snapshot) = {
                     let view = explorer.active_tab_mut().view_mut(side);
-                    let column_state = &mut view.column_state;
+                    // Derive the view kind from the view that produced the action. The
+                    // focused split can differ from the view being processed here, and
+                    // using global navigation state can otherwise persist the wrong
+                    // column collection for directory views.
+                    let is_drive_view = view.nav.is_root();
+                    let is_recycle_bin_view = view.nav.is_recycle_bin();
 
-                    if column_state.toggle_column_visibility(
+                    let changed = view.column_state.toggle_column_visibility(
                         is_drive_view,
                         is_recycle_bin_view,
                         column,
-                    ) {
-                        Some(
-                            column_state
-                                .order(is_drive_view, is_recycle_bin_view)
-                                .to_vec(),
-                        )
-                    } else {
-                        None
-                    }
+                    );
+                    let new_order = changed.then(|| {
+                        view.column_state
+                            .order(is_drive_view, is_recycle_bin_view)
+                            .to_vec()
+                    });
+                    let snapshot = changed.then(|| directory_settings_snapshot_for_view(view));
+                    (new_order, is_drive_view, is_recycle_bin_view, snapshot)
                 };
 
                 if let Some(order) = new_order {
@@ -2343,11 +2439,9 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                         is_recycle_bin_view,
                         &order,
                     );
-                    let snapshot =
-                        directory_settings_snapshot_for_view(explorer.active_tab().view(side));
                     let _ = persist_directory_settings_snapshot(
                         &mut explorer.settings_window.current_settings.directory_settings,
-                        snapshot,
+                        snapshot.expect("changed column visibility must have a snapshot"),
                     );
                     explorer.save_app_settings_to_disk();
                 }
@@ -2852,7 +2946,10 @@ pub fn draw_file_op_window(
 ) {
     egui::Area::new(egui::Id::new("file_op_modal_bg"))
         .order(egui::Order::Middle)
-        .interactable(true)
+        // Keep the progress backdrop visual only. The operation runs on a
+        // worker thread, so users can continue browsing while it is active;
+        // the centered progress window remains the only interactive part.
+        .interactable(false)
         .show(ctx, |ui| {
             let rect = ctx.content_rect();
             ui.painter()

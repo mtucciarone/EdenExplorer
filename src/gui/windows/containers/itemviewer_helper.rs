@@ -155,9 +155,10 @@ pub fn handle_context_menu_actions(
             .button(i18n.tr("recycle_bin_delete_permanently"))
             .clicked()
         {
-            *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
-                context_paths.clone(),
-            )));
+            *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete {
+                paths: context_paths.clone(),
+                permanent: false,
+            }));
             ui.close();
         }
 
@@ -264,9 +265,10 @@ pub fn handle_context_menu_actions(
     }
 
     if ui.button(i18n.tr("inputs_delete")).clicked() {
-        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
-            context_paths.clone(),
-        )));
+        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete {
+            paths: context_paths.clone(),
+            permanent: false,
+        }));
         ui.close();
     }
 
@@ -985,8 +987,14 @@ pub fn handle_global_actions(
             )));
         }
 
-        let delete = ui.input(|input| input.key_pressed(egui::Key::Delete));
-        if delete && !is_drive_view {
+        let (delete, permanent) = ui.input(|input| {
+            let delete = input.key_pressed(egui::Key::Delete);
+            (
+                delete && !input.modifiers.ctrl,
+                delete && input.modifiers.ctrl,
+            )
+        });
+        if (delete || permanent) && !is_drive_view {
             let paths: Vec<PathBuf> = if !explorer_state.selected_paths.is_empty() {
                 explorer_state.selected_paths.iter().cloned().collect()
             } else if let Some(&index) = filter_state.cached_indices.first() {
@@ -996,9 +1004,10 @@ pub fn handle_global_actions(
             };
 
             if !paths.is_empty() {
-                return Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
+                return Some(ItemViewerAction::Context(ItemViewerContextAction::Delete {
                     paths,
-                )));
+                    permanent,
+                }));
             }
         }
 
@@ -1110,9 +1119,10 @@ pub fn handle_global_actions(
                 return;
             };
 
-            action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete(
+            action = Some(ItemViewerAction::Context(ItemViewerContextAction::Delete {
                 paths,
-            )));
+                permanent: i.modifiers.ctrl,
+            }));
         }
     });
 
@@ -1122,10 +1132,26 @@ pub fn handle_global_actions(
         if i.modifiers.command || i.modifiers.ctrl || i.modifiers.alt {
             return;
         }
+
+        // IME integrations may emit both a regular Text event and an IME Commit
+        // event for the same input. Prefer the commit event so the first filter
+        // frame cannot append the same text twice or in a different order.
+        let mut has_ime_commit = false;
         for event in &i.events {
-            if let egui::Event::Text(text) = event {
+            if let egui::Event::Ime(egui::ImeEvent::Commit(text)) = event {
                 if text.chars().all(|c| !c.is_control()) {
                     start_filter.push_str(text);
+                }
+                has_ime_commit = true;
+            }
+        }
+
+        if !has_ime_commit {
+            for event in &i.events {
+                if let egui::Event::Text(text) = event {
+                    if text.chars().all(|c| !c.is_control()) {
+                        start_filter.push_str(text);
+                    }
                 }
             }
         }
