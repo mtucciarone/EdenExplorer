@@ -25,7 +25,6 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 const MIN_WIDTH: i32 = 600;
 const MIN_HEIGHT: i32 = 400;
 const REAPPLY_DPI_MESSAGE: u32 = WM_APP + 1;
-/// Width of the client-area region reserved for native window resizing.
 const RESIZE_BORDER_FALLBACK: i32 = 8;
 
 /// Thickness of the invisible drag-to-resize border. Matches the native
@@ -438,20 +437,22 @@ unsafe extern "system" fn custom_wndproc(
             LRESULT(0)
         }
 
-        // Keep the custom borderless frame's client area aligned with the
-        // window. A maximized WS_THICKFRAME window is positioned with the
-        // native frame's thickness outside the monitor; because our frame is
-        // hidden, that overhang would otherwise clip the outer edge of the UI.
+        // Reserve the native resize frame outside the client area. This keeps
+        // the resize band available to Windows without taking pixels away
+        // from edge controls such as the vertical scrollbar. Maximized
+        // windows need the same inset to avoid clipping their outer edge.
         WM_NCCALCSIZE if wparam.0 != 0 => {
             unsafe {
+                let params = &mut *(lparam.0 as *mut NCCALCSIZE_PARAMS);
+                let border = resize_border_thickness();
+                let rect = &mut params.rgrc[0];
+                rect.left += border;
+                rect.right -= border;
+                rect.bottom -= border;
+                // Keep the custom title-bar controls flush with the top of
+                // the window. A top inset creates a dead strip above them.
                 if IsZoomed(hwnd).as_bool() {
-                    let params = &mut *(lparam.0 as *mut NCCALCSIZE_PARAMS);
-                    let border = resize_border_thickness();
-                    let rect = &mut params.rgrc[0];
-                    rect.left += border;
                     rect.top += border;
-                    rect.right -= border;
-                    rect.bottom -= border;
                 }
             }
             LRESULT(0)
@@ -487,45 +488,59 @@ unsafe extern "system" fn custom_wndproc(
                 let right = bottom_right.x;
                 let bottom = bottom_right.y;
 
+                // Keep the resize band outside the client area, like a
+                // normal decorated window. Testing inward from the client
+                // edge steals the outer pixels of edge controls such as the
+                // vertical scrollbar.
                 let resize = resize_border_thickness();
+                let left_resize = x >= left - resize && x < left;
+                let right_resize = x >= right && x < right + resize;
+                // There is no outward top frame in the normal window state,
+                // so retain the small inward top resize target there.
+                let top_resize = if IsZoomed(hwnd).as_bool() {
+                    y >= top - resize && y < top
+                } else {
+                    y >= top && y < top + resize
+                };
+                let bottom_resize = y >= bottom && y < bottom + resize;
 
                 // Top-left
-                if x >= left && x < left + resize && y >= top && y < top + resize {
+                if left_resize && top_resize {
                     return LRESULT(HTTOPLEFT as _);
                 }
 
                 // Top-right
-                if x >= right - resize && x < right && y >= top && y < top + resize {
+                if right_resize && top_resize {
                     return LRESULT(HTTOPRIGHT as _);
                 }
 
                 // Bottom-left
-                if x >= left && x < left + resize && y >= bottom - resize && y < bottom {
+                if left_resize && bottom_resize {
                     return LRESULT(HTBOTTOMLEFT as _);
                 }
 
                 // Bottom-right
-                if x >= right - resize && x < right && y >= bottom - resize && y < bottom {
+                if right_resize && bottom_resize {
                     return LRESULT(HTBOTTOMRIGHT as _);
                 }
 
                 // Left
-                if x >= left && x < left + resize {
+                if left_resize {
                     return LRESULT(HTLEFT as _);
                 }
 
                 // Right
-                if x >= right - resize && x < right {
+                if right_resize {
                     return LRESULT(HTRIGHT as _);
                 }
 
                 // Top
-                if y >= top && y < top + resize {
+                if top_resize {
                     return LRESULT(HTTOP as _);
                 }
 
                 // Bottom
-                if y >= bottom - resize && y < bottom {
+                if bottom_resize {
                     return LRESULT(HTBOTTOM as _);
                 }
 
