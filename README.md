@@ -183,6 +183,7 @@
 - [x] Customize default directory view settings
 - [x] Customize shortcut keys for various actions
 - [x] Remember opened tabs global setting
+- [x] In-house, font-rendering decoupled icon SVG support
 
 ## License
 This project is FOSS, released under the MIT License.
