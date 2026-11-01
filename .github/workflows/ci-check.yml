@@ -65,10 +65,10 @@ jobs:
         echo "📦 Binary size:"
         if (Test-Path "target/release/EdenExplorer.exe") {
           $size = (Get-Item "target/release/EdenExplorer.exe").Length / 1MB
-          echo "EdenExplorer.exe: $([math]::Round($size, 2)) MB"
+          echo "EdenExplorer-portable.exe: $([math]::Round($size, 2)) MB"
         } elseif (Test-Path "target/release/eden_explorer.exe") {
           $size = (Get-Item "target/release/eden_explorer.exe").Length / 1MB
-          echo "eden_explorer.exe: $([math]::Round($size, 2)) MB"
+          echo "EdenExplorer-portable.exe: $([math]::Round($size, 2)) MB"
         } else {
           echo "Binary not found with expected names"
         }

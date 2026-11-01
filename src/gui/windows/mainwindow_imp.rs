@@ -640,6 +640,8 @@ impl MainWindow {
             apply_directory_settings_to_view(view, &current_settings);
             view.files.clear();
             view.rx = None;
+            view.directory_change_rx = None;
+            view.directory_watcher = None;
             view.size_req_tx = None;
             view.size_rx = None;
             view.pending_size_queue.clear();
@@ -696,7 +698,7 @@ impl MainWindow {
         // Async directory listing
         let (tx, rx) = unbounded();
         scan_dir_async(
-            current_path,
+            current_path.clone(),
             tx,
             self.settings_window.current_settings.date_style,
             self.settings_window.current_settings.time_format_24h,
@@ -707,6 +709,18 @@ impl MainWindow {
             .folder_scanning_enabled;
         let shutdown = Arc::clone(&self.shutdown);
         let view = self.active_tab_mut().view_mut(side);
+        let (directory_change_tx, directory_change_rx) = unbounded();
+        view.directory_watcher = match crate::core::fs::watch_directory(
+            &current_path,
+            directory_change_tx,
+        ) {
+            Ok(watcher) => Some(watcher),
+            Err(error) => {
+                eprintln!("Failed to watch directory {}: {error}", current_path.display());
+                None
+            }
+        };
+        view.directory_change_rx = Some(directory_change_rx);
         view.rx = Some(rx);
         view.is_loading = true;
 
@@ -722,6 +736,40 @@ impl MainWindow {
             view.size_threads =
                 calculate_folder_sizes_parallel(size_req_rx, size_done_tx, shutdown, num_threads);
         }
+    }
+
+    /// Reload visible directory views when an external process changes them.
+    /// Events are coalesced because a single operation commonly produces
+    /// several filesystem notifications.
+    pub(crate) fn refresh_changed_directories(&mut self) {
+        let mut changed_sides = Vec::new();
+        for side in [SplitSide::Primary, SplitSide::Secondary] {
+            let changed = {
+                let view = self.active_tab().view(side);
+                view.directory_change_rx
+                    .as_ref()
+                    .is_some_and(|rx| rx.try_iter().next().is_some())
+            };
+            if changed {
+                changed_sides.push(side);
+            }
+        }
+
+        for side in changed_sides {
+            self.load_view(side);
+        }
+    }
+
+    pub(crate) fn has_directory_watchers(&self) -> bool {
+        self.active_tab()
+            .primary_view
+            .directory_watcher
+            .is_some()
+            || self
+                .active_tab()
+                .split_view
+                .as_ref()
+                .is_some_and(|view| view.directory_watcher.is_some())
     }
 
     pub fn load_recycle_bin_view(&mut self, side: SplitSide) {

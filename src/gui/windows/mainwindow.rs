@@ -38,7 +38,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Foundation::{POINT, RECT};
 use windows::Win32::Graphics::Gdi::ClientToScreen;
@@ -328,6 +328,13 @@ impl MainWindow {
 
 impl eframe::App for MainWindow {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        if self.has_directory_watchers() {
+            // egui repaints on demand. Keep a modest heartbeat so filesystem
+            // events can be consumed even while the window is otherwise idle.
+            ui.ctx().request_repaint_after(Duration::from_millis(250));
+        }
+        self.refresh_changed_directories();
+
         {
             let forwarded_paths = take_forwarded_paths();
             for path in &forwarded_paths {

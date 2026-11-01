@@ -1,4 +1,5 @@
 use crate::gui::dragdrop::DropTargets;
+use crate::core::utils::files::format_size;
 use crate::core::i18n::I18n;
 use crate::gui::icon_system::{AppIcon, StyledIcon, paint_icon};
 use crate::core::icons::IconCache;
@@ -22,6 +23,7 @@ const RIGHT_MARGIN: f32 = 20.0;
 const COLUMN_SPACING: f32 = 20.0;
 const FILES_COLUMN_WIDTH: f32 = 56.0;
 const FOLDERS_COLUMN_WIDTH: f32 = 56.0;
+const SIZE_COLUMN_WIDTH: f32 = 76.0;
 const STATUS_ICON_GAP: f32 = 4.0;
 
 /// Draws one view's breadcrumb + item viewer + status bar (the content of
@@ -217,6 +219,25 @@ pub fn draw_tab_content(
                         }
                     }
 
+                    // Sum visible files and completed recursive folder sizes.
+                    let total_size = view
+                        .item_viewer_filter_state
+                        .cached_indices
+                        .iter()
+                        .map(|&idx| {
+                            let item = &view.files[idx];
+                            if item.is_dir {
+                                folder_sizes
+                                    .get(&item.path)
+                                    .filter(|state| state.done)
+                                    .map(|state| state.bytes)
+                                    .unwrap_or(0)
+                            } else {
+                                item.file_size.unwrap_or(0)
+                            }
+                        })
+                        .fold(0u64, u64::saturating_add);
+
                     let text_color = ui.visuals().text_color();
                     let font_id = egui::FontId::proportional(palette.text_size);
 
@@ -256,6 +277,22 @@ pub fn draw_tab_content(
                     );
 
                     right -= FOLDERS_COLUMN_WIDTH + COLUMN_SPACING;
+
+                    // Total size, immediately to the left of the folder count.
+                    draw_status_size(
+                        ui.painter(),
+                        right,
+                        center_y,
+                        if settings_window.current_settings.folder_scanning_enabled {
+                            format_size(total_size)
+                        } else {
+                            "-".to_string()
+                        },
+                        &font_id,
+                        text_color,
+                    );
+
+                    right -= SIZE_COLUMN_WIDTH + COLUMN_SPACING;
 
                     // Selected
                     if selected_count > 0 {
@@ -306,6 +343,23 @@ fn draw_status_counter(
         egui::vec2(icon_size, icon_size),
     );
     paint_icon(ui, icon_rect, icon, icon_size, color);
+}
+
+fn draw_status_size(
+    painter: &egui::Painter,
+    right: f32,
+    center_y: f32,
+    size: String,
+    font_id: &egui::FontId,
+    color: egui::Color32,
+) {
+    painter.text(
+        egui::pos2(right, center_y),
+        egui::Align2::RIGHT_CENTER,
+        size,
+        font_id.clone(),
+        color,
+    );
 }
 
 fn draw_status_selected(

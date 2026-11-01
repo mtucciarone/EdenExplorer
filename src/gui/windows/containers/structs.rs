@@ -15,6 +15,7 @@ use crossbeam_channel::{Receiver, Sender};
 use egui::Color32;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use notify::RecommendedWatcher;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
@@ -89,6 +90,8 @@ pub struct TabView {
     pub drag_state: DragState,
     pub is_loading: bool,
     pub rx: Option<Receiver<FileItem>>,
+    pub directory_change_rx: Option<Receiver<()>>,
+    pub directory_watcher: Option<RecommendedWatcher>,
     pub size_req_tx: Option<Sender<PathBuf>>,
     pub size_rx: Option<Receiver<(PathBuf, u64, bool)>>,
     pub pending_size_queue: VecDeque<PathBuf>,
@@ -126,6 +129,8 @@ impl TabView {
             drag_state: DragState::default(),
             is_loading: false,
             rx: None,
+            directory_change_rx: None,
+            directory_watcher: None,
             size_req_tx: None,
             size_rx: None,
             pending_size_queue: VecDeque::new(),

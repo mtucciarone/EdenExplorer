@@ -505,13 +505,13 @@ fn draw_general_tab(
                 ui,
                 palette,
                 &mut settings.current_settings.folder_scanning_enabled,
-                RichText::new(&i18n.tr("settings_folderscanning")).color(palette.text_normal),
-                "settings_folderscanning",
+                RichText::new(&i18n.tr("settings_directoryscanning")).color(palette.text_normal),
+                "settings_directoryscanning",
             ) {
                 // Auto-save when setting changes
                 action = Some(SettingsAction::ApplySettings);
             }
-            info_icon(ui, &i18n.tr("tooltip_settings_folderscanning"), palette);
+            info_icon(ui, &i18n.tr("tooltip_settings_directoryscanning"), palette);
         });
         ui.add_space(8.0);
         // Hidden Files/Folders

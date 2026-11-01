@@ -69,6 +69,7 @@ unic-langid = "0.9"
 rust-embed = "8"
 sys-locale = "0.3"
 rand = "0.9"
+notify = "8.2"
 
 [profile.release]
 opt-level = "z"

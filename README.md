@@ -151,7 +151,7 @@
 - [x] **Context menu operations** (cut, copy, paste, rename, delete)
 - [x] **Enhanced drive caching** with 30-second cache duration for improved UI performance
 - [x] **Optimized icon caching** with metadata-based cache keys and background loading
-- [x] **Folder size scanning control** with user setting to enable/disable performance-heavy operations
+- [x] **Directory size scanning control** with user setting to enable/disable performance-heavy operations
 - [x] **Window size customization** with fullscreen, half-screen, and custom dimension modes
 - [x] **Portable device support** for iPhone, Android, and other connected devices
 - [x] **Raw/unmounted drive detection** for ISO sticks and Linux partitions
