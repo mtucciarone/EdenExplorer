@@ -33,7 +33,7 @@
 </p>
 
 <p align="center">
-  <img src="src/demo.gif" width="600" />
+  <img src="demo.gif" width="664" />
 </p>
 
 <p align="center">
@@ -86,7 +86,7 @@
 </p>
 
 <p align="center">
-  <img src="src/appcomparison.png" width="1536" />
+  <img src="appcomparison.png" width="1536" />
 </p>
 
 <h2 align="center">🚀 Getting Started</h2>
@@ -98,11 +98,11 @@
   </a>
 </p>
 <p align="center">
-  Just download and launch — no installation, no setup.
+  Standalone application. Just download and launch — no installation, no setup.
 </p>
 
 <p align="center">
-  <img src="src/featureslist.png" width="1536" />
+  <img src="featureslist.png" width="1536" />
 </p>
 
 ## 🗺️ Roadmap
@@ -183,7 +183,7 @@
 - [x] Customize default directory view settings
 - [x] Customize shortcut keys for various actions
 - [x] Remember opened tabs global setting
-- [x] In-house, font-rendering decoupled icon SVG support
+- [x] Decoupled icon rendering via SVG icons
 
 ## License
 This project is FOSS, released under the MIT License.
