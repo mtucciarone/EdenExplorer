@@ -1,7 +1,7 @@
 use crate::core::drives::mark_drive_cache_dirty;
 use crate::core::indexer::{WindowSizeMode, load_app_settings, save_app_settings};
 use crate::core::launch::receive_copydata;
-use crate::gui::i18n::I18n;
+use crate::core::i18n::I18n;
 use crate::gui::icon_system::AppIcon;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::clickable_windows_icon;

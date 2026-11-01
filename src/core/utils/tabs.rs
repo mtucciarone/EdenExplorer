@@ -1,5 +1,5 @@
 use crate::core::fs::MY_PC_PATH;
-use crate::gui::i18n::I18n;
+use crate::core::i18n::I18n;
 use crate::gui::windows::containers::structs::{TabInfo, TabState};
 use crate::gui::windows::structs::Navigation;
 use crate::gui::windows::structs::SettingsWindow;

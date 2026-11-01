@@ -1,4 +1,4 @@
-use crate::gui::i18n::I18n;
+use crate::core::i18n::I18n;
 use crate::gui::icon_system::{AppIcon, paint_icon};
 use crate::gui::utils::{clickable_active_icon, clickable_icon};
 use crate::gui::windows::containers::structs::TopbarAction;

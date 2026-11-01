@@ -1,8 +1,8 @@
 use crate::core::fs::{MY_PC_PATH, MY_RECYCLE_BIN_PATH};
 use crate::core::portable;
-use crate::gui::i18n::I18n;
+use crate::core::i18n::I18n;
 use crate::gui::icon_system::{AppIcon, StyledIcon, draw_icon, paint_icon};
-use crate::gui::icons::IconCache;
+use crate::core::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{clickable_icon, expand_environment_variables};
 use crate::gui::windows::containers::enums::ItemViewerNavAction;

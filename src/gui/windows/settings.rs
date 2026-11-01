@@ -10,7 +10,7 @@ use crate::core::{
         eden_text_label, eden_toggle_button,
     },
 };
-use crate::gui::i18n::I18n;
+use crate::core::i18n::I18n;
 use crate::gui::icon_system::{AppIcon, draw_icon, paint_icon};
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::SortColumn;

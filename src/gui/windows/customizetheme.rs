@@ -1,5 +1,5 @@
 use crate::core::utils::fonts::get_font_list;
-use crate::gui::i18n::I18n;
+use crate::core::i18n::I18n;
 use crate::gui::theme::{
     ThemeMode, ThemePalette, apply_font_to_context, get_default_palette,
     regenerate_base_derived_colors,

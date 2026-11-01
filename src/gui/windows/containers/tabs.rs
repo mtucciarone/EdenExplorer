@@ -1,5 +1,5 @@
 use crate::core::fs::{MY_PC_PATH, MY_RECYCLE_BIN_PATH};
-use crate::gui::i18n::I18n;
+use crate::core::i18n::I18n;
 use crate::gui::icon_system::{AppIcon, paint_icon};
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::truncate_item_text;

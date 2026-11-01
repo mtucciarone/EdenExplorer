@@ -5,9 +5,9 @@ use crate::core::utils::thumbnails::{ThumbnailPriority, ThumbnailService};
 use crate::core::utils::widgets::{
     apply_eden_dropdown_visual_color_overrides, apply_eden_visual_overrides, draw_dropdown,
 };
-use crate::gui::i18n::I18n;
+use crate::core::i18n::I18n;
 use crate::gui::icon_system::{AppIcon, paint_icon};
-use crate::gui::icons::IconCache;
+use crate::core::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{SortColumn, truncate_item_text};
 use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};

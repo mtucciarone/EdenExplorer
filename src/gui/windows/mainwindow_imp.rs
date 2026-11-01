@@ -7,7 +7,7 @@ use crate::core::indexer::{
 };
 use crate::core::utils::widgets::{loading_spinner, request_animation_frame};
 use crate::gui::MainWindow;
-use crate::gui::i18n::I18n;
+use crate::core::i18n::I18n;
 use crate::gui::theme::{
     ThemeMode, ThemePalette, apply_font_to_context, get_default_palette, set_palette,
 };

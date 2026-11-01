@@ -1,7 +1,7 @@
 use crate::gui::dragdrop::DropTargets;
-use crate::gui::i18n::I18n;
+use crate::core::i18n::I18n;
 use crate::gui::icon_system::{AppIcon, StyledIcon, paint_icon};
-use crate::gui::icons::IconCache;
+use crate::core::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::itemviewer::draw_item_viewer;

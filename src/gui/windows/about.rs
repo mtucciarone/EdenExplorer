@@ -1,4 +1,4 @@
-use crate::gui::i18n::I18n;
+use crate::core::i18n::I18n;
 use crate::gui::theme::ThemePalette;
 use crate::gui::windows::structs::AboutWindow;
 use eframe::egui;

@@ -2,8 +2,8 @@ use crate::core::indexer::{load_app_settings, load_favorites, load_tags, load_th
 use crate::core::launch::take_forwarded_paths;
 use crate::core::utils::tabs::update_tab_infos_cache;
 use crate::gui::dragdrop::{DragDropBackend, DropTargets};
-use crate::gui::i18n::I18n;
-use crate::gui::icons::IconCache;
+use crate::core::i18n::I18n;
+use crate::core::icons::IconCache;
 use crate::gui::theme::{
     ThemeMode, apply_font_to_context, apply_theme, get_default_palette, get_palette, set_palette,
 };

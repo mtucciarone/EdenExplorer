@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::{LazyLock, RwLock};
 
-pub const THEME_VERSION: u32 = 7;
+pub const THEME_VERSION: u32 = 8;
 
 fn default_itemviewer_row_height() -> f32 {
     16.0
