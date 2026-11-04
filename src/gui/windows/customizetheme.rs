@@ -1,5 +1,5 @@
+use crate::core::i18n::I18n;
 use crate::core::utils::fonts::get_font_list;
-use crate::gui::i18n::I18n;
 use crate::gui::theme::{
     ThemeMode, ThemePalette, apply_font_to_context, get_default_palette,
     regenerate_base_derived_colors,
@@ -269,24 +269,6 @@ pub fn draw_theme_customizer(
                                             &editing_palette.font_name,
                                         ) {
                                             editing_palette.font_name = new_font;
-                                            apply_font_to_context(ctx, &editing_palette);
-                                            changed = true;
-                                        }
-                                    },
-                                );
-                                ui.end_row();
-
-                                eden_text_label(ui, palette, &i18n.tr("theme_mono_font"));
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        if let Some(new_font) = font_selector(
-                                            ui,
-                                            palette,
-                                            "theme_mono_font_selector",
-                                            &editing_palette.mono_font_name,
-                                        ) {
-                                            editing_palette.mono_font_name = new_font;
                                             apply_font_to_context(ctx, &editing_palette);
                                             changed = true;
                                         }

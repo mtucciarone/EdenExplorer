@@ -1,10 +1,11 @@
 use crate::core::drives::is_raw_physical_drive_path;
 use crate::core::fs::FileItem;
+use crate::core::i18n::I18n;
+use crate::core::icons::IconCache;
 use crate::core::utils::files::filename_has_valid_characters_realtime;
 use crate::core::utils::text::{apply_eden_text_overrides, paint_truncated_text};
 use crate::core::utils::widgets::{apply_eden_visual_overrides, draw_checkbox, loading_spinner};
-use crate::gui::i18n::I18n;
-use crate::gui::icons::IconCache;
+use crate::gui::icon_system::paint_icon;
 use crate::gui::theme::{ThemePalette, apply_checkbox_colors};
 use crate::gui::utils::{
     SortColumn, SortKey, clear_clipboard_files, drive_usage_bar, format_size, get_file_type_name,
@@ -24,7 +25,6 @@ use eframe::egui;
 use egui::containers::{Popup, PopupCloseBehavior};
 use egui::text::{CCursor, CCursorRange};
 use egui::{FontFamily, FontId};
-use egui_phosphor::regular;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use windows::Win32::Foundation::HWND;
@@ -386,17 +386,9 @@ pub fn handle_draw_col_name(
             palette.icon_colored_hover
         };
 
-        // Use a custom Phosphor icon for recognized folder names.
+        // Use a custom application icon for recognized folder names.
         if let Some(glyph) = icon_cache.get_custom_folder_icon(&file.path, file.is_dir) {
-            let font_id = egui::FontId::new(icon_size.x, egui::FontFamily::Proportional);
-
-            ui.painter().text(
-                icon_area.center(),
-                egui::Align2::CENTER_CENTER,
-                glyph,
-                font_id,
-                icon_color,
-            );
+            paint_icon(ui, icon_area, glyph.regular(), icon_size.x, icon_color);
         } else if let Some(icon) = icon_cache.get(&file.path, file.is_dir) {
             let icon_pos = egui::pos2(
                 icon_area.center().x - icon_size.x * 0.5,
@@ -1274,13 +1266,7 @@ fn draw_header_cell(
         let cell_resp = ui.interact(ui.max_rect(), cell_id, egui::Sense::click());
         let arrow = column_action
             .and_then(|column| sort_keys.iter().find(|key| key.column == column))
-            .map(|key| {
-                if key.ascending {
-                    regular::CARET_UP
-                } else {
-                    regular::CARET_DOWN
-                }
-            })
+            .map(|key| if key.ascending { "↑" } else { "↓" })
             .unwrap_or("");
         let sort_label = label;
 

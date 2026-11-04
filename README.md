@@ -8,7 +8,7 @@
   <a href="https://thetalabs.ca/eden-explorer/">
     <img src="https://img.shields.io/badge/🚀%20LIVE%20NOW!-Official%20Website-2ecc71?style=for-the-badge&link=https://thetalabs.ca/eden-explorer/" alt="Official Website Launched">
   </a>
-  <img src="https://img.shields.io/badge/Public%20Alpha-Now%20Available-2ecc71?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Public%20Beta-Now%20Available-2ecc71?style=for-the-badge" />
 </p>
 
 <p align="center">
@@ -33,7 +33,7 @@
 </p>
 
 <p align="center">
-  <img src="src/demo.gif" width="600" />
+  <img src="demo.gif" width="664" />
 </p>
 
 <p align="center">
@@ -81,12 +81,12 @@
 <p align="center">
   🦀 <b>Rust</b> — Safe, fast, and reliable systems programming<br>
   🎨 <a href="https://github.com/emilk/egui/"><b>egui</b></a> — Immediate mode GUI for ultra-responsive interfaces<br>
-  📦 <a href="https://github.com/amPerl/egui-phosphor"><b>egui-phosphor</b></a> — <a href="https://github.com/phosphor-icons/homepage">Phosphor</a> icon set for egui<br>
+  🧩 <a href="https://lucide.dev/"><b>Lucide</b></a> — Vendored SVG icons rendered independently of egui fonts<br>
   ⚙️ <b>NT-level filesystem access</b> — Maximum performance, minimal abstraction
 </p>
 
 <p align="center">
-  <img src="src/appcomparison.png" width="1536" />
+  <img src="appcomparison.png" width="1536" />
 </p>
 
 <h2 align="center">🚀 Getting Started</h2>
@@ -98,18 +98,17 @@
   </a>
 </p>
 <p align="center">
-  Just download and launch — no installation, no setup.
+  Standalone application. Just download and launch — no installation, no setup.
 </p>
 
 <p align="center">
-  <img src="src/featureslist.png" width="1536" />
+  <img src="featureslist.png" width="1536" />
 </p>
 
 ## 🗺️ Roadmap
 
-### 🚀 Upcoming Alpha Features
-- [ ] Enhanced theme customization, such as custom layouts, mix/match UI elements, styles, etc
-- [ ] Support network devices
+### 🚀 Upcoming Beta Features
+- [ ] TBD
 
 ## Star History
 
@@ -151,7 +150,7 @@
 - [x] **Context menu operations** (cut, copy, paste, rename, delete)
 - [x] **Enhanced drive caching** with 30-second cache duration for improved UI performance
 - [x] **Optimized icon caching** with metadata-based cache keys and background loading
-- [x] **Folder size scanning control** with user setting to enable/disable performance-heavy operations
+- [x] **Directory size scanning control** with user setting to enable/disable performance-heavy operations
 - [x] **Window size customization** with fullscreen, half-screen, and custom dimension modes
 - [x] **Portable device support** for iPhone, Android, and other connected devices
 - [x] **Raw/unmounted drive detection** for ISO sticks and Linux partitions
@@ -183,6 +182,7 @@
 - [x] Customize default directory view settings
 - [x] Customize shortcut keys for various actions
 - [x] Remember opened tabs global setting
+- [x] Decoupled icon rendering via SVG icons
 
 ## License
 This project is FOSS, released under the MIT License.

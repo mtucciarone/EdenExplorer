@@ -1,9 +1,9 @@
 use crate::core::drives::is_raw_physical_drive_path;
 use crate::core::fs::FileItem;
+use crate::core::i18n::I18n;
+use crate::core::icons::IconCache;
 use crate::core::utils::text::apply_eden_text_overrides;
 use crate::core::utils::widgets::draw_checkbox;
-use crate::gui::i18n::I18n;
-use crate::gui::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{draw_object_drag_ghost, fuzzy_match, truncate_item_text};
 use crate::gui::windows::containers::enums::{
@@ -20,7 +20,6 @@ use eframe::egui;
 use egui::containers::{Popup, PopupCloseBehavior};
 use egui::{FontFamily, FontId};
 use egui_extras::{Column, TableBuilder};
-use egui_phosphor::regular;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use windows::Win32::Foundation::HWND;
@@ -861,10 +860,7 @@ pub fn draw_item_viewer(
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
-                                    if ui
-                                        .button(format!("{} {}", regular::CHECK, i18n.tr("ok")))
-                                        .clicked()
-                                    {
+                                    if ui.button(i18n.tr("ok")).clicked() {
                                         explorer_state.non_ntfs_popup_path = None;
                                     }
                                 },

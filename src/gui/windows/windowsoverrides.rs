@@ -1,12 +1,12 @@
 use crate::core::drives::mark_drive_cache_dirty;
+use crate::core::i18n::I18n;
 use crate::core::indexer::{WindowSizeMode, load_app_settings, save_app_settings};
 use crate::core::launch::receive_copydata;
-use crate::gui::i18n::I18n;
+use crate::gui::icon_system::AppIcon;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::clickable_windows_icon;
 use eframe::egui;
 use egui::Context;
-use egui_phosphor::regular;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use std::sync::{Mutex, RwLock};
@@ -130,12 +130,14 @@ fn save_manual_window_size(hwnd: HWND) {
             show_hidden_files_folders,
             show_item_viewer_icons,
             windows_context_menu_enabled,
+            extra_actions_bar,
             _window_size_mode,
             start_path,
             saved_theme,
             pinned_tabs,
             remember_open_tabs,
             unremembered_tabs,
+            remembered_active_tab,
             time_format_24h,
             sort_column,
             sort_ascending,
@@ -156,12 +158,14 @@ fn save_manual_window_size(hwnd: HWND) {
             show_hidden_files_folders,
             show_item_viewer_icons,
             windows_context_menu_enabled,
+            extra_actions_bar,
             &window_size_mode,
             &Some(start_path),
             saved_theme.as_deref(),
             &pinned_tabs,
             remember_open_tabs,
             &unremembered_tabs,
+            remembered_active_tab.as_ref(),
             time_format_24h,
             sort_column,
             sort_ascending,
@@ -579,12 +583,12 @@ pub fn handle_draw_windows_buttons(
         let is_maximized = unsafe { IsZoomed(hwnd).as_bool() };
 
         let maximize_icon = if is_maximized {
-            regular::COPY
+            AppIcon::Copy.regular()
         } else {
-            regular::SQUARE
+            AppIcon::Square.regular()
         };
 
-        if clickable_windows_icon(ui, regular::X, palette.tab_close_hover, palette)
+        if clickable_windows_icon(ui, AppIcon::X.regular(), palette.tab_close_hover, palette)
             .on_hover_text(
                 egui::RichText::new(i18n.tr("close"))
                     .size(palette.tooltip_text_size)
@@ -614,7 +618,7 @@ pub fn handle_draw_windows_buttons(
             toggle_window_fullscreen(hwnd);
         }
 
-        if clickable_windows_icon(ui, regular::MINUS, palette.primary, palette)
+        if clickable_windows_icon(ui, AppIcon::Minus.regular(), palette.primary, palette)
             .on_hover_text(
                 egui::RichText::new(i18n.tr("minimize"))
                     .size(palette.tooltip_text_size)

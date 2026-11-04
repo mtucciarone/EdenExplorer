@@ -7,9 +7,9 @@ cargo build --release --verbose
 mkdir -Force release
 
 if (Test-Path "target/release/EdenExplorer.exe") {
-  Copy-Item "target/release/EdenExplorer.exe" "release/EdenExplorer.exe"
+  Copy-Item "target/release/EdenExplorer.exe" "release/EdenExplorer-portable.exe"
 } elseif (Test-Path "target/release/eden_explorer.exe") {
-  Copy-Item "target/release/eden_explorer.exe" "release/EdenExplorer.exe"
+  Copy-Item "target/release/eden_explorer.exe" "release/EdenExplorer-portable.exe"
 } else {
   Write-Error "❌ No binary found"
 }

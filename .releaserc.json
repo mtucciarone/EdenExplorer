@@ -17,8 +17,8 @@
       {
         "assets": [
           {
-            "path": "release/EdenExplorer.exe",
-            "name": "EdenExplorer-v${nextRelease.version}-win_x86-64.exe"
+            "path": "release/EdenExplorer-portable.exe",
+            "name": "EdenExplorer-portable-v${nextRelease.version}-win_x86-64.exe"
           }
         ]
       }

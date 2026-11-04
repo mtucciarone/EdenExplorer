@@ -1,6 +1,8 @@
+use crate::core::i18n::I18n;
+use crate::core::icons::IconCache;
+use crate::core::utils::files::format_size;
 use crate::gui::dragdrop::DropTargets;
-use crate::gui::i18n::I18n;
-use crate::gui::icons::IconCache;
+use crate::gui::icon_system::{AppIcon, StyledIcon, paint_icon};
 use crate::gui::theme::ThemePalette;
 use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::itemviewer::draw_item_viewer;
@@ -12,7 +14,6 @@ use crate::gui::windows::structs::{SettingsWindow, ThemeCustomizer};
 use eframe::egui;
 use egui::ScrollArea;
 use egui_extras::{Size, StripBuilder};
-use egui_phosphor::regular;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -22,6 +23,7 @@ const RIGHT_MARGIN: f32 = 20.0;
 const COLUMN_SPACING: f32 = 20.0;
 const FILES_COLUMN_WIDTH: f32 = 56.0;
 const FOLDERS_COLUMN_WIDTH: f32 = 56.0;
+const SIZE_COLUMN_WIDTH: f32 = 76.0;
 const STATUS_ICON_GAP: f32 = 4.0;
 
 /// Draws one view's breadcrumb + item viewer + status bar (the content of
@@ -45,6 +47,7 @@ pub fn draw_tab_content(
     clipboard_is_cut: bool,
     show_hidden_files_folders: bool,
     show_item_viewer_icons: bool,
+    extra_actions_bar: bool,
     rename_state: &mut Option<RenameState>,
     file_type_cache: &mut HashMap<String, String>,
     file_size_text_cache: &mut HashMap<PathBuf, (u64, String)>,
@@ -93,6 +96,8 @@ pub fn draw_tab_content(
                     is_favorited,
                     drag_active,
                     drag_hover_target.clone(),
+                    extra_actions_bar,
+                    clipboard_has_files,
                 ));
             });
 
@@ -217,6 +222,25 @@ pub fn draw_tab_content(
                         }
                     }
 
+                    // Sum visible files and completed recursive folder sizes.
+                    let total_size = view
+                        .item_viewer_filter_state
+                        .cached_indices
+                        .iter()
+                        .map(|&idx| {
+                            let item = &view.files[idx];
+                            if item.is_dir {
+                                folder_sizes
+                                    .get(&item.path)
+                                    .filter(|state| state.done)
+                                    .map(|state| state.bytes)
+                                    .unwrap_or(0)
+                            } else {
+                                item.file_size.unwrap_or(0)
+                            }
+                        })
+                        .fold(0u64, u64::saturating_add);
+
                     let text_color = ui.visuals().text_color();
                     let font_id = egui::FontId::proportional(palette.text_size);
 
@@ -227,17 +251,16 @@ pub fn draw_tab_content(
                         i18n.tr("items_capital")
                     };
 
-                    let painter = ui.painter();
                     let center_y = rect.center().y;
 
                     let mut right = rect.right() - RIGHT_MARGIN;
 
                     // Files
                     draw_status_counter(
-                        painter,
+                        ui,
                         right,
                         center_y,
-                        regular::FILE,
+                        AppIcon::File.regular(),
                         file_count,
                         &font_id,
                         text_color,
@@ -247,10 +270,10 @@ pub fn draw_tab_content(
 
                     // Folders
                     draw_status_counter(
-                        painter,
+                        ui,
                         right,
                         center_y,
-                        regular::FOLDER_SIMPLE,
+                        AppIcon::FolderSimple.regular(),
                         dir_count,
                         &font_id,
                         text_color,
@@ -258,13 +281,29 @@ pub fn draw_tab_content(
 
                     right -= FOLDERS_COLUMN_WIDTH + COLUMN_SPACING;
 
+                    // Total size, immediately to the left of the folder count.
+                    draw_status_size(
+                        ui.painter(),
+                        right,
+                        center_y,
+                        if settings_window.current_settings.folder_scanning_enabled {
+                            format_size(total_size)
+                        } else {
+                            "-".to_string()
+                        },
+                        &font_id,
+                        text_color,
+                    );
+
+                    right -= SIZE_COLUMN_WIDTH + COLUMN_SPACING;
+
                     // Selected
                     if selected_count > 0 {
                         let selected_text =
                             format!("{selected_count} {selected_label} {}", i18n.tr("selected"));
 
                         draw_status_selected(
-                            painter,
+                            ui.painter(),
                             right,
                             center_y,
                             &selected_text,
@@ -282,10 +321,10 @@ pub fn draw_tab_content(
 }
 
 fn draw_status_counter(
-    painter: &egui::Painter,
+    ui: &mut egui::Ui,
     right: f32,
     center_y: f32,
-    icon: &str,
+    icon: StyledIcon,
     count: usize,
     font_id: &egui::FontId,
     color: egui::Color32,
@@ -293,7 +332,7 @@ fn draw_status_counter(
     let number_right = right;
     let icon_left = number_right + STATUS_ICON_GAP;
 
-    painter.text(
+    ui.painter().text(
         egui::pos2(number_right, center_y),
         egui::Align2::RIGHT_CENTER,
         count.to_string(),
@@ -301,10 +340,26 @@ fn draw_status_counter(
         color,
     );
 
+    let icon_size = font_id.size + 2.0;
+    let icon_rect = egui::Rect::from_center_size(
+        egui::pos2(icon_left + icon_size * 0.5, center_y),
+        egui::vec2(icon_size, icon_size),
+    );
+    paint_icon(ui, icon_rect, icon, icon_size, color);
+}
+
+fn draw_status_size(
+    painter: &egui::Painter,
+    right: f32,
+    center_y: f32,
+    size: String,
+    font_id: &egui::FontId,
+    color: egui::Color32,
+) {
     painter.text(
-        egui::pos2(icon_left, center_y),
-        egui::Align2::LEFT_CENTER,
-        icon,
+        egui::pos2(right, center_y),
+        egui::Align2::RIGHT_CENTER,
+        size,
         font_id.clone(),
         color,
     );

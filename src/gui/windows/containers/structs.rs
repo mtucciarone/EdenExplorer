@@ -7,12 +7,13 @@ use crate::core::indexer::{
 use crate::core::utils::thumbnails::ThumbnailService;
 use crate::gui::utils::{FileOpProgress, SortKey, hsl_to_color32};
 use crate::gui::windows::containers::enums::{
-    ItemViewerAction, ItemViewerHeaderColumn, ItemViewerNavAction,
+    ItemViewerAction, ItemViewerContextAction, ItemViewerHeaderColumn, ItemViewerNavAction,
 };
 use crate::gui::windows::shell_context_menu::ShellContextMenu;
 use crate::gui::windows::structs::Navigation;
 use crossbeam_channel::{Receiver, Sender};
 use egui::Color32;
+use notify::RecommendedWatcher;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -89,6 +90,8 @@ pub struct TabView {
     pub drag_state: DragState,
     pub is_loading: bool,
     pub rx: Option<Receiver<FileItem>>,
+    pub directory_change_rx: Option<Receiver<()>>,
+    pub directory_watcher: Option<RecommendedWatcher>,
     pub size_req_tx: Option<Sender<PathBuf>>,
     pub size_rx: Option<Receiver<(PathBuf, u64, bool)>>,
     pub pending_size_queue: VecDeque<PathBuf>,
@@ -126,6 +129,8 @@ impl TabView {
             drag_state: DragState::default(),
             is_loading: false,
             rx: None,
+            directory_change_rx: None,
+            directory_watcher: None,
             size_req_tx: None,
             size_rx: None,
             pending_size_queue: VecDeque::new(),
@@ -829,6 +834,8 @@ pub struct ItemViewerNavBarAction {
     pub is_breadcrumb_path_edit_active: bool,
     pub move_files_to_breadcrumb_dir: Option<PathBuf>,
     pub move_files_to_breadcrumb_dir_rect: Option<egui::Rect>,
+    pub context_action: Option<ItemViewerContextAction>,
+    pub rename_path: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy)]

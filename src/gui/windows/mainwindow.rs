@@ -1,9 +1,9 @@
+use crate::core::i18n::I18n;
+use crate::core::icons::IconCache;
 use crate::core::indexer::{load_app_settings, load_favorites, load_tags, load_theme_settings};
 use crate::core::launch::take_forwarded_paths;
 use crate::core::utils::tabs::update_tab_infos_cache;
 use crate::gui::dragdrop::{DragDropBackend, DropTargets};
-use crate::gui::i18n::I18n;
-use crate::gui::icons::IconCache;
 use crate::gui::theme::{
     ThemeMode, apply_font_to_context, apply_theme, get_default_palette, get_palette, set_palette,
 };
@@ -38,7 +38,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Foundation::{POINT, RECT};
 use windows::Win32::Graphics::Gdi::ClientToScreen;
@@ -102,12 +102,14 @@ impl Default for MainWindow {
             show_hidden_files_folders,
             show_item_viewer_icons,
             windows_context_menu_enabled,
+            extra_actions_bar,
             window_size_mode,
             start_path,
             saved_theme,
             pinned_tabs,
             remember_open_tabs,
             unremembered_tabs,
+            remembered_active_tab,
             time_format_24h,
             sort_column,
             sort_ascending,
@@ -126,11 +128,13 @@ impl Default for MainWindow {
             show_hidden_files_folders,
             show_item_viewer_icons,
             windows_context_menu_enabled,
+            extra_actions_bar,
             window_size_mode: window_size_mode.clone(),
             start_path: Some(start_path.clone()), // important
             pinned_tabs: pinned_tabs.clone(),
             remember_open_tabs,
             unremembered_tabs,
+            remembered_active_tab,
             time_format_24h,
             date_style,
             sort_column,
@@ -197,9 +201,22 @@ impl Default for MainWindow {
             }
         }
 
+        let active_tab = if loaded_settings.remember_open_tabs {
+            loaded_settings
+                .remembered_active_tab
+                .as_ref()
+                .and_then(|path| {
+                    tabs.iter()
+                        .position(|tab| tab.primary_view.nav.current == *path)
+                })
+                .unwrap_or(0)
+        } else {
+            0
+        };
+
         let mut app = Self {
             tabs,
-            active_tab: 0,
+            active_tab,
             tab_infos_cache: Vec::new(),
             tab_infos_dirty: true,
 
@@ -328,6 +345,13 @@ impl MainWindow {
 
 impl eframe::App for MainWindow {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        if self.has_directory_watchers() {
+            // egui repaints on demand. Keep a modest heartbeat so filesystem
+            // events can be consumed even while the window is otherwise idle.
+            ui.ctx().request_repaint_after(Duration::from_millis(250));
+        }
+        self.refresh_changed_directories();
+
         {
             let forwarded_paths = take_forwarded_paths();
             for path in &forwarded_paths {
@@ -752,6 +776,7 @@ impl eframe::App for MainWindow {
                                                                 self.settings_window
                                                                     .current_settings
                                                                     .show_item_viewer_icons,
+                                                                self.settings_window.current_settings.extra_actions_bar,
                                                                 &mut self.rename_state,
                                                                 &mut self.file_type_cache,
                                                                 &mut self.file_size_text_cache,
@@ -847,6 +872,7 @@ impl eframe::App for MainWindow {
                                                                 self.settings_window
                                                                     .current_settings
                                                                     .show_item_viewer_icons,
+                                                                self.settings_window.current_settings.extra_actions_bar,
                                                                 &mut self.rename_state,
                                                                 &mut self.file_type_cache,
                                                                 &mut self.file_size_text_cache,
@@ -912,6 +938,7 @@ impl eframe::App for MainWindow {
                                                 self.settings_window
                                                     .current_settings
                                                     .show_item_viewer_icons,
+                                                self.settings_window.current_settings.extra_actions_bar,
                                                 &mut self.rename_state,
                                                 &mut self.file_type_cache,
                                                 &mut self.file_size_text_cache,

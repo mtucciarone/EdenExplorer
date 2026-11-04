@@ -84,6 +84,7 @@ fn main() -> eframe::Result<()> {
             apply_custom_font_definitions(&mut fonts);
 
             cc.egui_ctx.set_fonts(fonts);
+            egui_extras::install_image_loaders(&cc.egui_ctx);
             set_egui_ctx(&cc.egui_ctx);
 
             Ok(Box::new(gui::MainWindow::new_with_paths(

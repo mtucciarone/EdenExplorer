@@ -44,11 +44,15 @@ pub struct AppSettings {
     pub show_hidden_files_folders: bool,
     pub show_item_viewer_icons: bool,
     pub windows_context_menu_enabled: bool,
+    #[serde(default)]
+    pub extra_actions_bar: bool,
     pub start_path: Option<PathBuf>,
     pub window_size_mode: WindowSizeMode,
     pub pinned_tabs: Vec<PathBuf>,
     pub remember_open_tabs: bool,
     pub unremembered_tabs: Vec<PathBuf>,
+    #[serde(default)]
+    pub remembered_active_tab: Option<PathBuf>,
     pub time_format_24h: bool,
     pub date_style: crate::core::fs::DateStyle,
     pub sort_column: SortColumn,
