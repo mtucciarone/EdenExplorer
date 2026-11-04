@@ -1,3 +1,4 @@
+use crate::core::i18n::I18n;
 use crate::core::{
     fs::{DateStyle, MY_PC_PATH},
     indexer::{
@@ -10,7 +11,6 @@ use crate::core::{
         eden_text_label, eden_toggle_button,
     },
 };
-use crate::core::i18n::I18n;
 use crate::gui::icon_system::{AppIcon, draw_icon, paint_icon};
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::SortColumn;
@@ -259,6 +259,7 @@ impl Default for AppSettings {
             show_hidden_files_folders: true,
             show_item_viewer_icons: true,
             windows_context_menu_enabled: false,
+            extra_actions_bar: false,
             start_path: Some(PathBuf::from(MY_PC_PATH)),
             window_size_mode: WindowSizeMode::default(),
             pinned_tabs: Vec::new(),
@@ -579,6 +580,18 @@ fn draw_general_tab(
                 action = Some(SettingsAction::ApplySettings);
             }
             info_icon(ui, &i18n.tr("tooltip_settings_contextmenu"), palette);
+        });
+        ui.add_space(8.0);
+        ui.horizontal(|ui| {
+            if setting_checkbox(
+                ui,
+                palette,
+                &mut settings.current_settings.extra_actions_bar,
+                RichText::new(i18n.tr("settings_extra_actions_bar")).color(palette.text_normal),
+                "settings_extra_actions_bar",
+            ) {
+                action = Some(SettingsAction::ApplySettings);
+            }
         });
         ui.add_space(8.0);
         // Date Style Section

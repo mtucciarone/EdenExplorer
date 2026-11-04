@@ -1,11 +1,11 @@
 use crate::core::fs::{MY_PC_PATH, MY_RECYCLE_BIN_PATH};
-use crate::core::portable;
 use crate::core::i18n::I18n;
-use crate::gui::icon_system::{AppIcon, StyledIcon, draw_icon, paint_icon};
 use crate::core::icons::IconCache;
+use crate::core::portable;
+use crate::gui::icon_system::{AppIcon, StyledIcon, draw_icon, paint_icon};
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{clickable_icon, expand_environment_variables};
-use crate::gui::windows::containers::enums::ItemViewerNavAction;
+use crate::gui::windows::containers::enums::{ItemViewerContextAction, ItemViewerNavAction};
 use crate::gui::windows::containers::structs::{
     Breadcrumb, ItemViewerDisplayMode, ItemViewerNavBarAction, RenderedBreadcrumb, TabView,
 };
@@ -25,6 +25,8 @@ pub fn draw_itemviewer_navigation_bar(
     is_favorited: bool,
     drag_active: bool,
     drag_hover_target: Option<PathBuf>,
+    extra_actions_bar: bool,
+    clipboard_has_files: bool,
 ) -> ItemViewerNavBarAction {
     let mut action = ItemViewerNavBarAction::default();
     let tabbar_rect = ui.available_rect_before_wrap();
@@ -55,6 +57,9 @@ pub fn draw_itemviewer_navigation_bar(
             can_go_back,
             can_go_forward,
             tab.display_mode,
+            extra_actions_bar,
+            &tab.explorer_state.selected_paths,
+            clipboard_has_files,
         );
 
         merge_toolbar_action(&mut action, toolbar_action);
@@ -352,6 +357,9 @@ fn draw_navigation_bar_buttons(
     can_go_back: bool,
     can_go_forward: bool,
     display_mode: ItemViewerDisplayMode,
+    extra_actions_bar: bool,
+    selected_paths: &std::collections::HashSet<PathBuf>,
+    clipboard_has_files: bool,
 ) -> ItemViewerNavBarAction {
     let mut action = ItemViewerNavBarAction::default();
 
@@ -508,6 +516,42 @@ fn draw_navigation_bar_buttons(
         && !is_recycle_bin
     {
         open_default_terminal(current_dir);
+    }
+
+    if extra_actions_bar {
+        let mut selected: Vec<PathBuf> = selected_paths.iter().cloned().collect();
+        selected.sort();
+        let has_selection = !selected.is_empty();
+        let edit_enabled = has_selection && !is_recycle_bin;
+        let paste_enabled = edit_enabled && clipboard_has_files;
+
+        ui.separator();
+        let extra_button = |ui: &mut egui::Ui, icon: StyledIcon, enabled: bool, label: String| {
+            nav_icon_button(ui, icon, palette, enabled, &label)
+        };
+        if extra_button(ui, AppIcon::ActionCut.regular(), edit_enabled, i18n.tr("inputs_cut")).clicked() && edit_enabled {
+            action.context_action = Some(ItemViewerContextAction::Cut(selected.clone()));
+        }
+        if extra_button(ui, AppIcon::ActionCopy.regular(), edit_enabled, i18n.tr("inputs_copy")).clicked() && edit_enabled {
+            action.context_action = Some(ItemViewerContextAction::Copy(selected.clone()));
+        }
+        if extra_button(ui, AppIcon::ActionPaste.regular(), paste_enabled, i18n.tr("inputs_paste")).clicked() && paste_enabled {
+            action.context_action = Some(ItemViewerContextAction::Paste);
+        }
+        if extra_button(ui, AppIcon::ActionDelete.regular(), has_selection, i18n.tr("inputs_delete")).clicked() && has_selection {
+            action.context_action = Some(ItemViewerContextAction::Delete {
+                paths: selected.clone(),
+                permanent: is_recycle_bin,
+            });
+        }
+        if extra_button(ui, AppIcon::ActionRename.regular(), edit_enabled, i18n.tr("inputs_rename")).clicked() && edit_enabled {
+            if let Some(path) = selected.first() {
+                action.rename_path = Some(path.clone());
+            }
+        }
+        if extra_button(ui, AppIcon::ActionProperties.regular(), has_selection, i18n.tr("properties")).clicked() && has_selection {
+            action.context_action = Some(ItemViewerContextAction::Properties(selected));
+        }
     }
 
     action
@@ -865,4 +909,10 @@ fn merge_toolbar_action(action: &mut ItemViewerNavBarAction, toolbar: ItemViewer
     action.add_favorite |= toolbar.add_favorite;
     action.remove_favorite |= toolbar.remove_favorite;
     action.toggle_gallery |= toolbar.toggle_gallery;
+    if action.context_action.is_none() {
+        action.context_action = toolbar.context_action;
+    }
+    if action.rename_path.is_none() {
+        action.rename_path = toolbar.rename_path;
+    }
 }

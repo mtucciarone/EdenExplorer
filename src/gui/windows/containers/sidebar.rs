@@ -2,10 +2,10 @@ use crate::core::drives::{
     DriveInfo, consume_drive_list_dirty, get_drive_infos, is_raw_physical_drive_path,
 };
 use crate::core::fs::{MY_PC_PATH, MY_RECYCLE_BIN_PATH};
-use crate::core::utils::text::apply_eden_text_overrides;
 use crate::core::i18n::I18n;
-use crate::gui::icon_system::{AppIcon, paint_icon};
 use crate::core::icons::IconCache;
+use crate::core::utils::text::apply_eden_text_overrides;
+use crate::gui::icon_system::{AppIcon, paint_icon};
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{draw_object_drag_ghost, drive_usage_color, truncate_item_text};
 use crate::gui::windows::containers::structs::SidebarAction;

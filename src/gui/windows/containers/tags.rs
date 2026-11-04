@@ -1,7 +1,7 @@
 use crate::core::fs::FileItem;
 use crate::core::i18n::I18n;
-use crate::gui::icon_system::AppIcon;
 use crate::core::icons::IconCache;
+use crate::gui::icon_system::AppIcon;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{clickable_icon, draw_object_drag_ghost, rgba_color_edit_button};
 use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};

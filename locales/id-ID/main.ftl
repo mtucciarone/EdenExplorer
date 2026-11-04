@@ -45,6 +45,7 @@ settings_show_hidden_files_folders = Tampilkan file/folder tersembunyi
 settings_remember_open_tabs = Ingat tab yang terbuka
 tooltip_settings_remember_open_tabs = Jika diaktifkan, semua tab yang terbuka akan dipulihkan saat aplikasi dijalankan lagi.
 settings_show_item_viewer_file_icons = Tampilkan/sembunyikan ikon file di item viewer
+settings_extra_actions_bar = Bilah tindakan tambahan
 tooltip_settings_show_hidden_files_folders = Jika diaktifkan, file dan folder tersembunyi akan ditampilkan di explorer.
 settings_startpath = Direktori Awal
 settings_startpath_default = Default (PC Ini)

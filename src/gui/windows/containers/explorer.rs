@@ -1,8 +1,8 @@
-use crate::gui::dragdrop::DropTargets;
-use crate::core::utils::files::format_size;
 use crate::core::i18n::I18n;
-use crate::gui::icon_system::{AppIcon, StyledIcon, paint_icon};
 use crate::core::icons::IconCache;
+use crate::core::utils::files::format_size;
+use crate::gui::dragdrop::DropTargets;
+use crate::gui::icon_system::{AppIcon, StyledIcon, paint_icon};
 use crate::gui::theme::ThemePalette;
 use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::itemviewer::draw_item_viewer;
@@ -47,6 +47,7 @@ pub fn draw_tab_content(
     clipboard_is_cut: bool,
     show_hidden_files_folders: bool,
     show_item_viewer_icons: bool,
+    extra_actions_bar: bool,
     rename_state: &mut Option<RenameState>,
     file_type_cache: &mut HashMap<String, String>,
     file_size_text_cache: &mut HashMap<PathBuf, (u64, String)>,
@@ -95,6 +96,8 @@ pub fn draw_tab_content(
                     is_favorited,
                     drag_active,
                     drag_hover_target.clone(),
+                    extra_actions_bar,
+                    clipboard_has_files,
                 ));
             });
 

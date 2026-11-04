@@ -1,13 +1,13 @@
 use crate::core::drives::is_raw_physical_drive_path;
 use crate::core::fs::FileItem;
+use crate::core::i18n::I18n;
+use crate::core::icons::IconCache;
 use crate::core::utils::text::apply_eden_text_overrides;
 use crate::core::utils::thumbnails::{ThumbnailPriority, ThumbnailService};
 use crate::core::utils::widgets::{
     apply_eden_dropdown_visual_color_overrides, apply_eden_visual_overrides, draw_dropdown,
 };
-use crate::core::i18n::I18n;
 use crate::gui::icon_system::{AppIcon, paint_icon};
-use crate::core::icons::IconCache;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{SortColumn, truncate_item_text};
 use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};

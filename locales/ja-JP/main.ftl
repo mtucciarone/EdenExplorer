@@ -45,6 +45,7 @@ settings_show_hidden_files_folders = 隠しファイル/フォルダーを表示
 settings_remember_open_tabs = 開いているタブを記憶する
 tooltip_settings_remember_open_tabs = 有効にすると、次回の起動時に開いているすべてのタブを復元します。
 settings_show_item_viewer_file_icons = アイテムビューアーのファイルアイコンを表示/非表示
+settings_extra_actions_bar = 追加アクションバー
 tooltip_settings_show_hidden_files_folders = 有効にすると、エクスプローラーで隠しファイルとフォルダーが表示されます。
 settings_startpath = 起動ディレクトリ
 settings_startpath_default = デフォルト（PC）

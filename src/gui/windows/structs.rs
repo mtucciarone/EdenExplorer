@@ -44,6 +44,8 @@ pub struct AppSettings {
     pub show_hidden_files_folders: bool,
     pub show_item_viewer_icons: bool,
     pub windows_context_menu_enabled: bool,
+    #[serde(default)]
+    pub extra_actions_bar: bool,
     pub start_path: Option<PathBuf>,
     pub window_size_mode: WindowSizeMode,
     pub pinned_tabs: Vec<PathBuf>,

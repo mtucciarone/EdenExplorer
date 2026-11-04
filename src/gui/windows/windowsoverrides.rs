@@ -1,7 +1,7 @@
 use crate::core::drives::mark_drive_cache_dirty;
+use crate::core::i18n::I18n;
 use crate::core::indexer::{WindowSizeMode, load_app_settings, save_app_settings};
 use crate::core::launch::receive_copydata;
-use crate::core::i18n::I18n;
 use crate::gui::icon_system::AppIcon;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::clickable_windows_icon;
@@ -130,6 +130,7 @@ fn save_manual_window_size(hwnd: HWND) {
             show_hidden_files_folders,
             show_item_viewer_icons,
             windows_context_menu_enabled,
+            extra_actions_bar,
             _window_size_mode,
             start_path,
             saved_theme,
@@ -156,6 +157,7 @@ fn save_manual_window_size(hwnd: HWND) {
             show_hidden_files_folders,
             show_item_viewer_icons,
             windows_context_menu_enabled,
+            extra_actions_bar,
             &window_size_mode,
             &Some(start_path),
             saved_theme.as_deref(),

@@ -45,6 +45,7 @@ settings_show_hidden_files_folders = 显示隐藏文件/文件夹
 settings_remember_open_tabs = 记住打开的标签页
 tooltip_settings_remember_open_tabs = 启用后，下次启动应用时会恢复所有打开的标签页。
 settings_show_item_viewer_file_icons = 显示/隐藏项目查看器中的文件图标
+settings_extra_actions_bar = 额外操作栏
 tooltip_settings_show_hidden_files_folders = 启用后，资源管理器中将显示隐藏文件和文件夹。
 settings_startpath = 启动目录
 settings_startpath_default = 默认（此电脑）

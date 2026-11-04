@@ -1,8 +1,8 @@
 use crate::core::portable;
 use chrono::{DateTime, Local, TimeZone, Utc};
 use crossbeam_channel::Sender;
-use ntapi::ntioapi::{FILE_DIRECTORY_INFORMATION, IO_STATUS_BLOCK, NtQueryDirectoryFile};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use ntapi::ntioapi::{FILE_DIRECTORY_INFORMATION, IO_STATUS_BLOCK, NtQueryDirectoryFile};
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
@@ -33,10 +33,7 @@ pub const MY_RECYCLE_BIN_PATH: &str = "::RECYCLE_BIN::";
 
 /// Watch a directory for changes to its immediate children. The watcher is
 /// returned to the caller and must be kept alive for notifications to arrive.
-pub fn watch_directory(
-    path: &Path,
-    changed_tx: Sender<()>,
-) -> notify::Result<RecommendedWatcher> {
+pub fn watch_directory(path: &Path, changed_tx: Sender<()>) -> notify::Result<RecommendedWatcher> {
     let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
         if event.is_ok() {
             let _ = changed_tx.try_send(());

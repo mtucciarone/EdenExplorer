@@ -1,9 +1,9 @@
 use crate::core::drives::is_raw_physical_drive_path;
 use crate::core::fs::FileItem;
-use crate::core::utils::text::apply_eden_text_overrides;
-use crate::core::utils::widgets::draw_checkbox;
 use crate::core::i18n::I18n;
 use crate::core::icons::IconCache;
+use crate::core::utils::text::apply_eden_text_overrides;
+use crate::core::utils::widgets::draw_checkbox;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{draw_object_drag_ghost, fuzzy_match, truncate_item_text};
 use crate::gui::windows::containers::enums::{

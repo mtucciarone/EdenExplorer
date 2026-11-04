@@ -1,13 +1,13 @@
 use crate::core::drives::{get_drive_infos, is_raw_physical_drive_path};
 use crate::core::fs::{FileItem, get_shell_item_metadata};
 use crate::core::fs::{MY_RECYCLE_BIN_PATH, parallel_directory_scan, scan_dir_async};
+use crate::core::i18n::I18n;
 use crate::core::indexer::{
     DirectorySettingsSnapshot, WindowSizeMode, load_app_settings, save_app_settings,
     save_favorites, save_tags, save_theme_settings,
 };
 use crate::core::utils::widgets::{loading_spinner, request_animation_frame};
 use crate::gui::MainWindow;
-use crate::core::i18n::I18n;
 use crate::gui::theme::{
     ThemeMode, ThemePalette, apply_font_to_context, get_default_palette, set_palette,
 };
@@ -425,6 +425,7 @@ impl MainWindow {
             self.settings_window
                 .current_settings
                 .windows_context_menu_enabled,
+            self.settings_window.current_settings.extra_actions_bar,
             &self.settings_window.current_settings.window_size_mode,
             &self.settings_window.current_settings.start_path,
             Some(match self.theme {
@@ -710,16 +711,17 @@ impl MainWindow {
         let shutdown = Arc::clone(&self.shutdown);
         let view = self.active_tab_mut().view_mut(side);
         let (directory_change_tx, directory_change_rx) = unbounded();
-        view.directory_watcher = match crate::core::fs::watch_directory(
-            &current_path,
-            directory_change_tx,
-        ) {
-            Ok(watcher) => Some(watcher),
-            Err(error) => {
-                eprintln!("Failed to watch directory {}: {error}", current_path.display());
-                None
-            }
-        };
+        view.directory_watcher =
+            match crate::core::fs::watch_directory(&current_path, directory_change_tx) {
+                Ok(watcher) => Some(watcher),
+                Err(error) => {
+                    eprintln!(
+                        "Failed to watch directory {}: {error}",
+                        current_path.display()
+                    );
+                    None
+                }
+            };
         view.directory_change_rx = Some(directory_change_rx);
         view.rx = Some(rx);
         view.is_loading = true;
@@ -761,10 +763,7 @@ impl MainWindow {
     }
 
     pub(crate) fn has_directory_watchers(&self) -> bool {
-        self.active_tab()
-            .primary_view
-            .directory_watcher
-            .is_some()
+        self.active_tab().primary_view.directory_watcher.is_some()
             || self
                 .active_tab()
                 .split_view
@@ -1587,6 +1586,24 @@ impl MainWindow {
                 let path = self.current_nav().current.clone();
                 self.remove_favorite(&path);
             }
+            if let Some(context_action) = tabbar_action
+                .as_ref()
+                .and_then(|t| t.context_action.clone())
+            {
+                self.handle_context_action(context_action);
+            }
+            if let Some(path) = tabbar_action.as_ref().and_then(|t| t.rename_path.clone()) {
+                let name = path
+                    .file_name()
+                    .map(|value| value.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                self.rename_state = Some(RenameState {
+                    path,
+                    new_name: name,
+                    should_focus: true,
+                    validation_error_show: false,
+                });
+            }
         }
     }
 
@@ -1675,6 +1692,7 @@ impl MainWindow {
                         _show_hidden_files_folders,
                         _show_item_viewer_icons,
                         _windows_context_menu_enabled,
+                        _extra_actions_bar,
                         _window_size_mode,
                         start_path,
                         _saved_theme,
