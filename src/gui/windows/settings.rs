@@ -265,6 +265,7 @@ impl Default for AppSettings {
             pinned_tabs: Vec::new(),
             remember_open_tabs: false,
             unremembered_tabs: Vec::new(),
+            remembered_active_tab: None,
             time_format_24h: false,
             date_style: DateStyle::default(),
             sort_column: SortColumn::Name,
@@ -587,8 +588,8 @@ fn draw_general_tab(
                 ui,
                 palette,
                 &mut settings.current_settings.extra_actions_bar,
-                RichText::new(i18n.tr("settings_extra_actions_bar")).color(palette.text_normal),
-                "settings_extra_actions_bar",
+                RichText::new(i18n.tr("settings_enable_extra_action_buttons_in_item_viewer")).color(palette.text_normal),
+                "settings_enable_extra_action_buttons_in_item_viewer",
             ) {
                 action = Some(SettingsAction::ApplySettings);
             }

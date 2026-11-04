@@ -109,6 +109,7 @@ impl Default for MainWindow {
             pinned_tabs,
             remember_open_tabs,
             unremembered_tabs,
+            remembered_active_tab,
             time_format_24h,
             sort_column,
             sort_ascending,
@@ -133,6 +134,7 @@ impl Default for MainWindow {
             pinned_tabs: pinned_tabs.clone(),
             remember_open_tabs,
             unremembered_tabs,
+            remembered_active_tab,
             time_format_24h,
             date_style,
             sort_column,
@@ -199,9 +201,22 @@ impl Default for MainWindow {
             }
         }
 
+        let active_tab = if loaded_settings.remember_open_tabs {
+            loaded_settings
+                .remembered_active_tab
+                .as_ref()
+                .and_then(|path| {
+                    tabs.iter()
+                        .position(|tab| tab.primary_view.nav.current == *path)
+                })
+                .unwrap_or(0)
+        } else {
+            0
+        };
+
         let mut app = Self {
             tabs,
-            active_tab: 0,
+            active_tab,
             tab_infos_cache: Vec::new(),
             tab_infos_dirty: true,
 

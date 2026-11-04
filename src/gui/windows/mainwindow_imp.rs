@@ -414,6 +414,13 @@ impl MainWindow {
         } else {
             self.settings_window.current_settings.pinned_tabs.clone()
         };
+        let remembered_active_tab = if self.settings_window.current_settings.remember_open_tabs {
+            self.tabs
+                .get(self.active_tab)
+                .map(|tab| tab.primary_view.nav.current.clone())
+        } else {
+            None
+        };
         save_app_settings(
             self.settings_window
                 .current_settings
@@ -435,6 +442,7 @@ impl MainWindow {
             &tabs_to_save,
             self.settings_window.current_settings.remember_open_tabs,
             &self.settings_window.current_settings.unremembered_tabs,
+            remembered_active_tab.as_ref(),
             self.settings_window.current_settings.time_format_24h,
             self.settings_window.current_settings.sort_column,
             self.settings_window.current_settings.sort_ascending,
@@ -1699,6 +1707,7 @@ impl MainWindow {
                         _pinned_tabs,
                         _remember_open_tabs,
                         _unremembered_tabs,
+                        _remembered_active_tab,
                         _time_format_24h,
                         _sort_column,
                         _sort_ascending,

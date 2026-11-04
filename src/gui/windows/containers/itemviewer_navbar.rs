@@ -529,27 +529,75 @@ fn draw_navigation_bar_buttons(
         let extra_button = |ui: &mut egui::Ui, icon: StyledIcon, enabled: bool, label: String| {
             nav_icon_button(ui, icon, palette, enabled, &label)
         };
-        if extra_button(ui, AppIcon::ActionCut.regular(), edit_enabled, i18n.tr("inputs_cut")).clicked() && edit_enabled {
+        if extra_button(
+            ui,
+            AppIcon::ActionCut.regular(),
+            edit_enabled,
+            i18n.tr("inputs_cut"),
+        )
+        .clicked()
+            && edit_enabled
+        {
             action.context_action = Some(ItemViewerContextAction::Cut(selected.clone()));
         }
-        if extra_button(ui, AppIcon::ActionCopy.regular(), edit_enabled, i18n.tr("inputs_copy")).clicked() && edit_enabled {
+        if extra_button(
+            ui,
+            AppIcon::ActionCopy.regular(),
+            edit_enabled,
+            i18n.tr("inputs_copy"),
+        )
+        .clicked()
+            && edit_enabled
+        {
             action.context_action = Some(ItemViewerContextAction::Copy(selected.clone()));
         }
-        if extra_button(ui, AppIcon::ActionPaste.regular(), paste_enabled, i18n.tr("inputs_paste")).clicked() && paste_enabled {
+        if extra_button(
+            ui,
+            AppIcon::ActionPaste.regular(),
+            paste_enabled,
+            i18n.tr("inputs_paste"),
+        )
+        .clicked()
+            && paste_enabled
+        {
             action.context_action = Some(ItemViewerContextAction::Paste);
         }
-        if extra_button(ui, AppIcon::ActionDelete.regular(), has_selection, i18n.tr("inputs_delete")).clicked() && has_selection {
+        if extra_button(
+            ui,
+            AppIcon::ActionDelete.regular(),
+            has_selection,
+            i18n.tr("inputs_delete"),
+        )
+        .clicked()
+            && has_selection
+        {
             action.context_action = Some(ItemViewerContextAction::Delete {
                 paths: selected.clone(),
                 permanent: is_recycle_bin,
             });
         }
-        if extra_button(ui, AppIcon::ActionRename.regular(), edit_enabled, i18n.tr("inputs_rename")).clicked() && edit_enabled {
+        if extra_button(
+            ui,
+            AppIcon::ActionRename.regular(),
+            edit_enabled,
+            i18n.tr("inputs_rename"),
+        )
+        .clicked()
+            && edit_enabled
+        {
             if let Some(path) = selected.first() {
                 action.rename_path = Some(path.clone());
             }
         }
-        if extra_button(ui, AppIcon::ActionProperties.regular(), has_selection, i18n.tr("properties")).clicked() && has_selection {
+        if extra_button(
+            ui,
+            AppIcon::ActionProperties.regular(),
+            has_selection,
+            i18n.tr("properties"),
+        )
+        .clicked()
+            && has_selection
+        {
             action.context_action = Some(ItemViewerContextAction::Properties(selected));
         }
     }

@@ -51,6 +51,8 @@ pub struct AppSettings {
     pub pinned_tabs: Vec<PathBuf>,
     pub remember_open_tabs: bool,
     pub unremembered_tabs: Vec<PathBuf>,
+    #[serde(default)]
+    pub remembered_active_tab: Option<PathBuf>,
     pub time_format_24h: bool,
     pub date_style: crate::core::fs::DateStyle,
     pub sort_column: SortColumn,
