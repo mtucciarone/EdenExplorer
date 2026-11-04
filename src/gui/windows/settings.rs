@@ -588,7 +588,8 @@ fn draw_general_tab(
                 ui,
                 palette,
                 &mut settings.current_settings.extra_actions_bar,
-                RichText::new(i18n.tr("settings_enable_extra_action_buttons_in_item_viewer")).color(palette.text_normal),
+                RichText::new(i18n.tr("settings_enable_extra_action_buttons_in_item_viewer"))
+                    .color(palette.text_normal),
                 "settings_enable_extra_action_buttons_in_item_viewer",
             ) {
                 action = Some(SettingsAction::ApplySettings);
