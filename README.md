@@ -37,7 +37,7 @@
 </p>
 
 <p align="center">
-  *Users reported no issues on Windows 10, but I'm cautious in declaring official support.
+  *Various support on Windows 10.
 </p>
 
 <h1 align="center"> ⭐ Support</h1>
