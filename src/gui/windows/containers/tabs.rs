@@ -339,6 +339,8 @@ fn handle_draw_tab_new_allocated(
         action.toggle_pin = Some(tab.full_path.clone());
     } else if resp.clicked() {
         action.activate = Some(tab.id);
+    } else if resp.middle_clicked() {
+        action.close = Some(tab.id);
     }
 
     if icon_resp.hovered() {
