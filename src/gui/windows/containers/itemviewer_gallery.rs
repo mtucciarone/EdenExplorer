@@ -243,6 +243,11 @@ pub fn draw_gallery_view(
                             }
                         }
 
+                        if !drag_state.active && !response.ctx.input(|i| i.pointer.primary_down()) {
+                            drag_state.start_pos = None;
+                            drag_state.source_items.clear();
+                        }
+
                         if let (Some(start), Some(current)) = (
                             drag_state.start_pos,
                             response.ctx.input(|i| i.pointer.hover_pos()),
