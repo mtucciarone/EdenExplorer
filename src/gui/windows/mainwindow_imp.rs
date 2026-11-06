@@ -476,7 +476,7 @@ impl MainWindow {
         );
     }
 
-    fn save_remembered_tabs_if_enabled(&self) {
+    pub fn save_remembered_tabs_if_enabled(&self) {
         if self.settings_window.current_settings.remember_open_tabs {
             self.save_app_settings_to_disk();
         }
