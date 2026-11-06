@@ -79,6 +79,11 @@ pub fn draw_tabs(
         0.0
     };
 
+    let row_rect = egui::Rect::from_min_size(
+        ui.cursor().min,
+        egui::vec2(ui.available_width(), TAB_HEIGHT),
+    );
+    let mut pointer_over_tab = false;
     ui.allocate_ui_with_layout(
         egui::vec2(ui.available_width(), 32.0),
         egui::Layout::left_to_right(egui::Align::Center),
@@ -155,6 +160,10 @@ pub fn draw_tabs(
                                         }
                                     }
 
+                                    if pointer_pos.is_some_and(|pointer| rect.contains(pointer)) {
+                                        pointer_over_tab = true;
+                                    }
+
                                     handle_draw_tab_new_allocated(
                                         ui,
                                         i18n,
@@ -207,6 +216,26 @@ pub fn draw_tabs(
             }
         },
     );
+    // Dropping a dragged folder on the empty part of the tab row opens it in a new tab.
+    let drop_rect = egui::Rect::from_min_max(
+        row_rect.min,
+        egui::pos2(row_rect.right() - controls_width, row_rect.bottom()),
+    );
+    let over_empty_tab_row = drag_active
+        && !pointer_over_tab
+        && tab_drop_target.is_none()
+        && pointer_pos.is_some_and(|pointer| drop_rect.contains(pointer));
+    if over_empty_tab_row {
+        ui.painter().rect_stroke(
+            drop_rect.shrink(1.0),
+            egui::CornerRadius::same(palette.medium_radius),
+            egui::Stroke::new(2.0, palette.borders_active),
+            egui::StrokeKind::Inside,
+        );
+        if pointer_released {
+            action.open_dragged_in_new_tabs = true;
+        }
+    }
     action.move_files_to_tab_dir = tab_drop_target;
     action.max_scroll_offset = max_scroll_offset;
     action

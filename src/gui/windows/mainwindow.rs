@@ -1028,7 +1028,29 @@ impl eframe::App for MainWindow {
                 Vec::new()
             };
 
-            if !source_items.is_empty() {
+            let open_in_new_tabs = tabs_action
+                .as_ref()
+                .is_some_and(|a| a.open_dragged_in_new_tabs);
+            if open_in_new_tabs && !source_items.is_empty() {
+                // Released on the empty part of the tab row: open each dragged folder
+                // in its own tab instead of moving anything.
+                // Clear the drag state on the source tab first: open_new_tab switches
+                // the active tab, so clearing afterwards would hit the new tab instead.
+                let source_tab = &mut self.tabs[self.active_tab];
+                source_tab.primary_view.drag_state.active = false;
+                source_tab.primary_view.drag_state.start_pos = None;
+                source_tab.primary_view.drag_state.source_items.clear();
+                if let Some(split) = source_tab.split_view.as_mut() {
+                    split.drag_state.active = false;
+                    split.drag_state.start_pos = None;
+                    split.drag_state.source_items.clear();
+                }
+                for path in source_items.iter().filter(|p| p.is_dir()) {
+                    self.open_new_tab(path.clone());
+                }
+                self.load_path();
+                self.save_remembered_tabs_if_enabled();
+            } else if !source_items.is_empty() {
                 let pointer_pos = ui.ctx().input(|input| input.pointer.interact_pos());
                 let target_dir = drop_targets.item_target.target.clone().or_else(|| {
                     drop_targets
