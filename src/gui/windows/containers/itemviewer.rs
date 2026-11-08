@@ -567,6 +567,14 @@ pub fn draw_item_viewer(
                             }
                         }
 
+                        // A drag only exists while the primary button is held. Without this,
+                        // a press that never crossed the threshold leaves a stale start_pos and
+                        // the next pointer move would start a button-less drag.
+                        if !drag_state.active && !row_resp.ctx.input(|i| i.pointer.primary_down()) {
+                            drag_state.start_pos = None;
+                            drag_state.source_items.clear();
+                        }
+
                         if let (Some(start), Some(current)) = (
                             drag_state.start_pos,
                             row_resp.ctx.input(|i| i.pointer.hover_pos()),
