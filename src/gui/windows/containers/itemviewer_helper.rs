@@ -890,7 +890,6 @@ pub fn handle_global_actions(
     }
 
     if drag_state.active && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-        println!("852 - clearing drag_state");
         drag_state.active = false;
         drag_state.source_items.clear();
         drag_state.start_pos = None;
