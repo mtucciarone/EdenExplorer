@@ -564,7 +564,61 @@ fn draw_gallery_tile(
     // Clip image/icon rendering specifically to the preview rectangle.
     let preview_painter = tile_painter.with_clip_rect(preview_rect.intersect(ui.clip_rect()));
 
-    if let Some(texture) = thumbnail_service.texture_for(ui.ctx(), file) {
+    // Keep the app's custom folder glyphs ahead of both Windows thumbnails and
+    // shell icons so recognized folders keep their visual identity in Gallery.
+    if let Some(glyph) = icon_cache.get_custom_folder_icon(&file.path, file.is_dir) {
+        let icon_size = (thumb_size * 0.35).clamp(26.0, 80.0);
+        let icon_rect =
+            egui::Rect::from_center_size(preview_rect.center(), egui::vec2(icon_size, icon_size));
+        let icon_color = if is_cut {
+            palette.icon_colored_hover.linear_multiply(0.45)
+        } else {
+            palette.icon_colored_hover
+        };
+
+        ui.scope_builder(egui::UiBuilder::new().max_rect(icon_rect), |icon_ui| {
+            paint_icon(
+                icon_ui,
+                icon_ui.max_rect(),
+                glyph.regular(),
+                icon_size,
+                icon_color,
+            );
+        });
+    } else if file.is_dir {
+        // Directory thumbnails are often just Windows' generic folder preview.
+        // Use the path-specific shell icon instead, including desktop.ini
+        // customizations, and only show the neutral placeholder while it loads.
+        if let Some(icon) = icon_cache.get(&file.path, true) {
+            let icon_size = (thumb_size * 0.35).clamp(26.0, 80.0);
+            let icon_rect = egui::Rect::from_center_size(
+                preview_rect.center(),
+                egui::vec2(icon_size, icon_size),
+            );
+
+            preview_painter.image(
+                (&icon).into(),
+                icon_rect,
+                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                if is_cut {
+                    palette.icon_colored_hover.linear_multiply(0.45)
+                } else {
+                    palette.icon_colored_hover
+                },
+            );
+        } else {
+            ui.scope_builder(egui::UiBuilder::new().max_rect(preview_rect), |icon_ui| {
+                let size = (thumb_size * 0.35).clamp(24.0, 80.0);
+                paint_icon(
+                    icon_ui,
+                    icon_ui.max_rect(),
+                    AppIcon::FolderSimple.regular(),
+                    size,
+                    palette.text_header_section,
+                );
+            });
+        }
+    } else if let Some(texture) = thumbnail_service.texture_for(ui.ctx(), file) {
         let image_rect = fit_rect(texture.size_vec2(), preview_rect);
 
         preview_painter.image(

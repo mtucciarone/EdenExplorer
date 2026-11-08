@@ -1,26 +1,77 @@
 use crossbeam_channel::Sender;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::fs::{copy, create_dir_all, read_dir};
 use std::mem::size_of;
 use std::os::windows::ffi::OsStrExt;
+use std::os::windows::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::thread;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_NORMAL;
-use windows::Win32::System::Com::CoTaskMemFree;
+use windows::Win32::Storage::FileSystem::WIN32_FIND_DATAW;
+use windows::Win32::System::Com::{
+    CLSCTX_INPROC_SERVER, CoCreateInstance, CoTaskMemFree, IPersistFile, STGM_READ,
+};
 use windows::Win32::UI::Shell::Common::ITEMIDLIST;
 use windows::Win32::UI::Shell::{
     BHID_SFUIObject, CMINVOKECOMMANDINFO, CMINVOKECOMMANDINFOEX, IContextMenu,
-    IFileOperationProgressSink, IFileOperationProgressSink_Impl, IShellItem,
+    IFileOperationProgressSink, IFileOperationProgressSink_Impl, IShellItem, IShellLinkW,
     SHCreateItemFromIDList, SHFILEINFOW, SHGFI_TYPENAME, SHGFI_USEFILEATTRIBUTES, SHGetFileInfoW,
-    SIGDN_FILESYSPATH,
+    SIGDN_FILESYSPATH, SLGP_RAWPATH,
 };
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-use windows::core::{Error, HRESULT, PCSTR, PCWSTR, PWSTR, Ref, implement};
+use windows::core::{Error, HRESULT, Interface, PCSTR, PCWSTR, PWSTR, Ref, implement};
+
+/// Resolve a Windows shortcut to the filesystem path it targets.
+pub fn resolve_shortcut_target(path: &Path) -> Option<PathBuf> {
+    if !path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("lnk"))
+    {
+        return None;
+    }
+
+    let shortcut_wide: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    unsafe {
+        let shell_link: IShellLinkW = CoCreateInstance(
+            &windows::core::GUID::from_u128(0x00021401_0000_0000_c000_000000000046),
+            None,
+            CLSCTX_INPROC_SERVER,
+        )
+        .ok()?;
+        let persist_file: IPersistFile = shell_link.cast().ok()?;
+        persist_file
+            .Load(PCWSTR(shortcut_wide.as_ptr()), STGM_READ)
+            .ok()?;
+
+        let mut target = vec![0u16; 32_768];
+        let mut find_data = WIN32_FIND_DATAW::default();
+        shell_link
+            .GetPath(&mut target, &mut find_data, SLGP_RAWPATH.0 as u32)
+            .ok()?;
+
+        let target_len = target.iter().position(|&value| value == 0)?;
+        if target_len == 0 {
+            return None;
+        }
+
+        let target = PathBuf::from(OsString::from_wide(&target[..target_len]));
+        Some(if target.is_relative() {
+            path.parent().unwrap_or_else(|| Path::new(".")).join(target)
+        } else {
+            target
+        })
+    }
+}
 
 pub fn get_file_type_name<'a>(ext: &str, cache: &'a mut HashMap<String, String>) -> &'a str {
     use std::collections::hash_map::Entry;

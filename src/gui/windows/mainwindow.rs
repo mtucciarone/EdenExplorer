@@ -89,6 +89,7 @@ pub struct MainWindow {
 
     // Misc. Variables
     pub(crate) icon_cache: Option<IconCache>,
+    pub(crate) icon_cache_needs_invalidation: bool,
 
     // i18n
     pub(crate) i18n: I18n,
@@ -239,6 +240,7 @@ impl Default for MainWindow {
             window_override_set: false,
             dragdrop: None,
             icon_cache: None,
+            icon_cache_needs_invalidation: false,
 
             file_type_cache: HashMap::new(),
             tags_state: load_tags()
@@ -459,6 +461,10 @@ impl eframe::App for MainWindow {
         }
 
         let icon_cache = self.icon_cache.take().unwrap();
+        if self.icon_cache_needs_invalidation {
+            icon_cache.invalidate_all();
+            self.icon_cache_needs_invalidation = false;
+        }
 
         // Main layout: sidebar + tabs column
         let mut topbar_action = None;
