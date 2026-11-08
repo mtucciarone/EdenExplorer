@@ -34,6 +34,8 @@ pub fn draw_tabs(
         ui.input(|i| i.pointer.any_released() && i.pointer.interact_pos().is_some());
     let hovered_target_ref = drag_hover_target.as_ref();
     let mut tab_drop_target: Option<PathBuf> = None;
+    let reorder_key = egui::Id::new("tab_reorder_dragging");
+    let mut tab_rects: Vec<(u64, egui::Rect)> = Vec::new();
     let windows_buttons_width = 45.0 * 3.0;
     let split_button_width = 32.0;
     let controls_width = windows_buttons_width + split_button_width;
@@ -118,8 +120,12 @@ pub fn draw_tabs(
                                 for tab in tabs {
                                     let (rect, resp) = ui.allocate_exact_size(
                                         egui::vec2(tab_width, TAB_HEIGHT),
-                                        egui::Sense::click(),
+                                        egui::Sense::click_and_drag(),
                                     );
+                                    tab_rects.push((tab.id, rect));
+                                    if resp.drag_started() {
+                                        ui.ctx().data_mut(|d| d.insert_temp(reorder_key, tab.id));
+                                    }
 
                                     if Some(tab.id) == scroll_to_id {
                                         resp.scroll_to_me(Some(egui::Align::Center));
@@ -207,6 +213,41 @@ pub fn draw_tabs(
             }
         },
     );
+    // Reordering: a tab drag started earlier is resolved against the tab rects on release.
+    let dragged_tab: Option<u64> = ui.ctx().data(|d| d.get_temp(reorder_key));
+    if let Some(dragged_id) = dragged_tab {
+        let released = ui.input(|i| i.pointer.any_released());
+        if released || !ui.input(|i| i.pointer.any_down()) {
+            ui.ctx().data_mut(|d| d.remove::<u64>(reorder_key));
+        }
+        let from = tab_rects.iter().position(|(id, _)| *id == dragged_id);
+        if let (Some(pointer), Some(from)) = (pointer_pos, from) {
+            let row_top = tab_rects[from].1.top();
+            let row_bottom = tab_rects[from].1.bottom();
+            // Releasing far away from the tab row cancels the reorder.
+            let near_row = pointer.y >= row_top - 24.0 && pointer.y <= row_bottom + 24.0;
+            let insertion = tab_rects
+                .iter()
+                .filter(|(_, r)| pointer.x > r.center().x)
+                .count();
+            if near_row && tab_rects.len() > 1 && insertion != from && insertion != from + 1 {
+                if released {
+                    action.reorder = Some((dragged_id, insertion));
+                } else {
+                    let x = if insertion < tab_rects.len() {
+                        tab_rects[insertion].1.left()
+                    } else {
+                        tab_rects[tab_rects.len() - 1].1.right()
+                    };
+                    ui.painter().vline(
+                        x,
+                        row_top..=row_bottom,
+                        egui::Stroke::new(2.0, palette.borders_active),
+                    );
+                }
+            }
+        }
+    }
     action.move_files_to_tab_dir = tab_drop_target;
     action.max_scroll_offset = max_scroll_offset;
     action
@@ -339,6 +380,8 @@ fn handle_draw_tab_new_allocated(
         action.toggle_pin = Some(tab.full_path.clone());
     } else if resp.clicked() {
         action.activate = Some(tab.id);
+    } else if resp.middle_clicked() {
+        action.close = Some(tab.id);
     }
 
     if icon_resp.hovered() {
