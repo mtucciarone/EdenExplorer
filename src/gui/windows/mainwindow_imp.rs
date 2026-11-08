@@ -283,6 +283,12 @@ impl MainWindow {
         self.mark_tab_infos_dirty();
     }
 
+    pub fn open_new_tab_in_background(&mut self, path: PathBuf) {
+        let active_tab = self.active_tab;
+        self.open_new_tab(path);
+        self.active_tab = active_tab;
+    }
+
     pub fn open_startup_paths(&mut self, paths: &[PathBuf]) {
         let Some(first_path) = paths.first() else {
             return;
@@ -1918,6 +1924,10 @@ impl MainWindow {
                 self.load_path();
                 self.save_remembered_tabs_if_enabled();
             }
+            if let Some(path) = action.open_background_tab {
+                self.open_new_tab_in_background(path);
+                self.save_remembered_tabs_if_enabled();
+            }
             if let Some(path) = action.select_favorite {
                 self.sidebar_state.item_clicked = Some(path);
             }
@@ -2463,6 +2473,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 | ItemViewerAction::Open(_)
                 | ItemViewerAction::OpenWithDefault(_)
                 | ItemViewerAction::OpenInNewTab(_)
+                | ItemViewerAction::OpenInBackgroundTab(_)
                 | ItemViewerAction::OpenInSplitView(_)
                 | ItemViewerAction::StartEdit(_)
                 | ItemViewerAction::FilesDropped(_)
@@ -2835,6 +2846,9 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             ItemViewerAction::OpenInNewTab(path) => {
                 explorer.open_new_tab(path);
                 explorer.load_path();
+            }
+            ItemViewerAction::OpenInBackgroundTab(path) => {
+                explorer.open_new_tab_in_background(path);
             }
             ItemViewerAction::OpenInSplitView(path) => {
                 explorer.open_path_in_split(path);

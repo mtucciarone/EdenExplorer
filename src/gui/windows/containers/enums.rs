@@ -46,6 +46,7 @@ pub enum ItemViewerAction {
     Open(PathBuf),
     OpenWithDefault(Vec<PathBuf>),
     OpenInNewTab(PathBuf),
+    OpenInBackgroundTab(PathBuf),
     OpenInSplitView(PathBuf),
     Context(ItemViewerContextAction),
     StartEdit(PathBuf),

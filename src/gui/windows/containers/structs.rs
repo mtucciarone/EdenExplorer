@@ -877,6 +877,7 @@ pub struct FavoriteItem {
 pub struct SidebarAction {
     pub nav_to: Option<PathBuf>,
     pub open_new_tab: Option<PathBuf>,
+    pub open_background_tab: Option<PathBuf>,
     pub remove_favorite: Option<PathBuf>,
     pub select_favorite: Option<PathBuf>,
     pub reorder: Option<(usize, usize)>, // from_idx, to_idx

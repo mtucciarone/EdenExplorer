@@ -271,7 +271,7 @@ pub fn draw_gallery_view(
                         }
 
                         if response.middle_clicked() && file.is_dir {
-                            action = Some(ItemViewerAction::OpenInNewTab(file.path.clone()));
+                            action = Some(ItemViewerAction::OpenInBackgroundTab(file.path.clone()));
                         }
 
                         Popup::context_menu(&response)
