@@ -1774,6 +1774,27 @@ impl MainWindow {
 
                 self.mark_tab_infos_dirty();
             }
+            if let Some((tab_id, insertion)) = action.reorder {
+                if let Some(from) = self.tabs.iter().position(|t| t.id == tab_id) {
+                    let to = if insertion > from {
+                        insertion - 1
+                    } else {
+                        insertion
+                    };
+                    if to != from && to < self.tabs.len() {
+                        let active_id = self.tabs[self.active_tab].id;
+                        let tab = self.tabs.remove(from);
+                        self.tabs.insert(to, tab);
+                        self.active_tab = self
+                            .tabs
+                            .iter()
+                            .position(|t| t.id == active_id)
+                            .unwrap_or(0);
+                        self.mark_tab_infos_dirty();
+                        self.save_remembered_tabs_if_enabled();
+                    }
+                }
+            }
             if let Some(target_dir) = action.move_files_to_tab_dir.as_ref() {
                 if let Some(sources) = drag_sources {
                     self.move_selected_paths_to_dir(sources, target_dir.clone());

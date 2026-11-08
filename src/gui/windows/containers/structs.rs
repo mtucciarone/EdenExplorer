@@ -55,6 +55,7 @@ pub struct TabsAction {
     pub open_new: bool,
     pub toggle_pin: Option<PathBuf>,
     pub move_files_to_tab_dir: Option<PathBuf>,
+    pub reorder: Option<(u64, usize)>,
     pub scroll_left: bool,
     pub scroll_right: bool,
     pub max_scroll_offset: f32,
