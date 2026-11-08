@@ -1,6 +1,9 @@
 use crate::core::i18n::I18n;
 use crate::core::icons::IconCache;
-use crate::core::indexer::{load_app_settings, load_favorites, load_tags, load_theme_settings};
+use crate::core::indexer::{
+    load_app_settings, load_favorites, load_tags, load_theme_settings,
+    load_window_position_on_start, load_window_was_maximized_on_start,
+};
 use crate::core::launch::take_forwarded_paths;
 use crate::core::utils::tabs::update_tab_infos_cache;
 use crate::gui::dragdrop::{DragDropBackend, DropTargets};
@@ -30,7 +33,7 @@ use crate::gui::windows::structs::{
 };
 use crate::gui::windows::windowsoverrides::{
     apply_window_override, apply_window_theme, consume_clipboard_dirty,
-    handle_draw_windows_buttons, install_wndproc,
+    handle_draw_windows_buttons, install_wndproc, set_window_position,
 };
 use eframe::egui;
 use std::collections::HashMap;
@@ -89,6 +92,7 @@ pub struct MainWindow {
 
     // Misc. Variables
     pub(crate) icon_cache: Option<IconCache>,
+    pub(crate) icon_cache_needs_invalidation: bool,
 
     // i18n
     pub(crate) i18n: I18n,
@@ -239,6 +243,7 @@ impl Default for MainWindow {
             window_override_set: false,
             dragdrop: None,
             icon_cache: None,
+            icon_cache_needs_invalidation: false,
 
             file_type_cache: HashMap::new(),
             tags_state: load_tags()
@@ -385,12 +390,26 @@ impl eframe::App for MainWindow {
             if let Some(hwnd) = self.hwnd {
                 apply_window_override(hwnd, &palette);
 
-                crate::gui::windows::windowsoverrides::set_window_mode(
-                    hwnd,
-                    &self.settings_window.current_settings.window_size_mode,
-                );
+                let was_maximized = load_window_was_maximized_on_start();
+                let configured_mode = &self.settings_window.current_settings.window_size_mode;
+                let should_maximize = was_maximized
+                    || matches!(
+                        configured_mode,
+                        crate::core::indexer::WindowSizeMode::FullScreen
+                    );
 
-                crate::gui::windows::windowsoverrides::clamp_window_to_monitor_work_area(hwnd);
+                // The native viewport already applied the maximized state.
+                // Avoid calling ShowWindow again here, which causes a visible
+                // normal-to-maximized flash during startup.
+                if !should_maximize {
+                    crate::gui::windows::windowsoverrides::set_window_mode(hwnd, configured_mode);
+
+                    if let Some((x, y)) = load_window_position_on_start() {
+                        set_window_position(hwnd, x, y);
+                    }
+
+                    crate::gui::windows::windowsoverrides::clamp_window_to_monitor_work_area(hwnd);
+                }
 
                 self.window_override_set = true;
             }
@@ -459,6 +478,10 @@ impl eframe::App for MainWindow {
         }
 
         let icon_cache = self.icon_cache.take().unwrap();
+        if self.icon_cache_needs_invalidation {
+            icon_cache.invalidate_all();
+            self.icon_cache_needs_invalidation = false;
+        }
 
         // Main layout: sidebar + tabs column
         let mut topbar_action = None;

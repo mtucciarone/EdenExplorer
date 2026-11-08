@@ -6,6 +6,7 @@ use crate::core::indexer::{
     DirectorySettingsSnapshot, WindowSizeMode, load_app_settings, save_app_settings,
     save_favorites, save_tags, save_theme_settings,
 };
+use crate::core::utils::files::resolve_shortcut_target;
 use crate::core::utils::widgets::{loading_spinner, request_animation_frame};
 use crate::gui::MainWindow;
 use crate::gui::theme::{
@@ -280,6 +281,12 @@ impl MainWindow {
         );
         self.active_tab = self.tabs.len() - 1;
         self.mark_tab_infos_dirty();
+    }
+
+    pub fn open_new_tab_in_background(&mut self, path: PathBuf) {
+        let active_tab = self.active_tab;
+        self.open_new_tab(path);
+        self.active_tab = active_tab;
     }
 
     pub fn open_startup_paths(&mut self, paths: &[PathBuf]) {
@@ -637,6 +644,7 @@ impl MainWindow {
     }
 
     pub(crate) fn load_view(&mut self, side: SplitSide) {
+        self.icon_cache_needs_invalidation = true;
         let (current_path, is_root) = {
             let view = self.active_tab().view(side);
             (view.nav.current.clone(), view.nav.is_root())
@@ -1937,6 +1945,10 @@ impl MainWindow {
                 self.load_path();
                 self.save_remembered_tabs_if_enabled();
             }
+            if let Some(path) = action.open_background_tab {
+                self.open_new_tab_in_background(path);
+                self.save_remembered_tabs_if_enabled();
+            }
             if let Some(path) = action.select_favorite {
                 self.sidebar_state.item_clicked = Some(path);
             }
@@ -2482,6 +2494,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 | ItemViewerAction::Open(_)
                 | ItemViewerAction::OpenWithDefault(_)
                 | ItemViewerAction::OpenInNewTab(_)
+                | ItemViewerAction::OpenInBackgroundTab(_)
                 | ItemViewerAction::OpenInSplitView(_)
                 | ItemViewerAction::StartEdit(_)
                 | ItemViewerAction::FilesDropped(_)
@@ -2803,40 +2816,17 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 }
             }
             ItemViewerAction::Open(path) => {
-                {
-                    let side = explorer.focused_split;
-                    let view = explorer.active_tab_mut().view_mut(side);
-                    view.explorer_state.selected_paths.clear();
-                    view.explorer_state.selected_paths.insert(path.clone());
-                    view.item_viewer_filter_state.dirty = true;
-                    view.item_viewer_filter_state.cached_indices.clear();
-                }
-                let snapshot = directory_settings_snapshot_for_view(
-                    explorer.active_tab().view(explorer.focused_split),
-                );
-                let _ = persist_directory_settings_snapshot(
-                    &mut explorer.settings_window.current_settings.directory_settings,
-                    snapshot,
-                );
-
-                // Store current path in navigation history before navigating
-                if let Some(parent) = explorer.current_nav().get_parent() {
-                    let current = explorer.current_nav().current.clone();
-                    let side = explorer.focused_split;
-                    explorer
-                        .active_tab_mut()
-                        .view_mut(side)
-                        .explorer_state
-                        .navigation_history
-                        .insert(parent, current);
-                }
-
-                explorer.current_nav_mut().go_to(path);
-                explorer.mark_tab_infos_dirty();
-                explorer.load_path();
+                open_path_in_explorer(explorer, path);
             }
             ItemViewerAction::OpenWithDefault(paths) => {
                 for path in paths {
+                    let path = resolve_shortcut_target(&path).unwrap_or(path);
+
+                    if path.is_dir() {
+                        open_path_in_explorer(explorer, path);
+                        continue;
+                    }
+
                     let wide_path: Vec<u16> = path
                         .as_os_str()
                         .encode_wide()
@@ -2877,6 +2867,9 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             ItemViewerAction::OpenInNewTab(path) => {
                 explorer.open_new_tab(path);
                 explorer.load_path();
+            }
+            ItemViewerAction::OpenInBackgroundTab(path) => {
+                explorer.open_new_tab_in_background(path);
             }
             ItemViewerAction::OpenInSplitView(path) => {
                 explorer.open_path_in_split(path);
@@ -3029,6 +3022,39 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             }
         }
     }
+}
+
+fn open_path_in_explorer(explorer: &mut MainWindow, path: PathBuf) {
+    {
+        let side = explorer.focused_split;
+        let view = explorer.active_tab_mut().view_mut(side);
+        view.explorer_state.selected_paths.clear();
+        view.explorer_state.selected_paths.insert(path.clone());
+        view.item_viewer_filter_state.dirty = true;
+        view.item_viewer_filter_state.cached_indices.clear();
+    }
+    let snapshot =
+        directory_settings_snapshot_for_view(explorer.active_tab().view(explorer.focused_split));
+    let _ = persist_directory_settings_snapshot(
+        &mut explorer.settings_window.current_settings.directory_settings,
+        snapshot,
+    );
+
+    // Store current path in navigation history before navigating.
+    if let Some(parent) = explorer.current_nav().get_parent() {
+        let current = explorer.current_nav().current.clone();
+        let side = explorer.focused_split;
+        explorer
+            .active_tab_mut()
+            .view_mut(side)
+            .explorer_state
+            .navigation_history
+            .insert(parent, current);
+    }
+
+    explorer.current_nav_mut().go_to(path);
+    explorer.mark_tab_infos_dirty();
+    explorer.load_path();
 }
 
 /// Modal progress window for an in-flight background file operation (delete /

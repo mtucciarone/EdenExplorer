@@ -68,7 +68,7 @@ pub fn draw_sidebar(
                         action.nav_to = Some(PathBuf::from(MY_PC_PATH));
                     }
                     if resp.middle_clicked() {
-                        action.open_new_tab = Some(PathBuf::from(MY_PC_PATH));
+                        action.open_background_tab = Some(PathBuf::from(MY_PC_PATH));
                     }
 
                     Popup::context_menu(&resp)
@@ -98,7 +98,7 @@ pub fn draw_sidebar(
                             action.nav_to = Some(home.clone());
                         }
                         if resp.middle_clicked() {
-                            action.open_new_tab = Some(home.clone());
+                            action.open_background_tab = Some(home.clone());
                         }
                         Popup::context_menu(&resp)
                             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
@@ -127,7 +127,7 @@ pub fn draw_sidebar(
                         action.nav_to = Some(PathBuf::from(MY_RECYCLE_BIN_PATH));
                     }
                     if resp.middle_clicked() {
-                        action.open_new_tab = Some(PathBuf::from(MY_RECYCLE_BIN_PATH));
+                        action.open_background_tab = Some(PathBuf::from(MY_RECYCLE_BIN_PATH));
                     }
 
                     Popup::context_menu(&resp)
@@ -243,7 +243,7 @@ pub fn draw_sidebar(
                             action.select_favorite = Some(favorite.path.clone());
                         }
                         if resp.middle_clicked() {
-                            action.open_new_tab = Some(favorite.path.clone());
+                            action.open_background_tab = Some(favorite.path.clone());
                         }
 
                         Popup::context_menu(&resp)
@@ -357,7 +357,7 @@ pub fn draw_sidebar(
                             if is_raw_physical_drive_path(&drive.path) {
                                 sidebar_state.non_ntfs_popup_path = Some(drive.path.clone());
                             } else {
-                                action.open_new_tab = Some(drive.path.clone());
+                                action.open_background_tab = Some(drive.path.clone());
                             }
                         }
                     }

@@ -609,7 +609,7 @@ pub fn draw_item_viewer(
                             && !is_non_ntfs_drive
                             && !is_recycle_bin_view
                         {
-                            action = Some(ItemViewerAction::OpenInNewTab(file.path.clone()));
+                            action = Some(ItemViewerAction::OpenInBackgroundTab(file.path.clone()));
                         }
 
                         let context_menu_open =

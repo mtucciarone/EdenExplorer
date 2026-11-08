@@ -1,6 +1,9 @@
 use crate::core::drives::mark_drive_cache_dirty;
 use crate::core::i18n::I18n;
-use crate::core::indexer::{WindowSizeMode, load_app_settings, save_app_settings};
+use crate::core::indexer::{
+    WindowSizeMode, load_app_settings, save_app_settings, save_window_position,
+    save_window_was_maximized,
+};
 use crate::core::launch::receive_copydata;
 use crate::gui::icon_system::AppIcon;
 use crate::gui::theme::ThemePalette;
@@ -106,16 +109,17 @@ pub fn mark_clipboard_dirty() {
 
 fn save_manual_window_size(hwnd: HWND) {
     unsafe {
-        // Never persist while maximized: the screen-filling dimensions must
-        // not replace the user's restore size, and a stored "fullscreen" mode
-        // must survive a close-from-maximized.
-        if IsZoomed(hwnd).as_bool() {
-            return;
-        }
+        let is_maximized = IsZoomed(hwnd).as_bool();
+        save_window_was_maximized(is_maximized);
 
         let mut rect = RECT::default();
         if GetClientRect(hwnd, &mut rect).is_err() {
             return;
+        }
+
+        let mut window_rect = RECT::default();
+        if !is_maximized && GetWindowRect(hwnd, &mut window_rect).is_ok() {
+            save_window_position(window_rect.left, window_rect.top);
         }
 
         let width = (rect.right - rect.left) as f32;
@@ -131,7 +135,7 @@ fn save_manual_window_size(hwnd: HWND) {
             show_item_viewer_icons,
             windows_context_menu_enabled,
             extra_actions_bar,
-            _window_size_mode,
+            window_size_mode,
             start_path,
             saved_theme,
             pinned_tabs,
@@ -151,7 +155,13 @@ fn save_manual_window_size(hwnd: HWND) {
             recycle_bin_column_sizes,
             directory_settings,
         ) = load_app_settings();
-        let window_size_mode = WindowSizeMode::Custom { width, height };
+        // Keep the configured mode while maximized so the last normal size is
+        // not replaced by the maximized client dimensions.
+        let window_size_mode = if is_maximized {
+            window_size_mode
+        } else {
+            WindowSizeMode::Custom { width, height }
+        };
 
         save_app_settings(
             folder_scanning_enabled,
@@ -779,6 +789,21 @@ pub fn set_window_mode(hwnd: HWND, mode: &WindowSizeMode) {
         WindowSizeMode::Custom { width, height } => {
             resize_and_center_window(hwnd, width.round() as i32, height.round() as i32);
         }
+    }
+}
+
+/// Restore the saved top-left position without changing the current size.
+pub fn set_window_position(hwnd: HWND, x: i32, y: i32) {
+    unsafe {
+        let _ = SetWindowPos(
+            hwnd,
+            None,
+            x,
+            y,
+            0,
+            0,
+            SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
     }
 }
 

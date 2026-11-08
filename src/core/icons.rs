@@ -6,7 +6,10 @@ use std::os::windows::ffi::OsStrExt;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
     thread,
 };
 use windows::Win32::Graphics::Gdi::{
@@ -33,6 +36,7 @@ use windows::{
 struct IconRequest {
     path: PathBuf,
     is_dir: bool,
+    generation: u64,
 }
 
 type IconKey = String;
@@ -42,6 +46,7 @@ pub struct IconCache {
     #[allow(dead_code)]
     icon_indices: Arc<Mutex<HashMap<IconKey, i32>>>,
     sender: Sender<IconRequest>,
+    generation: Arc<AtomicU64>,
 }
 
 impl IconCache {
@@ -49,9 +54,11 @@ impl IconCache {
         let (tx, rx) = unbounded::<IconRequest>();
         let textures = Arc::new(Mutex::new(HashMap::new()));
         let icon_indices = Arc::new(Mutex::new(HashMap::new()));
+        let generation = Arc::new(AtomicU64::new(0));
 
         let textures_bg = textures.clone();
         let icon_indices_bg = icon_indices.clone();
+        let generation_bg = generation.clone();
         let ctx_bg = ctx.clone();
 
         thread::spawn(move || {
@@ -61,13 +68,19 @@ impl IconCache {
             };
 
             while let Ok(req) = rx.recv() {
+                if req.generation != generation_bg.load(Ordering::Acquire) {
+                    continue;
+                }
+
                 let key = icon_key(&req.path, req.is_dir);
 
                 if key.starts_with("portable_device") {
                     if textures_bg.lock().unwrap().contains_key(&key) {
                         continue;
                     }
-                    if let Some((pixels, w, h)) = get_portable_device_icon_rgba() {
+                    if let Some((pixels, w, h)) = get_portable_device_icon_rgba()
+                        && req.generation == generation_bg.load(Ordering::Acquire)
+                    {
                         let image = egui::ColorImage::from_rgba_unmultiplied(
                             [w as usize, h as usize],
                             &pixels,
@@ -83,6 +96,9 @@ impl IconCache {
                 // 1️⃣ Get icon index (cached)
                 let icon_index = {
                     let mut idx_cache = icon_indices_bg.lock().unwrap();
+                    if req.generation != generation_bg.load(Ordering::Acquire) {
+                        continue;
+                    }
                     if let Some(&idx) = idx_cache.get(&key) {
                         idx
                     } else {
@@ -91,6 +107,10 @@ impl IconCache {
                         idx
                     }
                 };
+
+                if req.generation != generation_bg.load(Ordering::Acquire) {
+                    continue;
+                }
 
                 // 2️⃣ Skip if texture already exists
                 if textures_bg.lock().unwrap().contains_key(&key) {
@@ -109,8 +129,10 @@ impl IconCache {
                         let texture =
                             ctx_bg.load_texture(format!("icon_{}", key), image, Default::default());
 
-                        textures_bg.lock().unwrap().insert(key.clone(), texture);
-                        ctx_bg.request_repaint();
+                        if req.generation == generation_bg.load(Ordering::Acquire) {
+                            textures_bg.lock().unwrap().insert(key.clone(), texture);
+                            ctx_bg.request_repaint();
+                        }
                     }
                 }
             }
@@ -120,6 +142,7 @@ impl IconCache {
             textures,
             icon_indices,
             sender: tx,
+            generation,
         }
     }
 
@@ -135,9 +158,18 @@ impl IconCache {
         let _ = self.sender.send(IconRequest {
             path: path.to_path_buf(),
             is_dir,
+            generation: self.generation.load(Ordering::Acquire),
         });
 
         None
+    }
+
+    /// Discard cached shell icons so changes made through Windows folder
+    /// properties are visible without restarting the application.
+    pub fn invalidate_all(&self) {
+        self.generation.fetch_add(1, Ordering::AcqRel);
+        self.textures.lock().unwrap().clear();
+        self.icon_indices.lock().unwrap().clear();
     }
 
     /// Returns a custom application icon for folders with a recognized name.
@@ -165,7 +197,9 @@ fn icon_key(path: &Path, is_dir: bool) -> String {
         if is_drive_root(path) {
             format!("drive:{}", path.to_string_lossy().to_lowercase())
         } else {
-            "folder".to_string()
+            // Directory icons can be customized through desktop.ini. Keep the
+            // path in the cache key so each directory gets its own shell icon.
+            format!("dir:{}", path.to_string_lossy().to_lowercase())
         }
     } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         format!("ext:{}", ext.to_lowercase())
@@ -194,8 +228,9 @@ fn get_icon_index_for_key(key: &str, path: &Path, is_dir: bool) -> Option<i32> {
         let fake = PathBuf::from("C:\\");
         wide = fake.as_os_str().encode_wide().chain(Some(0)).collect();
     } else if is_dir {
-        wide = "folder".encode_utf16().chain(Some(0)).collect();
-        flags |= SHGFI_USEFILEATTRIBUTES;
+        // Query the actual directory instead of a synthetic "folder" path so
+        // Windows can resolve desktop.ini/IconResource customizations.
+        wide = path.as_os_str().encode_wide().chain(Some(0)).collect();
     } else {
         let ext = key.strip_prefix("ext:").unwrap_or("");
         let fake = if ext.is_empty() {

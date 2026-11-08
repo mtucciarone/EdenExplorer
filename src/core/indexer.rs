@@ -167,6 +167,17 @@ struct ThemeSettingsSnapshot {
     dark: ThemePalette,
 }
 
+#[derive(Serialize, Deserialize)]
+struct WindowPositionSnapshot {
+    x: i32,
+    y: i32,
+}
+
+#[derive(Serialize, Deserialize)]
+struct WindowStateSnapshot {
+    was_maximized: bool,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum WindowSizeMode {
     FullScreen,
@@ -314,6 +325,53 @@ fn favorites_cache_path(drive: char) -> Option<PathBuf> {
 fn settings_cache_path() -> Option<PathBuf> {
     let base = dirs::data_local_dir()?;
     Some(base.join("ExplorerEden").join("settings.bin"))
+}
+
+fn window_position_cache_path() -> Option<PathBuf> {
+    let base = dirs::data_local_dir()?;
+    Some(base.join("ExplorerEden").join("window_position.bin"))
+}
+
+fn window_state_cache_path() -> Option<PathBuf> {
+    let base = dirs::data_local_dir()?;
+    Some(base.join("ExplorerEden").join("window_state.bin"))
+}
+
+pub fn load_window_position_on_start() -> Option<(i32, i32)> {
+    let path = window_position_cache_path()?;
+    load_or_migrate_bincode_to_postcard::<WindowPositionSnapshot>(&path)
+        .map(|snapshot| (snapshot.x, snapshot.y))
+}
+
+pub fn save_window_position(x: i32, y: i32) {
+    let Some(path) = window_position_cache_path() else {
+        return;
+    };
+    let _ = std::fs::create_dir_all(path.parent().unwrap());
+    let snapshot = WindowPositionSnapshot { x, y };
+    if let Ok(data) = postcard::to_allocvec(&snapshot) {
+        let _ = std::fs::write(path, data);
+    }
+}
+
+pub fn load_window_was_maximized_on_start() -> bool {
+    let Some(path) = window_state_cache_path() else {
+        return false;
+    };
+    load_or_migrate_bincode_to_postcard::<WindowStateSnapshot>(&path)
+        .map(|snapshot| snapshot.was_maximized)
+        .unwrap_or(false)
+}
+
+pub fn save_window_was_maximized(was_maximized: bool) {
+    let Some(path) = window_state_cache_path() else {
+        return;
+    };
+    let _ = std::fs::create_dir_all(path.parent().unwrap());
+    let snapshot = WindowStateSnapshot { was_maximized };
+    if let Ok(data) = postcard::to_allocvec(&snapshot) {
+        let _ = std::fs::write(path, data);
+    }
 }
 
 fn theme_cache_path() -> Option<PathBuf> {
