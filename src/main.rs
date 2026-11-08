@@ -2,7 +2,10 @@
 mod core;
 mod gui;
 
-use crate::core::indexer::{WindowSizeMode, load_windows_size_mode_on_start};
+use crate::core::indexer::{
+    WindowSizeMode, load_window_position_on_start, load_window_was_maximized_on_start,
+    load_windows_size_mode_on_start,
+};
 use crate::core::launch::{LaunchError, acquire_or_forward, existing_directories, parse_args};
 use crate::core::utils::fonts::apply_custom_font_definitions;
 use crate::gui::windows::windowsoverrides::set_egui_ctx;
@@ -49,6 +52,8 @@ fn main() -> eframe::Result<()> {
 
     let icon = load_icon();
     let window_size_mode = load_windows_size_mode_on_start();
+    let was_maximized = load_window_was_maximized_on_start();
+    let should_maximize = was_maximized || matches!(window_size_mode, WindowSizeMode::FullScreen);
 
     let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) } as f32;
     let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) } as f32;
@@ -63,14 +68,28 @@ fn main() -> eframe::Result<()> {
     let pos_x = ((screen_w - window_size.x) * 0.5).max(0.0);
     let pos_y = ((screen_h - window_size.y) * 0.5).max(0.0);
 
-    let options = NativeOptions {
-        viewport: egui::ViewportBuilder::default()
+    let saved_position = load_window_position_on_start();
+    let initial_position = saved_position
+        .map(|(x, y)| egui::pos2(x as f32, y as f32))
+        .unwrap_or_else(|| egui::pos2(pos_x, pos_y));
+
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_maximized(should_maximize)
+        .with_icon(icon)
+        .with_title_shown(false)
+        .with_decorations(false)
+        .with_clamp_size_to_monitor_size(true);
+
+    // Supplying normal-window geometry alongside a maximized viewport can
+    // make Windows briefly realize the restore rectangle before maximizing.
+    if !should_maximize {
+        viewport = viewport
             .with_inner_size(window_size)
-            .with_position(egui::pos2(pos_x, pos_y))
-            .with_icon(icon)
-            .with_title_shown(false)
-            .with_decorations(false)
-            .with_clamp_size_to_monitor_size(true),
+            .with_position(initial_position);
+    }
+
+    let options = NativeOptions {
+        viewport,
         wgpu_options: low_latency_wgpu_options(),
         ..Default::default()
     };
