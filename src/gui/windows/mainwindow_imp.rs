@@ -1776,7 +1776,11 @@ impl MainWindow {
             }
             if let Some((tab_id, insertion)) = action.reorder {
                 if let Some(from) = self.tabs.iter().position(|t| t.id == tab_id) {
-                    let to = if insertion > from { insertion - 1 } else { insertion };
+                    let to = if insertion > from {
+                        insertion - 1
+                    } else {
+                        insertion
+                    };
                     if to != from && to < self.tabs.len() {
                         let active_id = self.tabs[self.active_tab].id;
                         let tab = self.tabs.remove(from);
