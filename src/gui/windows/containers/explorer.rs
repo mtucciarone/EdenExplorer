@@ -213,33 +213,25 @@ pub fn draw_tab_content(
                 if !is_drive_view {
                     let mut dir_count = 0usize;
                     let mut file_count = 0usize;
+                    // Sum visible files and completed recursive folder sizes in the
+                    // same pass that counts them.
+                    let mut total_size = 0u64;
 
                     for &idx in &view.item_viewer_filter_state.cached_indices {
-                        if view.files[idx].is_dir {
+                        let item = &view.files[idx];
+                        if item.is_dir {
                             dir_count += 1;
+                            let bytes = folder_sizes
+                                .get(&item.path)
+                                .filter(|state| state.done)
+                                .map(|state| state.bytes)
+                                .unwrap_or(0);
+                            total_size = total_size.saturating_add(bytes);
                         } else {
                             file_count += 1;
+                            total_size = total_size.saturating_add(item.file_size.unwrap_or(0));
                         }
                     }
-
-                    // Sum visible files and completed recursive folder sizes.
-                    let total_size = view
-                        .item_viewer_filter_state
-                        .cached_indices
-                        .iter()
-                        .map(|&idx| {
-                            let item = &view.files[idx];
-                            if item.is_dir {
-                                folder_sizes
-                                    .get(&item.path)
-                                    .filter(|state| state.done)
-                                    .map(|state| state.bytes)
-                                    .unwrap_or(0)
-                            } else {
-                                item.file_size.unwrap_or(0)
-                            }
-                        })
-                        .fold(0u64, u64::saturating_add);
 
                     let text_color = ui.visuals().text_color();
                     let font_id = egui::FontId::proportional(palette.text_size);

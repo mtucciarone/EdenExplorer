@@ -16,6 +16,7 @@ use egui::Color32;
 use notify::RecommendedWatcher;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
@@ -1014,6 +1015,32 @@ pub struct TagDragState {
     pub active: bool,
 }
 
+/// Memoized `Path::is_dir` answers for tagged paths, so the tag view does not
+/// hit the filesystem every frame. Filled on first use; cleared by
+/// `TagsState::reindex` whenever group membership changes.
+#[derive(Default)]
+pub struct TagDirCache(RefCell<HashMap<PathBuf, bool>>);
+
+impl TagDirCache {
+    pub fn is_dir(&self, path: &Path) -> bool {
+        if let Some(&is_dir) = self.0.borrow().get(path) {
+            return is_dir;
+        }
+        let is_dir = path.is_dir();
+        self.0.borrow_mut().insert(path.to_path_buf(), is_dir);
+        is_dir
+    }
+
+    fn clear(&self) {
+        self.0.borrow_mut().clear();
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.0.borrow().len()
+    }
+}
+
 pub struct TagsState {
     pub groups: Vec<TagGroup>,
     pub next_group_id: u64,
@@ -1022,6 +1049,10 @@ pub struct TagsState {
     pub drag_state: Option<TagDragState>,
     pub delete_confirmation: Option<u64>,
     pub pending_action: Option<ItemViewerAction>,
+    /// Path -> indices into `groups` of every group containing it, in group order.
+    /// Derived from `groups`; rebuilt by `reindex` after each membership change.
+    path_index: HashMap<PathBuf, Vec<usize>>,
+    pub dir_cache: TagDirCache,
 }
 
 impl Default for TagsState {
@@ -1034,6 +1065,8 @@ impl Default for TagsState {
             drag_state: None,
             delete_confirmation: None,
             pending_action: None,
+            path_index: HashMap::new(),
+            dir_cache: TagDirCache::default(),
         }
     }
 }
@@ -1051,7 +1084,7 @@ impl TagPickerState {
 
 impl TagsState {
     pub fn from_snapshot(snapshot: TagsSnapshot) -> Self {
-        Self {
+        let mut state = Self {
             groups: snapshot
                 .groups
                 .into_iter()
@@ -1076,7 +1109,11 @@ impl TagsState {
             drag_state: None,
             delete_confirmation: None,
             pending_action: None,
-        }
+            path_index: HashMap::new(),
+            dir_cache: TagDirCache::default(),
+        };
+        state.reindex();
+        state
     }
 
     pub fn to_snapshot(&self) -> TagsSnapshot {
@@ -1108,14 +1145,36 @@ impl TagsState {
     }
 
     pub fn tags_for_path(&self, path: &Path) -> Vec<TagInfo> {
-        self.groups
+        let Some(group_indices) = self.path_index.get(path) else {
+            return Vec::new();
+        };
+        group_indices
             .iter()
-            .filter(|group| group.items.iter().any(|item| item == path))
-            .map(|group| TagInfo {
-                name: group.name.clone(),
-                color: group.color,
+            .map(|&index| {
+                let group = &self.groups[index];
+                TagInfo {
+                    name: group.name.clone(),
+                    color: group.color,
+                }
             })
             .collect()
+    }
+
+    /// Rebuilds the derived lookups after `groups` changes membership or order.
+    /// Every method that edits group membership calls this. Code that edits
+    /// `groups` directly must call it too.
+    pub fn reindex(&mut self) {
+        let mut index: HashMap<PathBuf, Vec<usize>> = HashMap::new();
+        for (group_index, group) in self.groups.iter().enumerate() {
+            for path in &group.items {
+                let indices = index.entry(path.clone()).or_default();
+                if indices.last() != Some(&group_index) {
+                    indices.push(group_index);
+                }
+            }
+        }
+        self.path_index = index;
+        self.dir_cache.clear();
     }
 
     pub fn tags_for_paths(&self, paths: &[PathBuf]) -> Vec<TagInfo> {
@@ -1151,6 +1210,7 @@ impl TagsState {
 
         if changed {
             self.prune_empty_groups();
+            self.reindex();
         }
 
         changed
@@ -1184,6 +1244,9 @@ impl TagsState {
             }
         }
 
+        if changed {
+            self.reindex();
+        }
         changed
     }
 
@@ -1219,6 +1282,7 @@ impl TagsState {
         }
 
         self.groups.push(group);
+        self.reindex();
         true
     }
 
@@ -1242,6 +1306,9 @@ impl TagsState {
             }
         }
 
+        if changed {
+            self.reindex();
+        }
         changed
     }
 
@@ -1258,6 +1325,7 @@ impl TagsState {
 
         if changed {
             self.prune_empty_groups();
+            self.reindex();
         }
 
         changed
@@ -1443,5 +1511,197 @@ mod tests {
             TopbarAction::default().file_explorer_mode_change(true),
             None
         );
+    }
+
+    /// The original per-frame scan, kept as the reference the index must match.
+    fn linear_tags_for_path(state: &TagsState, path: &Path) -> Vec<(String, Color32)> {
+        state
+            .groups
+            .iter()
+            .filter(|group| group.items.iter().any(|item| item == path))
+            .map(|group| (group.name.clone(), group.color))
+            .collect()
+    }
+
+    fn indexed_tags_for_path(state: &TagsState, path: &Path) -> Vec<(String, Color32)> {
+        state
+            .tags_for_path(path)
+            .into_iter()
+            .map(|tag| (tag.name, tag.color))
+            .collect()
+    }
+
+    fn assert_index_matches_scan(state: &TagsState, probes: &[PathBuf]) {
+        for probe in probes {
+            assert_eq!(
+                indexed_tags_for_path(state, probe),
+                linear_tags_for_path(state, probe),
+                "index disagrees with scan for {}",
+                probe.display()
+            );
+        }
+    }
+
+    #[test]
+    fn tag_index_matches_linear_scan_including_overlaps_and_duplicates() {
+        let snapshot = TagsSnapshot {
+            version: 1,
+            next_group_id: 4,
+            groups: vec![
+                crate::core::indexer::TagGroupSnapshot {
+                    id: 1,
+                    name: "First".to_string(),
+                    color: [255, 0, 0, 255],
+                    items: vec![
+                        PathBuf::from("C:/data/one.txt"),
+                        PathBuf::from("C:/data/one.txt"),
+                        PathBuf::from("C:/data/two.txt"),
+                    ],
+                },
+                crate::core::indexer::TagGroupSnapshot {
+                    id: 2,
+                    name: "Second".to_string(),
+                    color: [0, 255, 0, 255],
+                    items: vec![
+                        PathBuf::from("C:/data/two.txt"),
+                        PathBuf::from("C:/data/three.txt"),
+                    ],
+                },
+                crate::core::indexer::TagGroupSnapshot {
+                    id: 3,
+                    name: "Third".to_string(),
+                    color: [0, 0, 255, 255],
+                    items: vec![PathBuf::from("C:/data/one.txt")],
+                },
+            ],
+        };
+        let state = TagsState::from_snapshot(snapshot);
+        let probes = [
+            PathBuf::from("C:/data/one.txt"),
+            PathBuf::from("C:/data/two.txt"),
+            PathBuf::from("C:/data/three.txt"),
+            PathBuf::from("C:/data/missing.txt"),
+            // Same file spelled with backslashes must still resolve to the same entry.
+            PathBuf::from("C:\\data\\one.txt"),
+        ];
+
+        assert_index_matches_scan(&state, &probes);
+        assert_eq!(
+            indexed_tags_for_path(&state, &probes[0]).len(),
+            2,
+            "a path in two groups (one of them listing it twice) gets exactly two tags"
+        );
+    }
+
+    #[test]
+    fn tag_index_follows_membership_changes() {
+        let probes = [
+            PathBuf::from("C:/data/one.txt"),
+            PathBuf::from("C:/data/two.txt"),
+            PathBuf::from("C:/data/three.txt"),
+            PathBuf::from("D:/moved/one.txt"),
+        ];
+        let mut state = TagsState::default();
+        state.create_group_and_add(
+            "Alpha".to_string(),
+            Color32::RED,
+            &[PathBuf::from("C:/data/one.txt")],
+        );
+        assert_index_matches_scan(&state, &probes);
+
+        let alpha_id = state.groups[0].id;
+        state.add_paths_to_group(alpha_id, &[PathBuf::from("C:/data/two.txt")]);
+        assert_index_matches_scan(&state, &probes);
+
+        state.create_group_and_add(
+            "Beta".to_string(),
+            Color32::BLUE,
+            &[PathBuf::from("C:/data/one.txt")],
+        );
+        assert_index_matches_scan(&state, &probes);
+
+        state.remap_path_prefix(Path::new("C:/data"), Path::new("D:/moved"));
+        assert_index_matches_scan(&state, &probes);
+
+        // Emptying "Alpha" deletes that group, which shifts the remaining group indices.
+        let alpha_id = state.groups[0].id;
+        state.remove_paths_from_group(
+            alpha_id,
+            &[
+                PathBuf::from("D:/moved/one.txt"),
+                PathBuf::from("D:/moved/two.txt"),
+            ],
+        );
+        assert_eq!(state.groups.len(), 1);
+        assert_index_matches_scan(&state, &probes);
+
+        state.remove_path_prefix(Path::new("D:/moved"));
+        assert_index_matches_scan(&state, &probes);
+        assert!(state.groups.is_empty());
+        assert!(indexed_tags_for_path(&state, &probes[3]).is_empty());
+    }
+
+    #[test]
+    fn deleting_a_group_from_the_ui_reindexes_remaining_groups() {
+        let mut state = TagsState::default();
+        state.create_group_and_add(
+            "Gone".to_string(),
+            Color32::RED,
+            &[PathBuf::from("C:/data/one.txt")],
+        );
+        state.create_group_and_add(
+            "Kept".to_string(),
+            Color32::BLUE,
+            &[
+                PathBuf::from("C:/data/one.txt"),
+                PathBuf::from("C:/data/two.txt"),
+            ],
+        );
+        let gone_id = state.groups[0].id;
+
+        // Mirrors the delete-confirmation path in tags.rs, which edits `groups` directly.
+        state.groups.retain(|g| g.id != gone_id);
+        state.reindex();
+
+        let probes = [
+            PathBuf::from("C:/data/one.txt"),
+            PathBuf::from("C:/data/two.txt"),
+        ];
+        assert_index_matches_scan(&state, &probes);
+        assert_eq!(indexed_tags_for_path(&state, &probes[0]).len(), 1);
+    }
+
+    #[test]
+    fn dir_cache_memoizes_and_is_cleared_when_tags_change() {
+        let root = std::env::temp_dir().join(format!("eden-tags-dir-cache-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("item");
+        std::fs::write(&file, b"x").unwrap();
+
+        let mut state = TagsState::default();
+        state.create_group_and_add(
+            "Dirs".to_string(),
+            Color32::RED,
+            std::slice::from_ref(&file),
+        );
+
+        assert!(!state.dir_cache.is_dir(&file));
+        assert_eq!(state.dir_cache.len(), 1);
+
+        // Memoized: a change on disk is not seen until the tag set changes.
+        std::fs::remove_file(&file).unwrap();
+        std::fs::create_dir(&file).unwrap();
+        assert!(!state.dir_cache.is_dir(&file), "answer should be memoized");
+
+        state.reindex();
+        assert_eq!(
+            state.dir_cache.len(),
+            0,
+            "reindex must clear memoized answers"
+        );
+        assert!(state.dir_cache.is_dir(&file));
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

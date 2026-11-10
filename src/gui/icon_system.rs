@@ -6,10 +6,14 @@
 //! glyphs.
 
 use crate::core::utils::widgets::paint_focus_ring;
+use egui::load::Bytes;
 use egui::{Color32, CornerRadius, Image, Rect, Response, Sense, Ui, Vec2, WidgetInfo, WidgetType};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 #[allow(dead_code)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum AppIcon {
     ArrowLeft,
     ArrowRight,
@@ -286,10 +290,17 @@ pub fn draw_icon(
     response
 }
 
-pub fn paint_icon(ui: &mut Ui, rect: Rect, icon: StyledIcon, size: f32, color: Color32) {
-    // Lucide SVGs use `currentColor`. An SVG loaded as an image has no
-    // inherited CSS color, so replace it before handing the bytes to the
-    // loader. Tinting black SVG pixels would remain black.
+/// URI and SVG payload for an icon tinted with one color.
+type ColoredIconSource = (String, Arc<[u8]>);
+
+thread_local! {
+    /// Colored SVG sources per icon and RGBA color, built once per pair.
+    static COLORED_ICON_SOURCES: RefCell<HashMap<(AppIcon, [u8; 4]), ColoredIconSource>> =
+        RefCell::new(HashMap::new());
+}
+
+/// Builds the `bytes://` URI and SVG payload for `icon` tinted with `color`.
+fn build_colored_icon_source(icon: AppIcon, color: Color32) -> ColoredIconSource {
     let color_key = format!(
         "{:02x}{:02x}{:02x}{:02x}",
         color.r(),
@@ -297,16 +308,29 @@ pub fn paint_icon(ui: &mut Ui, rect: Rect, icon: StyledIcon, size: f32, color: C
         color.b(),
         color.a()
     );
+    // Lucide SVGs use `currentColor`. An SVG loaded as an image has no
+    // inherited CSS color, so replace it before handing the bytes to the
+    // loader. Tinting black SVG pixels would remain black.
     let color_svg = icon
-        .icon
         .lucide_svg()
         .replace("currentColor", &format!("#{color_key}"));
-    let uri = format!(
-        "bytes://eden-icon/{}-{}.svg",
-        icon.icon.lucide_name(),
-        color_key
-    );
-    let image = Image::from_bytes(uri, color_svg.into_bytes()).fit_to_exact_size(Vec2::splat(size));
+    let uri = format!("bytes://eden-icon/{}-{}.svg", icon.lucide_name(), color_key);
+    (uri, Arc::from(color_svg.into_bytes()))
+}
+
+fn colored_icon_source(icon: AppIcon, color: Color32) -> ColoredIconSource {
+    COLORED_ICON_SOURCES.with(|cache| {
+        cache
+            .borrow_mut()
+            .entry((icon, color.to_array()))
+            .or_insert_with(|| build_colored_icon_source(icon, color))
+            .clone()
+    })
+}
+
+pub fn paint_icon(ui: &mut Ui, rect: Rect, icon: StyledIcon, size: f32, color: Color32) {
+    let (uri, bytes) = colored_icon_source(icon.icon, color);
+    let image = Image::from_bytes(uri, Bytes::from(bytes)).fit_to_exact_size(Vec2::splat(size));
     // This renderer is also used after callers have already allocated their
     // layout rect (for example sidebar rows). Paint directly into the
     // requested icon-sized rect so the icon does not advance egui's layout
@@ -318,6 +342,43 @@ pub fn paint_icon(ui: &mut Ui, rect: Rect, icon: StyledIcon, size: f32, color: C
 #[cfg(test)]
 mod tests {
     use super::AppIcon;
+
+    #[test]
+    fn colored_icon_source_matches_direct_build_and_is_cached() {
+        use super::{build_colored_icon_source, colored_icon_source};
+        use egui::Color32;
+        use std::sync::Arc;
+
+        let colors = [
+            Color32::from_rgba_unmultiplied(0x12, 0x34, 0x56, 0xff),
+            Color32::from_rgba_unmultiplied(0xab, 0xcd, 0xef, 0x80),
+        ];
+        for icon in [AppIcon::Star, AppIcon::Trash, AppIcon::Image] {
+            for color in colors {
+                let (uri, bytes) = colored_icon_source(icon, color);
+                let (direct_uri, direct_bytes) = build_colored_icon_source(icon, color);
+                assert_eq!(uri, direct_uri);
+                assert_eq!(&bytes[..], &direct_bytes[..]);
+
+                let text = String::from_utf8(bytes.to_vec()).unwrap();
+                assert!(!text.contains("currentColor"));
+                assert!(text.contains(&format!(
+                    "#{:02x}{:02x}{:02x}{:02x}",
+                    color.r(),
+                    color.g(),
+                    color.b(),
+                    color.a()
+                )));
+                assert!(uri.starts_with("bytes://eden-icon/"));
+
+                let (_, again) = colored_icon_source(icon, color);
+                assert!(
+                    Arc::ptr_eq(&bytes, &again),
+                    "second lookup must reuse the cached SVG"
+                );
+            }
+        }
+    }
 
     #[test]
     fn every_app_icon_has_a_lucide_asset() {

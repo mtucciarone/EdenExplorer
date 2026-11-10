@@ -29,8 +29,41 @@ struct DriveCache {
     last_update: Instant,
 }
 
+/// The drive cache plus a generation that changes on every invalidation. A
+/// background enumeration started before an invalidation must not store its
+/// (possibly stale) result afterwards.
+#[derive(Default)]
+struct DriveCacheSlot {
+    generation: u64,
+    entry: Option<DriveCache>,
+}
+
+impl DriveCacheSlot {
+    fn fresh_drives(&self, now: Instant) -> Option<Vec<DriveInfo>> {
+        self.entry
+            .as_ref()
+            .filter(|cache| now.saturating_duration_since(cache.last_update) < CACHE_DURATION)
+            .map(|cache| cache.drives.clone())
+    }
+
+    fn invalidate(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+        self.entry = None;
+    }
+
+    fn store_if_current(&mut self, generation: u64, drives: Vec<DriveInfo>, now: Instant) {
+        if generation == self.generation {
+            self.entry = Some(DriveCache {
+                drives,
+                last_update: now,
+            });
+        }
+    }
+}
+
 lazy_static::lazy_static! {
-    static ref DRIVE_CACHE: Arc<Mutex<Option<DriveCache>>> = Arc::new(Mutex::new(None));
+    static ref DRIVE_CACHE: Arc<Mutex<DriveCacheSlot>> =
+        Arc::new(Mutex::new(DriveCacheSlot::default()));
 }
 static DRIVE_LIST_DIRTY: AtomicBool = AtomicBool::new(true);
 
@@ -40,7 +73,7 @@ const CACHE_DURATION: Duration = Duration::from_secs(30);
 pub fn mark_drive_cache_dirty() {
     DRIVE_LIST_DIRTY.store(true, Ordering::Release);
     if let Ok(mut cache) = DRIVE_CACHE.lock() {
-        *cache = None;
+        cache.invalidate();
     }
 }
 
@@ -362,23 +395,22 @@ fn disk_numbers_for_letter(letter: char) -> Vec<u32> {
 }
 
 pub fn get_drive_infos() -> Vec<DriveInfo> {
-    let mut cache = DRIVE_CACHE.lock().unwrap();
-
-    // Check if cache is valid (not expired)
-    if let Some(ref cached) = *cache {
-        if cached.last_update.elapsed() < CACHE_DURATION {
-            return cached.drives.clone();
+    let generation = {
+        let cache = DRIVE_CACHE.lock().unwrap();
+        if let Some(drives) = cache.fresh_drives(Instant::now()) {
+            return drives;
         }
-    }
+        cache.generation
+    };
 
-    // Cache is expired or doesn't exist, regenerate drive info
+    // Enumerate without holding the cache lock. A sleeping network drive can block
+    // for seconds, and other callers, such as the drive-change handler, must not wait.
     let drives = get_drive_infos_internal();
 
-    // Update cache
-    *cache = Some(DriveCache {
-        drives: drives.clone(),
-        last_update: std::time::Instant::now(),
-    });
+    DRIVE_CACHE
+        .lock()
+        .unwrap()
+        .store_if_current(generation, drives.clone(), Instant::now());
 
     drives
 }
@@ -679,5 +711,65 @@ fn normalize_volume_name(volume_name: &str) -> String {
         volume_name.to_string()
     } else {
         format!("{volume_name}\\")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn drive(letter: char) -> DriveInfo {
+        DriveInfo {
+            display: format!("{letter}:"),
+            path: PathBuf::from(format!("{letter}:\\")),
+            is_removable: false,
+            total_space: None,
+            free_space: None,
+            device_path: None,
+        }
+    }
+
+    #[test]
+    fn cached_drives_are_served_until_the_cache_duration_passes() {
+        let mut slot = DriveCacheSlot::default();
+        let now = Instant::now();
+        slot.store_if_current(slot.generation, vec![drive('C')], now);
+
+        let fresh = slot
+            .fresh_drives(now + CACHE_DURATION / 2)
+            .expect("entry should still be fresh");
+        assert_eq!(fresh.len(), 1);
+        assert!(slot.fresh_drives(now + CACHE_DURATION).is_none());
+    }
+
+    #[test]
+    fn invalidation_drops_the_entry() {
+        let mut slot = DriveCacheSlot::default();
+        let now = Instant::now();
+        slot.store_if_current(slot.generation, vec![drive('C')], now);
+
+        slot.invalidate();
+
+        assert!(slot.fresh_drives(now).is_none());
+    }
+
+    #[test]
+    fn enumeration_started_before_invalidation_is_not_cached() {
+        let mut slot = DriveCacheSlot::default();
+        let now = Instant::now();
+        // An enumeration starts, then a device change invalidates the cache.
+        let started_at = slot.generation;
+        slot.invalidate();
+
+        slot.store_if_current(started_at, vec![drive('C')], now);
+        assert!(
+            slot.fresh_drives(now).is_none(),
+            "a stale enumeration must not repopulate the cache"
+        );
+
+        // An enumeration started after the invalidation is kept.
+        slot.store_if_current(slot.generation, vec![drive('D')], now);
+        let kept = slot.fresh_drives(now).expect("current result stored");
+        assert_eq!(kept[0].display, "D:");
     }
 }

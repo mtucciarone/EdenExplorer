@@ -92,6 +92,8 @@ pub struct SidebarState {
     pub sidebar_default_width: f32,
     pub cached_drives: Vec<DriveInfo>,
     pub last_drive_refresh: Instant,
+    /// Result of a drive enumeration running on a worker thread, if one is pending.
+    pub drive_refresh_rx: Option<std::sync::mpsc::Receiver<Vec<DriveInfo>>>,
     pub non_ntfs_popup_path: Option<PathBuf>,
 }
 
@@ -105,6 +107,7 @@ impl Default for SidebarState {
             sidebar_default_width: 250.0,
             cached_drives: Vec::new(),
             last_drive_refresh: now.checked_sub(Duration::from_secs(60)).unwrap_or(now),
+            drive_refresh_rx: None,
             non_ntfs_popup_path: None,
         }
     }

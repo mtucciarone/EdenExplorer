@@ -223,7 +223,7 @@ pub fn draw_tags(
 
                                     for (item_index, path) in group_items.iter().enumerate() {
                                         let label = tag_item_label(path);
-                                        let is_dir = path.is_dir();
+                                        let is_dir = tags_state.dir_cache.is_dir(path);
                                         let resp = if drag_is_active {
                                             let rect = item_rects[item_index];
                                             let item_resp = item_responses[item_index].clone();
@@ -488,6 +488,7 @@ pub fn draw_delete_confirmation_popup(
     if close_requested {
         if confirmed {
             tags_state.groups.retain(|g| g.id != group_id);
+            tags_state.reindex();
             changed = true;
         }
         tags_state.delete_confirmation = None;
