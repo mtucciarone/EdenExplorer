@@ -395,6 +395,8 @@ pub fn draw_gallery_view(
 
     if !modal_input_blocked
         && is_focused
+        && rename_state.is_none()
+        && !ui.ctx().egui_wants_keyboard_input()
         && let Some(a) = handle_keyboard_navigation(
             ui.ctx(),
             filtered_indices,
@@ -403,7 +405,7 @@ pub fn draw_gallery_view(
             explorer_state,
         )
     {
-        action = Some(a);
+        action = action.or(Some(a));
     }
 
     action

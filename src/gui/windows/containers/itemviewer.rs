@@ -763,7 +763,11 @@ pub fn draw_item_viewer(
             *hovered_drop_target_out = hovered_drop_target.clone();
             *hovered_drop_target_rect_out = hovered_drop_target_rect;
 
-            if !modal_input_blocked {
+            if !modal_input_blocked
+                && is_focused
+                && rename_state.is_none()
+                && !ui.ctx().egui_wants_keyboard_input()
+            {
                 if let Some(a) = handle_keyboard_navigation(
                     ui.ctx(),
                     &filter_state.cached_indices,
@@ -771,7 +775,9 @@ pub fn draw_item_viewer(
                     layout.is_drive_view,
                     explorer_state,
                 ) {
-                    action = Some(a);
+                    if action.is_none() {
+                        action = Some(a);
+                    }
                 }
             }
 

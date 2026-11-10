@@ -1496,6 +1496,19 @@ fn draw_visibility_checkbox(ui: &mut egui::Ui, label: String, checked: bool) -> 
     ui.checkbox(&mut value, label).clicked() && value != checked
 }
 
+/// Row index of `path` within the displayed (filtered) list. Falls back to the
+/// position in `files` only when the filtered index list has not been built yet.
+pub fn filtered_row_index(
+    files: &[FileItem],
+    cached_indices: &[usize],
+    path: &std::path::Path,
+) -> Option<usize> {
+    if cached_indices.is_empty() {
+        return files.iter().position(|f| f.path == path);
+    }
+    cached_indices.iter().position(|&i| files[i].path == path)
+}
+
 pub fn handle_keyboard_navigation(
     ctx: &egui::Context,
     filtered_indices: &[usize],
@@ -1599,6 +1612,17 @@ pub fn handle_keyboard_navigation(
 
     // SHIFT RANGE
     if ctx.input(|i| i.modifiers.shift) {
+        // Only act when a navigation key was pressed this frame; otherwise merely
+        // holding Shift would emit a RangeSelect every frame and clobber other actions.
+        let nav_pressed = home_pressed
+            || end_pressed
+            || ctx.input(|i| {
+                i.key_pressed(egui::Key::ArrowDown) || i.key_pressed(egui::Key::ArrowUp)
+            });
+        if !nav_pressed {
+            return None;
+        }
+
         let anchor = explorer_state.selection_anchor.unwrap_or(current_idx);
         let focus = explorer_state.selection_focus.unwrap_or(current_idx);
 
@@ -2342,4 +2366,132 @@ pub fn draw_empty_item_viewer_area(
     }
 
     action
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    fn item(name: &str) -> FileItem {
+        FileItem::new(
+            name.to_string(),
+            PathBuf::from(name),
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    }
+
+    fn files(n: usize) -> Vec<FileItem> {
+        (0..n).map(|i| item(&format!("f{i}"))).collect()
+    }
+
+    fn run_keys(
+        keys: &[egui::Key],
+        shift: bool,
+        indices: &[usize],
+        files: &Vec<FileItem>,
+        state: &mut ExplorerState,
+    ) -> Option<ItemViewerAction> {
+        let ctx = egui::Context::default();
+        let mut raw = egui::RawInput::default();
+        raw.modifiers.shift = shift;
+        for &key in keys {
+            raw.events.push(egui::Event::Key {
+                key,
+                physical_key: Some(key),
+                pressed: true,
+                repeat: false,
+                modifiers: raw.modifiers,
+            });
+        }
+        ctx.begin_pass(raw);
+        let out = handle_keyboard_navigation(&ctx, indices, files, false, state);
+        let _ = ctx.end_pass();
+        out
+    }
+
+    fn selected(paths: &[&str]) -> ExplorerState {
+        let mut st = ExplorerState::default();
+        st.selected_paths = paths.iter().map(PathBuf::from).collect::<HashSet<_>>();
+        st
+    }
+
+    #[test]
+    fn shift_held_without_nav_key_emits_nothing() {
+        let f = files(4);
+        let mut st = selected(&["f1"]);
+        st.selection_anchor = Some(0);
+        st.selection_focus = Some(1);
+        let out = run_keys(&[], true, &[0, 1, 2, 3], &f, &mut st);
+        assert!(out.is_none());
+    }
+
+    #[test]
+    fn shift_arrow_down_extends_range() {
+        let f = files(4);
+        let mut st = selected(&["f1"]);
+        st.selection_anchor = Some(1);
+        st.selection_focus = Some(1);
+        let out = run_keys(&[egui::Key::ArrowDown], true, &[0, 1, 2, 3], &f, &mut st);
+        match out {
+            Some(ItemViewerAction::RangeSelect(p)) => {
+                assert_eq!(p, vec![PathBuf::from("f1"), PathBuf::from("f2")]);
+            }
+            _ => panic!("expected RangeSelect"),
+        }
+        assert_eq!(st.selection_focus, Some(2));
+    }
+
+    #[test]
+    fn plain_arrow_down_replaces_selection() {
+        let f = files(3);
+        let mut st = selected(&["f0"]);
+        let out = run_keys(&[egui::Key::ArrowDown], false, &[0, 1, 2], &f, &mut st);
+        assert!(matches!(
+            out,
+            Some(ItemViewerAction::ReplaceSelection(ref p)) if p == &PathBuf::from("f1")
+        ));
+        assert_eq!(st.selection_anchor, Some(1));
+    }
+
+    #[test]
+    fn no_keys_no_action() {
+        let f = files(3);
+        let mut st = selected(&["f0"]);
+        assert!(run_keys(&[], false, &[0, 1, 2], &f, &mut st).is_none());
+    }
+
+    #[test]
+    fn row_index_uses_filtered_list_when_hidden_files_are_excluded() {
+        // files[0] is hidden and not displayed; displayed rows are files 1..=3.
+        let f = files(4);
+        let cached = [1usize, 2, 3];
+        assert_eq!(
+            filtered_row_index(&f, &cached, std::path::Path::new("f2")),
+            Some(1)
+        );
+        assert_eq!(
+            filtered_row_index(&f, &cached, std::path::Path::new("f0")),
+            None
+        );
+    }
+
+    #[test]
+    fn row_index_falls_back_to_files_when_cache_empty() {
+        let f = files(3);
+        assert_eq!(
+            filtered_row_index(&f, &[], std::path::Path::new("f2")),
+            Some(2)
+        );
+    }
 }
