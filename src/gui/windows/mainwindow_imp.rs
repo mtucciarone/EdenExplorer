@@ -1992,6 +1992,8 @@ impl MainWindow {
                 .as_ref()
                 .map(|state| state.validation_error_show)
                 .unwrap_or(false)
+            || self.rename_state.is_some()
+            || ctx.egui_wants_keyboard_input()
             || self.sidebar_state.non_ntfs_popup_path.is_some()
             || active_tab
                 .primary_view
@@ -2912,20 +2914,12 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
             ItemViewerAction::ReplaceSelection(path) => {
                 let idx = {
                     let view = explorer.active_tab().view(explorer.focused_split);
-                    // Check if we're in a filtered view
-                    let is_filtered = view.item_viewer_filter_state.active
-                        && !view.item_viewer_filter_state.query.is_empty();
-
-                    if is_filtered {
-                        // Use filtered indices
-                        view.item_viewer_filter_state
-                            .cached_indices
-                            .iter()
-                            .position(|&i| view.files[i].path == path)
-                    } else {
-                        // Use original file indices (unfiltered view)
-                        view.files.iter().position(|f| f.path == path)
-                    }
+                    // Row indices (anchor/focus) always refer to the filtered list.
+                    crate::gui::windows::containers::itemviewer_helper::filtered_row_index(
+                        &view.files,
+                        &view.item_viewer_filter_state.cached_indices,
+                        &path,
+                    )
                 };
 
                 let side = explorer.focused_split;
