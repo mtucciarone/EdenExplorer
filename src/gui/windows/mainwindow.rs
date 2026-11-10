@@ -98,6 +98,19 @@ pub struct MainWindow {
     pub(crate) i18n: I18n,
 }
 
+/// Maps a system locale tag (e.g. `zh-HK`) to a bundled locale.
+/// Traditional-Chinese regions must be matched before the generic `zh` arm.
+fn default_locale_for_system(system_locale: &str) -> &'static str {
+    match system_locale {
+        l if l.starts_with("ja") => "ja-JP",
+        l if l.starts_with("id") => "id-ID",
+        l if l.starts_with("zh-HK") => "zh-HK",
+        l if l.starts_with("zh-TW") => "zh-TW",
+        l if l.starts_with("zh") => "zh-CN",
+        _ => "en-US",
+    }
+}
+
 impl Default for MainWindow {
     fn default() -> Self {
         // Load saved settings
@@ -155,14 +168,7 @@ impl Default for MainWindow {
 
         let system_locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
 
-        let default_locale = match system_locale.as_str() {
-            l if l.starts_with("ja") => "ja-JP",
-            l if l.starts_with("id") => "id-ID",
-            l if l.starts_with("zh") => "zh-CN",
-            l if l.starts_with("zh-HK") => "zh-HK",
-            l if l.starts_with("zh-TW") => "zh-TW",
-            _ => "en-US",
-        };
+        let default_locale = default_locale_for_system(&system_locale);
 
         let pinned_tabs = pinned_tabs;
         let mut tabs = Vec::new();
@@ -1319,5 +1325,30 @@ impl eframe::App for MainWindow {
         self.flush_pending_column_settings_save(ui.ctx());
 
         self.icon_cache = Some(icon_cache);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::default_locale_for_system;
+
+    #[test]
+    fn traditional_chinese_regions_map_to_their_own_locales() {
+        assert_eq!(default_locale_for_system("zh-HK"), "zh-HK");
+        assert_eq!(default_locale_for_system("zh-TW"), "zh-TW");
+    }
+
+    #[test]
+    fn other_chinese_locales_map_to_simplified() {
+        assert_eq!(default_locale_for_system("zh-CN"), "zh-CN");
+        assert_eq!(default_locale_for_system("zh-SG"), "zh-CN");
+        assert_eq!(default_locale_for_system("zh"), "zh-CN");
+    }
+
+    #[test]
+    fn other_locales_map_to_their_bundles() {
+        assert_eq!(default_locale_for_system("ja-JP"), "ja-JP");
+        assert_eq!(default_locale_for_system("id-ID"), "id-ID");
+        assert_eq!(default_locale_for_system("fr-FR"), "en-US");
     }
 }

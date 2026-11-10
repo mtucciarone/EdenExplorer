@@ -8,6 +8,8 @@ use unic_langid::LanguageIdentifier;
 #[folder = "locales/"]
 struct Localizations;
 
+const FALLBACK_LOCALE: &str = "en-US";
+
 pub struct I18n {
     current_locale: String,
     bundles: HashMap<String, FluentBundle<FluentResource>>,
@@ -17,11 +19,8 @@ impl I18n {
     pub fn new(default_locale: &str) -> Self {
         let mut bundles = HashMap::new();
 
+        Self::load_locale(&mut bundles, FALLBACK_LOCALE);
         Self::load_locale(&mut bundles, default_locale);
-
-        if default_locale != "en-US" {
-            Self::load_locale(&mut bundles, default_locale);
-        }
 
         Self {
             current_locale: default_locale.to_string(),
@@ -92,25 +91,94 @@ impl I18n {
     }
 
     pub fn tr(&self, key: &str) -> String {
-        let bundle = match self.bundles.get(&self.current_locale) {
-            Some(bundle) => bundle,
-            None => return key.to_string(),
-        };
+        self.lookup(&self.current_locale, key)
+            .or_else(|| self.lookup(FALLBACK_LOCALE, key))
+            .unwrap_or_else(|| key.to_string())
+    }
 
-        let message = match bundle.get_message(key) {
-            Some(message) => message,
-            None => return key.to_string(),
-        };
-
-        let pattern = match message.value() {
-            Some(value) => value,
-            None => return key.to_string(),
-        };
+    fn lookup(&self, locale: &str, key: &str) -> Option<String> {
+        let bundle = self.bundles.get(locale)?;
+        let message = bundle.get_message(key)?;
+        let pattern = message.value()?;
 
         let mut errors = vec![];
 
+        Some(
+            bundle
+                .format_pattern(pattern, None, &mut errors)
+                .to_string(),
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bundle_from(locale: &str, source: &str) -> FluentBundle<FluentResource> {
+        let mut bundle = FluentBundle::new(vec![locale.parse().unwrap()]);
         bundle
-            .format_pattern(pattern, None, &mut errors)
-            .to_string()
+            .add_resource(FluentResource::try_new(source.to_string()).unwrap())
+            .unwrap();
+        bundle
+    }
+
+    /// Top-level message ids in a `.ftl` source (lines starting at column 0 with `id =`).
+    fn message_keys(source: &str) -> std::collections::BTreeSet<String> {
+        source
+            .lines()
+            .filter(|line| line.starts_with(|c: char| c.is_ascii_alphabetic()))
+            .filter_map(|line| line.split_once('='))
+            .map(|(key, _)| key.trim_end().to_string())
+            .filter(|key| {
+                key.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            })
+            .collect()
+    }
+
+    fn embedded_source(locale: &str) -> String {
+        let file = Localizations::get(&format!("{locale}/main.ftl"))
+            .unwrap_or_else(|| panic!("missing locales/{locale}/main.ftl"));
+        String::from_utf8(file.data.into_owned()).unwrap()
+    }
+
+    #[test]
+    fn missing_key_in_locale_falls_back_to_en_us() {
+        let mut bundles = HashMap::new();
+        bundles.insert(
+            FALLBACK_LOCALE.to_string(),
+            bundle_from(
+                FALLBACK_LOCALE,
+                "only_english = Only in English\nshared = Shared",
+            ),
+        );
+        bundles.insert("ja-JP".to_string(), bundle_from("ja-JP", "shared = 共有"));
+        let i18n = I18n {
+            current_locale: "ja-JP".to_string(),
+            bundles,
+        };
+
+        assert_eq!(i18n.tr("shared"), "共有");
+        assert_eq!(i18n.tr("only_english"), "Only in English");
+        assert_eq!(i18n.tr("nowhere"), "nowhere");
+    }
+
+    #[test]
+    fn every_en_us_key_exists_in_every_locale() {
+        let english = message_keys(&embedded_source(FALLBACK_LOCALE));
+        assert!(english.len() > 100, "key extraction found too few keys");
+
+        let mut checked = 0;
+        for path in Localizations::iter() {
+            let Some(locale) = path.strip_suffix("/main.ftl") else {
+                continue;
+            };
+            checked += 1;
+            let keys = message_keys(&embedded_source(locale));
+            let missing: Vec<&String> = english.difference(&keys).collect();
+            assert!(missing.is_empty(), "{locale} is missing keys: {missing:?}");
+        }
+        assert!(checked >= 6, "expected all locales, found {checked}");
     }
 }
