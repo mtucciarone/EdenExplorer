@@ -3,7 +3,7 @@ use crate::core::i18n::I18n;
 use crate::core::icons::IconCache;
 use crate::core::portable;
 use crate::gui::icon_system::{AppIcon, StyledIcon, draw_icon, paint_icon};
-use crate::gui::theme::ThemePalette;
+use crate::gui::theme::{ThemePalette, error_color};
 use crate::gui::utils::{clickable_icon, expand_environment_variables};
 use crate::gui::windows::containers::enums::{ItemViewerContextAction, ItemViewerNavAction};
 use crate::gui::windows::containers::structs::{
@@ -105,14 +105,16 @@ pub fn draw_itemviewer_navigation_bar(
             let error_strength = (1.0 - time_since_error * 2.0).clamp(0.0, 1.0);
 
             let stroke_color = if tab.breadcrumb_path_error {
-                egui::Color32::from_rgba_premultiplied(255, 80, 80, (255.0 * error_strength) as u8)
+                let error = error_color(ui.visuals().dark_mode);
+                let alpha = (255.0 * error_strength) as u8;
+                egui::Color32::from_rgba_unmultiplied(error.r(), error.g(), error.b(), alpha)
             } else {
                 ui.visuals().widgets.inactive.bg_stroke.color
             };
 
             let frame = egui::Frame::NONE
                 .stroke(egui::Stroke::new(1.5, stroke_color))
-                .corner_radius(egui::CornerRadius::same(4));
+                .corner_radius(egui::CornerRadius::same(palette.medium_radius));
 
             let mut resp = frame
                 .show(ui, |ui| {

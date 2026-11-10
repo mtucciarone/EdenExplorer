@@ -23,12 +23,91 @@ use windows::Win32::System::DataExchange::{
     AddClipboardFormatListener, RemoveClipboardFormatListener,
 };
 use windows::Win32::UI::Controls::MARGINS;
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 const MIN_WIDTH: i32 = 600;
 const MIN_HEIGHT: i32 = 400;
 const REAPPLY_DPI_MESSAGE: u32 = WM_APP + 1;
 const RESIZE_BORDER_FALLBACK: i32 = 8;
+
+/// Title-bar caption button metrics in logical pixels (100% scale). Shared by
+/// the drawing code, the layouts that reserve room for the buttons, and the
+/// `WM_NCHITTEST` handling so they can never drift apart.
+pub const CAPTION_BUTTON_WIDTH: f32 = 45.0;
+pub const CAPTION_BUTTON_HEIGHT: f32 = 26.0;
+pub const CAPTION_BUTTON_COUNT: f32 = 3.0;
+pub const CAPTION_CONTROLS_WIDTH: f32 = CAPTION_BUTTON_WIDTH * CAPTION_BUTTON_COUNT;
+pub const TITLE_BAR_HEIGHT: f32 = 32.0;
+
+/// Smallest gap kept between a dialog and the edges of the window.
+const DIALOG_WINDOW_MARGIN: f32 = 40.0;
+
+/// Clamp a dialog's fixed size so it still fits inside a small window.
+pub fn clamp_dialog_size(size: [f32; 2], available: egui::Vec2) -> [f32; 2] {
+    [
+        size[0].min((available.x - DIALOG_WINDOW_MARGIN).max(0.0)),
+        size[1].min((available.y - DIALOG_WINDOW_MARGIN).max(0.0)),
+    ]
+}
+
+/// DPI scale factor (1.0 at 96 DPI).
+fn dpi_scale(dpi: u32) -> f32 {
+    if dpi == 0 { 1.0 } else { dpi as f32 / 96.0 }
+}
+
+/// Screen-space rectangle covered by the caption buttons, given the client
+/// rectangle in screen coordinates.
+fn caption_buttons_rect(client: RECT, scale: f32) -> RECT {
+    RECT {
+        left: client.right - (CAPTION_CONTROLS_WIDTH * scale).round() as i32,
+        top: client.top,
+        right: client.right,
+        bottom: client.top + (CAPTION_BUTTON_HEIGHT * scale).round() as i32,
+    }
+}
+
+/// Pure `WM_NCHITTEST` decision. `client` and `caption` are in screen
+/// coordinates, `resize` is the resize band thickness in pixels.
+fn hit_test(x: i32, y: i32, client: RECT, resize: i32, maximized: bool, caption: RECT) -> u32 {
+    // The caption buttons win over the inward top resize band so hovering or
+    // clicking their upper edge does not start a resize.
+    if x >= caption.left && x < caption.right && y >= caption.top && y < caption.bottom {
+        return HTCLIENT;
+    }
+
+    let (left, top, right, bottom) = (client.left, client.top, client.right, client.bottom);
+    let left_resize = x >= left - resize && x < left;
+    let right_resize = x >= right && x < right + resize;
+    // There is no outward top frame in the normal window state, so retain
+    // the small inward top resize target there.
+    let top_resize = if maximized {
+        y >= top - resize && y < top
+    } else {
+        y >= top && y < top + resize
+    };
+    let bottom_resize = y >= bottom && y < bottom + resize;
+
+    if left_resize && top_resize {
+        HTTOPLEFT
+    } else if right_resize && top_resize {
+        HTTOPRIGHT
+    } else if left_resize && bottom_resize {
+        HTBOTTOMLEFT
+    } else if right_resize && bottom_resize {
+        HTBOTTOMRIGHT
+    } else if left_resize {
+        HTLEFT
+    } else if right_resize {
+        HTRIGHT
+    } else if top_resize {
+        HTTOP
+    } else if bottom_resize {
+        HTBOTTOM
+    } else {
+        HTCLIENT
+    }
+}
 
 /// Thickness of the invisible drag-to-resize border. Matches the native
 /// window frame width (SM_CXFRAME + SM_CXPADDEDBORDER) so the grab area
@@ -497,68 +576,26 @@ unsafe extern "system" fn custom_wndproc(
                 let _ = ClientToScreen(hwnd, &mut top_left);
                 let _ = ClientToScreen(hwnd, &mut bottom_right);
 
-                let left = top_left.x;
-                let top = top_left.y;
-                let right = bottom_right.x;
-                let bottom = bottom_right.y;
-
-                // Keep the resize band outside the client area, like a
-                // normal decorated window. Testing inward from the client
-                // edge steals the outer pixels of edge controls such as the
-                // vertical scrollbar.
-                let resize = resize_border_thickness();
-                let left_resize = x >= left - resize && x < left;
-                let right_resize = x >= right && x < right + resize;
-                // There is no outward top frame in the normal window state,
-                // so retain the small inward top resize target there.
-                let top_resize = if IsZoomed(hwnd).as_bool() {
-                    y >= top - resize && y < top
-                } else {
-                    y >= top && y < top + resize
+                let client = RECT {
+                    left: top_left.x,
+                    top: top_left.y,
+                    right: bottom_right.x,
+                    bottom: bottom_right.y,
                 };
-                let bottom_resize = y >= bottom && y < bottom + resize;
+                let scale = dpi_scale(GetDpiForWindow(hwnd));
+                let caption = caption_buttons_rect(client, scale);
 
-                // Top-left
-                if left_resize && top_resize {
-                    return LRESULT(HTTOPLEFT as _);
-                }
-
-                // Top-right
-                if right_resize && top_resize {
-                    return LRESULT(HTTOPRIGHT as _);
-                }
-
-                // Bottom-left
-                if left_resize && bottom_resize {
-                    return LRESULT(HTBOTTOMLEFT as _);
-                }
-
-                // Bottom-right
-                if right_resize && bottom_resize {
-                    return LRESULT(HTBOTTOMRIGHT as _);
-                }
-
-                // Left
-                if left_resize {
-                    return LRESULT(HTLEFT as _);
-                }
-
-                // Right
-                if right_resize {
-                    return LRESULT(HTRIGHT as _);
-                }
-
-                // Top
-                if top_resize {
-                    return LRESULT(HTTOP as _);
-                }
-
-                // Bottom
-                if bottom_resize {
-                    return LRESULT(HTBOTTOM as _);
-                }
-
-                LRESULT(HTCLIENT as _)
+                // The resize band lives outside the client area, like a
+                // normal decorated window, so it does not steal the outer
+                // pixels of edge controls such as the vertical scrollbar.
+                LRESULT(hit_test(
+                    x,
+                    y,
+                    client,
+                    resize_border_thickness(),
+                    IsZoomed(hwnd).as_bool(),
+                    caption,
+                ) as _)
             }
         }
 
@@ -604,7 +641,6 @@ pub fn handle_draw_windows_buttons(
                     .size(palette.tooltip_text_size)
                     .color(palette.tooltip_text_color),
             )
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
             .clicked()
         {
             unsafe {
@@ -622,7 +658,6 @@ pub fn handle_draw_windows_buttons(
                 .size(palette.tooltip_text_size)
                 .color(palette.tooltip_text_color),
             )
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
             .clicked()
         {
             toggle_window_fullscreen(hwnd);
@@ -634,7 +669,6 @@ pub fn handle_draw_windows_buttons(
                     .size(palette.tooltip_text_size)
                     .color(palette.tooltip_text_color),
             )
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
             .clicked()
         {
             unsafe {
@@ -832,5 +866,92 @@ pub fn set_window_size_keep_origin(hwnd: HWND, width: f32, height: f32) {
             height.round() as i32,
             SWP_NOZORDER | SWP_NOACTIVATE,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CLIENT: RECT = RECT {
+        left: 100,
+        top: 100,
+        right: 1100,
+        bottom: 700,
+    };
+    const RESIZE: i32 = 8;
+
+    fn caption() -> RECT {
+        caption_buttons_rect(CLIENT, 1.0)
+    }
+
+    fn hit(x: i32, y: i32, maximized: bool) -> u32 {
+        hit_test(x, y, CLIENT, RESIZE, maximized, caption())
+    }
+
+    #[test]
+    fn caption_rect_matches_drawn_buttons() {
+        let r = caption();
+        assert_eq!(r.right - r.left, 135);
+        assert_eq!(r.bottom - r.top, 26);
+        assert_eq!(r.right, CLIENT.right);
+        let r2 = caption_buttons_rect(CLIENT, 1.5);
+        assert_eq!(r2.right - r2.left, 203);
+        assert_eq!(r2.bottom - r2.top, 39);
+    }
+
+    #[test]
+    fn top_band_over_caption_buttons_is_client() {
+        // Top 8 px of Close/Max/Min must not start a resize.
+        assert_eq!(hit(1050, 100, false), HTCLIENT);
+        assert_eq!(hit(1050, 103, false), HTCLIENT);
+        assert_eq!(hit(CLIENT.right - 135, 100, false), HTCLIENT);
+    }
+
+    #[test]
+    fn top_band_elsewhere_still_resizes() {
+        assert_eq!(hit(500, 100, false), HTTOP);
+        assert_eq!(hit(500, 107, false), HTTOP);
+        assert_eq!(hit(500, 108, false), HTCLIENT);
+        assert_eq!(hit(CLIENT.right - 136, 100, false), HTTOP);
+    }
+
+    #[test]
+    fn corners_and_edges() {
+        assert_eq!(hit(95, 100, false), HTTOPLEFT);
+        assert_eq!(hit(1105, 100, false), HTTOPRIGHT);
+        assert_eq!(hit(95, 705, false), HTBOTTOMLEFT);
+        assert_eq!(hit(1105, 705, false), HTBOTTOMRIGHT);
+        assert_eq!(hit(95, 400, false), HTLEFT);
+        assert_eq!(hit(1105, 400, false), HTRIGHT);
+        assert_eq!(hit(500, 705, false), HTBOTTOM);
+    }
+
+    #[test]
+    fn maximized_uses_outward_top_band() {
+        assert_eq!(hit(500, 95, true), HTTOP);
+        assert_eq!(hit(500, 101, true), HTCLIENT);
+        assert_eq!(hit(1050, 105, true), HTCLIENT);
+    }
+
+    #[test]
+    fn drag_area_and_content_are_client() {
+        assert_eq!(hit(500, 120, false), HTCLIENT);
+        assert_eq!(hit(500, 400, false), HTCLIENT);
+    }
+
+    #[test]
+    fn dpi_scale_defaults_to_one() {
+        assert_eq!(dpi_scale(0), 1.0);
+        assert_eq!(dpi_scale(96), 1.0);
+        assert_eq!(dpi_scale(144), 1.5);
+    }
+
+    #[test]
+    fn dialog_size_is_clamped_to_window() {
+        let small = egui::vec2(600.0, 400.0);
+        assert_eq!(clamp_dialog_size([600.0, 550.0], small), [560.0, 360.0]);
+        let big = egui::vec2(1920.0, 1080.0);
+        assert_eq!(clamp_dialog_size([600.0, 550.0], big), [600.0, 550.0]);
     }
 }
