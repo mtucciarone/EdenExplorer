@@ -64,7 +64,7 @@ pub fn draw_theme_customizer(
         .open(&mut customizer.open)
         .frame(
             egui::Frame::popup(&ctx.style_of(ctx.theme()))
-                .corner_radius(egui::CornerRadius::same(8)),
+                .corner_radius(egui::CornerRadius::same(palette.large_radius)),
         )
         .show(ctx, |ui| {
             ui.set_width(ui.available_width());
@@ -140,29 +140,6 @@ pub fn draw_theme_customizer(
                                                 egui::vec2(90.0, 0.0),
                                                 egui::DragValue::new(
                                                     &mut editing_palette.tooltip_text_size,
-                                                )
-                                                .range(8.0..=24.0)
-                                                .speed(0.2),
-                                            )
-                                            .changed();
-                                    },
-                                );
-                                ui.end_row();
-
-                                eden_text_label(
-                                    ui,
-                                    palette,
-                                    &i18n.tr("theme_contextmenu_textsize"),
-                                );
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        apply_eden_visual_overrides(ui, palette);
-                                        changed |= ui
-                                            .add_sized(
-                                                egui::vec2(90.0, 0.0),
-                                                egui::DragValue::new(
-                                                    &mut editing_palette.text_size,
                                                 )
                                                 .range(8.0..=24.0)
                                                 .speed(0.2),

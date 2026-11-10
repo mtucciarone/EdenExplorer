@@ -209,7 +209,7 @@ pub fn draw_object_drag_ghost(
         let ui_rect = ui.min_rect();
         let ghost_width = ui_rect.width();
 
-        let ghost_rect = Rect::from_center_size(pos, vec2(ghost_width, 18.0));
+        let ghost_rect = Rect::from_center_size(pos, vec2(ghost_width, palette.text_size + 8.0));
 
         painter.rect_filled(
             ghost_rect,
@@ -224,7 +224,7 @@ pub fn draw_object_drag_ghost(
             Align2::LEFT_CENTER,
             label,
             font_id,
-            palette.icon_color.gamma_multiply(0.2),
+            palette.text_header_section,
         );
 
         ui.ctx().set_cursor_icon(CursorIcon::Grab);
@@ -290,7 +290,7 @@ pub fn draw_checkbox(
 
     ui.painter().rect(
         rect,
-        egui::CornerRadius::same(5),
+        egui::CornerRadius::same(palette.medium_radius),
         bg,
         egui::Stroke::new(1.0, border),
         egui::StrokeKind::Middle,

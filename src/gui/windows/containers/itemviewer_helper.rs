@@ -6,7 +6,7 @@ use crate::core::utils::files::filename_has_valid_characters_realtime;
 use crate::core::utils::text::{apply_eden_text_overrides, paint_truncated_text};
 use crate::core::utils::widgets::{apply_eden_visual_overrides, draw_checkbox, loading_spinner};
 use crate::gui::icon_system::paint_icon;
-use crate::gui::theme::{ThemePalette, apply_checkbox_colors};
+use crate::gui::theme::{ThemePalette, apply_checkbox_colors, error_color};
 use crate::gui::utils::{
     SortColumn, SortKey, clear_clipboard_files, drive_usage_bar, format_size, get_file_type_name,
     truncate_item_text,
@@ -50,13 +50,14 @@ pub fn draw_external_to_internal_drag_overlay(
     ui: &mut egui::Ui,
     i18n: &I18n,
     external_drag_to_internal_hover: bool,
+    palette: &ThemePalette,
 ) {
     if external_drag_to_internal_hover {
         let rect = ui.max_rect();
 
         ui.painter().rect_filled(
             rect,
-            egui::CornerRadius::same(6),
+            egui::CornerRadius::same(palette.large_radius),
             ui.visuals().selection.bg_fill.linear_multiply(0.15),
         );
 
@@ -803,13 +804,13 @@ pub fn handle_editing_file_name(
                 .current_pos(popup_pos)
                 .show(ui.ctx(), |ui| {
                     ui.set_min_width(350.0);
+                    let error = error_color(ui.visuals().dark_mode);
                     egui::Frame::popup(ui.style())
-                        .fill(egui::Color32::from_rgb(40, 40, 40))
-                        .stroke(egui::Stroke::new(1.0, egui::Color32::RED))
+                        .stroke(egui::Stroke::new(1.0, error))
                         .show(ui, |ui| {
                             ui.add_space(8.0);
                             ui.vertical_centered(|ui| {
-                                ui.colored_label(egui::Color32::RED, tooltip_text);
+                                ui.colored_label(error, tooltip_text);
                             });
                             ui.add_space(8.0);
                         });

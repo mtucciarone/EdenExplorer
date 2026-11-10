@@ -1,7 +1,7 @@
 use crate::core::fs::{MY_PC_PATH, MY_RECYCLE_BIN_PATH};
 use crate::core::i18n::I18n;
 use crate::gui::icon_system::{AppIcon, paint_icon};
-use crate::gui::theme::ThemePalette;
+use crate::gui::theme::{ThemePalette, active_tab_text_color};
 use crate::gui::utils::truncate_item_text;
 use crate::gui::windows::containers::structs::{TabInfo, TabsAction};
 use crate::gui::windows::windowsoverrides::{CAPTION_CONTROLS_WIDTH, toggle_window_fullscreen};
@@ -296,7 +296,7 @@ fn handle_draw_tab_new_allocated(
     // --- Font and colors ---
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let label_color = if is_active {
-        palette.tab_text_selected
+        active_tab_text_color(palette, ui.visuals().dark_mode)
     } else {
         palette.text_normal
     };

@@ -70,7 +70,7 @@ pub fn draw_item_viewer(
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let mut hovered_drop_target: Option<PathBuf> = None;
     let mut hovered_drop_target_rect: Option<egui::Rect> = None;
-    draw_external_to_internal_drag_overlay(ui, i18n, *external_drag_to_internal_hover);
+    draw_external_to_internal_drag_overlay(ui, i18n, *external_drag_to_internal_hover, palette);
 
     let layout = compute_layout(ui, is_drive_view, is_recycle_bin_view, palette);
     let modal_input_blocked =

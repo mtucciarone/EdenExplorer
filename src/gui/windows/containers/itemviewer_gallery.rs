@@ -449,6 +449,7 @@ fn draw_gallery_toolbar(
                 },
             );
 
+            let dark_mode = ui.visuals().dark_mode;
             for size in [
                 GalleryThumbnailSize::ExtraSmall,
                 GalleryThumbnailSize::Small,
@@ -460,8 +461,10 @@ fn draw_gallery_toolbar(
                     .selectable_label(
                         gallery_state.thumbnail_size == size,
                         egui::RichText::new(size.label()).color(
-                            if gallery_state.thumbnail_size == size {
-                                palette.text_header_section
+                            // Primary has low contrast on the dark selection fill,
+                            // so dark mode marks the active size with the header color.
+                            if gallery_state.thumbnail_size == size && !dark_mode {
+                                palette.primary
                             } else {
                                 palette.text_header_section
                             },

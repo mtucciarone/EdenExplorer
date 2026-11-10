@@ -12,7 +12,7 @@ use crate::core::{
     },
 };
 use crate::gui::icon_system::{AppIcon, draw_icon, paint_icon};
-use crate::gui::theme::ThemePalette;
+use crate::gui::theme::{ThemePalette, error_color};
 use crate::gui::utils::SortColumn;
 use crate::gui::windows::containers::enums::ItemViewerHeaderColumn;
 use crate::gui::windows::enums::SettingsAction;
@@ -178,9 +178,9 @@ fn draw_hotkeys_tab(
                         .to_string()
                 };
                 let shortcut_color = if is_recording {
-                    egui::Color32::RED
+                    error_color(ui.visuals().dark_mode)
                 } else if is_customized {
-                    egui::Color32::WHITE
+                    palette.text_header_section
                 } else if can_rebind {
                     palette.primary
                 } else {
@@ -196,10 +196,14 @@ fn draw_hotkeys_tab(
                     } else {
                         egui::Color32::TRANSPARENT
                     };
-                    ui.painter().rect_filled(rect, 4.0, fill);
+                    ui.painter().rect_filled(
+                        rect,
+                        egui::CornerRadius::same(palette.medium_radius),
+                        fill,
+                    );
                     ui.painter().rect_stroke(
                         rect,
-                        4.0,
+                        egui::CornerRadius::same(palette.medium_radius),
                         egui::Stroke::new(if is_recording { 2.0 } else { 1.0 }, shortcut_color),
                         egui::StrokeKind::Inside,
                     );
@@ -875,7 +879,7 @@ fn draw_confirmation_dialog(
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .frame(
             egui::Frame::popup(&ctx.style_of(ctx.theme()))
-                .corner_radius(egui::CornerRadius::same(8)),
+                .corner_radius(egui::CornerRadius::same(palette.large_radius)),
         )
         .show(ctx, |ui| {
             ui.vertical_centered(|ui| {
@@ -1098,7 +1102,7 @@ pub fn draw_settings_window(
         .open(&mut settings_open)
         .frame(
             egui::Frame::popup(&ctx.style_of(ctx.theme()))
-                .corner_radius(egui::CornerRadius::same(8)),
+                .corner_radius(egui::CornerRadius::same(palette.large_radius)),
         )
         .show(ctx, |ui| {
             let mut style = (**ui.style()).clone();

@@ -3096,7 +3096,7 @@ pub fn draw_file_op_window(
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .frame(
             egui::Frame::popup(&ctx.style_of(ctx.theme()))
-                .corner_radius(egui::CornerRadius::same(8)),
+                .corner_radius(egui::CornerRadius::same(palette.large_radius)),
         )
         .show(ctx, |ui| {
             let mut style = (**ui.style()).clone();
