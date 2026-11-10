@@ -7,7 +7,9 @@ use crate::gui::utils::{clickable_icon, draw_object_drag_ghost, rgba_color_edit_
 use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
 use crate::gui::windows::containers::sidebar::draw_sidebar_item;
 use crate::gui::windows::containers::structs::TagsState;
-use crate::gui::windows::windowsoverrides::handle_draw_windows_buttons;
+use crate::gui::windows::windowsoverrides::{
+    CAPTION_CONTROLS_WIDTH, TITLE_BAR_HEIGHT, handle_draw_windows_buttons, toggle_window_fullscreen,
+};
 use eframe::egui;
 use egui::FontId;
 use egui::ScrollArea;
@@ -157,14 +159,14 @@ pub fn draw_tags(
                                                 .size(palette.text_size)
                                                 .color(palette.tooltip_text_color),
                                         );
-                                        if clickable_icon(ui, AppIcon::Trash.regular(), palette)
+                                        if clickable_icon(ui, AppIcon::Trash.regular(), palette, &i18n.tr("tag_delete_group"))
                                             .on_hover_text(i18n.tr("tag_delete_group"))
                                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                                             .clicked()
                                         {
                                             delete_confirmation = Some(group_id);
                                         }
-                                        if clickable_icon(ui, AppIcon::PencilSimple.regular(), palette)
+                                        if clickable_icon(ui, AppIcon::PencilSimple.regular(), palette, &i18n.tr("inputs_rename"))
                                             .on_hover_text(i18n.tr("inputs_rename"))
                                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                                             .clicked()
@@ -221,7 +223,7 @@ pub fn draw_tags(
 
                                     for (item_index, path) in group_items.iter().enumerate() {
                                         let label = tag_item_label(path);
-                                        let is_dir = path.is_dir();
+                                        let is_dir = tags_state.dir_cache.is_dir(path);
                                         let resp = if drag_is_active {
                                             let rect = item_rects[item_index];
                                             let item_resp = item_responses[item_index].clone();
@@ -413,7 +415,8 @@ pub fn draw_delete_confirmation_popup(
     };
 
     let mut changed = false;
-    let mut close_requested = false;
+    // Escape cancels the delete (close without confirming).
+    let mut close_requested = ctx.input(|i| i.key_pressed(egui::Key::Escape));
     let mut confirmed = false;
 
     let group_name = tags_state
@@ -439,7 +442,7 @@ pub fn draw_delete_confirmation_popup(
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .frame(
             egui::Frame::popup(&ctx.style_of(ctx.theme()))
-                .corner_radius(egui::CornerRadius::same(8)),
+                .corner_radius(egui::CornerRadius::same(palette.large_radius)),
         )
         .show(ctx, |ui| {
             let mut style = (**ui.style()).clone();
@@ -485,6 +488,7 @@ pub fn draw_delete_confirmation_popup(
     if close_requested {
         if confirmed {
             tags_state.groups.retain(|g| g.id != group_id);
+            tags_state.reindex();
             changed = true;
         }
         tags_state.delete_confirmation = None;
@@ -513,7 +517,7 @@ pub fn draw_tag_picker_popup(
     };
 
     let mut changed = false;
-    let mut close_requested = false;
+    let mut close_requested = ctx.input(|i| i.key_pressed(egui::Key::Escape));
 
     egui::Area::new(egui::Id::new("tag_modal_bg"))
         .order(egui::Order::Middle)
@@ -531,7 +535,7 @@ pub fn draw_tag_picker_popup(
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .frame(
             egui::Frame::popup(&ctx.style_of(ctx.theme()))
-                .corner_radius(egui::CornerRadius::same(8)),
+                .corner_radius(egui::CornerRadius::same(palette.large_radius)),
         )
         .show(ctx, |ui| {
             let mut style = (**ui.style()).clone();
@@ -742,7 +746,7 @@ pub fn draw_container_header(
     palette: &ThemePalette,
     hwnd: Option<HWND>,
 ) {
-    let controls_width = 64.0;
+    let controls_width = CAPTION_CONTROLS_WIDTH;
     let full_width = ui.available_width();
     let tabs_width = (full_width - controls_width).max(0.0);
 
@@ -762,11 +766,13 @@ pub fn draw_container_header(
                     );
                     if drag_rect.width() > 4.0 {
                         let resp = ui.allocate_rect(drag_rect, egui::Sense::click_and_drag());
+                        if resp.double_clicked() {
+                            if let Some(hwnd) = hwnd {
+                                toggle_window_fullscreen(hwnd);
+                            }
+                        }
                         if resp.drag_started() || resp.dragged() {
                             ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
-                        }
-                        if resp.hovered() {
-                            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
                         }
                     }
                 },
@@ -774,8 +780,8 @@ pub fn draw_container_header(
 
             // --- RIGHT SIDE ---
             ui.allocate_ui_with_layout(
-                egui::vec2(controls_width, 32.0),
-                egui::Layout::right_to_left(egui::Align::Center),
+                egui::vec2(controls_width, TITLE_BAR_HEIGHT),
+                egui::Layout::right_to_left(egui::Align::Min),
                 |ui| {
                     handle_draw_windows_buttons(i18n, ui, hwnd, palette);
                 },

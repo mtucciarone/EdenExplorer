@@ -1,6 +1,7 @@
 use crate::core::i18n::I18n;
 use crate::gui::theme::ThemePalette;
 use crate::gui::windows::structs::AboutWindow;
+use crate::gui::windows::windowsoverrides::clamp_dialog_size;
 use eframe::egui;
 use egui::FontId;
 
@@ -33,18 +34,18 @@ pub fn draw_about_window(
         })
         .inner;
 
-    if modal_bg_clicked {
+    if modal_bg_clicked || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         should_close = true;
     }
 
     egui::Window::new(i18n.tr("about"))
         .collapsible(false)
         .resizable(false)
-        .fixed_size([400.0, 400.0])
+        .fixed_size(clamp_dialog_size([400.0, 400.0], ctx.content_rect().size()))
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .frame(
             egui::Frame::popup(&ctx.style_of(ctx.theme()))
-                .corner_radius(egui::CornerRadius::same(8)),
+                .corner_radius(egui::CornerRadius::same(palette.large_radius)),
         )
         .show(ctx, |ui| {
             // 🎯 Smaller font override (fix giant UI)

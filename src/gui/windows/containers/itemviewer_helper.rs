@@ -6,7 +6,7 @@ use crate::core::utils::files::filename_has_valid_characters_realtime;
 use crate::core::utils::text::{apply_eden_text_overrides, paint_truncated_text};
 use crate::core::utils::widgets::{apply_eden_visual_overrides, draw_checkbox, loading_spinner};
 use crate::gui::icon_system::paint_icon;
-use crate::gui::theme::{ThemePalette, apply_checkbox_colors};
+use crate::gui::theme::{ThemePalette, apply_checkbox_colors, error_color};
 use crate::gui::utils::{
     SortColumn, SortKey, clear_clipboard_files, drive_usage_bar, format_size, get_file_type_name,
     truncate_item_text,
@@ -26,7 +26,7 @@ use egui::containers::{Popup, PopupCloseBehavior};
 use egui::text::{CCursor, CCursorRange};
 use egui::{FontFamily, FontId};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use windows::Win32::Foundation::HWND;
 
 const ITEM_VIEWER_COLUMN_RESIZE_ACTIVE_ID: &str = "item_viewer_column_resize_active";
@@ -50,13 +50,14 @@ pub fn draw_external_to_internal_drag_overlay(
     ui: &mut egui::Ui,
     i18n: &I18n,
     external_drag_to_internal_hover: bool,
+    palette: &ThemePalette,
 ) {
     if external_drag_to_internal_hover {
         let rect = ui.max_rect();
 
         ui.painter().rect_filled(
             rect,
-            egui::CornerRadius::same(6),
+            egui::CornerRadius::same(palette.large_radius),
             ui.visuals().selection.bg_fill.linear_multiply(0.15),
         );
 
@@ -88,6 +89,17 @@ pub fn compute_layout(
         header_height: row_height,
         is_drive_view,
         is_recycle_bin_view,
+    }
+}
+
+/// Whether a context-menu path is a folder. The menu is redrawn every frame while
+/// open, so the right-clicked item uses its listing value instead of a stat.
+/// Other selected paths still stat.
+fn context_path_is_dir(path: &std::path::Path, clicked: &FileItem) -> bool {
+    if path == clicked.path.as_path() {
+        clicked.is_dir
+    } else {
+        path.is_dir()
     }
 }
 
@@ -194,7 +206,10 @@ pub fn handle_context_menu_actions(
 
     if ui
         .add_enabled(
-            enable_open_in_tab && context_paths.first().is_some_and(|p| p.is_dir()),
+            enable_open_in_tab
+                && context_paths
+                    .first()
+                    .is_some_and(|p| context_path_is_dir(p, file)),
             egui::Button::new(i18n.tr("inputs_opensplit")),
         )
         .clicked()
@@ -218,14 +233,15 @@ pub fn handle_context_menu_actions(
         ui.close();
     }
 
-    let all_files = context_paths.iter().all(|path| !path.is_dir());
+    let all_files = context_paths
+        .iter()
+        .all(|path| !context_path_is_dir(path, file));
 
     if ui
         .add_enabled(all_files, egui::Button::new(label))
         .clicked()
     {
-        let paths: Vec<PathBuf> = explorer_state.selected_paths.iter().cloned().collect();
-        *action = Some(ItemViewerAction::OpenWithDefault(paths));
+        *action = Some(ItemViewerAction::OpenWithDefault(context_paths.clone()));
         ui.close();
     }
 
@@ -803,13 +819,13 @@ pub fn handle_editing_file_name(
                 .current_pos(popup_pos)
                 .show(ui.ctx(), |ui| {
                     ui.set_min_width(350.0);
+                    let error = error_color(ui.visuals().dark_mode);
                     egui::Frame::popup(ui.style())
-                        .fill(egui::Color32::from_rgb(40, 40, 40))
-                        .stroke(egui::Stroke::new(1.0, egui::Color32::RED))
+                        .stroke(egui::Stroke::new(1.0, error))
                         .show(ui, |ui| {
                             ui.add_space(8.0);
                             ui.vertical_centered(|ui| {
-                                ui.colored_label(egui::Color32::RED, tooltip_text);
+                                ui.colored_label(error, tooltip_text);
                             });
                             ui.add_space(8.0);
                         });
@@ -842,9 +858,10 @@ pub fn handle_editing_file_name(
             // Clear validation error on focus loss
             rename_state.validation_error_show = false;
 
-            // 👈 matches Windows: clicking away cancels rename
+            // Matches Windows Explorer: clicking away commits the rename
+            let new_name = rename_state.new_name.trim().to_string();
             action = Some(ItemViewerAction::Context(
-                ItemViewerContextAction::RenameCancel,
+                ItemViewerContextAction::RenameRequest(file.path.clone(), new_name),
             ));
         }
     });
@@ -1058,28 +1075,8 @@ pub fn handle_global_actions(
             if is_recycle_bin_view {
                 return;
             }
-            let selected_paths: Vec<PathBuf> = explorer_state
-                .selected_paths
-                .iter()
-                .filter_map(|p| {
-                    files
-                        .iter()
-                        .find(|f| &f.path == p && !f.is_dir)
-                        .map(|_| p.clone())
-                })
-                .collect();
-
-            if !selected_paths.is_empty() {
-                action = Some(ItemViewerAction::OpenWithDefault(selected_paths));
-            }
-
-            // Optionally handle directories separately:
-            for dir_path in explorer_state
-                .selected_paths
-                .iter()
-                .filter(|p| files.iter().any(|f| &f.path == *p && f.is_dir))
-            {
-                action = Some(ItemViewerAction::Open(dir_path.clone()));
+            if let Some(a) = enter_action(files, &explorer_state.selected_paths) {
+                action = Some(a);
             }
         }
         if i.modifiers.command && i.key_pressed(egui::Key::A) {
@@ -1188,7 +1185,15 @@ pub fn draw_item_viewer_header(
 
             ui.scope(|ui| {
                 apply_checkbox_colors(ui, palette, all_selected);
-                if draw_checkbox(ui, palette, &mut all_selected, "select_all").clicked() {
+                if draw_checkbox(
+                    ui,
+                    palette,
+                    &mut all_selected,
+                    "select_all",
+                    &i18n.tr("select_all"),
+                )
+                .clicked()
+                {
                     action = Some(if all_selected {
                         ItemViewerAction::SelectAll
                     } else {
@@ -1348,7 +1353,10 @@ fn draw_header_context_menu(
         let can_move_right = order_index.is_some_and(|idx| idx + 1 < order_len);
 
         if ui
-            .add_enabled(can_move_left, egui::Button::new("Move left"))
+            .add_enabled(
+                can_move_left,
+                egui::Button::new(i18n.tr("itemviewer_column_move_left")),
+            )
             .clicked()
         {
             *action = Some(ItemViewerAction::MoveColumnLeft(clicked_column));
@@ -1356,7 +1364,10 @@ fn draw_header_context_menu(
         }
 
         if ui
-            .add_enabled(can_move_right, egui::Button::new("Move right"))
+            .add_enabled(
+                can_move_right,
+                egui::Button::new(i18n.tr("itemviewer_column_move_right")),
+            )
             .clicked()
         {
             *action = Some(ItemViewerAction::MoveColumnRight(clicked_column));
@@ -1364,7 +1375,10 @@ fn draw_header_context_menu(
         }
 
         if ui
-            .add_enabled(can_move_left, egui::Button::new("Move to start"))
+            .add_enabled(
+                can_move_left,
+                egui::Button::new(i18n.tr("itemviewer_column_move_to_start")),
+            )
             .clicked()
         {
             *action = Some(ItemViewerAction::MoveColumnToStart(clicked_column));
@@ -1372,7 +1386,10 @@ fn draw_header_context_menu(
         }
 
         if ui
-            .add_enabled(can_move_right, egui::Button::new("Move to end"))
+            .add_enabled(
+                can_move_right,
+                egui::Button::new(i18n.tr("itemviewer_column_move_to_end")),
+            )
             .clicked()
         {
             *action = Some(ItemViewerAction::MoveColumnToEnd(clicked_column));
@@ -1496,6 +1513,19 @@ fn draw_visibility_checkbox(ui: &mut egui::Ui, label: String, checked: bool) -> 
     ui.checkbox(&mut value, label).clicked() && value != checked
 }
 
+/// Row index of `path` within the displayed (filtered) list. Falls back to the
+/// position in `files` only when the filtered index list has not been built yet.
+pub fn filtered_row_index(
+    files: &[FileItem],
+    cached_indices: &[usize],
+    path: &std::path::Path,
+) -> Option<usize> {
+    if cached_indices.is_empty() {
+        return files.iter().position(|f| f.path == path);
+    }
+    cached_indices.iter().position(|&i| files[i].path == path)
+}
+
 pub fn handle_keyboard_navigation(
     ctx: &egui::Context,
     filtered_indices: &[usize],
@@ -1599,6 +1629,17 @@ pub fn handle_keyboard_navigation(
 
     // SHIFT RANGE
     if ctx.input(|i| i.modifiers.shift) {
+        // Only act when a navigation key was pressed this frame; otherwise merely
+        // holding Shift would emit a RangeSelect every frame and clobber other actions.
+        let nav_pressed = home_pressed
+            || end_pressed
+            || ctx.input(|i| {
+                i.key_pressed(egui::Key::ArrowDown) || i.key_pressed(egui::Key::ArrowUp)
+            });
+        if !nav_pressed {
+            return None;
+        }
+
         let anchor = explorer_state.selection_anchor.unwrap_or(current_idx);
         let focus = explorer_state.selection_focus.unwrap_or(current_idx);
 
@@ -1704,7 +1745,6 @@ pub fn handle_row_click(
     files: &[FileItem],
     drag_state: &DragState,
     explorer_state: &mut ExplorerState,
-    is_recycle_bin_view: bool,
 ) -> Option<ItemViewerAction> {
     if drag_state.active {
         return None;
@@ -1739,34 +1779,63 @@ pub fn handle_row_click(
             Some(ItemViewerAction::Select(file.path.clone()))
         }
     } else if modifiers.ctrl {
-        if !explorer_state.selected_paths.contains(&file.path) {
-            explorer_state.selected_paths.insert(file.path.clone());
-        }
-
         explorer_state.selection_anchor = Some(row_idx);
         explorer_state.selection_focus = Some(row_idx);
 
-        Some(ItemViewerAction::Select(file.path.clone()))
-    } else {
-        let is_single_selected = explorer_state.selected_paths.len() == 1
-            && explorer_state.selected_paths.contains(&file.path);
-
-        if is_single_selected {
-            if is_recycle_bin_view {
-                return Some(ItemViewerAction::ReplaceSelection(file.path.clone()));
-            }
-            return Some(if file.is_dir {
-                ItemViewerAction::Open(file.path.clone())
-            } else {
-                ItemViewerAction::OpenWithDefault(vec![file.path.clone()])
-            });
+        // Ctrl+click toggles, like Windows Explorer
+        Some(if explorer_state.selected_paths.contains(&file.path) {
+            ItemViewerAction::Deselect(file.path.clone())
         } else {
-            explorer_state.selection_anchor = Some(row_idx);
-            explorer_state.selection_focus = Some(row_idx);
+            ItemViewerAction::Select(file.path.clone())
+        })
+    } else {
+        explorer_state.selection_anchor = Some(row_idx);
+        explorer_state.selection_focus = Some(row_idx);
 
-            Some(ItemViewerAction::ReplaceSelection(file.path.clone()))
-        }
+        Some(ItemViewerAction::ReplaceSelection(file.path.clone()))
     }
+}
+
+/// Action for a plain (unmodified) double-click on a row. Opening requires a
+/// real double-click; a single click only selects.
+pub fn double_click_action(
+    file: &FileItem,
+    modifiers: egui::Modifiers,
+    is_recycle_bin_view: bool,
+) -> Option<ItemViewerAction> {
+    if is_recycle_bin_view || modifiers.shift || modifiers.ctrl || modifiers.command {
+        return None;
+    }
+    Some(if file.is_dir {
+        ItemViewerAction::Open(file.path.clone())
+    } else {
+        ItemViewerAction::OpenWithDefault(vec![file.path.clone()])
+    })
+}
+
+/// Action for Enter with the current selection. Deterministic rule: if any
+/// selected file exists, open all selected files with their default program;
+/// otherwise open the first selected folder in view order.
+pub fn enter_action(
+    files: &[FileItem],
+    selected_paths: &std::collections::HashSet<PathBuf>,
+) -> Option<ItemViewerAction> {
+    let selected: Vec<&FileItem> = files
+        .iter()
+        .filter(|f| selected_paths.contains(&f.path))
+        .collect();
+    let file_paths: Vec<PathBuf> = selected
+        .iter()
+        .filter(|f| !f.is_dir)
+        .map(|f| f.path.clone())
+        .collect();
+    if !file_paths.is_empty() {
+        return Some(ItemViewerAction::OpenWithDefault(file_paths));
+    }
+    selected
+        .iter()
+        .find(|f| f.is_dir)
+        .map(|f| ItemViewerAction::Open(f.path.clone()))
 }
 
 pub fn draw_table_text(
@@ -2240,6 +2309,50 @@ pub fn table_background_response(ui: &mut egui::Ui) -> egui::Response {
     )
 }
 
+/// Background menu for a directory listing (list view, gallery and empty area share it).
+pub fn draw_background_context_menu(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    palette: &ThemePalette,
+    paste_enabled: bool,
+    current_dir: &Path,
+    action: &mut Option<ItemViewerAction>,
+) {
+    apply_eden_text_overrides(ui, palette);
+    if ui.button(i18n.tr("tooltip_newfolder")).clicked() {
+        *action = Some(ItemViewerAction::CreateFolder);
+        ui.close();
+    }
+    if ui.button(i18n.tr("tooltip_newfile")).clicked() {
+        *action = Some(ItemViewerAction::CreateFile);
+        ui.close();
+    }
+    if ui.button(i18n.tr("tooltip_refresh")).clicked() {
+        *action = Some(ItemViewerAction::RefreshCurrentDirectory);
+        ui.close();
+    }
+    if ui.button(i18n.tr("tooltip_open_terminal")).clicked() {
+        *action = Some(ItemViewerAction::OpenTerminal);
+        ui.close();
+    }
+
+    ui.separator();
+
+    if ui
+        .add_enabled(paste_enabled, egui::Button::new(i18n.tr("inputs_paste")))
+        .clicked()
+    {
+        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
+        ui.close();
+    }
+    if ui.button(i18n.tr("properties")).clicked() {
+        *action = Some(ItemViewerAction::Context(
+            ItemViewerContextAction::Properties(vec![current_dir.to_path_buf()]),
+        ));
+        ui.close();
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn draw_empty_item_viewer_area(
     ui: &mut egui::Ui,
@@ -2294,39 +2407,14 @@ pub fn draw_empty_item_viewer_area(
             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| {
                 ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Default);
-                apply_eden_text_overrides(ui, palette);
-                if ui.button("New Folder").clicked() {
-                    action = Some(ItemViewerAction::CreateFolder);
-                    ui.close();
-                }
-                if ui.button("New File").clicked() {
-                    action = Some(ItemViewerAction::CreateFile);
-                    ui.close();
-                }
-                if ui.button("Refresh").clicked() {
-                    action = Some(ItemViewerAction::RefreshCurrentDirectory);
-                    ui.close();
-                }
-                if ui.button("Open Terminal").clicked() {
-                    action = Some(ItemViewerAction::OpenTerminal);
-                    ui.close();
-                }
-
-                ui.separator();
-
-                if ui
-                    .add_enabled(paste_enabled, egui::Button::new("Paste"))
-                    .clicked()
-                {
-                    action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
-                    ui.close();
-                }
-                if ui.button("Properties").clicked() {
-                    action = Some(ItemViewerAction::Context(
-                        ItemViewerContextAction::Properties(vec![current_dir.clone()]),
-                    ));
-                    ui.close();
-                }
+                draw_background_context_menu(
+                    ui,
+                    i18n,
+                    palette,
+                    paste_enabled,
+                    current_dir,
+                    &mut action,
+                );
             });
     } else if is_recycle_bin_view {
         Popup::context_menu(&response)
@@ -2334,7 +2422,7 @@ pub fn draw_empty_item_viewer_area(
             .show(|ui| {
                 ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Default);
                 apply_eden_text_overrides(ui, palette);
-                if ui.button("Refresh").clicked() {
+                if ui.button(i18n.tr("tooltip_refresh")).clicked() {
                     action = Some(ItemViewerAction::RefreshCurrentDirectory);
                     ui.close();
                 }
@@ -2342,4 +2430,248 @@ pub fn draw_empty_item_viewer_area(
     }
 
     action
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    fn item(path: &str, is_dir: bool) -> FileItem {
+        FileItem::new(
+            path.to_string(),
+            PathBuf::from(path),
+            is_dir,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    }
+
+    fn files(n: usize) -> Vec<FileItem> {
+        (0..n).map(|i| item(&format!("f{i}"), false)).collect()
+    }
+
+    fn run_keys(
+        keys: &[egui::Key],
+        shift: bool,
+        indices: &[usize],
+        files: &Vec<FileItem>,
+        state: &mut ExplorerState,
+    ) -> Option<ItemViewerAction> {
+        let ctx = egui::Context::default();
+        let mut raw = egui::RawInput::default();
+        raw.modifiers.shift = shift;
+        for &key in keys {
+            raw.events.push(egui::Event::Key {
+                key,
+                physical_key: Some(key),
+                pressed: true,
+                repeat: false,
+                modifiers: raw.modifiers,
+            });
+        }
+        ctx.begin_pass(raw);
+        let out = handle_keyboard_navigation(&ctx, indices, files, false, state);
+        let _ = ctx.end_pass();
+        out
+    }
+
+    fn selected(paths: &[&str]) -> ExplorerState {
+        let mut st = ExplorerState::default();
+        st.selected_paths = paths.iter().map(PathBuf::from).collect::<HashSet<_>>();
+        st
+    }
+
+    #[test]
+    fn shift_held_without_nav_key_emits_nothing() {
+        let f = files(4);
+        let mut st = selected(&["f1"]);
+        st.selection_anchor = Some(0);
+        st.selection_focus = Some(1);
+        let out = run_keys(&[], true, &[0, 1, 2, 3], &f, &mut st);
+        assert!(out.is_none());
+    }
+
+    #[test]
+    fn shift_arrow_down_extends_range() {
+        let f = files(4);
+        let mut st = selected(&["f1"]);
+        st.selection_anchor = Some(1);
+        st.selection_focus = Some(1);
+        let out = run_keys(&[egui::Key::ArrowDown], true, &[0, 1, 2, 3], &f, &mut st);
+        match out {
+            Some(ItemViewerAction::RangeSelect(p)) => {
+                assert_eq!(p, vec![PathBuf::from("f1"), PathBuf::from("f2")]);
+            }
+            _ => panic!("expected RangeSelect"),
+        }
+        assert_eq!(st.selection_focus, Some(2));
+    }
+
+    #[test]
+    fn plain_arrow_down_replaces_selection() {
+        let f = files(3);
+        let mut st = selected(&["f0"]);
+        let out = run_keys(&[egui::Key::ArrowDown], false, &[0, 1, 2], &f, &mut st);
+        assert!(matches!(
+            out,
+            Some(ItemViewerAction::ReplaceSelection(ref p)) if p == &PathBuf::from("f1")
+        ));
+        assert_eq!(st.selection_anchor, Some(1));
+    }
+
+    #[test]
+    fn no_keys_no_action() {
+        let f = files(3);
+        let mut st = selected(&["f0"]);
+        assert!(run_keys(&[], false, &[0, 1, 2], &f, &mut st).is_none());
+    }
+
+    #[test]
+    fn row_index_uses_filtered_list_when_hidden_files_are_excluded() {
+        // files[0] is hidden and not displayed; displayed rows are files 1..=3.
+        let f = files(4);
+        let cached = [1usize, 2, 3];
+        assert_eq!(
+            filtered_row_index(&f, &cached, std::path::Path::new("f2")),
+            Some(1)
+        );
+        assert_eq!(
+            filtered_row_index(&f, &cached, std::path::Path::new("f0")),
+            None
+        );
+    }
+
+    #[test]
+    fn row_index_falls_back_to_files_when_cache_empty() {
+        let f = files(3);
+        assert_eq!(
+            filtered_row_index(&f, &[], std::path::Path::new("f2")),
+            Some(2)
+        );
+    }
+
+    fn click(
+        file: &FileItem,
+        modifiers: egui::Modifiers,
+        state: &mut ExplorerState,
+    ) -> Option<ItemViewerAction> {
+        let files = vec![file.clone()];
+        handle_row_click(
+            0,
+            file,
+            modifiers,
+            &[0],
+            &files,
+            &DragState::default(),
+            state,
+        )
+    }
+
+    fn ctrl() -> egui::Modifiers {
+        egui::Modifiers {
+            ctrl: true,
+            command: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn ctrl_click_toggles_selection() {
+        let file = item("C:/a.txt", false);
+        let mut state = ExplorerState::default();
+        assert!(matches!(
+            click(&file, ctrl(), &mut state),
+            Some(ItemViewerAction::Select(_))
+        ));
+        state.selected_paths.insert(file.path.clone());
+        assert!(matches!(
+            click(&file, ctrl(), &mut state),
+            Some(ItemViewerAction::Deselect(_))
+        ));
+    }
+
+    #[test]
+    fn plain_click_on_sole_selected_item_does_not_open() {
+        let file = item("C:/a.txt", false);
+        let mut state = ExplorerState::default();
+        state.selected_paths.insert(file.path.clone());
+        assert!(matches!(
+            click(&file, egui::Modifiers::NONE, &mut state),
+            Some(ItemViewerAction::ReplaceSelection(_))
+        ));
+    }
+
+    #[test]
+    fn double_click_opens_by_kind() {
+        let m = egui::Modifiers::NONE;
+        assert!(matches!(
+            double_click_action(&item("C:/d", true), m, false),
+            Some(ItemViewerAction::Open(_))
+        ));
+        assert!(matches!(
+            double_click_action(&item("C:/a.txt", false), m, false),
+            Some(ItemViewerAction::OpenWithDefault(_))
+        ));
+        assert!(double_click_action(&item("C:/a.txt", false), m, true).is_none());
+        assert!(double_click_action(&item("C:/a.txt", false), ctrl(), false).is_none());
+    }
+
+    #[test]
+    fn enter_prefers_files_in_view_order() {
+        let files = vec![
+            item("C:/d1", true),
+            item("C:/a.txt", false),
+            item("C:/d2", true),
+            item("C:/b.txt", false),
+        ];
+        let sel: HashSet<PathBuf> = files.iter().map(|f| f.path.clone()).collect();
+        match enter_action(&files, &sel) {
+            Some(ItemViewerAction::OpenWithDefault(p)) => {
+                assert_eq!(
+                    p,
+                    vec![PathBuf::from("C:/a.txt"), PathBuf::from("C:/b.txt")]
+                );
+            }
+            _ => panic!("expected OpenWithDefault"),
+        }
+    }
+
+    #[test]
+    fn enter_with_only_dirs_opens_first_in_view_order() {
+        let files = vec![item("C:/d1", true), item("C:/d2", true)];
+        let sel: HashSet<PathBuf> = files.iter().map(|f| f.path.clone()).collect();
+        for _ in 0..5 {
+            match enter_action(&files, &sel) {
+                Some(ItemViewerAction::Open(p)) => assert_eq!(p, PathBuf::from("C:/d1")),
+                _ => panic!("expected Open"),
+            }
+        }
+        assert!(enter_action(&files, &HashSet::new()).is_none());
+    }
+
+    #[test]
+    fn clicked_item_uses_listing_is_dir_without_statting() {
+        // The path does not exist, so only the listing value can answer `true`.
+        let clicked = item("Z:/eden/does/not/exist", true);
+        assert!(context_path_is_dir(&clicked.path, &clicked));
+    }
+
+    #[test]
+    fn other_selected_paths_are_checked_on_disk() {
+        let clicked = item("Z:/eden/does/not/exist", false);
+        assert!(context_path_is_dir(&std::env::temp_dir(), &clicked));
+        assert!(!context_path_is_dir(
+            &PathBuf::from("Z:/eden/does/not/exist/other"),
+            &clicked
+        ));
+    }
 }

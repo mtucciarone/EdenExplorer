@@ -330,12 +330,35 @@ pub fn draw_sidebar(
                     ));
                     ui.add_space(4.0);
 
-                    if sidebar_state.cached_drives.is_empty()
-                        || sidebar_state.last_drive_refresh.elapsed() > DRIVE_CACHE_DURATION
-                        || consume_drive_list_dirty()
+                    // Enumerate on a worker thread: a sleeping or disconnected drive can
+                    // take long enough to stall a frame. One refresh runs at a time.
+                    if sidebar_state.drive_refresh_rx.is_none()
+                        && (sidebar_state.cached_drives.is_empty()
+                            || sidebar_state.last_drive_refresh.elapsed() > DRIVE_CACHE_DURATION
+                            || consume_drive_list_dirty())
                     {
-                        sidebar_state.cached_drives = get_drive_infos();
-                        sidebar_state.last_drive_refresh = Instant::now();
+                        let (tx, rx) = std::sync::mpsc::channel();
+                        let ctx = ui.ctx().clone();
+                        std::thread::spawn(move || {
+                            let _ = tx.send(get_drive_infos());
+                            ctx.request_repaint();
+                        });
+                        sidebar_state.drive_refresh_rx = Some(rx);
+                    }
+                    let polled = sidebar_state
+                        .drive_refresh_rx
+                        .as_ref()
+                        .map(|rx| rx.try_recv());
+                    match polled {
+                        Some(Ok(drives)) => {
+                            sidebar_state.cached_drives = drives;
+                            sidebar_state.last_drive_refresh = Instant::now();
+                            sidebar_state.drive_refresh_rx = None;
+                        }
+                        Some(Err(std::sync::mpsc::TryRecvError::Disconnected)) => {
+                            sidebar_state.drive_refresh_rx = None;
+                        }
+                        Some(Err(std::sync::mpsc::TryRecvError::Empty)) | None => {}
                     }
 
                     for drive in sidebar_state.cached_drives.iter() {

@@ -71,16 +71,25 @@ fn draw_hamburger_menu(
 ) {
     let menu_id = egui::Id::new("topbar_hamburger_menu");
 
-    let menu_open = ui.memory(|mem| mem.data.get_temp::<bool>(menu_id).unwrap_or(false));
+    let mut menu_open = ui.memory(|mem| mem.data.get_temp::<bool>(menu_id).unwrap_or(false));
+    if menu_open && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        menu_open = false;
+        ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
+    }
 
-    if clickable_icon(ui, AppIcon::List.regular(), palette)
-        .on_hover_text(
-            egui::RichText::new(&i18n.tr("tooltip_mainmenu"))
-                .size(palette.tooltip_text_size)
-                .color(palette.tooltip_text_color),
-        )
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .clicked()
+    if clickable_icon(
+        ui,
+        AppIcon::List.regular(),
+        palette,
+        &i18n.tr("tooltip_mainmenu"),
+    )
+    .on_hover_text(
+        egui::RichText::new(&i18n.tr("tooltip_mainmenu"))
+            .size(palette.tooltip_text_size)
+            .color(palette.tooltip_text_color),
+    )
+    .on_hover_cursor(egui::CursorIcon::PointingHand)
+    .clicked()
     {
         ui.memory_mut(|mem| mem.data.insert_temp(menu_id, !menu_open));
     }
@@ -93,10 +102,28 @@ fn draw_hamburger_menu(
             .fixed_pos(popup_pos)
             .show(ui.ctx(), |ui| {
                 egui::containers::Frame::popup(ui.style()).show(ui, |ui| {
-                    ui.set_min_width(120.0);
+                    // Every row gets the width of the widest label so hit areas and hover
+                    // fills line up.
+                    let labels = [
+                        i18n.tr("theme"),
+                        i18n.tr("settings"),
+                        i18n.tr("about"),
+                        i18n.tr("exit"),
+                    ];
+                    let menu_width = labels
+                        .iter()
+                        .map(|label| menu_item_content_width(ui, label, palette))
+                        .fold(120.0_f32, f32::max);
+                    ui.set_min_width(menu_width);
 
-                    if menu_item(ui, AppIcon::Palette.regular(), &i18n.tr("theme"), palette)
-                        .clicked()
+                    if menu_item(
+                        ui,
+                        AppIcon::Palette.regular(),
+                        &labels[0],
+                        palette,
+                        menu_width,
+                    )
+                    .clicked()
                     {
                         action.customize_theme = true;
                         ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
@@ -105,8 +132,9 @@ fn draw_hamburger_menu(
                     if menu_item(
                         ui,
                         AppIcon::Sliders.regular(),
-                        &i18n.tr("settings"),
+                        &labels[1],
                         palette,
+                        menu_width,
                     )
                     .clicked()
                     {
@@ -114,14 +142,22 @@ fn draw_hamburger_menu(
                         ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
                     }
 
-                    if menu_item(ui, AppIcon::Question.regular(), &i18n.tr("about"), palette)
-                        .clicked()
+                    if menu_item(
+                        ui,
+                        AppIcon::Question.regular(),
+                        &labels[2],
+                        palette,
+                        menu_width,
+                    )
+                    .clicked()
                     {
                         action.about = true;
                         ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
                     }
 
-                    if menu_item(ui, AppIcon::X.regular(), &i18n.tr("exit"), palette).clicked() {
+                    if menu_item(ui, AppIcon::X.regular(), &labels[3], palette, menu_width)
+                        .clicked()
+                    {
                         action.exit = true;
                         ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
                     }
@@ -157,6 +193,7 @@ fn draw_mode_icons(
         ui.visuals().text_color(),
         !sidebar_collapsed,
         palette,
+        &i18n.tr(sidebar_tooltip_key),
     )
     .on_hover_text(
         egui::RichText::new(&i18n.tr(sidebar_tooltip_key))
@@ -175,7 +212,7 @@ fn draw_mode_icons(
         AppIcon::Moon.regular()
     };
 
-    if clickable_icon(ui, icon, palette)
+    if clickable_icon(ui, icon, palette, &i18n.tr("tooltip_theme"))
         .on_hover_text(
             egui::RichText::new(&i18n.tr("tooltip_theme"))
                 .size(palette.tooltip_text_size)
@@ -189,18 +226,13 @@ fn draw_mode_icons(
 
     ui.separator();
 
-    let file_explorer_icon = if is_file_explorer {
-        AppIcon::Tabs.regular()
-    } else {
-        AppIcon::Tabs.regular()
-    };
-
     if clickable_active_icon(
         ui,
-        file_explorer_icon,
+        AppIcon::Tabs.regular(),
         ui.visuals().text_color(),
         is_file_explorer,
         palette,
+        &i18n.tr("tooltip_show_file_explorer"),
     )
     .on_hover_text(
         egui::RichText::new(&i18n.tr("tooltip_show_file_explorer"))
@@ -210,7 +242,7 @@ fn draw_mode_icons(
     .on_hover_cursor(egui::CursorIcon::PointingHand)
     .clicked()
     {
-        action.toggle_file_explorer = true;
+        action.set_file_explorer = Some(true);
     }
 
     if clickable_active_icon(
@@ -219,6 +251,7 @@ fn draw_mode_icons(
         ui.visuals().text_color(),
         !is_file_explorer,
         palette,
+        &i18n.tr("tooltip_show_tags"),
     )
     .on_hover_text(
         egui::RichText::new(&i18n.tr("tooltip_show_tags"))
@@ -228,7 +261,7 @@ fn draw_mode_icons(
     .on_hover_cursor(egui::CursorIcon::PointingHand)
     .clicked()
     {
-        action.toggle_file_explorer = true;
+        action.set_file_explorer = Some(false);
     }
 
     if is_file_explorer {
@@ -240,7 +273,7 @@ fn draw_mode_icons(
         } else {
             (AppIcon::SplitHorizontal.regular(), "tooltip_open_split")
         };
-        if clickable_icon(ui, icon, palette)
+        if clickable_icon(ui, icon, palette, &i18n.tr(tooltip_key))
             .on_hover_text(
                 egui::RichText::new(i18n.tr(tooltip_key))
                     .size(palette.tooltip_text_size)
@@ -267,18 +300,15 @@ fn draw_drag_region(ui: &mut egui::Ui, hwnd: Option<HWND>) {
         if resp.drag_started() || resp.dragged() {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
         }
-        if resp.hovered() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
-        }
     }
 }
 
-fn menu_item(
+/// Width a menu row needs for its icon, spacing, and label.
+fn menu_item_content_width(
     ui: &mut egui::Ui,
-    icon: crate::gui::icon_system::StyledIcon,
     label: &str,
     palette: &crate::gui::theme::ThemePalette,
-) -> egui::Response {
+) -> f32 {
     let text_galley = ui.fonts_mut(|fonts| {
         fonts.layout_no_wrap(
             label.to_owned(),
@@ -286,14 +316,31 @@ fn menu_item(
             ui.visuals().text_color(),
         )
     });
-    let text_width = text_galley.size().x;
+    let icon_width = palette.text_size + 2.0;
+    let spacing = 4.0;
+    icon_width + spacing + text_galley.size().x
+}
+
+fn menu_item(
+    ui: &mut egui::Ui,
+    icon: crate::gui::icon_system::StyledIcon,
+    label: &str,
+    palette: &crate::gui::theme::ThemePalette,
+    width: f32,
+) -> egui::Response {
     let row_height = 20.0;
     let icon_width = palette.text_size + 2.0;
     let spacing = 4.0;
 
-    let total_size = egui::vec2(icon_width + spacing + text_width, row_height);
+    // Span the whole menu width so the entire row is clickable, not just icon + label.
+    let row_width = width.max(menu_item_content_width(ui, label, palette));
+    let total_size = egui::vec2(row_width, row_height);
 
     let (rect, response) = ui.allocate_exact_size(total_size, egui::Sense::click());
+    if response.hovered() {
+        ui.painter()
+            .rect_filled(rect, 4.0, ui.visuals().widgets.hovered.weak_bg_fill);
+    }
     let mut x = rect.min.x;
     let center_y = rect.center().y;
 
