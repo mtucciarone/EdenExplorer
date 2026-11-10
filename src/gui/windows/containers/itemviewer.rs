@@ -6,9 +6,7 @@ use crate::core::utils::text::apply_eden_text_overrides;
 use crate::core::utils::widgets::draw_checkbox;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{draw_object_drag_ghost, fuzzy_match, truncate_item_text};
-use crate::gui::windows::containers::enums::{
-    ItemViewerAction, ItemViewerContextAction, ItemViewerHeaderColumn,
-};
+use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerHeaderColumn};
 use crate::gui::windows::containers::itemviewer_gallery::draw_gallery_view;
 use crate::gui::windows::containers::itemviewer_helper::*;
 use crate::gui::windows::containers::structs::{
@@ -806,48 +804,21 @@ pub fn draw_item_viewer(
                     Popup::context_menu(&bg_response)
                         .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                         .show(|ui| {
-                            apply_eden_text_overrides(ui, palette);
-                            if ui.button("New Folder").clicked() {
-                                action = Some(ItemViewerAction::CreateFolder);
-                                ui.close();
-                            }
-                            if ui.button("New File").clicked() {
-                                action = Some(ItemViewerAction::CreateFile);
-                                ui.close();
-                            }
-                            if ui.button("Refresh").clicked() {
-                                action = Some(ItemViewerAction::RefreshCurrentDirectory);
-                                ui.close();
-                            }
-                            if ui.button("Open Terminal").clicked() {
-                                action = Some(ItemViewerAction::OpenTerminal);
-                                ui.close();
-                            }
-
-                            ui.separator();
-
-                            if ui
-                                .add_enabled(paste_enabled, egui::Button::new("Paste"))
-                                .clicked()
-                            {
-                                action =
-                                    Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
-                                ui.close();
-                            }
-                            if ui.button("Properties").clicked() {
-                                action = Some(ItemViewerAction::Context(
-                                    ItemViewerContextAction::Properties(vec![current_dir.clone()]),
-                                ));
-                                ui.close();
-                            }
-                            // }
+                            draw_background_context_menu(
+                                ui,
+                                i18n,
+                                palette,
+                                paste_enabled,
+                                &current_dir,
+                                &mut action,
+                            );
                         });
                 } else if is_recycle_bin_view {
                     Popup::context_menu(&bg_response)
                         .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                         .show(|ui| {
                             apply_eden_text_overrides(ui, palette);
-                            if ui.button("Refresh").clicked() {
+                            if ui.button(i18n.tr("tooltip_refresh")).clicked() {
                                 action = Some(ItemViewerAction::RefreshCurrentDirectory);
                                 ui.close();
                             }

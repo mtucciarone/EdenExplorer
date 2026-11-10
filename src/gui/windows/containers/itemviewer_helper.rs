@@ -26,7 +26,7 @@ use egui::containers::{Popup, PopupCloseBehavior};
 use egui::text::{CCursor, CCursorRange};
 use egui::{FontFamily, FontId};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use windows::Win32::Foundation::HWND;
 
 const ITEM_VIEWER_COLUMN_RESIZE_ACTIVE_ID: &str = "item_viewer_column_resize_active";
@@ -1348,7 +1348,10 @@ fn draw_header_context_menu(
         let can_move_right = order_index.is_some_and(|idx| idx + 1 < order_len);
 
         if ui
-            .add_enabled(can_move_left, egui::Button::new("Move left"))
+            .add_enabled(
+                can_move_left,
+                egui::Button::new(i18n.tr("itemviewer_column_move_left")),
+            )
             .clicked()
         {
             *action = Some(ItemViewerAction::MoveColumnLeft(clicked_column));
@@ -1356,7 +1359,10 @@ fn draw_header_context_menu(
         }
 
         if ui
-            .add_enabled(can_move_right, egui::Button::new("Move right"))
+            .add_enabled(
+                can_move_right,
+                egui::Button::new(i18n.tr("itemviewer_column_move_right")),
+            )
             .clicked()
         {
             *action = Some(ItemViewerAction::MoveColumnRight(clicked_column));
@@ -1364,7 +1370,10 @@ fn draw_header_context_menu(
         }
 
         if ui
-            .add_enabled(can_move_left, egui::Button::new("Move to start"))
+            .add_enabled(
+                can_move_left,
+                egui::Button::new(i18n.tr("itemviewer_column_move_to_start")),
+            )
             .clicked()
         {
             *action = Some(ItemViewerAction::MoveColumnToStart(clicked_column));
@@ -1372,7 +1381,10 @@ fn draw_header_context_menu(
         }
 
         if ui
-            .add_enabled(can_move_right, egui::Button::new("Move to end"))
+            .add_enabled(
+                can_move_right,
+                egui::Button::new(i18n.tr("itemviewer_column_move_to_end")),
+            )
             .clicked()
         {
             *action = Some(ItemViewerAction::MoveColumnToEnd(clicked_column));
@@ -2264,6 +2276,50 @@ pub fn table_background_response(ui: &mut egui::Ui) -> egui::Response {
     )
 }
 
+/// Background menu for a directory listing (list view, gallery and empty area share it).
+pub fn draw_background_context_menu(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    palette: &ThemePalette,
+    paste_enabled: bool,
+    current_dir: &Path,
+    action: &mut Option<ItemViewerAction>,
+) {
+    apply_eden_text_overrides(ui, palette);
+    if ui.button(i18n.tr("tooltip_newfolder")).clicked() {
+        *action = Some(ItemViewerAction::CreateFolder);
+        ui.close();
+    }
+    if ui.button(i18n.tr("tooltip_newfile")).clicked() {
+        *action = Some(ItemViewerAction::CreateFile);
+        ui.close();
+    }
+    if ui.button(i18n.tr("tooltip_refresh")).clicked() {
+        *action = Some(ItemViewerAction::RefreshCurrentDirectory);
+        ui.close();
+    }
+    if ui.button(i18n.tr("tooltip_open_terminal")).clicked() {
+        *action = Some(ItemViewerAction::OpenTerminal);
+        ui.close();
+    }
+
+    ui.separator();
+
+    if ui
+        .add_enabled(paste_enabled, egui::Button::new(i18n.tr("inputs_paste")))
+        .clicked()
+    {
+        *action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
+        ui.close();
+    }
+    if ui.button(i18n.tr("properties")).clicked() {
+        *action = Some(ItemViewerAction::Context(
+            ItemViewerContextAction::Properties(vec![current_dir.to_path_buf()]),
+        ));
+        ui.close();
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn draw_empty_item_viewer_area(
     ui: &mut egui::Ui,
@@ -2318,39 +2374,14 @@ pub fn draw_empty_item_viewer_area(
             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| {
                 ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Default);
-                apply_eden_text_overrides(ui, palette);
-                if ui.button("New Folder").clicked() {
-                    action = Some(ItemViewerAction::CreateFolder);
-                    ui.close();
-                }
-                if ui.button("New File").clicked() {
-                    action = Some(ItemViewerAction::CreateFile);
-                    ui.close();
-                }
-                if ui.button("Refresh").clicked() {
-                    action = Some(ItemViewerAction::RefreshCurrentDirectory);
-                    ui.close();
-                }
-                if ui.button("Open Terminal").clicked() {
-                    action = Some(ItemViewerAction::OpenTerminal);
-                    ui.close();
-                }
-
-                ui.separator();
-
-                if ui
-                    .add_enabled(paste_enabled, egui::Button::new("Paste"))
-                    .clicked()
-                {
-                    action = Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
-                    ui.close();
-                }
-                if ui.button("Properties").clicked() {
-                    action = Some(ItemViewerAction::Context(
-                        ItemViewerContextAction::Properties(vec![current_dir.clone()]),
-                    ));
-                    ui.close();
-                }
+                draw_background_context_menu(
+                    ui,
+                    i18n,
+                    palette,
+                    paste_enabled,
+                    current_dir,
+                    &mut action,
+                );
             });
     } else if is_recycle_bin_view {
         Popup::context_menu(&response)
@@ -2358,7 +2389,7 @@ pub fn draw_empty_item_viewer_area(
             .show(|ui| {
                 ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Default);
                 apply_eden_text_overrides(ui, palette);
-                if ui.button("Refresh").clicked() {
+                if ui.button(i18n.tr("tooltip_refresh")).clicked() {
                     action = Some(ItemViewerAction::RefreshCurrentDirectory);
                     ui.close();
                 }

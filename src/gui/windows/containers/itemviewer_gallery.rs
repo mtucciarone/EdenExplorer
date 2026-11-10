@@ -10,10 +10,10 @@ use crate::core::utils::widgets::{
 use crate::gui::icon_system::{AppIcon, paint_icon};
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{SortColumn, truncate_item_text};
-use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
+use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::itemviewer_helper::{
-    draw_empty_item_viewer_area, handle_context_menu_actions, handle_editing_file_name,
-    handle_keyboard_navigation, handle_row_click,
+    draw_background_context_menu, draw_empty_item_viewer_area, handle_context_menu_actions,
+    handle_editing_file_name, handle_keyboard_navigation, handle_row_click,
 };
 use crate::gui::windows::containers::structs::{
     DragState, ExplorerState, GalleryState, GalleryThumbnailSize, RenameState,
@@ -333,40 +333,14 @@ pub fn draw_gallery_view(
                     Popup::context_menu(&bg_response)
                         .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                         .show(|ui| {
-                            apply_eden_text_overrides(ui, palette);
-                            if ui.button("New Folder").clicked() {
-                                action = Some(ItemViewerAction::CreateFolder);
-                                ui.close();
-                            }
-                            if ui.button("New File").clicked() {
-                                action = Some(ItemViewerAction::CreateFile);
-                                ui.close();
-                            }
-                            if ui.button("Refresh").clicked() {
-                                action = Some(ItemViewerAction::RefreshCurrentDirectory);
-                                ui.close();
-                            }
-                            if ui.button("Open Terminal").clicked() {
-                                action = Some(ItemViewerAction::OpenTerminal);
-                                ui.close();
-                            }
-
-                            ui.separator();
-
-                            if ui
-                                .add_enabled(paste_enabled, egui::Button::new("Paste"))
-                                .clicked()
-                            {
-                                action =
-                                    Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
-                                ui.close();
-                            }
-                            if ui.button("Properties").clicked() {
-                                action = Some(ItemViewerAction::Context(
-                                    ItemViewerContextAction::Properties(vec![current_dir.clone()]),
-                                ));
-                                ui.close();
-                            }
+                            draw_background_context_menu(
+                                ui,
+                                i18n,
+                                palette,
+                                paste_enabled,
+                                &current_dir,
+                                &mut action,
+                            );
                         });
                 }
             });
