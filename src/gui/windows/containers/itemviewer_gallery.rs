@@ -12,8 +12,9 @@ use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{SortColumn, truncate_item_text};
 use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::itemviewer_helper::{
-    draw_background_context_menu, draw_empty_item_viewer_area, handle_context_menu_actions,
-    handle_editing_file_name, handle_keyboard_navigation, handle_row_click,
+    double_click_action, draw_background_context_menu, draw_empty_item_viewer_area,
+    handle_context_menu_actions, handle_editing_file_name, handle_keyboard_navigation,
+    handle_row_click,
 };
 use crate::gui::windows::containers::structs::{
     DragState, ExplorerState, GalleryState, GalleryThumbnailSize, RenameState,
@@ -269,8 +270,13 @@ pub fn draw_gallery_view(
                                 files,
                                 drag_state,
                                 explorer_state,
-                                false,
                             ) {
+                                action = Some(a);
+                            }
+                        }
+
+                        if response.double_clicked() && !drag_state.active && !modal_input_blocked {
+                            if let Some(a) = double_click_action(file, modifiers, false) {
                                 action = Some(a);
                             }
                         }

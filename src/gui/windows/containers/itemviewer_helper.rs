@@ -225,8 +225,7 @@ pub fn handle_context_menu_actions(
         .add_enabled(all_files, egui::Button::new(label))
         .clicked()
     {
-        let paths: Vec<PathBuf> = explorer_state.selected_paths.iter().cloned().collect();
-        *action = Some(ItemViewerAction::OpenWithDefault(paths));
+        *action = Some(ItemViewerAction::OpenWithDefault(context_paths.clone()));
         ui.close();
     }
 
@@ -843,9 +842,10 @@ pub fn handle_editing_file_name(
             // Clear validation error on focus loss
             rename_state.validation_error_show = false;
 
-            // 👈 matches Windows: clicking away cancels rename
+            // Matches Windows Explorer: clicking away commits the rename
+            let new_name = rename_state.new_name.trim().to_string();
             action = Some(ItemViewerAction::Context(
-                ItemViewerContextAction::RenameCancel,
+                ItemViewerContextAction::RenameRequest(file.path.clone(), new_name),
             ));
         }
     });
@@ -1059,28 +1059,8 @@ pub fn handle_global_actions(
             if is_recycle_bin_view {
                 return;
             }
-            let selected_paths: Vec<PathBuf> = explorer_state
-                .selected_paths
-                .iter()
-                .filter_map(|p| {
-                    files
-                        .iter()
-                        .find(|f| &f.path == p && !f.is_dir)
-                        .map(|_| p.clone())
-                })
-                .collect();
-
-            if !selected_paths.is_empty() {
-                action = Some(ItemViewerAction::OpenWithDefault(selected_paths));
-            }
-
-            // Optionally handle directories separately:
-            for dir_path in explorer_state
-                .selected_paths
-                .iter()
-                .filter(|p| files.iter().any(|f| &f.path == *p && f.is_dir))
-            {
-                action = Some(ItemViewerAction::Open(dir_path.clone()));
+            if let Some(a) = enter_action(files, &explorer_state.selected_paths) {
+                action = Some(a);
             }
         }
         if i.modifiers.command && i.key_pressed(egui::Key::A) {
@@ -1741,7 +1721,6 @@ pub fn handle_row_click(
     files: &[FileItem],
     drag_state: &DragState,
     explorer_state: &mut ExplorerState,
-    is_recycle_bin_view: bool,
 ) -> Option<ItemViewerAction> {
     if drag_state.active {
         return None;
@@ -1776,34 +1755,63 @@ pub fn handle_row_click(
             Some(ItemViewerAction::Select(file.path.clone()))
         }
     } else if modifiers.ctrl {
-        if !explorer_state.selected_paths.contains(&file.path) {
-            explorer_state.selected_paths.insert(file.path.clone());
-        }
-
         explorer_state.selection_anchor = Some(row_idx);
         explorer_state.selection_focus = Some(row_idx);
 
-        Some(ItemViewerAction::Select(file.path.clone()))
-    } else {
-        let is_single_selected = explorer_state.selected_paths.len() == 1
-            && explorer_state.selected_paths.contains(&file.path);
-
-        if is_single_selected {
-            if is_recycle_bin_view {
-                return Some(ItemViewerAction::ReplaceSelection(file.path.clone()));
-            }
-            return Some(if file.is_dir {
-                ItemViewerAction::Open(file.path.clone())
-            } else {
-                ItemViewerAction::OpenWithDefault(vec![file.path.clone()])
-            });
+        // Ctrl+click toggles, like Windows Explorer
+        Some(if explorer_state.selected_paths.contains(&file.path) {
+            ItemViewerAction::Deselect(file.path.clone())
         } else {
-            explorer_state.selection_anchor = Some(row_idx);
-            explorer_state.selection_focus = Some(row_idx);
+            ItemViewerAction::Select(file.path.clone())
+        })
+    } else {
+        explorer_state.selection_anchor = Some(row_idx);
+        explorer_state.selection_focus = Some(row_idx);
 
-            Some(ItemViewerAction::ReplaceSelection(file.path.clone()))
-        }
+        Some(ItemViewerAction::ReplaceSelection(file.path.clone()))
     }
+}
+
+/// Action for a plain (unmodified) double-click on a row. Opening requires a
+/// real double-click; a single click only selects.
+pub fn double_click_action(
+    file: &FileItem,
+    modifiers: egui::Modifiers,
+    is_recycle_bin_view: bool,
+) -> Option<ItemViewerAction> {
+    if is_recycle_bin_view || modifiers.shift || modifiers.ctrl || modifiers.command {
+        return None;
+    }
+    Some(if file.is_dir {
+        ItemViewerAction::Open(file.path.clone())
+    } else {
+        ItemViewerAction::OpenWithDefault(vec![file.path.clone()])
+    })
+}
+
+/// Action for Enter with the current selection. Deterministic rule: if any
+/// selected file exists, open all selected files with their default program;
+/// otherwise open the first selected folder in view order.
+pub fn enter_action(
+    files: &[FileItem],
+    selected_paths: &std::collections::HashSet<PathBuf>,
+) -> Option<ItemViewerAction> {
+    let selected: Vec<&FileItem> = files
+        .iter()
+        .filter(|f| selected_paths.contains(&f.path))
+        .collect();
+    let file_paths: Vec<PathBuf> = selected
+        .iter()
+        .filter(|f| !f.is_dir)
+        .map(|f| f.path.clone())
+        .collect();
+    if !file_paths.is_empty() {
+        return Some(ItemViewerAction::OpenWithDefault(file_paths));
+    }
+    selected
+        .iter()
+        .find(|f| f.is_dir)
+        .map(|f| ItemViewerAction::Open(f.path.clone()))
 }
 
 pub fn draw_table_text(
@@ -2405,11 +2413,11 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
 
-    fn item(name: &str) -> FileItem {
+    fn item(path: &str, is_dir: bool) -> FileItem {
         FileItem::new(
-            name.to_string(),
-            PathBuf::from(name),
-            false,
+            path.to_string(),
+            PathBuf::from(path),
+            is_dir,
             false,
             None,
             None,
@@ -2424,7 +2432,7 @@ mod tests {
     }
 
     fn files(n: usize) -> Vec<FileItem> {
-        (0..n).map(|i| item(&format!("f{i}"))).collect()
+        (0..n).map(|i| item(&format!("f{i}"), false)).collect()
     }
 
     fn run_keys(
@@ -2525,5 +2533,104 @@ mod tests {
             filtered_row_index(&f, &[], std::path::Path::new("f2")),
             Some(2)
         );
+    }
+
+    fn click(
+        file: &FileItem,
+        modifiers: egui::Modifiers,
+        state: &mut ExplorerState,
+    ) -> Option<ItemViewerAction> {
+        let files = vec![file.clone()];
+        handle_row_click(
+            0,
+            file,
+            modifiers,
+            &[0],
+            &files,
+            &DragState::default(),
+            state,
+        )
+    }
+
+    fn ctrl() -> egui::Modifiers {
+        egui::Modifiers {
+            ctrl: true,
+            command: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn ctrl_click_toggles_selection() {
+        let file = item("C:/a.txt", false);
+        let mut state = ExplorerState::default();
+        assert!(matches!(
+            click(&file, ctrl(), &mut state),
+            Some(ItemViewerAction::Select(_))
+        ));
+        state.selected_paths.insert(file.path.clone());
+        assert!(matches!(
+            click(&file, ctrl(), &mut state),
+            Some(ItemViewerAction::Deselect(_))
+        ));
+    }
+
+    #[test]
+    fn plain_click_on_sole_selected_item_does_not_open() {
+        let file = item("C:/a.txt", false);
+        let mut state = ExplorerState::default();
+        state.selected_paths.insert(file.path.clone());
+        assert!(matches!(
+            click(&file, egui::Modifiers::NONE, &mut state),
+            Some(ItemViewerAction::ReplaceSelection(_))
+        ));
+    }
+
+    #[test]
+    fn double_click_opens_by_kind() {
+        let m = egui::Modifiers::NONE;
+        assert!(matches!(
+            double_click_action(&item("C:/d", true), m, false),
+            Some(ItemViewerAction::Open(_))
+        ));
+        assert!(matches!(
+            double_click_action(&item("C:/a.txt", false), m, false),
+            Some(ItemViewerAction::OpenWithDefault(_))
+        ));
+        assert!(double_click_action(&item("C:/a.txt", false), m, true).is_none());
+        assert!(double_click_action(&item("C:/a.txt", false), ctrl(), false).is_none());
+    }
+
+    #[test]
+    fn enter_prefers_files_in_view_order() {
+        let files = vec![
+            item("C:/d1", true),
+            item("C:/a.txt", false),
+            item("C:/d2", true),
+            item("C:/b.txt", false),
+        ];
+        let sel: HashSet<PathBuf> = files.iter().map(|f| f.path.clone()).collect();
+        match enter_action(&files, &sel) {
+            Some(ItemViewerAction::OpenWithDefault(p)) => {
+                assert_eq!(
+                    p,
+                    vec![PathBuf::from("C:/a.txt"), PathBuf::from("C:/b.txt")]
+                );
+            }
+            _ => panic!("expected OpenWithDefault"),
+        }
+    }
+
+    #[test]
+    fn enter_with_only_dirs_opens_first_in_view_order() {
+        let files = vec![item("C:/d1", true), item("C:/d2", true)];
+        let sel: HashSet<PathBuf> = files.iter().map(|f| f.path.clone()).collect();
+        for _ in 0..5 {
+            match enter_action(&files, &sel) {
+                Some(ItemViewerAction::Open(p)) => assert_eq!(p, PathBuf::from("C:/d1")),
+                _ => panic!("expected Open"),
+            }
+        }
+        assert!(enter_action(&files, &HashSet::new()).is_none());
     }
 }

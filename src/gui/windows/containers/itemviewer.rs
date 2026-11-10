@@ -596,8 +596,15 @@ pub fn draw_item_viewer(
                                 files,
                                 drag_state,
                                 explorer_state,
-                                is_recycle_bin_view,
                             ) {
+                                action = Some(a);
+                            }
+                        }
+
+                        if row_resp.double_clicked() && !drag_state.active && !is_non_ntfs_drive {
+                            if let Some(a) =
+                                double_click_action(file, modifiers, is_recycle_bin_view)
+                            {
                                 action = Some(a);
                             }
                         }
