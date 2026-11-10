@@ -10,6 +10,7 @@ my_user_home = My User Home
 recycle_bin = Recycle Bin
 exit = Exit
 selected = Selected
+select_all = Select all
 tooltip_refresh = Refresh current directory
 tooltip_newfolder = Create new folder
 tooltip_newfile = Create new file

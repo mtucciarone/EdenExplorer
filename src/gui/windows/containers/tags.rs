@@ -159,14 +159,14 @@ pub fn draw_tags(
                                                 .size(palette.text_size)
                                                 .color(palette.tooltip_text_color),
                                         );
-                                        if clickable_icon(ui, AppIcon::Trash.regular(), palette)
+                                        if clickable_icon(ui, AppIcon::Trash.regular(), palette, &i18n.tr("tag_delete_group"))
                                             .on_hover_text(i18n.tr("tag_delete_group"))
                                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                                             .clicked()
                                         {
                                             delete_confirmation = Some(group_id);
                                         }
-                                        if clickable_icon(ui, AppIcon::PencilSimple.regular(), palette)
+                                        if clickable_icon(ui, AppIcon::PencilSimple.regular(), palette, &i18n.tr("inputs_rename"))
                                             .on_hover_text(i18n.tr("inputs_rename"))
                                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                                             .clicked()

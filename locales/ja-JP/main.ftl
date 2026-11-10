@@ -10,6 +10,7 @@ my_user_home = ホームフォルダー
 recycle_bin = ごみ箱
 exit = 終了
 selected = 選択済み
+select_all = すべて選択
 tooltip_refresh = 現在のディレクトリを更新
 tooltip_newfolder = 新しいフォルダーを作成
 tooltip_newfile = 新しいファイルを作成

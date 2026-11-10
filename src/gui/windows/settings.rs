@@ -532,17 +532,27 @@ fn draw_general_tab(
                 setting_label(ui, &i18n.tr("settings_startpath"), None, palette);
             },
             |ui| {
-                if eden_icon_button(ui, palette, AppIcon::ArrowCounterClockwise.regular())
-                    .on_hover_text(i18n.tr("settings_startpath_reset_hover"))
-                    .clicked()
+                if eden_icon_button(
+                    ui,
+                    palette,
+                    AppIcon::ArrowCounterClockwise.regular(),
+                    &i18n.tr("settings_startpath_reset_hover"),
+                )
+                .on_hover_text(i18n.tr("settings_startpath_reset_hover"))
+                .clicked()
                 {
                     settings.current_settings.start_path = Some(PathBuf::from(MY_PC_PATH));
                     action = Some(SettingsAction::ApplySettings);
                 }
 
-                if eden_icon_button(ui, palette, AppIcon::FolderOpen.regular())
-                    .on_hover_text(i18n.tr("settings_startpath_choose_hover"))
-                    .clicked()
+                if eden_icon_button(
+                    ui,
+                    palette,
+                    AppIcon::FolderOpen.regular(),
+                    &i18n.tr("settings_startpath_choose_hover"),
+                )
+                .on_hover_text(i18n.tr("settings_startpath_choose_hover"))
+                .clicked()
                 {
                     if let Some(path) = rfd::FileDialog::new().pick_folder() {
                         settings.current_settings.start_path = Some(path);
@@ -637,9 +647,14 @@ fn draw_general_tab(
                     },
                 );
 
-                if eden_icon_button(ui, palette, AppIcon::ArrowCounterClockwise.regular())
-                    .on_hover_text(i18n.tr("settings_windowsize_reset_hover"))
-                    .clicked()
+                if eden_icon_button(
+                    ui,
+                    palette,
+                    AppIcon::ArrowCounterClockwise.regular(),
+                    &i18n.tr("settings_windowsize_reset_hover"),
+                )
+                .on_hover_text(i18n.tr("settings_windowsize_reset_hover"))
+                .clicked()
                 {
                     settings.current_settings.window_size_mode = WindowSizeMode::default();
                     window_size_changed = true;
@@ -763,6 +778,7 @@ fn info_icon(ui: &mut egui::Ui, hover_text: &str, palette: &ThemePalette) -> egu
         AppIcon::Question.regular(),
         palette.text_size + 2.0,
         palette.text_normal,
+        hover_text,
     );
 
     if resp.hovered() {
@@ -831,7 +847,7 @@ fn setting_checkbox(
             .allocate_ui_with_layout(
                 egui::vec2(16.0, ui.spacing().interact_size.y),
                 egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
-                |ui| draw_checkbox(ui, palette, checked, id),
+                |ui| draw_checkbox(ui, palette, checked, id, label.text()),
             )
             .inner;
 

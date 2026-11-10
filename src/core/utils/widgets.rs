@@ -50,15 +50,32 @@ pub fn loading_spinner(ui: &mut Ui, size: f32) -> Response {
     response
 }
 
+/// Keyboard focus ring for a control that paints its own rect. egui's widgets
+/// draw one themselves; these helpers don't, so Tab navigation was invisible.
+pub fn paint_focus_ring(ui: &Ui, rect: Rect, response: &Response, radius: impl Into<CornerRadius>) {
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            rect,
+            radius,
+            ui.visuals().selection.stroke,
+            StrokeKind::Outside,
+        );
+    }
+}
+
 pub fn clickable_active_icon(
     ui: &mut Ui,
     icon: StyledIcon,
     default_color: Color32,
     is_active: bool,
     palette: &ThemePalette,
+    label: &str,
 ) -> Response {
     let size = palette.text_size + 2.0;
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size), Sense::click());
+    resp.widget_info(|| {
+        WidgetInfo::selected(WidgetType::Button, ui.is_enabled(), is_active, label)
+    });
 
     let color = if is_active {
         palette.primary
@@ -71,13 +88,20 @@ pub fn clickable_active_icon(
     };
 
     paint_icon(ui, rect, icon, size, color);
+    paint_focus_ring(ui, rect, &resp, CornerRadius::same(palette.small_radius));
 
     resp
 }
 
-pub fn clickable_icon(ui: &mut Ui, icon: StyledIcon, palette: &ThemePalette) -> Response {
+pub fn clickable_icon(
+    ui: &mut Ui,
+    icon: StyledIcon,
+    palette: &ThemePalette,
+    label: &str,
+) -> Response {
     let size = palette.text_size + 2.0;
     let (rect, resp) = ui.allocate_exact_size(Vec2::splat(size), Sense::click());
+    resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, ui.is_enabled(), label));
 
     let color = if resp.hovered() {
         palette.primary
@@ -86,6 +110,7 @@ pub fn clickable_icon(ui: &mut Ui, icon: StyledIcon, palette: &ThemePalette) -> 
     };
 
     paint_icon(ui, rect, icon, size, color);
+    paint_focus_ring(ui, rect, &resp, CornerRadius::same(palette.small_radius));
 
     resp
 }
@@ -95,6 +120,7 @@ pub fn clickable_windows_icon(
     icon: StyledIcon,
     hover_bg: Color32,
     palette: &ThemePalette,
+    label: &str,
 ) -> Response {
     const BUTTON_WIDTH: f32 = CAPTION_BUTTON_WIDTH;
     const BUTTON_HEIGHT: f32 = CAPTION_BUTTON_HEIGHT;
@@ -102,12 +128,14 @@ pub fn clickable_windows_icon(
 
     let (rect, resp) =
         ui.allocate_exact_size(egui::vec2(BUTTON_WIDTH, BUTTON_HEIGHT), Sense::click());
+    resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, ui.is_enabled(), label));
 
     if resp.hovered() {
         ui.painter().rect_filled(rect, 0.0, hover_bg);
     }
 
     paint_icon(ui, rect, icon, ICON_SIZE, palette.icon_color);
+    paint_focus_ring(ui, rect, &resp, CornerRadius::ZERO);
 
     resp
 }
@@ -259,6 +287,7 @@ pub fn draw_checkbox(
     palette: &ThemePalette,
     checked: &mut bool,
     id: impl std::hash::Hash + std::fmt::Debug,
+    label: &str,
 ) -> egui::Response {
     let size = ui.available_rect_before_wrap().height().min(12.0);
 
@@ -273,6 +302,9 @@ pub fn draw_checkbox(
     if response.clicked() {
         *checked = !*checked;
     }
+    response.widget_info(|| {
+        WidgetInfo::selected(WidgetType::Checkbox, ui.is_enabled(), *checked, label)
+    });
 
     let bg = if *checked {
         palette.checkbox_bg_active
@@ -306,6 +338,8 @@ pub fn draw_checkbox(
         ui.painter().line_segment([p1, p2], stroke);
         ui.painter().line_segment([p2, p3], stroke);
     }
+
+    paint_focus_ring(ui, rect, &response, CornerRadius::same(5));
 
     response
 }
@@ -389,10 +423,12 @@ pub fn eden_icon_button(
     ui: &mut egui::Ui,
     palette: &ThemePalette,
     icon: StyledIcon,
+    label: &str,
 ) -> egui::Response {
     apply_eden_visual_overrides(ui, palette);
     let size = ui.spacing().interact_size.y;
     let (rect, response) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::click());
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, ui.is_enabled(), label));
 
     if response.hovered() {
         ui.painter().rect_filled(
@@ -412,6 +448,12 @@ pub fn eden_icon_button(
         } else {
             palette.text_normal
         },
+    );
+    paint_focus_ring(
+        ui,
+        rect,
+        &response,
+        ui.visuals().widgets.hovered.corner_radius,
     );
     response
 }
@@ -437,6 +479,7 @@ pub fn eden_toggle_button(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gui::theme::{ThemeMode, get_default_palette};
     use std::sync::{Arc, Mutex};
 
     fn requested_delays(ctx: &Context) -> Arc<Mutex<Vec<Duration>>> {
@@ -540,5 +583,177 @@ mod tests {
             roles.contains(&accesskit::Role::ProgressIndicator),
             "roles: {roles:?}"
         );
+    }
+
+    /// The (role, label, toggled) of every accessibility node in a frame.
+    fn announced(
+        output: &FullOutput,
+    ) -> Vec<(accesskit::Role, Option<String>, Option<accesskit::Toggled>)> {
+        let update = output
+            .platform_output
+            .accesskit_update
+            .as_ref()
+            .expect("no accesskit tree");
+        update
+            .nodes
+            .iter()
+            .map(|(_, node)| (node.role(), node.label().map(str::to_owned), node.toggled()))
+            .collect()
+    }
+
+    #[test]
+    fn clickable_icon_is_announced_as_a_named_button() {
+        let ctx = Context::default();
+        ctx.enable_accesskit();
+        let palette = get_default_palette(ThemeMode::Dark);
+        let output = ctx.run_ui(RawInput::default(), |ui| {
+            clickable_icon(ui, AppIcon::List.regular(), &palette, "Menu");
+        });
+        let nodes = announced(&output);
+        assert!(
+            nodes.contains(&(accesskit::Role::Button, Some("Menu".to_owned()), None)),
+            "nodes: {nodes:?}"
+        );
+    }
+
+    #[test]
+    fn active_icon_is_announced_with_its_toggled_state() {
+        let ctx = Context::default();
+        ctx.enable_accesskit();
+        let palette = get_default_palette(ThemeMode::Dark);
+        let output = ctx.run_ui(RawInput::default(), |ui| {
+            let text_color = ui.visuals().text_color();
+            clickable_active_icon(
+                ui,
+                AppIcon::SidebarSimple.regular(),
+                text_color,
+                true,
+                &palette,
+                "Sidebar",
+            );
+        });
+        let nodes = announced(&output);
+        assert!(
+            nodes.contains(&(
+                accesskit::Role::Button,
+                Some("Sidebar".to_owned()),
+                Some(accesskit::Toggled::True)
+            )),
+            "nodes: {nodes:?}"
+        );
+    }
+
+    #[test]
+    fn windows_icon_is_announced_as_a_named_button() {
+        let ctx = Context::default();
+        ctx.enable_accesskit();
+        let palette = get_default_palette(ThemeMode::Dark);
+        let output = ctx.run_ui(RawInput::default(), |ui| {
+            clickable_windows_icon(
+                ui,
+                AppIcon::X.regular(),
+                palette.tab_close_hover,
+                &palette,
+                "Close",
+            );
+        });
+        let nodes = announced(&output);
+        assert!(
+            nodes.contains(&(accesskit::Role::Button, Some("Close".to_owned()), None)),
+            "nodes: {nodes:?}"
+        );
+    }
+
+    #[test]
+    fn icon_button_is_announced_as_a_named_button() {
+        let ctx = Context::default();
+        ctx.enable_accesskit();
+        let palette = get_default_palette(ThemeMode::Dark);
+        let output = ctx.run_ui(RawInput::default(), |ui| {
+            eden_icon_button(
+                ui,
+                &palette,
+                AppIcon::FolderOpen.regular(),
+                "Choose a folder",
+            );
+        });
+        let nodes = announced(&output);
+        assert!(
+            nodes.contains(&(
+                accesskit::Role::Button,
+                Some("Choose a folder".to_owned()),
+                None
+            )),
+            "nodes: {nodes:?}"
+        );
+    }
+
+    #[test]
+    fn draw_icon_is_announced_as_a_named_button() {
+        let ctx = Context::default();
+        ctx.enable_accesskit();
+        let palette = get_default_palette(ThemeMode::Dark);
+        let output = ctx.run_ui(RawInput::default(), |ui| {
+            crate::gui::icon_system::draw_icon(
+                ui,
+                AppIcon::Question.regular(),
+                16.0,
+                palette.text_normal,
+                "Help",
+            );
+        });
+        let nodes = announced(&output);
+        assert!(
+            nodes.contains(&(accesskit::Role::Button, Some("Help".to_owned()), None)),
+            "nodes: {nodes:?}"
+        );
+    }
+
+    #[test]
+    fn checkbox_is_announced_as_a_named_checkbox_with_its_state() {
+        let ctx = Context::default();
+        ctx.enable_accesskit();
+        let palette = get_default_palette(ThemeMode::Dark);
+        let mut checked = true;
+        let output = ctx.run_ui(RawInput::default(), |ui| {
+            draw_checkbox(ui, &palette, &mut checked, "row", "Select file.txt");
+        });
+        let nodes = announced(&output);
+        assert!(
+            nodes.contains(&(
+                accesskit::Role::CheckBox,
+                Some("Select file.txt".to_owned()),
+                Some(accesskit::Toggled::True)
+            )),
+            "nodes: {nodes:?}"
+        );
+    }
+
+    #[test]
+    fn focused_icon_paints_a_focus_ring() {
+        let ctx = Context::default();
+        let palette = get_default_palette(ThemeMode::Dark);
+        let widget = Arc::new(Mutex::new(None));
+        let frame = |ctx: &Context| {
+            ctx.run_ui(RawInput::default(), |ui| {
+                let resp = clickable_icon(ui, AppIcon::List.regular(), &palette, "Menu");
+                *widget.lock().unwrap() = Some(resp.id);
+            })
+        };
+        let ring = ctx.global_style().visuals.selection.stroke;
+        let paints_ring = |output: &FullOutput| {
+            output
+                .shapes
+                .iter()
+                .any(|clipped| matches!(&clipped.shape, Shape::Rect(r) if r.stroke == ring))
+        };
+
+        let unfocused = frame(&ctx);
+        assert!(!paints_ring(&unfocused), "ring painted without focus");
+
+        let id = widget.lock().unwrap().expect("icon was not laid out");
+        ctx.memory_mut(|mem| mem.request_focus(id));
+        let focused = frame(&ctx);
+        assert!(paints_ring(&focused), "no focus ring on the focused icon");
     }
 }

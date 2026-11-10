@@ -10,6 +10,7 @@ my_user_home = 我的使用者主資料夾
 recycle_bin = 資源回收筒
 exit = 離開
 selected = 已選取
+select_all = 全選
 tooltip_refresh = 重新整理目前目錄
 tooltip_newfolder = 建立新資料夾
 tooltip_newfile = 建立新檔案

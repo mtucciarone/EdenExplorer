@@ -456,7 +456,9 @@ pub fn draw_item_viewer(
                             row.col(|ui| {
                                 let mut checked = is_selected;
 
-                                if draw_checkbox(ui, palette, &mut checked, &file.path).clicked() {
+                                if draw_checkbox(ui, palette, &mut checked, &file.path, &file.name)
+                                    .clicked()
+                                {
                                     if checked {
                                         action = Some(ItemViewerAction::Select(file.path.clone()));
                                     } else {

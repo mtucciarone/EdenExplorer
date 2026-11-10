@@ -10,6 +10,7 @@ my_user_home = Folder Home Pengguna Saya
 recycle_bin = Keranjang Sampah
 exit = Keluar
 selected = Dipilih
+select_all = Pilih semua
 tooltip_refresh = Muat ulang direktori saat ini
 tooltip_newfolder = Buat folder baru
 tooltip_newfile = Buat file baru

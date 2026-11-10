@@ -10,6 +10,7 @@ my_user_home = 我的用户主目录
 recycle_bin = 回收站
 exit = 退出
 selected = 已选择
+select_all = 全选
 tooltip_refresh = 刷新当前目录
 tooltip_newfolder = 创建新文件夹
 tooltip_newfile = 创建新文件

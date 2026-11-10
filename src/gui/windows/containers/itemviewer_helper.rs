@@ -1169,7 +1169,15 @@ pub fn draw_item_viewer_header(
 
             ui.scope(|ui| {
                 apply_checkbox_colors(ui, palette, all_selected);
-                if draw_checkbox(ui, palette, &mut all_selected, "select_all").clicked() {
+                if draw_checkbox(
+                    ui,
+                    palette,
+                    &mut all_selected,
+                    "select_all",
+                    &i18n.tr("select_all"),
+                )
+                .clicked()
+                {
                     action = Some(if all_selected {
                         ItemViewerAction::SelectAll
                     } else {

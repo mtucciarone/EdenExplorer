@@ -635,41 +635,59 @@ pub fn handle_draw_windows_buttons(
             AppIcon::Square.regular()
         };
 
-        if clickable_windows_icon(ui, AppIcon::X.regular(), palette.tab_close_hover, palette)
-            .on_hover_text(
-                egui::RichText::new(i18n.tr("close"))
-                    .size(palette.tooltip_text_size)
-                    .color(palette.tooltip_text_color),
-            )
-            .clicked()
+        if clickable_windows_icon(
+            ui,
+            AppIcon::X.regular(),
+            palette.tab_close_hover,
+            palette,
+            &i18n.tr("close"),
+        )
+        .on_hover_text(
+            egui::RichText::new(i18n.tr("close"))
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+        .clicked()
         {
             unsafe {
                 let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
             }
         }
 
-        if clickable_windows_icon(ui, maximize_icon, palette.primary, palette)
-            .on_hover_text(
-                egui::RichText::new(if is_maximized {
-                    i18n.tr("restore")
-                } else {
-                    i18n.tr("maximize")
-                })
-                .size(palette.tooltip_text_size)
-                .color(palette.tooltip_text_color),
-            )
-            .clicked()
+        if clickable_windows_icon(
+            ui,
+            maximize_icon,
+            palette.primary,
+            palette,
+            &i18n.tr(if is_maximized { "restore" } else { "maximize" }),
+        )
+        .on_hover_text(
+            egui::RichText::new(if is_maximized {
+                i18n.tr("restore")
+            } else {
+                i18n.tr("maximize")
+            })
+            .size(palette.tooltip_text_size)
+            .color(palette.tooltip_text_color),
+        )
+        .clicked()
         {
             toggle_window_fullscreen(hwnd);
         }
 
-        if clickable_windows_icon(ui, AppIcon::Minus.regular(), palette.primary, palette)
-            .on_hover_text(
-                egui::RichText::new(i18n.tr("minimize"))
-                    .size(palette.tooltip_text_size)
-                    .color(palette.tooltip_text_color),
-            )
-            .clicked()
+        if clickable_windows_icon(
+            ui,
+            AppIcon::Minus.regular(),
+            palette.primary,
+            palette,
+            &i18n.tr("minimize"),
+        )
+        .on_hover_text(
+            egui::RichText::new(i18n.tr("minimize"))
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+        .clicked()
         {
             unsafe {
                 let _ = ShowWindow(hwnd, SW_MINIMIZE);

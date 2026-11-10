@@ -7,7 +7,7 @@ use std::sync::{LazyLock, RwLock};
 pub const THEME_VERSION: u32 = 8;
 
 fn default_itemviewer_row_height() -> f32 {
-    16.0
+    22.0
 }
 
 fn default_sidebar_icon_size() -> f32 {
@@ -653,5 +653,18 @@ mod tests {
         // The rename field must not be dark gray in the light theme.
         let bg = DEFAULT_PALETTE_LIGHT.row_selected_bg;
         assert!(relative_luminance(bg) > 0.5);
+    }
+
+    #[test]
+    fn default_item_rows_are_tall_enough_to_click() {
+        // Rows at 16 px were below the usual 20 px minimum click target.
+        for mode in [ThemeMode::Dark, ThemeMode::Light] {
+            let palette = get_default_palette(mode);
+            assert!(
+                palette.row_height >= 20.0,
+                "{mode:?} row height is {}",
+                palette.row_height
+            );
+        }
     }
 }

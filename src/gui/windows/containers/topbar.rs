@@ -77,14 +77,19 @@ fn draw_hamburger_menu(
         ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
     }
 
-    if clickable_icon(ui, AppIcon::List.regular(), palette)
-        .on_hover_text(
-            egui::RichText::new(&i18n.tr("tooltip_mainmenu"))
-                .size(palette.tooltip_text_size)
-                .color(palette.tooltip_text_color),
-        )
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .clicked()
+    if clickable_icon(
+        ui,
+        AppIcon::List.regular(),
+        palette,
+        &i18n.tr("tooltip_mainmenu"),
+    )
+    .on_hover_text(
+        egui::RichText::new(&i18n.tr("tooltip_mainmenu"))
+            .size(palette.tooltip_text_size)
+            .color(palette.tooltip_text_color),
+    )
+    .on_hover_cursor(egui::CursorIcon::PointingHand)
+    .clicked()
     {
         ui.memory_mut(|mem| mem.data.insert_temp(menu_id, !menu_open));
     }
@@ -188,6 +193,7 @@ fn draw_mode_icons(
         ui.visuals().text_color(),
         !sidebar_collapsed,
         palette,
+        &i18n.tr(sidebar_tooltip_key),
     )
     .on_hover_text(
         egui::RichText::new(&i18n.tr(sidebar_tooltip_key))
@@ -206,7 +212,7 @@ fn draw_mode_icons(
         AppIcon::Moon.regular()
     };
 
-    if clickable_icon(ui, icon, palette)
+    if clickable_icon(ui, icon, palette, &i18n.tr("tooltip_theme"))
         .on_hover_text(
             egui::RichText::new(&i18n.tr("tooltip_theme"))
                 .size(palette.tooltip_text_size)
@@ -226,6 +232,7 @@ fn draw_mode_icons(
         ui.visuals().text_color(),
         is_file_explorer,
         palette,
+        &i18n.tr("tooltip_show_file_explorer"),
     )
     .on_hover_text(
         egui::RichText::new(&i18n.tr("tooltip_show_file_explorer"))
@@ -244,6 +251,7 @@ fn draw_mode_icons(
         ui.visuals().text_color(),
         !is_file_explorer,
         palette,
+        &i18n.tr("tooltip_show_tags"),
     )
     .on_hover_text(
         egui::RichText::new(&i18n.tr("tooltip_show_tags"))
@@ -265,7 +273,7 @@ fn draw_mode_icons(
         } else {
             (AppIcon::SplitHorizontal.regular(), "tooltip_open_split")
         };
-        if clickable_icon(ui, icon, palette)
+        if clickable_icon(ui, icon, palette, &i18n.tr(tooltip_key))
             .on_hover_text(
                 egui::RichText::new(i18n.tr(tooltip_key))
                     .size(palette.tooltip_text_size)
