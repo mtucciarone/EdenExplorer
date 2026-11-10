@@ -282,7 +282,7 @@ fn read_paths_from_data_object(
     data_object: windows::core::Ref<'_, IDataObject>,
 ) -> Result<Vec<PathBuf>> {
     unsafe {
-        let data_object = data_object.unwrap();
+        let data_object = data_object.ok()?;
         let format = FORMATETC {
             cfFormat: CF_HDROP.0,
             ptd: null_mut(),
@@ -425,5 +425,18 @@ impl DragDropBackend for WindowsDragDropBackend {
 
     fn poll_command(&self) -> Option<NativeDropCommand> {
         self.shared.pop_command()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows::core::Ref;
+
+    #[test]
+    fn read_paths_from_null_data_object_returns_error() {
+        // A null IDataObject must surface as Err, not abort the process.
+        let null: Ref<'_, IDataObject> = Ref::default();
+        assert!(read_paths_from_data_object(null).is_err());
     }
 }

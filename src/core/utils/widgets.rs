@@ -2,6 +2,7 @@ use crate::core::utils::colors::drive_usage_color;
 use crate::core::utils::text::apply_eden_text_overrides;
 use crate::gui::icon_system::{AppIcon, StyledIcon, paint_icon};
 use crate::gui::theme::ThemePalette;
+use crate::gui::windows::windowsoverrides::{CAPTION_BUTTON_HEIGHT, CAPTION_BUTTON_WIDTH};
 use eframe::egui::*;
 use std::time::Duration;
 
@@ -95,8 +96,8 @@ pub fn clickable_windows_icon(
     hover_bg: Color32,
     palette: &ThemePalette,
 ) -> Response {
-    const BUTTON_WIDTH: f32 = 45.0;
-    const BUTTON_HEIGHT: f32 = 26.0;
+    const BUTTON_WIDTH: f32 = CAPTION_BUTTON_WIDTH;
+    const BUTTON_HEIGHT: f32 = CAPTION_BUTTON_HEIGHT;
     const ICON_SIZE: f32 = 16.0;
 
     let (rect, resp) =
@@ -208,7 +209,7 @@ pub fn draw_object_drag_ghost(
         let ui_rect = ui.min_rect();
         let ghost_width = ui_rect.width();
 
-        let ghost_rect = Rect::from_center_size(pos, vec2(ghost_width, 18.0));
+        let ghost_rect = Rect::from_center_size(pos, vec2(ghost_width, palette.text_size + 8.0));
 
         painter.rect_filled(
             ghost_rect,
@@ -223,7 +224,7 @@ pub fn draw_object_drag_ghost(
             Align2::LEFT_CENTER,
             label,
             font_id,
-            palette.icon_color.gamma_multiply(0.2),
+            palette.text_header_section,
         );
 
         ui.ctx().set_cursor_icon(CursorIcon::Grab);
@@ -289,7 +290,7 @@ pub fn draw_checkbox(
 
     ui.painter().rect(
         rect,
-        egui::CornerRadius::same(5),
+        egui::CornerRadius::same(palette.medium_radius),
         bg,
         egui::Stroke::new(1.0, border),
         egui::StrokeKind::Middle,

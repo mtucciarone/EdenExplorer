@@ -6,9 +6,7 @@ use crate::core::utils::text::apply_eden_text_overrides;
 use crate::core::utils::widgets::draw_checkbox;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{draw_object_drag_ghost, fuzzy_match, truncate_item_text};
-use crate::gui::windows::containers::enums::{
-    ItemViewerAction, ItemViewerContextAction, ItemViewerHeaderColumn,
-};
+use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerHeaderColumn};
 use crate::gui::windows::containers::itemviewer_gallery::draw_gallery_view;
 use crate::gui::windows::containers::itemviewer_helper::*;
 use crate::gui::windows::containers::structs::{
@@ -72,7 +70,7 @@ pub fn draw_item_viewer(
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let mut hovered_drop_target: Option<PathBuf> = None;
     let mut hovered_drop_target_rect: Option<egui::Rect> = None;
-    draw_external_to_internal_drag_overlay(ui, i18n, *external_drag_to_internal_hover);
+    draw_external_to_internal_drag_overlay(ui, i18n, *external_drag_to_internal_hover, palette);
 
     let layout = compute_layout(ui, is_drive_view, is_recycle_bin_view, palette);
     let modal_input_blocked =
@@ -598,8 +596,15 @@ pub fn draw_item_viewer(
                                 files,
                                 drag_state,
                                 explorer_state,
-                                is_recycle_bin_view,
                             ) {
+                                action = Some(a);
+                            }
+                        }
+
+                        if row_resp.double_clicked() && !drag_state.active && !is_non_ntfs_drive {
+                            if let Some(a) =
+                                double_click_action(file, modifiers, is_recycle_bin_view)
+                            {
                                 action = Some(a);
                             }
                         }
@@ -763,7 +768,11 @@ pub fn draw_item_viewer(
             *hovered_drop_target_out = hovered_drop_target.clone();
             *hovered_drop_target_rect_out = hovered_drop_target_rect;
 
-            if !modal_input_blocked {
+            if !modal_input_blocked
+                && is_focused
+                && rename_state.is_none()
+                && !ui.ctx().egui_wants_keyboard_input()
+            {
                 if let Some(a) = handle_keyboard_navigation(
                     ui.ctx(),
                     &filter_state.cached_indices,
@@ -771,7 +780,9 @@ pub fn draw_item_viewer(
                     layout.is_drive_view,
                     explorer_state,
                 ) {
-                    action = Some(a);
+                    if action.is_none() {
+                        action = Some(a);
+                    }
                 }
             }
 
@@ -800,48 +811,21 @@ pub fn draw_item_viewer(
                     Popup::context_menu(&bg_response)
                         .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                         .show(|ui| {
-                            apply_eden_text_overrides(ui, palette);
-                            if ui.button("New Folder").clicked() {
-                                action = Some(ItemViewerAction::CreateFolder);
-                                ui.close();
-                            }
-                            if ui.button("New File").clicked() {
-                                action = Some(ItemViewerAction::CreateFile);
-                                ui.close();
-                            }
-                            if ui.button("Refresh").clicked() {
-                                action = Some(ItemViewerAction::RefreshCurrentDirectory);
-                                ui.close();
-                            }
-                            if ui.button("Open Terminal").clicked() {
-                                action = Some(ItemViewerAction::OpenTerminal);
-                                ui.close();
-                            }
-
-                            ui.separator();
-
-                            if ui
-                                .add_enabled(paste_enabled, egui::Button::new("Paste"))
-                                .clicked()
-                            {
-                                action =
-                                    Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
-                                ui.close();
-                            }
-                            if ui.button("Properties").clicked() {
-                                action = Some(ItemViewerAction::Context(
-                                    ItemViewerContextAction::Properties(vec![current_dir.clone()]),
-                                ));
-                                ui.close();
-                            }
-                            // }
+                            draw_background_context_menu(
+                                ui,
+                                i18n,
+                                palette,
+                                paste_enabled,
+                                &current_dir,
+                                &mut action,
+                            );
                         });
                 } else if is_recycle_bin_view {
                     Popup::context_menu(&bg_response)
                         .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                         .show(|ui| {
                             apply_eden_text_overrides(ui, palette);
-                            if ui.button("Refresh").clicked() {
+                            if ui.button(i18n.tr("tooltip_refresh")).clicked() {
                                 action = Some(ItemViewerAction::RefreshCurrentDirectory);
                                 ui.close();
                             }
