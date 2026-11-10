@@ -894,9 +894,18 @@ pub struct TopbarAction {
     pub open_settings: bool,
     pub about: bool,
     pub exit: bool,
-    pub toggle_file_explorer: bool,
+    /// `Some(true)` = Explorer mode, `Some(false)` = Tags mode, `None` = no request.
+    pub set_file_explorer: Option<bool>,
     pub toggle_sidebar: bool,
     pub toggle_active_tab_split: bool,
+}
+
+impl TopbarAction {
+    /// The mode to switch to, or `None` when no switch is requested or the requested
+    /// mode is already active (clicking the active Explorer/Tags button does nothing).
+    pub fn file_explorer_mode_change(&self, current: bool) -> Option<bool> {
+        self.set_file_explorer.filter(|wanted| *wanted != current)
+    }
 }
 
 #[derive(Default)]
@@ -1410,5 +1419,29 @@ mod tests {
 
         assert_eq!(state.groups.len(), 1, "empty tag should be dropped on load");
         assert_eq!(state.groups[0].name, "Kept");
+    }
+
+    #[test]
+    fn clicking_active_topbar_mode_is_not_a_change() {
+        let explorer_clicked = TopbarAction {
+            set_file_explorer: Some(true),
+            ..Default::default()
+        };
+        let tags_clicked = TopbarAction {
+            set_file_explorer: Some(false),
+            ..Default::default()
+        };
+
+        assert_eq!(explorer_clicked.file_explorer_mode_change(true), None);
+        assert_eq!(tags_clicked.file_explorer_mode_change(false), None);
+        assert_eq!(
+            explorer_clicked.file_explorer_mode_change(false),
+            Some(true)
+        );
+        assert_eq!(tags_clicked.file_explorer_mode_change(true), Some(false));
+        assert_eq!(
+            TopbarAction::default().file_explorer_mode_change(true),
+            None
+        );
     }
 }

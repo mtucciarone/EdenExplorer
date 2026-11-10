@@ -1949,8 +1949,10 @@ impl MainWindow {
                     }
                 }
             }
-            if action.toggle_file_explorer {
-                self.display_file_explorer = !self.display_file_explorer;
+            if let Some(explorer_mode) =
+                action.file_explorer_mode_change(self.display_file_explorer)
+            {
+                self.display_file_explorer = explorer_mode;
                 let tab = self.active_tab_mut();
                 tab.primary_view.drag_state.active = false;
                 tab.primary_view.drag_state.start_pos = None;

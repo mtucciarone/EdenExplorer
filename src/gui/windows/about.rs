@@ -34,7 +34,7 @@ pub fn draw_about_window(
         })
         .inner;
 
-    if modal_bg_clicked {
+    if modal_bg_clicked || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         should_close = true;
     }
 

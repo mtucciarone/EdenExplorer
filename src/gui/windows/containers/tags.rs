@@ -415,7 +415,8 @@ pub fn draw_delete_confirmation_popup(
     };
 
     let mut changed = false;
-    let mut close_requested = false;
+    // Escape cancels the delete (close without confirming).
+    let mut close_requested = ctx.input(|i| i.key_pressed(egui::Key::Escape));
     let mut confirmed = false;
 
     let group_name = tags_state
@@ -515,7 +516,7 @@ pub fn draw_tag_picker_popup(
     };
 
     let mut changed = false;
-    let mut close_requested = false;
+    let mut close_requested = ctx.input(|i| i.key_pressed(egui::Key::Escape));
 
     egui::Area::new(egui::Id::new("tag_modal_bg"))
         .order(egui::Order::Middle)

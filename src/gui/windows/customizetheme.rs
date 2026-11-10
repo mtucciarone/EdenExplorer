@@ -52,7 +52,7 @@ pub fn draw_theme_customizer(
         })
         .inner;
 
-    if modal_bg_clicked {
+    if modal_bg_clicked || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         customizer.open = false;
     }
 

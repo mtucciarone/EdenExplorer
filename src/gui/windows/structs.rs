@@ -73,11 +73,8 @@ pub struct SettingsWindow {
     pub current_settings: AppSettings,
     pub show_reset_favorites_confirmation: bool,
     pub show_reset_confirmation: bool,
-    pub show_reset_hotkeys_confirmation: bool,
     pub show_clear_directory_cache_confirmation: bool,
     pub selected_tab: SettingsTab,
-    pub hotkey_values: Vec<String>,
-    pub recording_hotkey: Option<usize>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
