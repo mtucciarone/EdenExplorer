@@ -5,7 +5,8 @@
 //! Icons are rendered from vendored Lucide SVG assets and do not use egui font
 //! glyphs.
 
-use egui::{Color32, Image, Rect, Response, Sense, Ui, Vec2};
+use crate::core::utils::widgets::paint_focus_ring;
+use egui::{Color32, CornerRadius, Image, Rect, Response, Sense, Ui, Vec2, WidgetInfo, WidgetType};
 
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -271,9 +272,17 @@ fn icon_rect(ui: &mut Ui, size: f32) -> (Rect, Response) {
     ui.allocate_exact_size(Vec2::splat(size), Sense::click())
 }
 
-pub fn draw_icon(ui: &mut Ui, icon: StyledIcon, size: f32, color: Color32) -> Response {
+pub fn draw_icon(
+    ui: &mut Ui,
+    icon: StyledIcon,
+    size: f32,
+    color: Color32,
+    label: &str,
+) -> Response {
     let (rect, response) = icon_rect(ui, size);
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, ui.is_enabled(), label));
     paint_icon(ui, rect, icon, size, color);
+    paint_focus_ring(ui, rect, &response, CornerRadius::ZERO);
     response
 }
 

@@ -93,6 +93,7 @@ pub struct TabView {
     pub rx: Option<Receiver<FileItem>>,
     pub directory_change_rx: Option<Receiver<()>>,
     pub directory_watcher: Option<RecommendedWatcher>,
+    pub directory_change_debounce: crate::core::fs::ChangeDebouncer,
     pub size_req_tx: Option<Sender<PathBuf>>,
     pub size_rx: Option<Receiver<(PathBuf, u64, bool)>>,
     pub pending_size_queue: VecDeque<PathBuf>,
@@ -132,6 +133,7 @@ impl TabView {
             rx: None,
             directory_change_rx: None,
             directory_watcher: None,
+            directory_change_debounce: Default::default(),
             size_req_tx: None,
             size_rx: None,
             pending_size_queue: VecDeque::new(),
@@ -892,9 +894,18 @@ pub struct TopbarAction {
     pub open_settings: bool,
     pub about: bool,
     pub exit: bool,
-    pub toggle_file_explorer: bool,
+    /// `Some(true)` = Explorer mode, `Some(false)` = Tags mode, `None` = no request.
+    pub set_file_explorer: Option<bool>,
     pub toggle_sidebar: bool,
     pub toggle_active_tab_split: bool,
+}
+
+impl TopbarAction {
+    /// The mode to switch to, or `None` when no switch is requested or the requested
+    /// mode is already active (clicking the active Explorer/Tags button does nothing).
+    pub fn file_explorer_mode_change(&self, current: bool) -> Option<bool> {
+        self.set_file_explorer.filter(|wanted| *wanted != current)
+    }
 }
 
 #[derive(Default)]
@@ -1408,5 +1419,29 @@ mod tests {
 
         assert_eq!(state.groups.len(), 1, "empty tag should be dropped on load");
         assert_eq!(state.groups[0].name, "Kept");
+    }
+
+    #[test]
+    fn clicking_active_topbar_mode_is_not_a_change() {
+        let explorer_clicked = TopbarAction {
+            set_file_explorer: Some(true),
+            ..Default::default()
+        };
+        let tags_clicked = TopbarAction {
+            set_file_explorer: Some(false),
+            ..Default::default()
+        };
+
+        assert_eq!(explorer_clicked.file_explorer_mode_change(true), None);
+        assert_eq!(tags_clicked.file_explorer_mode_change(false), None);
+        assert_eq!(
+            explorer_clicked.file_explorer_mode_change(false),
+            Some(true)
+        );
+        assert_eq!(tags_clicked.file_explorer_mode_change(true), Some(false));
+        assert_eq!(
+            TopbarAction::default().file_explorer_mode_change(true),
+            None
+        );
     }
 }
