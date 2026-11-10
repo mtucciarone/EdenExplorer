@@ -26,7 +26,8 @@ use crate::gui::windows::containers::tags::{
 use crate::gui::windows::containers::topbar::draw_topbar;
 use crate::gui::windows::mainwindow_imp::{
     apply_directory_settings_to_view, directory_settings_snapshot_for_view, draw_file_op_window,
-    handle_draw_customizetheme_window, handle_pending_actions, persist_directory_settings_snapshot,
+    font_needs_reload, handle_draw_customizetheme_window, handle_pending_actions,
+    persist_directory_settings_snapshot,
 };
 use crate::gui::windows::structs::{
     AboutWindow, AppSettings, Navigation, SettingsWindow, SidebarState, ThemeCustomizer,
@@ -41,7 +42,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Foundation::{POINT, RECT};
 use windows::Win32::Graphics::Gdi::ClientToScreen;
@@ -51,6 +52,8 @@ pub struct MainWindow {
     // MainWindow General Variables
     pub(crate) theme: ThemeMode,
     pub(crate) theme_dirty: bool,
+    applied_font_name: Option<String>,
+    theme_save_pending: bool,
     pub(crate) window_override_set: bool,
     pub(crate) theme_customizer: ThemeCustomizer,
     pub(crate) settings_window: SettingsWindow,
@@ -246,6 +249,8 @@ impl Default for MainWindow {
             display_file_explorer: true,
             sidebar_collapsed: false,
             theme_dirty: true,
+            applied_font_name: None,
+            theme_save_pending: false,
             window_override_set: false,
             dragdrop: None,
             icon_cache: None,
@@ -356,12 +361,8 @@ impl MainWindow {
 
 impl eframe::App for MainWindow {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
-        if self.has_directory_watchers() {
-            // egui repaints on demand. Keep a modest heartbeat so filesystem
-            // events can be consumed even while the window is otherwise idle.
-            ui.ctx().request_repaint_after(Duration::from_millis(250));
-        }
-        self.refresh_changed_directories();
+        // The watcher thread wakes the UI on each event; no idle heartbeat.
+        self.refresh_changed_directories(ui.ctx());
 
         {
             let forwarded_paths = take_forwarded_paths();
@@ -447,7 +448,9 @@ impl eframe::App for MainWindow {
 
         if self.theme_dirty {
             apply_theme(ui.ctx(), self.theme);
-            apply_font_to_context(ui.ctx(), &palette);
+            if font_needs_reload(&mut self.applied_font_name, &palette.font_name) {
+                apply_font_to_context(ui.ctx(), &palette);
+            }
             if let Some(hwnd) = self.hwnd {
                 apply_window_theme(hwnd, &palette);
             }
@@ -475,9 +478,18 @@ impl eframe::App for MainWindow {
         }
 
         // Increase scroll speed for the explorer view.
-        ui.ctx().input_mut(|i| {
-            i.smooth_scroll_delta *= 6.0;
+        // Only over the main (background) layer: windows, popups and the theme
+        // editor keep egui's native scroll speed.
+        let pointer_over_background = ui.ctx().input(|i| i.pointer.hover_pos()).is_none_or(|pos| {
+            ui.ctx()
+                .layer_id_at(pos)
+                .is_none_or(|l| l.order == egui::Order::Background)
         });
+        if pointer_over_background {
+            ui.ctx().input_mut(|i| {
+                i.smooth_scroll_delta *= 6.0;
+            });
+        }
 
         if self.icon_cache.is_none() {
             self.icon_cache = Some(IconCache::new(ui.ctx().clone()));
@@ -1290,6 +1302,7 @@ impl eframe::App for MainWindow {
             &palette,
             self.theme,
             &mut self.theme_dirty,
+            &mut self.theme_save_pending,
         );
         self.handle_draw_settings_window(ui.ctx(), &palette);
         self.handle_draw_about_window(ui.ctx(), &palette);

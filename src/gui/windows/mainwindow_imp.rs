@@ -9,9 +9,7 @@ use crate::core::indexer::{
 use crate::core::utils::files::resolve_shortcut_target;
 use crate::core::utils::widgets::{loading_spinner, request_animation_frame};
 use crate::gui::MainWindow;
-use crate::gui::theme::{
-    ThemeMode, ThemePalette, apply_font_to_context, get_default_palette, set_palette,
-};
+use crate::gui::theme::{ThemeMode, ThemePalette, get_default_palette, set_palette};
 use crate::gui::utils::{
     ClipboardFileRead, FileOpKind, FileOpProgress, SortColumn, SortKey, directory_child_paths,
     file_op_async, is_clipboard_cut, read_clipboard_files, restore_paths_native,
@@ -659,6 +657,7 @@ impl MainWindow {
             view.rx = None;
             view.directory_change_rx = None;
             view.directory_watcher = None;
+            view.directory_change_debounce = Default::default();
             view.size_req_tx = None;
             view.size_rx = None;
             view.pending_size_queue.clear();
@@ -727,17 +726,20 @@ impl MainWindow {
         let shutdown = Arc::clone(&self.shutdown);
         let view = self.active_tab_mut().view_mut(side);
         let (directory_change_tx, directory_change_rx) = unbounded();
-        view.directory_watcher =
-            match crate::core::fs::watch_directory(&current_path, directory_change_tx) {
-                Ok(watcher) => Some(watcher),
-                Err(error) => {
-                    eprintln!(
-                        "Failed to watch directory {}: {error}",
-                        current_path.display()
-                    );
-                    None
-                }
-            };
+        view.directory_watcher = match crate::core::fs::watch_directory(
+            &current_path,
+            directory_change_tx,
+            crate::gui::windows::windowsoverrides::request_repaint,
+        ) {
+            Ok(watcher) => Some(watcher),
+            Err(error) => {
+                eprintln!(
+                    "Failed to watch directory {}: {error}",
+                    current_path.display()
+                );
+                None
+            }
+        };
         view.directory_change_rx = Some(directory_change_rx);
         view.rx = Some(rx);
         view.is_loading = true;
@@ -759,32 +761,27 @@ impl MainWindow {
     /// Reload visible directory views when an external process changes them.
     /// Events are coalesced because a single operation commonly produces
     /// several filesystem notifications.
-    pub(crate) fn refresh_changed_directories(&mut self) {
+    pub(crate) fn refresh_changed_directories(&mut self, ctx: &egui::Context) {
+        let now = std::time::Instant::now();
         let mut changed_sides = Vec::new();
         for side in [SplitSide::Primary, SplitSide::Secondary] {
-            let changed = {
-                let view = self.active_tab().view(side);
-                view.directory_change_rx
-                    .as_ref()
-                    .is_some_and(|rx| rx.try_iter().next().is_some())
-            };
-            if changed {
+            let view = self.active_tab_mut().view_mut(side);
+            if let Some(rx) = view.directory_change_rx.as_ref() {
+                // Drain the whole burst; each event only restarts the quiet period.
+                if rx.try_iter().count() > 0 {
+                    view.directory_change_debounce.record_event(now);
+                }
+            }
+            if view.directory_change_debounce.take_due(now) {
                 changed_sides.push(side);
+            } else if let Some(wait) = view.directory_change_debounce.time_until_due(now) {
+                ctx.request_repaint_after(wait);
             }
         }
 
         for side in changed_sides {
             self.load_view(side);
         }
-    }
-
-    pub(crate) fn has_directory_watchers(&self) -> bool {
-        self.active_tab().primary_view.directory_watcher.is_some()
-            || self
-                .active_tab()
-                .split_view
-                .as_ref()
-                .is_some_and(|view| view.directory_watcher.is_some())
     }
 
     pub fn load_recycle_bin_view(&mut self, side: SplitSide) {
@@ -3160,6 +3157,28 @@ pub fn draw_file_op_window(
         });
 }
 
+/// True (and clears `pending`) when a deferred theme save should be written
+/// now: something changed and no pointer button is held (drag finished).
+fn take_theme_save(pending: &mut bool, pointer_down: bool) -> bool {
+    if *pending && !pointer_down {
+        *pending = false;
+        true
+    } else {
+        false
+    }
+}
+
+/// True when the font family must be rebuilt for `font_name`, recording it.
+/// Colors and sizes never need a font reload.
+pub(crate) fn font_needs_reload(applied: &mut Option<String>, font_name: &str) -> bool {
+    if applied.as_deref() == Some(font_name) {
+        false
+    } else {
+        *applied = Some(font_name.to_string());
+        true
+    }
+}
+
 pub fn handle_draw_customizetheme_window(
     i18n: &I18n,
     ctx: &egui::Context,
@@ -3167,6 +3186,7 @@ pub fn handle_draw_customizetheme_window(
     palette: &ThemePalette,
     current_mode: ThemeMode,
     theme_dirty: &mut bool,
+    theme_save_pending: &mut bool,
 ) {
     if let Some(action) = draw_theme_customizer(&i18n, ctx, theme_customizer, palette) {
         match action {
@@ -3175,12 +3195,9 @@ pub fn handle_draw_customizetheme_window(
                     ThemeMode::Dark => theme_customizer.dark_palette.clone(),
                     ThemeMode::Light => theme_customizer.light_palette.clone(),
                 };
-                apply_font_to_context(ctx, &updated);
                 set_palette(mode, updated);
-                save_theme_settings(
-                    &theme_customizer.light_palette,
-                    &theme_customizer.dark_palette,
-                );
+                // Persist once the drag ends instead of on every dragged frame.
+                *theme_save_pending = true;
 
                 if mode == current_mode {
                     *theme_dirty = true;
@@ -3191,9 +3208,6 @@ pub fn handle_draw_customizetheme_window(
                 match mode {
                     ThemeMode::Dark => theme_customizer.dark_palette = default.clone(),
                     ThemeMode::Light => theme_customizer.light_palette = default.clone(),
-                }
-                if mode == current_mode {
-                    apply_font_to_context(ctx, &default);
                 }
                 set_palette(mode, default);
                 save_theme_settings(
@@ -3237,9 +3251,6 @@ pub fn handle_draw_customizetheme_window(
                                     theme_customizer.light_palette = imported.clone()
                                 }
                             }
-                            if mode == current_mode {
-                                apply_font_to_context(ctx, &imported);
-                            }
                             set_palette(mode, imported);
                             save_theme_settings(
                                 &theme_customizer.light_palette,
@@ -3255,11 +3266,40 @@ pub fn handle_draw_customizetheme_window(
             }
         }
     }
+
+    let pointer_down = ctx.input(|i| i.pointer.any_down());
+    if take_theme_save(theme_save_pending, pointer_down) {
+        save_theme_settings(
+            &theme_customizer.light_palette,
+            &theme_customizer.dark_palette,
+        );
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn theme_save_waits_for_pointer_release() {
+        let mut pending = false;
+        assert!(!take_theme_save(&mut pending, false));
+        pending = true;
+        assert!(!take_theme_save(&mut pending, true));
+        assert!(pending);
+        assert!(take_theme_save(&mut pending, false));
+        assert!(!pending);
+        assert!(!take_theme_save(&mut pending, false));
+    }
+
+    #[test]
+    fn font_reloads_only_when_the_family_changes() {
+        let mut applied = None;
+        assert!(font_needs_reload(&mut applied, "Segoe UI"));
+        assert!(!font_needs_reload(&mut applied, "Segoe UI"));
+        assert!(font_needs_reload(&mut applied, "Arial"));
+        assert!(!font_needs_reload(&mut applied, "Arial"));
+    }
 
     fn init_com() {
         // Shell calls need COM on the test thread; the app does this in main.rs.

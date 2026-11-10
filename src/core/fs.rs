@@ -33,14 +33,64 @@ pub const MY_RECYCLE_BIN_PATH: &str = "::RECYCLE_BIN::";
 
 /// Watch a directory for changes to its immediate children. The watcher is
 /// returned to the caller and must be kept alive for notifications to arrive.
-pub fn watch_directory(path: &Path, changed_tx: Sender<()>) -> notify::Result<RecommendedWatcher> {
+/// `on_event` runs on the watcher thread for every event (used to wake the UI).
+pub fn watch_directory(
+    path: &Path,
+    changed_tx: Sender<()>,
+    on_event: impl Fn() + Send + 'static,
+) -> notify::Result<RecommendedWatcher> {
     let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
         if event.is_ok() {
             let _ = changed_tx.try_send(());
+            on_event();
         }
     })?;
     watcher.watch(path, RecursiveMode::NonRecursive)?;
     Ok(watcher)
+}
+
+/// Quiet period after the last filesystem event before a rescan is allowed.
+pub const WATCH_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(300);
+/// A continuous burst still rescans at least this often.
+pub const WATCH_MAX_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Coalesces a burst of filesystem events into one rescan. Time is injected so
+/// it is a pure state machine.
+#[derive(Debug, Default, Clone)]
+pub struct ChangeDebouncer {
+    first: Option<std::time::Instant>,
+    last: Option<std::time::Instant>,
+}
+
+impl ChangeDebouncer {
+    pub fn record_event(&mut self, now: std::time::Instant) {
+        self.first.get_or_insert(now);
+        self.last = Some(now);
+    }
+
+    #[cfg(test)]
+    pub fn is_pending(&self) -> bool {
+        self.last.is_some()
+    }
+
+    /// Time until a rescan is due, or `None` when nothing is pending.
+    pub fn time_until_due(&self, now: std::time::Instant) -> Option<std::time::Duration> {
+        let (first, last) = (self.first?, self.last?);
+        let due = (last + WATCH_DEBOUNCE).min(first + WATCH_MAX_WAIT);
+        Some(due.saturating_duration_since(now))
+    }
+
+    /// Returns true (and resets) when a rescan should happen now.
+    pub fn take_due(&mut self, now: std::time::Instant) -> bool {
+        match self.time_until_due(now) {
+            Some(d) if d.is_zero() => {
+                self.first = None;
+                self.last = None;
+                true
+            }
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -673,4 +723,64 @@ fn recycle_original_directory_key() -> &'static PROPERTYKEY {
 
         key
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn debouncer_is_idle_without_events() {
+        let mut d = ChangeDebouncer::default();
+        let t0 = Instant::now();
+        assert!(!d.is_pending());
+        assert_eq!(d.time_until_due(t0), None);
+        assert!(!d.take_due(t0 + Duration::from_secs(10)));
+    }
+
+    #[test]
+    fn debouncer_waits_for_quiet_period_then_fires_once() {
+        let mut d = ChangeDebouncer::default();
+        let t0 = Instant::now();
+        d.record_event(t0);
+        assert!(!d.take_due(t0 + Duration::from_millis(100)));
+        assert!(d.take_due(t0 + WATCH_DEBOUNCE));
+        assert!(!d.is_pending());
+        assert!(!d.take_due(t0 + Duration::from_secs(5)));
+    }
+
+    #[test]
+    fn debouncer_burst_coalesces_into_one_rescan() {
+        let mut d = ChangeDebouncer::default();
+        let t0 = Instant::now();
+        for i in 0..10 {
+            d.record_event(t0 + Duration::from_millis(i * 100));
+        }
+        // Last event at +900ms; not due until 300ms after it.
+        assert!(!d.take_due(t0 + Duration::from_millis(1100)));
+        assert!(d.take_due(t0 + Duration::from_millis(1200)));
+        assert!(!d.take_due(t0 + Duration::from_millis(1300)));
+    }
+
+    #[test]
+    fn debouncer_continuous_burst_is_capped_by_max_wait() {
+        let mut d = ChangeDebouncer::default();
+        let t0 = Instant::now();
+        for i in 0..30 {
+            d.record_event(t0 + Duration::from_millis(i * 100));
+        }
+        assert!(d.take_due(t0 + WATCH_MAX_WAIT));
+    }
+
+    #[test]
+    fn debouncer_reports_remaining_time() {
+        let mut d = ChangeDebouncer::default();
+        let t0 = Instant::now();
+        d.record_event(t0);
+        assert_eq!(
+            d.time_until_due(t0 + Duration::from_millis(100)),
+            Some(WATCH_DEBOUNCE - Duration::from_millis(100))
+        );
+    }
 }
