@@ -122,6 +122,26 @@ fn base_color() -> Color32 {
     Color32::from_rgb(110, 85, 160)
 }
 
+// ❌ Error / validation red. Deliberately not a ThemePalette field: adding one
+// would change the postcard layout and reset users' saved themes.
+pub fn error_color(dark_mode: bool) -> Color32 {
+    if dark_mode {
+        Color32::from_rgb(240, 96, 96)
+    } else {
+        Color32::from_rgb(190, 40, 40)
+    }
+}
+
+// Label color for the active tab. In light mode white on the light primary_active
+// fill is about 3.7:1, so the header color (black) is used instead.
+pub fn active_tab_text_color(palette: &ThemePalette, dark_mode: bool) -> Color32 {
+    if dark_mode {
+        palette.tab_text_selected
+    } else {
+        palette.text_header_section
+    }
+}
+
 // 🌙 Dark theme palette (defaults)
 pub static DEFAULT_PALETTE_DARK: LazyLock<ThemePalette> = LazyLock::new(|| {
     let base = base_color();
@@ -240,7 +260,9 @@ pub static DEFAULT_PALETTE_LIGHT: LazyLock<ThemePalette> = LazyLock::new(|| {
         tab_text_selected: Color32::WHITE,
 
         // 🎯 Rows / list items
-        row_selected_bg: Color32::from_rgb(70, 78, 86),
+        // Light tint matching the selected-row fill (primary at 40/255 over row_bg),
+        // so the black rename text stays readable inside a selected row.
+        row_selected_bg: Color32::from_rgb(220, 220, 236),
         row_bg: Color32::from_rgb(240, 245, 250),
         row_height: default_itemviewer_row_height(),
         sidebar_item_spacing_y: 0.5,
@@ -364,10 +386,10 @@ pub fn apply_theme(ctx: &egui::Context, mode: ThemeMode) {
     );
 
     // 🔲 Shape
-    style.visuals.window_corner_radius = CornerRadius::same(10);
-    style.visuals.widgets.inactive.corner_radius = CornerRadius::same(6);
-    style.visuals.widgets.hovered.corner_radius = CornerRadius::same(6);
-    style.visuals.widgets.active.corner_radius = CornerRadius::same(6);
+    style.visuals.window_corner_radius = CornerRadius::same(palette.large_radius.saturating_add(4));
+    style.visuals.widgets.inactive.corner_radius = CornerRadius::same(palette.medium_radius);
+    style.visuals.widgets.hovered.corner_radius = CornerRadius::same(palette.medium_radius);
+    style.visuals.widgets.active.corner_radius = CornerRadius::same(palette.medium_radius);
 
     match mode {
         ThemeMode::Dark => {
@@ -470,7 +492,6 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
             ((base.b() as u16 * 7) / 10) as u8, // 70% of blue
         );
         palette.borders_default = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 60);
-        palette.borders_default = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 60);
     } else {
         // Light theme calculations
         palette.primary_hover = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 90);
@@ -479,7 +500,6 @@ pub fn regenerate_base_derived_colors(palette: &mut ThemePalette, is_dark: bool)
             ((base.g() as u16 * 14) / 10).min(255) as u8, // 140% of green
             ((base.b() as u16 * 14) / 10).min(255) as u8, // 140% of blue
         );
-        palette.borders_default = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 40);
         palette.borders_default = Color32::from_rgba_unmultiplied(base.r(), base.g(), base.b(), 40);
     }
 
@@ -510,4 +530,128 @@ pub fn apply_font_to_context(ctx: &egui::Context, palette: &ThemePalette) {
 
     ctx.set_fonts(fonts);
     ctx.request_repaint();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// WCAG 2.x relative luminance of an opaque sRGB color.
+    fn relative_luminance(c: Color32) -> f64 {
+        let linear = |v: u8| {
+            let s = v as f64 / 255.0;
+            if s <= 0.03928 {
+                s / 12.92
+            } else {
+                ((s + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * linear(c.r()) + 0.7152 * linear(c.g()) + 0.0722 * linear(c.b())
+    }
+
+    /// WCAG contrast ratio between two opaque colors, in the range 1.0..=21.0.
+    fn contrast_ratio(a: Color32, b: Color32) -> f64 {
+        let (la, lb) = (relative_luminance(a), relative_luminance(b));
+        let (hi, lo) = if la > lb { (la, lb) } else { (lb, la) };
+        (hi + 0.05) / (lo + 0.05)
+    }
+
+    fn assert_contrast(label: &str, fg: Color32, bg: Color32) {
+        let ratio = contrast_ratio(fg, bg);
+        assert!(
+            ratio >= 4.5,
+            "{label}: {fg:?} on {bg:?} is {ratio:.2}:1, need at least 4.5:1"
+        );
+    }
+
+    #[test]
+    fn test_contrast_ratio_known_values() {
+        let black = Color32::BLACK;
+        let white = Color32::WHITE;
+        assert!((contrast_ratio(black, white) - 21.0).abs() < 0.01);
+        assert!((contrast_ratio(white, white) - 1.0).abs() < 1e-9);
+        // Mid gray (119) on white is a well-known 4.48:1 pair.
+        let gray = Color32::from_gray(119);
+        assert!((contrast_ratio(gray, white) - 4.48).abs() < 0.02);
+    }
+
+    #[test]
+    fn test_default_dark_palette_text_contrast() {
+        let p = &*DEFAULT_PALETTE_DARK;
+        let popup = egui::Visuals::dark().window_fill;
+        assert_contrast("dark body text", p.text_normal, p.application_bg_color);
+        assert_contrast("dark body text on row", p.text_normal, p.row_bg);
+        assert_contrast(
+            "dark rename field text",
+            p.item_viewer_row_text_selected,
+            p.row_selected_bg,
+        );
+        assert_contrast(
+            "dark header text",
+            p.text_header_section,
+            p.application_bg_color,
+        );
+        assert_contrast("dark customized hotkey", p.text_header_section, popup);
+        assert_contrast(
+            "dark active tab text",
+            active_tab_text_color(p, true),
+            p.primary_active,
+        );
+    }
+
+    #[test]
+    fn test_default_light_palette_text_contrast() {
+        let p = &*DEFAULT_PALETTE_LIGHT;
+        let popup = egui::Visuals::light().window_fill;
+        assert_contrast("light body text", p.text_normal, p.application_bg_color);
+        assert_contrast("light body text on row", p.text_normal, p.row_bg);
+        assert_contrast(
+            "light rename field text",
+            p.item_viewer_row_text_selected,
+            p.row_selected_bg,
+        );
+        assert_contrast(
+            "light header text",
+            p.text_header_section,
+            p.application_bg_color,
+        );
+        assert_contrast("light customized hotkey", p.text_header_section, popup);
+        assert_contrast(
+            "light active tab text",
+            active_tab_text_color(p, false),
+            p.primary_active,
+        );
+    }
+
+    #[test]
+    fn test_error_color_contrast_on_surfaces() {
+        let dark = DEFAULT_PALETTE_DARK.application_bg_color;
+        let light = DEFAULT_PALETTE_LIGHT.application_bg_color;
+        assert_contrast(
+            "dark error on popup",
+            error_color(true),
+            egui::Visuals::dark().window_fill,
+        );
+        assert_contrast("dark error on panel", error_color(true), dark);
+        assert_contrast(
+            "light error on popup",
+            error_color(false),
+            egui::Visuals::light().window_fill,
+        );
+        assert_contrast("light error on panel", error_color(false), light);
+    }
+
+    #[test]
+    fn test_active_tab_text_color_follows_mode() {
+        let p = &*DEFAULT_PALETTE_LIGHT;
+        assert_eq!(active_tab_text_color(p, true), p.tab_text_selected);
+        assert_eq!(active_tab_text_color(p, false), p.text_header_section);
+    }
+
+    #[test]
+    fn test_light_row_selected_bg_is_light() {
+        // The rename field must not be dark gray in the light theme.
+        let bg = DEFAULT_PALETTE_LIGHT.row_selected_bg;
+        assert!(relative_luminance(bg) > 0.5);
+    }
 }

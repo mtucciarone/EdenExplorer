@@ -267,9 +267,6 @@ fn draw_drag_region(ui: &mut egui::Ui, hwnd: Option<HWND>) {
         if resp.drag_started() || resp.dragged() {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
         }
-        if resp.hovered() {
-            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
-        }
     }
 }
 

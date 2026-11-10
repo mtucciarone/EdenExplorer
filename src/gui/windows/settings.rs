@@ -12,11 +12,12 @@ use crate::core::{
     },
 };
 use crate::gui::icon_system::{AppIcon, draw_icon, paint_icon};
-use crate::gui::theme::ThemePalette;
+use crate::gui::theme::{ThemePalette, error_color};
 use crate::gui::utils::SortColumn;
 use crate::gui::windows::containers::enums::ItemViewerHeaderColumn;
 use crate::gui::windows::enums::SettingsAction;
 use crate::gui::windows::structs::{AppSettings, SettingsTab, SettingsWindow};
+use crate::gui::windows::windowsoverrides::clamp_dialog_size;
 use eframe::egui;
 use egui::RichText;
 use std::path::PathBuf;
@@ -50,6 +51,19 @@ const HOTKEY_GROUPS: &[(&str, &[usize])] = &[
     ("hotkey_group_files_folders", &[1, 6, 9, 10, 15, 16]),
     ("hotkey_group_navigation", &[7, 8, 11, 12, 13, 14]),
 ];
+
+/// Returns the last `max_chars` characters of `s` prefixed with "...", or `s`
+/// unchanged when it already fits. Counts chars, not bytes, so multi-byte
+/// paths (CJK, accented) never get sliced inside a code point.
+fn truncate_path_tail(s: &str, max_chars: usize) -> String {
+    let char_count = s.chars().count();
+    if char_count > max_chars {
+        let tail: String = s.chars().skip(char_count - max_chars).collect();
+        format!("...{tail}")
+    } else {
+        s.to_string()
+    }
+}
 
 fn format_recorded_hotkey(key: egui::Key, modifiers: egui::Modifiers) -> Option<String> {
     let mut parts = Vec::new();
@@ -164,9 +178,9 @@ fn draw_hotkeys_tab(
                         .to_string()
                 };
                 let shortcut_color = if is_recording {
-                    egui::Color32::RED
+                    error_color(ui.visuals().dark_mode)
                 } else if is_customized {
-                    egui::Color32::WHITE
+                    palette.text_header_section
                 } else if can_rebind {
                     palette.primary
                 } else {
@@ -182,10 +196,14 @@ fn draw_hotkeys_tab(
                     } else {
                         egui::Color32::TRANSPARENT
                     };
-                    ui.painter().rect_filled(rect, 4.0, fill);
+                    ui.painter().rect_filled(
+                        rect,
+                        egui::CornerRadius::same(palette.medium_radius),
+                        fill,
+                    );
                     ui.painter().rect_stroke(
                         rect,
-                        4.0,
+                        egui::CornerRadius::same(palette.medium_radius),
                         egui::Stroke::new(if is_recording { 2.0 } else { 1.0 }, shortcut_color),
                         egui::StrokeKind::Inside,
                     );
@@ -698,13 +716,7 @@ fn draw_general_tab(
                     return i18n.tr("settings_startpath_default");
                 }
 
-                let s = p.to_string_lossy();
-
-                if s.len() > 40 {
-                    format!("...{}", &s[s.len() - 40..])
-                } else {
-                    s.to_string()
-                }
+                truncate_path_tail(&p.to_string_lossy(), 40)
             })
             .unwrap_or_else(|| i18n.tr("settings_startpath_default"));
 
@@ -867,7 +879,7 @@ fn draw_confirmation_dialog(
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .frame(
             egui::Frame::popup(&ctx.style_of(ctx.theme()))
-                .corner_radius(egui::CornerRadius::same(8)),
+                .corner_radius(egui::CornerRadius::same(palette.large_radius)),
         )
         .show(ctx, |ui| {
             ui.vertical_centered(|ui| {
@@ -1085,12 +1097,12 @@ pub fn draw_settings_window(
     egui::Window::new(i18n.tr("settings"))
         .collapsible(false)
         .resizable(false)
-        .fixed_size([600.0, 550.0])
+        .fixed_size(clamp_dialog_size([600.0, 550.0], ctx.content_rect().size()))
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .open(&mut settings_open)
         .frame(
             egui::Frame::popup(&ctx.style_of(ctx.theme()))
-                .corner_radius(egui::CornerRadius::same(8)),
+                .corner_radius(egui::CornerRadius::same(palette.large_radius)),
         )
         .show(ctx, |ui| {
             let mut style = (**ui.style()).clone();
@@ -1252,4 +1264,36 @@ pub fn draw_settings_window(
         settings.open = false;
     }
     action
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_path_tail_keeps_short_strings() {
+        assert_eq!(truncate_path_tail("C:/data", 40), "C:/data");
+        let exact = "a".repeat(40);
+        assert_eq!(truncate_path_tail(&exact, 40), exact);
+    }
+
+    #[test]
+    fn truncate_path_tail_keeps_last_chars_of_long_ascii() {
+        let s = format!("C:/{}/end", "x".repeat(60));
+        let out = truncate_path_tail(&s, 40);
+        assert_eq!(out, format!("...{}", &s[s.len() - 40..]));
+        assert!(out.ends_with("/end"));
+    }
+
+    #[test]
+    fn truncate_path_tail_does_not_split_multibyte_chars() {
+        // Each Japanese char is 3 bytes, so a byte-based cut at len - 40 lands mid-char.
+        let s = format!("C:/{}", "日本語のフォルダ".repeat(6));
+        assert!(s.len() > 40);
+        let out = truncate_path_tail(&s, 40);
+        let chars: Vec<char> = s.chars().collect();
+        let tail: String = chars[chars.len() - 40..].iter().collect();
+        assert_eq!(out, format!("...{tail}"));
+        assert_eq!(out.chars().count(), 43);
+    }
 }

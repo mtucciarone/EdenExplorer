@@ -10,10 +10,10 @@ use crate::core::utils::widgets::{
 use crate::gui::icon_system::{AppIcon, paint_icon};
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{SortColumn, truncate_item_text};
-use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
+use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::itemviewer_helper::{
-    draw_empty_item_viewer_area, handle_context_menu_actions, handle_editing_file_name,
-    handle_keyboard_navigation, handle_row_click,
+    draw_background_context_menu, draw_empty_item_viewer_area, handle_context_menu_actions,
+    handle_editing_file_name, handle_keyboard_navigation, handle_row_click,
 };
 use crate::gui::windows::containers::structs::{
     DragState, ExplorerState, GalleryState, GalleryThumbnailSize, RenameState,
@@ -333,40 +333,14 @@ pub fn draw_gallery_view(
                     Popup::context_menu(&bg_response)
                         .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                         .show(|ui| {
-                            apply_eden_text_overrides(ui, palette);
-                            if ui.button("New Folder").clicked() {
-                                action = Some(ItemViewerAction::CreateFolder);
-                                ui.close();
-                            }
-                            if ui.button("New File").clicked() {
-                                action = Some(ItemViewerAction::CreateFile);
-                                ui.close();
-                            }
-                            if ui.button("Refresh").clicked() {
-                                action = Some(ItemViewerAction::RefreshCurrentDirectory);
-                                ui.close();
-                            }
-                            if ui.button("Open Terminal").clicked() {
-                                action = Some(ItemViewerAction::OpenTerminal);
-                                ui.close();
-                            }
-
-                            ui.separator();
-
-                            if ui
-                                .add_enabled(paste_enabled, egui::Button::new("Paste"))
-                                .clicked()
-                            {
-                                action =
-                                    Some(ItemViewerAction::Context(ItemViewerContextAction::Paste));
-                                ui.close();
-                            }
-                            if ui.button("Properties").clicked() {
-                                action = Some(ItemViewerAction::Context(
-                                    ItemViewerContextAction::Properties(vec![current_dir.clone()]),
-                                ));
-                                ui.close();
-                            }
+                            draw_background_context_menu(
+                                ui,
+                                i18n,
+                                palette,
+                                paste_enabled,
+                                &current_dir,
+                                &mut action,
+                            );
                         });
                 }
             });
@@ -395,6 +369,8 @@ pub fn draw_gallery_view(
 
     if !modal_input_blocked
         && is_focused
+        && rename_state.is_none()
+        && !ui.ctx().egui_wants_keyboard_input()
         && let Some(a) = handle_keyboard_navigation(
             ui.ctx(),
             filtered_indices,
@@ -403,7 +379,7 @@ pub fn draw_gallery_view(
             explorer_state,
         )
     {
-        action = Some(a);
+        action = action.or(Some(a));
     }
 
     action
@@ -473,6 +449,7 @@ fn draw_gallery_toolbar(
                 },
             );
 
+            let dark_mode = ui.visuals().dark_mode;
             for size in [
                 GalleryThumbnailSize::ExtraSmall,
                 GalleryThumbnailSize::Small,
@@ -484,8 +461,10 @@ fn draw_gallery_toolbar(
                     .selectable_label(
                         gallery_state.thumbnail_size == size,
                         egui::RichText::new(size.label()).color(
-                            if gallery_state.thumbnail_size == size {
-                                palette.text_header_section
+                            // Primary has low contrast on the dark selection fill,
+                            // so dark mode marks the active size with the header color.
+                            if gallery_state.thumbnail_size == size && !dark_mode {
+                                palette.primary
                             } else {
                                 palette.text_header_section
                             },
