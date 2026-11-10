@@ -10,6 +10,7 @@ use crate::gui::utils::widgets::{
 };
 use crate::gui::windows::enums::ThemeCustomizerAction;
 use crate::gui::windows::structs::ThemeCustomizer;
+use crate::gui::windows::windowsoverrides::clamp_dialog_size;
 use eframe::egui;
 
 fn selectable_mode(
@@ -58,7 +59,7 @@ pub fn draw_theme_customizer(
     egui::Window::new(i18n.tr("theme_title"))
         .collapsible(false)
         .resizable(false)
-        .fixed_size([600.0, 550.0])
+        .fixed_size(clamp_dialog_size([600.0, 550.0], ctx.content_rect().size()))
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .open(&mut customizer.open)
         .frame(
