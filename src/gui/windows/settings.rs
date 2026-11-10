@@ -17,6 +17,7 @@ use crate::gui::utils::SortColumn;
 use crate::gui::windows::containers::enums::ItemViewerHeaderColumn;
 use crate::gui::windows::enums::SettingsAction;
 use crate::gui::windows::structs::{AppSettings, SettingsTab, SettingsWindow};
+use crate::gui::windows::windowsoverrides::clamp_dialog_size;
 use eframe::egui;
 use egui::RichText;
 use std::path::PathBuf;
@@ -1092,7 +1093,7 @@ pub fn draw_settings_window(
     egui::Window::new(i18n.tr("settings"))
         .collapsible(false)
         .resizable(false)
-        .fixed_size([600.0, 550.0])
+        .fixed_size(clamp_dialog_size([600.0, 550.0], ctx.content_rect().size()))
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
         .open(&mut settings_open)
         .frame(

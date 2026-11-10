@@ -2,6 +2,7 @@ use crate::core::utils::colors::drive_usage_color;
 use crate::core::utils::text::apply_eden_text_overrides;
 use crate::gui::icon_system::{AppIcon, StyledIcon, paint_icon};
 use crate::gui::theme::ThemePalette;
+use crate::gui::windows::windowsoverrides::{CAPTION_BUTTON_HEIGHT, CAPTION_BUTTON_WIDTH};
 use eframe::egui::*;
 use std::time::Duration;
 
@@ -95,8 +96,8 @@ pub fn clickable_windows_icon(
     hover_bg: Color32,
     palette: &ThemePalette,
 ) -> Response {
-    const BUTTON_WIDTH: f32 = 45.0;
-    const BUTTON_HEIGHT: f32 = 26.0;
+    const BUTTON_WIDTH: f32 = CAPTION_BUTTON_WIDTH;
+    const BUTTON_HEIGHT: f32 = CAPTION_BUTTON_HEIGHT;
     const ICON_SIZE: f32 = 16.0;
 
     let (rect, resp) =

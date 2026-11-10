@@ -4,7 +4,7 @@ use crate::gui::icon_system::{AppIcon, paint_icon};
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::truncate_item_text;
 use crate::gui::windows::containers::structs::{TabInfo, TabsAction};
-use crate::gui::windows::windowsoverrides::toggle_window_fullscreen;
+use crate::gui::windows::windowsoverrides::{CAPTION_CONTROLS_WIDTH, toggle_window_fullscreen};
 use eframe::egui;
 use egui::{FontFamily, FontId};
 use std::path::PathBuf;
@@ -12,9 +12,60 @@ use windows::Win32::Foundation::HWND;
 
 const PREFERRED_TAB_WIDTH: f32 = 180.0;
 const MIN_TAB_WIDTH: f32 = 80.0;
-const ADD_TAB_WIDTH: f32 = 28.0;
+/// Size of the square "+" and scroll-arrow buttons. Used both when drawing
+/// them and when budgeting the tab strip so the two can never disagree.
+const TAB_CONTROL_SIZE: f32 = 32.0;
 const TAB_HEIGHT: f32 = 32.0;
-const TAB_NAV_BUTTON_WIDTH: f32 = 28.0;
+
+struct TabStripLayout {
+    tab_width: f32,
+    tab_view_width: f32,
+    tabs_content_width: f32,
+    tabs_need_scroll: bool,
+}
+
+/// Split the row width between the tabs, the optional scroll arrows, the
+/// "+" button and the window caption buttons.
+fn compute_tab_strip_layout(full_width: f32, tab_count: usize, spacing: f32) -> TabStripLayout {
+    let tab_count = tab_count as f32;
+    let gaps = (tab_count - 1.0).max(0.0);
+    // The tab region holds the tabs and, when needed, the scroll arrows. The
+    // + button and the window controls stay outside it.
+    let tab_region_width =
+        (full_width - CAPTION_CONTROLS_WIDTH - TAB_CONTROL_SIZE - spacing).max(0.0);
+
+    // Determine how wide the tabs can be when there are no navigation buttons.
+    let natural_tab_width = if tab_count > 0.0 {
+        ((tab_region_width - gaps * spacing) / tab_count).max(0.0)
+    } else {
+        PREFERRED_TAB_WIDTH
+    };
+
+    let tabs_need_scroll = tab_count > 0.0 && natural_tab_width < MIN_TAB_WIDTH;
+
+    let tab_width = if tabs_need_scroll {
+        MIN_TAB_WIDTH
+    } else {
+        natural_tab_width.min(PREFERRED_TAB_WIDTH)
+    };
+
+    let tabs_content_width = tab_count * tab_width + gaps * spacing;
+
+    // The navigation buttons live INSIDE the tab region, each followed or
+    // preceded by one item spacing.
+    let tab_view_width = if tabs_need_scroll {
+        (tab_region_width - TAB_CONTROL_SIZE * 2.0 - spacing * 2.0).max(0.0)
+    } else {
+        tabs_content_width
+    };
+
+    TabStripLayout {
+        tab_width,
+        tab_view_width,
+        tabs_content_width,
+        tabs_need_scroll,
+    }
+}
 
 pub fn draw_tabs(
     ui: &mut egui::Ui,
@@ -36,42 +87,13 @@ pub fn draw_tabs(
     let mut tab_drop_target: Option<PathBuf> = None;
     let reorder_key = egui::Id::new("tab_reorder_dragging");
     let mut tab_rects: Vec<(u64, egui::Rect)> = Vec::new();
-    let windows_buttons_width = 45.0 * 3.0;
-    let split_button_width = 32.0;
-    let controls_width = windows_buttons_width + split_button_width;
-    let full_width = ui.available_width();
     let spacing = ui.spacing().item_spacing.x;
-    // Reserve the + button outside the tab viewport.
-    let tab_count = tabs.len() as f32;
-    let gaps = (tab_count - 1.0).max(0.0);
-    // Space reserved for the entire tab region.
-    // This includes the tabs and, when needed, the left/right navigation buttons.
-    // The + button and window controls remain outside this region.
-    let tab_region_width = (full_width - controls_width - ADD_TAB_WIDTH - spacing).max(0.0);
-
-    // Determine how wide the tabs can be when there are no navigation buttons.
-    let natural_tab_width = if tab_count > 0.0 {
-        ((tab_region_width - gaps * spacing) / tab_count).max(0.0)
-    } else {
-        PREFERRED_TAB_WIDTH
-    };
-
-    let tabs_need_scroll = tab_count > 0.0 && natural_tab_width < MIN_TAB_WIDTH;
-
-    let tab_width = if tabs_need_scroll {
-        MIN_TAB_WIDTH
-    } else {
-        natural_tab_width.min(PREFERRED_TAB_WIDTH)
-    };
-
-    let tabs_content_width = tab_count * tab_width + gaps * spacing;
-
-    // The navigation buttons live INSIDE the fixed tab region.
-    let tab_view_width = if tabs_need_scroll {
-        (tab_region_width - TAB_NAV_BUTTON_WIDTH * 2.0).max(0.0)
-    } else {
-        tabs_content_width
-    };
+    let TabStripLayout {
+        tab_width,
+        tab_view_width,
+        tabs_content_width,
+        tabs_need_scroll,
+    } = compute_tab_strip_layout(ui.available_width(), tabs.len(), spacing);
 
     let max_scroll_offset = (tabs_content_width - tab_view_width).max(0.0);
 
@@ -205,10 +227,6 @@ pub fn draw_tabs(
 
                 if resp.drag_started() || resp.dragged() {
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
-                }
-
-                if resp.hovered() {
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
                 }
             }
         },
@@ -384,13 +402,7 @@ fn handle_draw_tab_new_allocated(
         action.close = Some(tab.id);
     }
 
-    if icon_resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-
     if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-
         let tooltip_text = if truncated {
             tab.title.clone()
         } else {
@@ -416,7 +428,7 @@ fn handle_draw_add_new_tab_button(
     palette: &ThemePalette,
     action: &mut TabsAction,
 ) {
-    let size = egui::vec2(32.0, 32.0);
+    let size = egui::vec2(TAB_CONTROL_SIZE, TAB_CONTROL_SIZE);
 
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
 
@@ -450,17 +462,13 @@ fn handle_draw_add_new_tab_button(
 
     let _ = tab_add_button(ui, rect.shrink(3.0), resp.clone(), palette);
 
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-
     if resp.clicked() {
         action.open_new = true;
     }
 }
 
 fn handle_draw_nav_button(ui: &mut egui::Ui, palette: &ThemePalette, direction: &str) -> bool {
-    let size = egui::vec2(32.0, 32.0);
+    let size = egui::vec2(TAB_CONTROL_SIZE, TAB_CONTROL_SIZE);
 
     let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
 
@@ -493,10 +501,6 @@ fn handle_draw_nav_button(ui: &mut egui::Ui, palette: &ThemePalette, direction: 
     painter.rect_stroke(rect, rounding, stroke, egui::StrokeKind::Inside);
 
     let _ = tab_nav_button(ui, rect.shrink(3.0), resp.clone(), palette, direction);
-
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
 
     resp.clicked()
 }
@@ -540,10 +544,6 @@ fn tab_close_button(
 
     paint_icon(ui, rect, AppIcon::X.regular(), palette.tab_icon_size, color);
 
-    if resp.hovered() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
-
     resp
 }
 
@@ -579,10 +579,6 @@ fn tab_add_button(
         palette.tab_icon_size,
         color,
     );
-
-    if hovered {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-    }
 
     resp
 }
@@ -620,9 +616,64 @@ fn tab_nav_button(
     };
     paint_icon(ui, rect, icon, palette.tab_icon_size, color);
 
-    if hovered {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    resp
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SPACING: f32 = 8.0;
+
+    /// Width the row actually consumes, mirroring the draw order: -2 lead,
+    /// optional nav, tabs, optional nav, + button, each separated by spacing.
+    fn drawn_width(l: &TabStripLayout) -> f32 {
+        let nav = if l.tabs_need_scroll {
+            2.0 * (TAB_CONTROL_SIZE + SPACING)
+        } else {
+            0.0
+        };
+        -2.0 + nav + l.tab_view_width + SPACING + TAB_CONTROL_SIZE
     }
 
-    resp
+    #[test]
+    fn layout_never_overlaps_caption_buttons() {
+        for width in [600.0_f32, 800.0, 1000.0, 1600.0] {
+            for count in 0..30 {
+                let l = compute_tab_strip_layout(width, count, SPACING);
+                let limit = (width - CAPTION_CONTROLS_WIDTH).max(0.0);
+                if width - CAPTION_CONTROLS_WIDTH > 2.0 * TAB_CONTROL_SIZE + 4.0 * SPACING + 80.0 {
+                    assert!(
+                        drawn_width(&l) <= limit + 0.01,
+                        "width {width} count {count}: {} > {limit}",
+                        drawn_width(&l)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn few_tabs_do_not_scroll_and_use_preferred_width() {
+        let l = compute_tab_strip_layout(1600.0, 3, SPACING);
+        assert!(!l.tabs_need_scroll);
+        assert_eq!(l.tab_width, PREFERRED_TAB_WIDTH);
+        assert_eq!(l.tab_view_width, l.tabs_content_width);
+    }
+
+    #[test]
+    fn many_tabs_scroll_at_minimum_width() {
+        let l = compute_tab_strip_layout(900.0, 20, SPACING);
+        assert!(l.tabs_need_scroll);
+        assert_eq!(l.tab_width, MIN_TAB_WIDTH);
+        assert!(l.tabs_content_width > l.tab_view_width);
+    }
+
+    #[test]
+    fn tab_controls_reserve_drawn_size() {
+        // Buttons are drawn at TAB_CONTROL_SIZE; the budget must use the same.
+        let l = compute_tab_strip_layout(900.0, 20, SPACING);
+        let region = 900.0 - CAPTION_CONTROLS_WIDTH - TAB_CONTROL_SIZE - SPACING;
+        assert!(l.tab_view_width + 2.0 * TAB_CONTROL_SIZE <= region);
+    }
 }
