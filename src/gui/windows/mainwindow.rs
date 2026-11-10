@@ -26,7 +26,8 @@ use crate::gui::windows::containers::tags::{
 use crate::gui::windows::containers::topbar::draw_topbar;
 use crate::gui::windows::mainwindow_imp::{
     apply_directory_settings_to_view, directory_settings_snapshot_for_view, draw_file_op_window,
-    handle_draw_customizetheme_window, handle_pending_actions, persist_directory_settings_snapshot,
+    font_needs_reload, handle_draw_customizetheme_window, handle_pending_actions,
+    persist_directory_settings_snapshot,
 };
 use crate::gui::windows::structs::{
     AboutWindow, AppSettings, Navigation, SettingsWindow, SidebarState, ThemeCustomizer,
@@ -41,7 +42,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Foundation::{POINT, RECT};
 use windows::Win32::Graphics::Gdi::ClientToScreen;
@@ -51,6 +52,8 @@ pub struct MainWindow {
     // MainWindow General Variables
     pub(crate) theme: ThemeMode,
     pub(crate) theme_dirty: bool,
+    applied_font_name: Option<String>,
+    theme_save_pending: bool,
     pub(crate) window_override_set: bool,
     pub(crate) theme_customizer: ThemeCustomizer,
     pub(crate) settings_window: SettingsWindow,
@@ -96,6 +99,19 @@ pub struct MainWindow {
 
     // i18n
     pub(crate) i18n: I18n,
+}
+
+/// Maps a system locale tag (e.g. `zh-HK`) to a bundled locale.
+/// Traditional-Chinese regions must be matched before the generic `zh` arm.
+fn default_locale_for_system(system_locale: &str) -> &'static str {
+    match system_locale {
+        l if l.starts_with("ja") => "ja-JP",
+        l if l.starts_with("id") => "id-ID",
+        l if l.starts_with("zh-HK") => "zh-HK",
+        l if l.starts_with("zh-TW") => "zh-TW",
+        l if l.starts_with("zh") => "zh-CN",
+        _ => "en-US",
+    }
 }
 
 impl Default for MainWindow {
@@ -155,14 +171,7 @@ impl Default for MainWindow {
 
         let system_locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".to_string());
 
-        let default_locale = match system_locale.as_str() {
-            l if l.starts_with("ja") => "ja-JP",
-            l if l.starts_with("id") => "id-ID",
-            l if l.starts_with("zh") => "zh-CN",
-            l if l.starts_with("zh-HK") => "zh-HK",
-            l if l.starts_with("zh-TW") => "zh-TW",
-            _ => "en-US",
-        };
+        let default_locale = default_locale_for_system(&system_locale);
 
         let pinned_tabs = pinned_tabs;
         let mut tabs = Vec::new();
@@ -240,6 +249,8 @@ impl Default for MainWindow {
             display_file_explorer: true,
             sidebar_collapsed: false,
             theme_dirty: true,
+            applied_font_name: None,
+            theme_save_pending: false,
             window_override_set: false,
             dragdrop: None,
             icon_cache: None,
@@ -350,12 +361,8 @@ impl MainWindow {
 
 impl eframe::App for MainWindow {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
-        if self.has_directory_watchers() {
-            // egui repaints on demand. Keep a modest heartbeat so filesystem
-            // events can be consumed even while the window is otherwise idle.
-            ui.ctx().request_repaint_after(Duration::from_millis(250));
-        }
-        self.refresh_changed_directories();
+        // The watcher thread wakes the UI on each event; no idle heartbeat.
+        self.refresh_changed_directories(ui.ctx());
 
         {
             let forwarded_paths = take_forwarded_paths();
@@ -441,7 +448,9 @@ impl eframe::App for MainWindow {
 
         if self.theme_dirty {
             apply_theme(ui.ctx(), self.theme);
-            apply_font_to_context(ui.ctx(), &palette);
+            if font_needs_reload(&mut self.applied_font_name, &palette.font_name) {
+                apply_font_to_context(ui.ctx(), &palette);
+            }
             if let Some(hwnd) = self.hwnd {
                 apply_window_theme(hwnd, &palette);
             }
@@ -469,9 +478,18 @@ impl eframe::App for MainWindow {
         }
 
         // Increase scroll speed for the explorer view.
-        ui.ctx().input_mut(|i| {
-            i.smooth_scroll_delta *= 6.0;
+        // Only over the main (background) layer: windows, popups and the theme
+        // editor keep egui's native scroll speed.
+        let pointer_over_background = ui.ctx().input(|i| i.pointer.hover_pos()).is_none_or(|pos| {
+            ui.ctx()
+                .layer_id_at(pos)
+                .is_none_or(|l| l.order == egui::Order::Background)
         });
+        if pointer_over_background {
+            ui.ctx().input_mut(|i| {
+                i.smooth_scroll_delta *= 6.0;
+            });
+        }
 
         if self.icon_cache.is_none() {
             self.icon_cache = Some(IconCache::new(ui.ctx().clone()));
@@ -1284,6 +1302,7 @@ impl eframe::App for MainWindow {
             &palette,
             self.theme,
             &mut self.theme_dirty,
+            &mut self.theme_save_pending,
         );
         self.handle_draw_settings_window(ui.ctx(), &palette);
         self.handle_draw_about_window(ui.ctx(), &palette);
@@ -1319,5 +1338,30 @@ impl eframe::App for MainWindow {
         self.flush_pending_column_settings_save(ui.ctx());
 
         self.icon_cache = Some(icon_cache);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::default_locale_for_system;
+
+    #[test]
+    fn traditional_chinese_regions_map_to_their_own_locales() {
+        assert_eq!(default_locale_for_system("zh-HK"), "zh-HK");
+        assert_eq!(default_locale_for_system("zh-TW"), "zh-TW");
+    }
+
+    #[test]
+    fn other_chinese_locales_map_to_simplified() {
+        assert_eq!(default_locale_for_system("zh-CN"), "zh-CN");
+        assert_eq!(default_locale_for_system("zh-SG"), "zh-CN");
+        assert_eq!(default_locale_for_system("zh"), "zh-CN");
+    }
+
+    #[test]
+    fn other_locales_map_to_their_bundles() {
+        assert_eq!(default_locale_for_system("ja-JP"), "ja-JP");
+        assert_eq!(default_locale_for_system("id-ID"), "id-ID");
+        assert_eq!(default_locale_for_system("fr-FR"), "en-US");
     }
 }
