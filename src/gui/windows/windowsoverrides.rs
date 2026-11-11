@@ -107,23 +107,26 @@ pub fn mark_clipboard_dirty() {
     CLIPBOARD_DIRTY.store(true, Ordering::Release);
 }
 
-fn save_manual_window_size(hwnd: HWND) {
+pub fn save_manual_window_size(hwnd: HWND) {
     unsafe {
         let is_maximized = IsZoomed(hwnd).as_bool();
         save_window_was_maximized(is_maximized);
 
-        let mut rect = RECT::default();
-        if GetClientRect(hwnd, &mut rect).is_err() {
+        // Persist the outer window rectangle. Restoration uses SetWindowPos,
+        // whose width and height are outer-window dimensions; saving the
+        // client rectangle here loses the non-client/DWM frame on every
+        // reopen and causes the restored size to drift.
+        let mut window_rect = RECT::default();
+        if GetWindowRect(hwnd, &mut window_rect).is_err() {
             return;
         }
 
-        let mut window_rect = RECT::default();
-        if !is_maximized && GetWindowRect(hwnd, &mut window_rect).is_ok() {
+        if !is_maximized {
             save_window_position(window_rect.left, window_rect.top);
         }
 
-        let width = (rect.right - rect.left) as f32;
-        let height = (rect.bottom - rect.top) as f32;
+        let width = (window_rect.right - window_rect.left) as f32;
+        let height = (window_rect.bottom - window_rect.top) as f32;
 
         if width <= 0.0 || height <= 0.0 {
             return;

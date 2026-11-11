@@ -32,7 +32,7 @@ use crate::gui::windows::customizetheme::draw_theme_customizer;
 use crate::gui::windows::enums::{SettingsAction, ThemeCustomizerAction};
 use crate::gui::windows::settings::draw_settings_window;
 use crate::gui::windows::structs::{AppSettings, Navigation, ThemeCustomizer};
-use crate::gui::windows::windowsoverrides::mark_clipboard_dirty;
+use crate::gui::windows::windowsoverrides::{mark_clipboard_dirty, save_manual_window_size};
 use crate::gui::windows::windowsoverrides::toggle_window_fullscreen;
 use crossbeam_channel::Receiver;
 use crossbeam_channel::{Sender, unbounded};
@@ -1339,6 +1339,13 @@ impl MainWindow {
             || self.settings_window.current_settings.remember_open_tabs
         {
             self.save_app_settings_to_disk();
+        }
+
+        // UI cleanup may have written the in-memory settings after WM_CLOSE
+        // already captured the native window size. Persist the native geometry
+        // last so that stale in-memory defaults cannot overwrite it.
+        if let Some(hwnd) = self.hwnd {
+            save_manual_window_size(hwnd);
         }
 
         // Tell background workers to exit.
