@@ -89,6 +89,9 @@ fn main() -> eframe::Result<()> {
             .with_position(initial_position);
     }
 
+    // Before the graphics device exists, or the driver won't see it this launch.
+    crate::core::nvidia_profile::ensure_gsync_disabled();
+
     let options = NativeOptions {
         viewport,
         wgpu_options: low_latency_wgpu_options(),
