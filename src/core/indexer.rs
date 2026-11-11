@@ -682,15 +682,5 @@ fn reset_theme_to_defaults() {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_theme_reset_functionality() {
-        // Test that reset_theme_to_defaults doesn't panic
-        // In a real scenario, this would be tested with actual file system operations
-        // For now, we just verify the function exists and can be called
-        let path = theme_cache_path();
-        assert!(path.is_some() || path.is_none()); // Basic sanity check
-    }
-}
+#[path = "../../tests/unit/indexer.rs"]
+mod tests;

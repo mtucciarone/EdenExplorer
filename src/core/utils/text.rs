@@ -158,41 +158,8 @@ pub fn truncate_item_text(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_expand_environment_variables() {
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            let expanded = expand_environment_variables("%appdata%");
-            assert_eq!(expanded, appdata);
-        }
-
-        if let Ok(windir) = std::env::var("WINDIR") {
-            let expanded = expand_environment_variables("%WiNdIr%");
-            assert_eq!(expanded, windir);
-        }
-
-        let expanded = expand_environment_variables("%nonexistent%");
-        assert_eq!(expanded, "%nonexistent%");
-
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            let expanded = expand_environment_variables("C:\\test\\%appdata%\\subfolder");
-            assert_eq!(expanded, format!("C:\\test\\{}\\subfolder", appdata));
-        }
-
-        let expanded = expand_environment_variables("C:\\Windows\\System32");
-        assert_eq!(expanded, "C:\\Windows\\System32");
-
-        let expanded = expand_environment_variables("");
-        assert_eq!(expanded, "");
-
-        if let (Ok(appdata), Ok(windir)) = (std::env::var("APPDATA"), std::env::var("WINDIR")) {
-            let expanded = expand_environment_variables("%appdata%\\%windir%");
-            assert_eq!(expanded, format!("{}\\{}", appdata, windir));
-        }
-    }
-}
+#[path = "../../../tests/unit/text.rs"]
+mod tests;
 
 pub fn apply_eden_text_overrides(ui: &mut egui::Ui, palette: &ThemePalette) {
     let text_styles = &mut ui.style_mut().text_styles;

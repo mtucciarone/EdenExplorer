@@ -10,6 +10,10 @@ use std::time::Duration;
 /// fast as the GPU allows.
 pub const ANIMATION_FRAME_INTERVAL: Duration = Duration::from_millis(16);
 
+#[cfg(test)]
+#[path = "../../../tests/unit/widgets.rs"]
+mod tests;
+
 /// Ask for the next animation frame ANIMATION_FRAME_INTERVAL from now.
 ///
 /// egui subtracts its predicted frame time (`predicted_dt`, 1/60 s unless the
@@ -431,113 +435,4 @@ pub fn eden_toggle_button(
         }))
         .selected(selected),
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::{Arc, Mutex};
-
-    fn requested_delays(ctx: &Context) -> Arc<Mutex<Vec<Duration>>> {
-        let delays = Arc::new(Mutex::new(Vec::new()));
-        let sink = delays.clone();
-        ctx.set_request_repaint_callback(move |info| sink.lock().unwrap().push(info.delay));
-        delays
-    }
-
-    #[test]
-    fn animation_frame_waits_the_full_interval() {
-        // A bare request_repaint_after(ANIMATION_FRAME_INTERVAL) reaches the
-        // integration as a zero delay, because egui subtracts predicted_dt.
-        let ctx = Context::default();
-        let delays = requested_delays(&ctx);
-        request_animation_frame(&ctx);
-        let delays = delays.lock().unwrap();
-        assert_eq!(delays.len(), 1);
-        assert!(
-            delays[0] + Duration::from_millis(1) >= ANIMATION_FRAME_INTERVAL,
-            "next frame requested after {:?}",
-            delays[0]
-        );
-    }
-
-    #[test]
-    fn spinner_does_not_ask_for_an_immediate_repaint() {
-        let ctx = Context::default();
-        let delays = requested_delays(&ctx);
-        // The first pass lays out fonts and may repaint for its own reasons.
-        let _ = ctx.run_ui(RawInput::default(), |_| {});
-        delays.lock().unwrap().clear();
-        let _ = ctx.run_ui(RawInput::default(), |ui| {
-            loading_spinner(ui, 28.0);
-        });
-        let delays = delays.lock().unwrap();
-        assert!(!delays.is_empty(), "the spinner asked for no next frame");
-        assert!(
-            delays
-                .iter()
-                .all(|d| *d + Duration::from_millis(1) >= ANIMATION_FRAME_INTERVAL),
-            "requested delays: {delays:?}"
-        );
-    }
-
-    /// egui's Spinner, and a ProgressBar with `animate(true)`, ask for a repaint
-    /// every frame, which runs uncapped now that vsync is off; every spinner
-    /// must be `loading_spinner`.
-    #[test]
-    fn no_egui_spinner_is_used() {
-        fn rust_files(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
-            for entry in std::fs::read_dir(dir).unwrap() {
-                let path = entry.unwrap().path();
-                if path.is_dir() {
-                    rust_files(&path, files);
-                } else if path.extension().is_some_and(|ext| ext == "rs") {
-                    files.push(path);
-                }
-            }
-        }
-        let mut files = Vec::new();
-        rust_files(
-            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
-            &mut files,
-        );
-        assert!(files.len() > 10, "found only {} source files", files.len());
-        // Split so this test doesn't match itself.
-        let patterns = [
-            concat!(".spin", "ner()"),
-            concat!("Spin", "ner::"),
-            concat!(".anim", "ate(true)"),
-        ];
-        let offenders: Vec<String> = files
-            .iter()
-            .flat_map(|path| {
-                let text = std::fs::read_to_string(path).unwrap();
-                text.lines()
-                    .enumerate()
-                    .filter(|(_, line)| patterns.iter().any(|p| line.contains(p)))
-                    .map(|(n, line)| format!("{}:{}: {}", path.display(), n + 1, line.trim()))
-                    .collect::<Vec<_>>()
-            })
-            .collect();
-        assert_eq!(offenders, Vec::<String>::new());
-    }
-
-    #[test]
-    fn spinner_is_announced_as_a_progress_indicator() {
-        let ctx = Context::default();
-        ctx.enable_accesskit();
-        let output = ctx.run_ui(RawInput::default(), |ui| {
-            loading_spinner(ui, 28.0);
-        });
-        let update = output
-            .platform_output
-            .accesskit_update
-            .expect("no accesskit tree");
-        let roles: Vec<accesskit::Role> =
-            update.nodes.iter().map(|(_, node)| node.role()).collect();
-        assert!(
-            roles.contains(&accesskit::Role::ProgressIndicator),
-            "roles: {roles:?}"
-        );
-    }
 }

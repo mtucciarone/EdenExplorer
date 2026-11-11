@@ -2372,19 +2372,21 @@ fn rename_item_via_shell(source: &Path, new_name: &str) -> windows::core::Result
 
 /// Moves `sources` into `target_dir`. A source that vanished after the drag started
 /// is skipped; a target that cannot be resolved fails the whole call.
-fn move_items_via_shell(sources: &[PathBuf], target_dir: &Path) -> windows::core::Result<()> {
+fn move_items_via_shell(
+    sources: &[PathBuf],
+    target_dir: &Path,
+) -> windows::core::Result<Vec<PathBuf>> {
     unsafe {
         let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
 
-        file_op
-            .SetOperationFlags(FOF_SIMPLEPROGRESS | FOF_ALLOWUNDO | FOFX_SHOWELEVATIONPROMPT)
-            .ok();
+        file_op.SetOperationFlags(FOF_SIMPLEPROGRESS | FOF_ALLOWUNDO | FOFX_SHOWELEVATIONPROMPT)?;
 
         let target_item: IShellItem = SHCreateItemFromParsingName(
             &HSTRING::from(target_dir.to_string_lossy().to_string()),
             None,
         )?;
 
+        let mut moved_sources = Vec::new();
         for source in sources {
             let source_item: IShellItem = match SHCreateItemFromParsingName(
                 &HSTRING::from(source.to_string_lossy().to_string()),
@@ -2394,15 +2396,22 @@ fn move_items_via_shell(sources: &[PathBuf], target_dir: &Path) -> windows::core
                 Err(_) => continue,
             };
 
-            file_op
-                .MoveItem(&source_item, &target_item, None, None)
-                .ok();
+            file_op.MoveItem(&source_item, &target_item, None, None)?;
+            moved_sources.push(source.clone());
         }
 
-        file_op.PerformOperations().ok();
+        if moved_sources.is_empty() {
+            return Ok(moved_sources);
+        }
+
+        file_op.PerformOperations()?;
+        Ok(moved_sources)
     }
-    Ok(())
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/tabs_and_shell.rs"]
+mod tests;
 
 fn split_parent(paths: &[PathBuf]) -> Option<(PathBuf, Vec<PathBuf>)> {
     if paths.is_empty() {
@@ -2975,44 +2984,18 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     }
                 }
 
-                let existing_sources: Vec<PathBuf> = sources
-                    .into_iter()
-                    .filter(|source| source.exists())
-                    .collect();
-                let move_result = unsafe {
-                    (|| -> windows::core::Result<()> {
-                        let file_op: IFileOperation =
-                            CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
+                let move_result = move_items_via_shell(&sources, &target_dir);
 
-                        file_op.SetOperationFlags(
-                            FOF_SIMPLEPROGRESS | FOF_ALLOWUNDO | FOFX_SHOWELEVATIONPROMPT,
-                        )?;
-
-                        let target_item: IShellItem = SHCreateItemFromParsingName(
-                            &HSTRING::from(target_dir.to_string_lossy().to_string()),
-                            None,
-                        )?;
-
-                        for source in &existing_sources {
-                            let source_item: IShellItem = SHCreateItemFromParsingName(
-                                &HSTRING::from(source.to_string_lossy().to_string()),
-                                None,
-                            )?;
-
-                            file_op.MoveItem(&source_item, &target_item, None, None)?;
+                match move_result {
+                    Ok(moved_sources) if moved_sources.is_empty() => {
+                        eprintln!("Skipping move: all dragged sources have already disappeared");
+                    }
+                    Ok(moved_sources) => {
+                        if explorer.move_tagged_paths_to_dir(&moved_sources, &target_dir) {
+                            explorer.persist_tags();
                         }
-
-                        file_op.PerformOperations()?;
-                        Ok(())
-                    })()
-                };
-
-                if existing_sources.is_empty() {
-                    eprintln!("Skipping move: all dragged sources have already disappeared");
-                } else if let Err(error) = move_result {
-                    eprintln!("Failed to move dragged items: {error}");
-                } else if explorer.move_tagged_paths_to_dir(&existing_sources, &target_dir) {
-                    explorer.persist_tags();
+                    }
+                    Err(error) => eprintln!("Failed to move dragged items: {error}"),
                 }
 
                 {
@@ -3260,50 +3243,5 @@ pub fn handle_draw_customizetheme_window(
                 }
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn init_com() {
-        // Shell calls need COM on the test thread; the app does this in main.rs.
-        unsafe {
-            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
-        }
-    }
-
-    fn missing_path(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("eden-test-missing-{}-{name}", std::process::id()))
-    }
-
-    #[test]
-    fn tab_index_for_id_finds_known_and_ignores_stale_ids() {
-        let ids = [3u64, 7, 9];
-        assert_eq!(tab_index_for_id(ids.into_iter(), 7), Some(1));
-        assert_eq!(tab_index_for_id(ids.into_iter(), 8), None);
-        assert_eq!(tab_index_for_id(std::iter::empty(), 1), None);
-    }
-
-    #[test]
-    fn rename_missing_source_returns_error_instead_of_panicking() {
-        init_com();
-        let source = missing_path("rename.txt");
-        assert!(rename_item_via_shell(&source, "renamed.txt").is_err());
-    }
-
-    #[test]
-    fn move_skips_vanished_source_without_error() {
-        init_com();
-        let sources = [missing_path("move.txt")];
-        assert!(move_items_via_shell(&sources, &std::env::temp_dir()).is_ok());
-    }
-
-    #[test]
-    fn move_to_missing_target_returns_error_instead_of_panicking() {
-        init_com();
-        let sources = [missing_path("source.txt")];
-        assert!(move_items_via_shell(&sources, &missing_path("target")).is_err());
     }
 }

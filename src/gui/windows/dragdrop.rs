@@ -321,6 +321,10 @@ fn read_paths_from_data_object(
     }
 }
 
+#[cfg(test)]
+#[path = "../../../tests/unit/dragdrop.rs"]
+mod tests;
+
 pub struct WindowsDragDropBackend {
     hwnd: Option<HWND>,
     shared: Arc<DropShared>,
@@ -425,18 +429,5 @@ impl DragDropBackend for WindowsDragDropBackend {
 
     fn poll_command(&self) -> Option<NativeDropCommand> {
         self.shared.pop_command()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use windows::core::Ref;
-
-    #[test]
-    fn read_paths_from_null_data_object_returns_error() {
-        // A null IDataObject must surface as Err, not abort the process.
-        let null: Ref<'_, IDataObject> = Ref::default();
-        assert!(read_paths_from_data_object(null).is_err());
     }
 }
