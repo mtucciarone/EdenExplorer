@@ -1,7 +1,7 @@
 use crate::core::i18n::I18n;
 use crate::gui::icon_system::{AppIcon, paint_icon};
 use crate::gui::utils::{clickable_active_icon, clickable_icon};
-use crate::gui::windows::containers::structs::TopbarAction;
+use crate::gui::windows::containers::structs::{TopbarAction, ViewPreset};
 use crate::gui::windows::windowsoverrides::toggle_window_fullscreen;
 use eframe::egui;
 use egui::Pos2;
@@ -16,6 +16,7 @@ pub fn draw_topbar(
     hwnd: Option<HWND>,
     palette: &crate::gui::theme::ThemePalette,
     has_split: bool,
+    current_view: Option<ViewPreset>,
 ) -> TopbarAction {
     let mut action = TopbarAction::default();
 
@@ -33,6 +34,7 @@ pub fn draw_topbar(
                 palette,
                 &mut action,
                 has_split,
+                current_view,
             );
             draw_drag_region(ui, hwnd);
         });
@@ -53,6 +55,7 @@ pub fn draw_topbar(
                     palette,
                     &mut action,
                     has_split,
+                    current_view,
                 );
             });
 
@@ -145,6 +148,7 @@ fn draw_mode_icons(
     palette: &crate::gui::theme::ThemePalette,
     action: &mut TopbarAction,
     has_split: bool,
+    current_view: Option<ViewPreset>,
 ) {
     let sidebar_tooltip_key = if sidebar_collapsed {
         "tooltip_show_sidebar"
@@ -251,7 +255,61 @@ fn draw_mode_icons(
         {
             action.toggle_active_tab_split = true;
         }
+
+        draw_view_menu(ui, palette, current_view, !sidebar_collapsed, action);
     }
+}
+
+/// Windows Explorer style View menu for the focused pane, with the current
+/// view's name beside the icon. `current_view` is `None` where views can't
+/// change (drive list, Recycle Bin), which disables it.
+fn draw_view_menu(
+    ui: &mut egui::Ui,
+    palette: &crate::gui::theme::ThemePalette,
+    current_view: Option<ViewPreset>,
+    show_label: bool,
+    action: &mut TopbarAction,
+) {
+    let inner = ui.add_enabled_ui(current_view.is_some(), |ui| {
+        let icon = clickable_icon(ui, AppIcon::LayoutGrid.regular(), palette);
+        match current_view.filter(|_| show_label) {
+            Some(view) => {
+                let label = ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(view.short_label())
+                            .size((palette.text_size - 2.0).max(9.0))
+                            .color(ui.visuals().weak_text_color()),
+                    )
+                    .selectable(false)
+                    .sense(egui::Sense::click()),
+                );
+                icon.union(label)
+            }
+            None => icon,
+        }
+    });
+    let response = inner
+        .inner
+        .on_hover_text(
+            egui::RichText::new("View")
+                .size(palette.tooltip_text_size)
+                .color(palette.tooltip_text_color),
+        )
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+
+    let Some(current) = current_view else {
+        return;
+    };
+
+    egui::Popup::menu(&response).show(|ui| {
+        crate::core::utils::text::apply_eden_text_overrides(ui, palette);
+        for (preset, label) in ViewPreset::MENU {
+            if ui.radio(current == preset, label).clicked() {
+                action.set_view = Some(preset);
+                ui.close();
+            }
+        }
+    });
 }
 
 fn draw_drag_region(ui: &mut egui::Ui, hwnd: Option<HWND>) {

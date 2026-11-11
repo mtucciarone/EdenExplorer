@@ -203,7 +203,6 @@ pub fn draw_gallery_view(
         palette,
         gallery_state,
         display_mode,
-        current_view,
         sort_column,
         sort_ascending,
     );
@@ -572,16 +571,13 @@ pub fn draw_gallery_view(
     action
 }
 
-/// The View / Sort By bar shown above every view (Details included), so the
-/// view can always be changed from the top of the item viewer.
 #[allow(clippy::too_many_arguments)]
-pub fn draw_gallery_toolbar(
+fn draw_gallery_toolbar(
     ui: &mut egui::Ui,
     i18n: &I18n,
     palette: &ThemePalette,
     gallery_state: &mut GalleryState,
     display_mode: ItemViewerDisplayMode,
-    current_view: ViewPreset,
     sort_column: SortColumn,
     sort_ascending: bool,
 ) -> Option<ItemViewerAction> {
@@ -608,32 +604,6 @@ pub fn draw_gallery_toolbar(
             ui.style_mut().visuals.widgets.open.weak_bg_fill = egui::Color32::TRANSPARENT;
 
             const GALLERY_SORT_COMBO_WIDTH: f32 = 120.0;
-            const VIEW_COMBO_WIDTH: f32 = 150.0;
-
-            let view_label = ViewPreset::MENU
-                .iter()
-                .find(|(preset, _)| *preset == current_view)
-                .map(|(_, label)| *label)
-                .unwrap_or_else(|| match current_view {
-                    ViewPreset::Icons(size) => size.label(),
-                    _ => "",
-                });
-
-            draw_dropdown(
-                ui,
-                palette,
-                "gallery_view_selector",
-                VIEW_COMBO_WIDTH,
-                format!("View: {view_label}"),
-                |ui| {
-                    for (preset, label) in ViewPreset::MENU {
-                        if ui.radio(current_view == preset, label).clicked() {
-                            action = Some(ItemViewerAction::SetViewPreset(preset));
-                            ui.close();
-                        }
-                    }
-                },
-            );
 
             draw_dropdown(
                 ui,

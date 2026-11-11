@@ -17,7 +17,7 @@ use crate::gui::windows::containers::sidebar::draw_sidebar;
 use crate::gui::windows::containers::structs::{
     FavoriteItem, FileOpState, ItemViewerColumnState, ItemViewerFolderSizeState,
     ItemViewerNavBarAction, RenameState, SidebarAction, SplitSide, TabInfo, TabState, TabsAction,
-    TagsState,
+    TagsState, ViewPreset,
 };
 use crate::gui::windows::containers::tabs::draw_tabs;
 use crate::gui::windows::containers::tags::{
@@ -492,6 +492,10 @@ impl eframe::App for MainWindow {
         let mut secondary_pending_action: Option<ItemViewerAction> = None;
         let mut tags_changed = false;
         let has_split = self.tabs[self.active_tab].split_view.is_some();
+        let current_view = {
+            let view = self.tabs[self.active_tab].view(self.focused_split);
+            (!view.nav.is_root() && !view.nav.is_recycle_bin()).then(|| ViewPreset::of(view))
+        };
 
         let offset = egui::vec2(8.0, 8.0);
 
@@ -544,6 +548,7 @@ impl eframe::App for MainWindow {
                                         self.hwnd,
                                         &palette,
                                         has_split,
+                                        current_view,
                                     ));
                                 });
                                 if !self.sidebar_collapsed {

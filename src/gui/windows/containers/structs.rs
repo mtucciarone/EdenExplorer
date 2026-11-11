@@ -257,6 +257,22 @@ impl ViewPreset {
         ViewPreset::Content,
     ];
 
+    /// Short name shown next to the top bar's View button.
+    pub fn short_label(self) -> &'static str {
+        match self {
+            Self::Icons(GalleryThumbnailSize::ExtraLarge) => "Extra large",
+            Self::Icons(GalleryThumbnailSize::Large) => "Large icons",
+            Self::Icons(GalleryThumbnailSize::Medium) => "Medium icons",
+            Self::Icons(GalleryThumbnailSize::Small) => "Small grid",
+            Self::Icons(GalleryThumbnailSize::ExtraSmall) => "Tiny grid",
+            Self::SmallIcons => "Small icons",
+            Self::List => "List",
+            Self::Details => "Details",
+            Self::Tiles => "Tiles",
+            Self::Content => "Content",
+        }
+    }
+
     pub fn of(view: &TabView) -> Self {
         match view.display_mode {
             ItemViewerDisplayMode::Details => Self::Details,
@@ -985,6 +1001,7 @@ pub struct TopbarAction {
     pub toggle_file_explorer: bool,
     pub toggle_sidebar: bool,
     pub toggle_active_tab_split: bool,
+    pub set_view: Option<ViewPreset>,
 }
 
 #[derive(Default)]

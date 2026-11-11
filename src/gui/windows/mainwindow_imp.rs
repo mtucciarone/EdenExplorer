@@ -1978,6 +1978,16 @@ impl MainWindow {
             if action.toggle_active_tab_split {
                 self.toggle_split_for_active_tab();
             }
+
+            if let Some(preset) = action.set_view {
+                let side = self.focused_split;
+                preset.apply(self.active_tab_mut().view_mut(side));
+                let snapshot = directory_settings_snapshot_for_view(self.active_tab().view(side));
+                let _ = persist_directory_settings_snapshot(
+                    &mut self.settings_window.current_settings.directory_settings,
+                    snapshot,
+                );
+            }
         }
     }
 
