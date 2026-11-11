@@ -6,6 +6,7 @@ use crate::gui::icon_system::{AppIcon, StyledIcon, paint_icon};
 use crate::gui::theme::ThemePalette;
 use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::itemviewer::draw_item_viewer;
+use crate::gui::windows::containers::itemviewer_gallery::draw_gallery_toolbar;
 use crate::gui::windows::containers::itemviewer_navbar::draw_itemviewer_navigation_bar;
 use crate::gui::windows::containers::structs::{
     ItemViewerDisplayMode, ItemViewerNavBarAction, RenameState, TabView, TagsState, ViewPreset,
@@ -25,6 +26,8 @@ const FILES_COLUMN_WIDTH: f32 = 56.0;
 const FOLDERS_COLUMN_WIDTH: f32 = 56.0;
 const SIZE_COLUMN_WIDTH: f32 = 76.0;
 const STATUS_ICON_GAP: f32 = 4.0;
+/// Space between the View / Sort By bar and the Details table header.
+const DETAILS_TOOLBAR_GAP: f32 = 6.0;
 
 /// Draws one view's breadcrumb + item viewer + status bar (the content of
 /// either half of a split tab, or the whole content area for an unsplit tab).
@@ -139,6 +142,25 @@ pub fn draw_tab_content(
                         viewport_width,
                     );
                 } else {
+                    // Same View / Sort By bar the icon views draw for themselves.
+                    let toolbar_action = if !is_drive_view && !is_recycle_bin_view {
+                        let current_view = ViewPreset::of(view);
+                        let action = draw_gallery_toolbar(
+                            ui,
+                            i18n,
+                            palette,
+                            &mut view.gallery_state,
+                            view.display_mode,
+                            current_view,
+                            view.sort_column,
+                            view.sort_ascending,
+                        );
+                        ui.add_space(DETAILS_TOOLBAR_GAP);
+                        action
+                    } else {
+                        None
+                    };
+
                     ScrollArea::horizontal()
                         .id_salt(("item_viewer_horizontal_scroll", tab_id))
                         .auto_shrink([false, false])
@@ -179,6 +201,10 @@ pub fn draw_tab_content(
                                 viewport_width,
                             );
                         });
+
+                    if pending_action.is_none() {
+                        pending_action = toolbar_action;
+                    }
                 }
 
                 // View changes apply to this pane directly (not the focused one), and

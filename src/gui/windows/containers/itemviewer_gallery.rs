@@ -572,8 +572,10 @@ pub fn draw_gallery_view(
     action
 }
 
+/// The View / Sort By bar shown above every view (Details included), so the
+/// view can always be changed from the top of the item viewer.
 #[allow(clippy::too_many_arguments)]
-fn draw_gallery_toolbar(
+pub fn draw_gallery_toolbar(
     ui: &mut egui::Ui,
     i18n: &I18n,
     palette: &ThemePalette,
