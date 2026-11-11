@@ -51,6 +51,23 @@ const HOTKEY_GROUPS: &[(&str, &[usize])] = &[
     ("hotkey_group_navigation", &[7, 8, 11, 12, 13, 14]),
 ];
 
+/// Returns the last `max_chars` characters of `s` prefixed with "...", or `s`
+/// unchanged when it already fits. Counts chars, not bytes, so multi-byte
+/// paths (CJK, accented) never get sliced inside a code point.
+fn truncate_path_tail(s: &str, max_chars: usize) -> String {
+    let char_count = s.chars().count();
+    if char_count > max_chars {
+        let tail: String = s.chars().skip(char_count - max_chars).collect();
+        format!("...{tail}")
+    } else {
+        s.to_string()
+    }
+}
+
+#[cfg(test)]
+#[path = "../../../tests/unit/settings.rs"]
+mod tests;
+
 fn format_recorded_hotkey(key: egui::Key, modifiers: egui::Modifiers) -> Option<String> {
     let mut parts = Vec::new();
     if modifiers.ctrl {
@@ -698,13 +715,7 @@ fn draw_general_tab(
                     return i18n.tr("settings_startpath_default");
                 }
 
-                let s = p.to_string_lossy();
-
-                if s.len() > 40 {
-                    format!("...{}", &s[s.len() - 40..])
-                } else {
-                    s.to_string()
-                }
+                truncate_path_tail(&p.to_string_lossy(), 40)
             })
             .unwrap_or_else(|| i18n.tr("settings_startpath_default"));
 

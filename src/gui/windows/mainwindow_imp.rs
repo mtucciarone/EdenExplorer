@@ -1168,42 +1168,22 @@ impl MainWindow {
 
                     // Avoid no-op rename
                     if path != target {
-                        unsafe {
-                            use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
-                            use windows::Win32::UI::Shell::{
-                                FOF_ALLOWUNDO, FileOperation, IFileOperation, IShellItem,
-                                SHCreateItemFromParsingName,
-                            };
-                            use windows::core::HSTRING;
+                        match rename_item_via_shell(&path, trimmed) {
+                            Ok(()) => {
+                                // Queue the renamed file for auto-selection after refresh
+                                let side = self.focused_split;
+                                self.active_tab_mut()
+                                    .view_mut(side)
+                                    .explorer_state
+                                    .pending_selection_paths = Some(vec![target.clone()]);
 
-                            let file_op: IFileOperation =
-                                CoCreateInstance(&FileOperation, None, CLSCTX_ALL).unwrap();
-
-                            file_op.SetOperationFlags(FOF_ALLOWUNDO).ok();
-
-                            let source_item: IShellItem = SHCreateItemFromParsingName(
-                                &HSTRING::from(path.to_string_lossy().to_string()),
-                                None,
-                            )
-                            .unwrap();
-
-                            // Rename keeps same parent, so only pass new name
-                            file_op
-                                .RenameItem(&source_item, &HSTRING::from(trimmed), None)
-                                .ok();
-
-                            file_op.PerformOperations().ok();
-                        }
-
-                        // Queue the renamed file for auto-selection after refresh
-                        let side = self.focused_split;
-                        self.active_tab_mut()
-                            .view_mut(side)
-                            .explorer_state
-                            .pending_selection_paths = Some(vec![target.clone()]);
-
-                        if self.tags_state.remap_path_prefix(path.as_path(), &target) {
-                            self.persist_tags();
+                                if self.tags_state.remap_path_prefix(path.as_path(), &target) {
+                                    self.persist_tags();
+                                }
+                            }
+                            // Source vanished or shell refused: skip, the refresh below
+                            // drops the stale entry.
+                            Err(err) => eprintln!("Rename failed: {err}"),
                         }
                     }
                 }
@@ -1629,8 +1609,10 @@ impl MainWindow {
         drag_sources: Option<&[PathBuf]>,
     ) {
         if let Some(action) = tabs_action {
-            if let Some(id) = action.activate {
-                self.active_tab = self.tabs.iter().position(|t| t.id == id).unwrap();
+            if let Some(id) = action.activate
+                && let Some(index) = tab_index_for_id(self.tabs.iter().map(|t| t.id), id)
+            {
+                self.active_tab = index;
                 self.focused_split = SplitSide::Primary;
                 let has_split = {
                     let tab = self.active_tab_mut();
@@ -1858,33 +1840,8 @@ impl MainWindow {
             return;
         }
 
-        unsafe {
-            let file_op: IFileOperation =
-                CoCreateInstance(&FileOperation, None, CLSCTX_ALL).unwrap();
-
-            file_op
-                .SetOperationFlags(FOF_SIMPLEPROGRESS | FOF_ALLOWUNDO | FOFX_SHOWELEVATIONPROMPT)
-                .ok();
-
-            let target_item: IShellItem = SHCreateItemFromParsingName(
-                &HSTRING::from(target_dir.to_string_lossy().to_string()),
-                None,
-            )
-            .unwrap();
-
-            for source in sources {
-                let source_item: IShellItem = SHCreateItemFromParsingName(
-                    &HSTRING::from(source.to_string_lossy().to_string()),
-                    None,
-                )
-                .unwrap();
-
-                file_op
-                    .MoveItem(&source_item, &target_item, None, None)
-                    .ok();
-            }
-
-            file_op.PerformOperations().ok();
+        if let Err(err) = move_items_via_shell(sources, &target_dir) {
+            eprintln!("Move failed: {err}");
         }
 
         {
@@ -2383,6 +2340,78 @@ unsafe fn pwstr_to_string(pw: windows::core::PWSTR) -> String {
     let slice = unsafe { std::slice::from_raw_parts(pw.0, len) };
     String::from_utf16_lossy(slice)
 }
+
+/// Index of the tab with `id`. Ids come from a cached list that can be stale,
+/// so a miss is returned as `None` for the caller to ignore.
+fn tab_index_for_id(mut tab_ids: impl Iterator<Item = u64>, id: u64) -> Option<usize> {
+    tab_ids.position(|t| t == id)
+}
+
+/// Renames `source` to `new_name` within its parent. Shell failures (for example
+/// the file was removed by another process) are returned instead of panicking.
+fn rename_item_via_shell(source: &Path, new_name: &str) -> windows::core::Result<()> {
+    unsafe {
+        let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
+
+        file_op.SetOperationFlags(FOF_ALLOWUNDO).ok();
+
+        let source_item: IShellItem = SHCreateItemFromParsingName(
+            &HSTRING::from(source.to_string_lossy().to_string()),
+            None,
+        )?;
+
+        // Rename keeps same parent, so only pass new name
+        file_op
+            .RenameItem(&source_item, &HSTRING::from(new_name), None)
+            .ok();
+
+        file_op.PerformOperations().ok();
+    }
+    Ok(())
+}
+
+/// Moves `sources` into `target_dir`. A source that vanished after the drag started
+/// is skipped; a target that cannot be resolved fails the whole call.
+fn move_items_via_shell(
+    sources: &[PathBuf],
+    target_dir: &Path,
+) -> windows::core::Result<Vec<PathBuf>> {
+    unsafe {
+        let file_op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
+
+        file_op.SetOperationFlags(FOF_SIMPLEPROGRESS | FOF_ALLOWUNDO | FOFX_SHOWELEVATIONPROMPT)?;
+
+        let target_item: IShellItem = SHCreateItemFromParsingName(
+            &HSTRING::from(target_dir.to_string_lossy().to_string()),
+            None,
+        )?;
+
+        let mut moved_sources = Vec::new();
+        for source in sources {
+            let source_item: IShellItem = match SHCreateItemFromParsingName(
+                &HSTRING::from(source.to_string_lossy().to_string()),
+                None,
+            ) {
+                Ok(item) => item,
+                Err(_) => continue,
+            };
+
+            file_op.MoveItem(&source_item, &target_item, None, None)?;
+            moved_sources.push(source.clone());
+        }
+
+        if moved_sources.is_empty() {
+            return Ok(moved_sources);
+        }
+
+        file_op.PerformOperations()?;
+        Ok(moved_sources)
+    }
+}
+
+#[cfg(test)]
+#[path = "../../../tests/unit/tabs_and_shell.rs"]
+mod tests;
 
 fn split_parent(paths: &[PathBuf]) -> Option<(PathBuf, Vec<PathBuf>)> {
     if paths.is_empty() {
@@ -2955,44 +2984,18 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     }
                 }
 
-                let existing_sources: Vec<PathBuf> = sources
-                    .into_iter()
-                    .filter(|source| source.exists())
-                    .collect();
-                let move_result = unsafe {
-                    (|| -> windows::core::Result<()> {
-                        let file_op: IFileOperation =
-                            CoCreateInstance(&FileOperation, None, CLSCTX_ALL)?;
+                let move_result = move_items_via_shell(&sources, &target_dir);
 
-                        file_op.SetOperationFlags(
-                            FOF_SIMPLEPROGRESS | FOF_ALLOWUNDO | FOFX_SHOWELEVATIONPROMPT,
-                        )?;
-
-                        let target_item: IShellItem = SHCreateItemFromParsingName(
-                            &HSTRING::from(target_dir.to_string_lossy().to_string()),
-                            None,
-                        )?;
-
-                        for source in &existing_sources {
-                            let source_item: IShellItem = SHCreateItemFromParsingName(
-                                &HSTRING::from(source.to_string_lossy().to_string()),
-                                None,
-                            )?;
-
-                            file_op.MoveItem(&source_item, &target_item, None, None)?;
+                match move_result {
+                    Ok(moved_sources) if moved_sources.is_empty() => {
+                        eprintln!("Skipping move: all dragged sources have already disappeared");
+                    }
+                    Ok(moved_sources) => {
+                        if explorer.move_tagged_paths_to_dir(&moved_sources, &target_dir) {
+                            explorer.persist_tags();
                         }
-
-                        file_op.PerformOperations()?;
-                        Ok(())
-                    })()
-                };
-
-                if existing_sources.is_empty() {
-                    eprintln!("Skipping move: all dragged sources have already disappeared");
-                } else if let Err(error) = move_result {
-                    eprintln!("Failed to move dragged items: {error}");
-                } else if explorer.move_tagged_paths_to_dir(&existing_sources, &target_dir) {
-                    explorer.persist_tags();
+                    }
+                    Err(error) => eprintln!("Failed to move dragged items: {error}"),
                 }
 
                 {

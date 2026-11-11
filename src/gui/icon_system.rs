@@ -261,6 +261,10 @@ impl AppIcon {
     }
 }
 
+#[cfg(test)]
+#[path = "../../tests/unit/icon_system.rs"]
+mod tests;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StyledIcon {
     pub icon: AppIcon,
@@ -304,21 +308,4 @@ pub fn paint_icon(ui: &mut Ui, rect: Rect, icon: StyledIcon, size: f32, color: C
     // cursor a second time or stretch across a larger button hitbox.
     let icon_rect = Rect::from_center_size(rect.center(), Vec2::splat(size));
     image.paint_at(ui, icon_rect);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::AppIcon;
-
-    #[test]
-    fn every_app_icon_has_a_lucide_asset() {
-        for icon in AppIcon::ALL {
-            let svg = icon.lucide_svg();
-            assert!(!svg.is_empty(), "missing Lucide asset for {icon:?}");
-            assert!(
-                svg.trim_start().starts_with("<svg"),
-                "invalid Lucide SVG asset for {icon:?}"
-            );
-        }
-    }
 }

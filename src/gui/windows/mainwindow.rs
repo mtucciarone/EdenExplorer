@@ -1030,7 +1030,27 @@ impl eframe::App for MainWindow {
         // are the same view. For split views, the target pane has a different
         // DragState, so handle the cross-pane release here using the shared
         // drop target collected from both panes.
-        if !native_drag_active && ui.ctx().input(|input| input.pointer.primary_released()) {
+        let has_navigation_drop_target = tabbar_action
+            .as_ref()
+            .and_then(|action| action.move_files_to_breadcrumb_dir.as_ref())
+            .is_some()
+            || secondary_tabbar_action
+                .as_ref()
+                .and_then(|action| action.move_files_to_breadcrumb_dir.as_ref())
+                .is_some()
+            || tabs_action
+                .as_ref()
+                .and_then(|action| action.move_files_to_tab_dir.as_ref())
+                .is_some()
+            || sidebar_action
+                .as_ref()
+                .and_then(|action| action.move_files_to_sidebar_dir.as_ref())
+                .is_some();
+
+        if !native_drag_active
+            && !has_navigation_drop_target
+            && ui.ctx().input(|input| input.pointer.primary_released())
+        {
             let source_items = if self.tabs[self.active_tab].primary_view.drag_state.active {
                 self.tabs[self.active_tab]
                     .primary_view

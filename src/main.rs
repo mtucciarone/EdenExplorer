@@ -8,6 +8,7 @@ use crate::core::indexer::{
 };
 use crate::core::launch::{LaunchError, acquire_or_forward, existing_directories, parse_args};
 use crate::core::utils::fonts::apply_custom_font_definitions;
+use crate::gui::MainWindow;
 use crate::gui::windows::windowsoverrides::set_egui_ctx;
 use eframe::{NativeOptions, egui};
 use std::os::windows::ffi::OsStrExt;
@@ -106,11 +107,26 @@ fn main() -> eframe::Result<()> {
             egui_extras::install_image_loaders(&cc.egui_ctx);
             set_egui_ctx(&cc.egui_ctx);
 
-            Ok(Box::new(gui::MainWindow::new_with_paths(
-                launch_paths.clone(),
-            )))
+            Ok(Box::new(MainWindow::new_with_paths(launch_paths.clone())))
         }),
     )
+}
+
+/// Real hardware first (a discrete GPU, then integrated), then DX12 among
+/// adapters of the same kind. The software renderer must not win on backend alone.
+fn adapter_rank(
+    device_type: eframe::wgpu::DeviceType,
+    backend: eframe::wgpu::Backend,
+) -> (u8, bool) {
+    use eframe::wgpu::{Backend, DeviceType};
+
+    let hardware = match device_type {
+        DeviceType::DiscreteGpu => 3,
+        DeviceType::IntegratedGpu => 2,
+        DeviceType::VirtualGpu | DeviceType::Other => 1,
+        DeviceType::Cpu => 0,
+    };
+    (hardware, backend == Backend::Dx12)
 }
 
 /// Keep the hover highlight on the cursor. With Vulkan, or with vsync (eframe's
@@ -146,24 +162,6 @@ fn low_latency_wgpu_options() -> eframe::egui_wgpu::WgpuConfiguration {
         wgpu_setup: WgpuSetup::CreateNew(setup),
         ..Default::default()
     }
-}
-
-/// Real hardware first (a discrete GPU, then integrated), then DX12 among
-/// adapters of the same kind. The software renderer (WARP, "Microsoft Basic
-/// Render Driver") is also a DX12 adapter, so it must never win on backend alone.
-fn adapter_rank(
-    device_type: eframe::wgpu::DeviceType,
-    backend: eframe::wgpu::Backend,
-) -> (u8, bool) {
-    use eframe::wgpu::{Backend, DeviceType};
-
-    let hardware = match device_type {
-        DeviceType::DiscreteGpu => 3,
-        DeviceType::IntegratedGpu => 2,
-        DeviceType::VirtualGpu | DeviceType::Other => 1,
-        DeviceType::Cpu => 0,
-    };
-    (hardware, backend == Backend::Dx12)
 }
 
 fn show_launch_error(error: &LaunchError) {
@@ -217,46 +215,5 @@ fn load_icon() -> egui::IconData {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::adapter_rank;
-    use eframe::wgpu::{Backend, DeviceType};
-
-    fn pick(adapters: &[(DeviceType, Backend)]) -> (DeviceType, Backend) {
-        *adapters
-            .iter()
-            .max_by_key(|(device_type, backend)| adapter_rank(*device_type, *backend))
-            .unwrap()
-    }
-
-    #[test]
-    fn integrated_gpu_beats_the_software_renderer() {
-        // DXGI lists WARP last, and max_by_key keeps the last of equal keys.
-        let adapters = [
-            (DeviceType::IntegratedGpu, Backend::Dx12),
-            (DeviceType::IntegratedGpu, Backend::Vulkan),
-            (DeviceType::Cpu, Backend::Dx12),
-        ];
-        assert_eq!(pick(&adapters), (DeviceType::IntegratedGpu, Backend::Dx12));
-    }
-
-    #[test]
-    fn integrated_gpu_without_dx12_still_beats_the_software_renderer() {
-        // wgpu skips some older iGPUs on DX12, leaving only GL for the real GPU.
-        let adapters = [
-            (DeviceType::Cpu, Backend::Dx12),
-            (DeviceType::IntegratedGpu, Backend::Gl),
-        ];
-        assert_eq!(pick(&adapters), (DeviceType::IntegratedGpu, Backend::Gl));
-    }
-
-    #[test]
-    fn discrete_gpu_on_dx12_is_preferred() {
-        let adapters = [
-            (DeviceType::DiscreteGpu, Backend::Dx12),
-            (DeviceType::DiscreteGpu, Backend::Vulkan),
-            (DeviceType::IntegratedGpu, Backend::Dx12),
-            (DeviceType::Cpu, Backend::Dx12),
-        ];
-        assert_eq!(pick(&adapters), (DeviceType::DiscreteGpu, Backend::Dx12));
-    }
-}
+#[path = "../tests/unit/gpu.rs"]
+mod tests;

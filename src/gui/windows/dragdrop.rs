@@ -282,7 +282,7 @@ fn read_paths_from_data_object(
     data_object: windows::core::Ref<'_, IDataObject>,
 ) -> Result<Vec<PathBuf>> {
     unsafe {
-        let data_object = data_object.unwrap();
+        let data_object = data_object.ok()?;
         let format = FORMATETC {
             cfFormat: CF_HDROP.0,
             ptd: null_mut(),
@@ -320,6 +320,10 @@ fn read_paths_from_data_object(
         Ok(paths)
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/dragdrop.rs"]
+mod tests;
 
 pub struct WindowsDragDropBackend {
     hwnd: Option<HWND>,
