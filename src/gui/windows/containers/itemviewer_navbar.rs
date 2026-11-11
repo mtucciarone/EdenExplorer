@@ -64,9 +64,10 @@ pub fn draw_itemviewer_navigation_bar(
 
         merge_toolbar_action(&mut action, toolbar_action);
         if action.toggle_gallery {
-            tab.display_mode = match tab.display_mode {
-                ItemViewerDisplayMode::Details => ItemViewerDisplayMode::Gallery,
-                ItemViewerDisplayMode::Gallery => ItemViewerDisplayMode::Details,
+            tab.display_mode = if tab.display_mode == ItemViewerDisplayMode::Details {
+                ItemViewerDisplayMode::Gallery
+            } else {
+                ItemViewerDisplayMode::Details
             };
         }
 
@@ -484,7 +485,7 @@ fn draw_navigation_bar_buttons(
         }
     }
 
-    let gallery_color = if display_mode == ItemViewerDisplayMode::Gallery {
+    let gallery_color = if display_mode != ItemViewerDisplayMode::Details {
         palette.primary
     } else {
         ui.visuals().text_color()

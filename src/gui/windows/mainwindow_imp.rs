@@ -3020,6 +3020,10 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     explorer.load_view(SplitSide::Secondary);
                 }
             }
+            ItemViewerAction::SetViewPreset(preset) => {
+                // Normally applied by the pane that produced it; this is a fallback.
+                preset.apply(explorer.active_tab_mut().view_mut(side));
+            }
             ItemViewerAction::ColumnSizesChanged { finished } => {
                 let snapshot =
                     directory_settings_snapshot_for_view(explorer.active_tab().view(side));

@@ -2241,6 +2241,28 @@ pub fn table_background_response(ui: &mut egui::Ui) -> egui::Response {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Windows Explorer style "View" submenu for background context menus.
+pub fn draw_view_submenu(
+    ui: &mut egui::Ui,
+    palette: &ThemePalette,
+    current: crate::gui::windows::containers::structs::ViewPreset,
+    action: &mut Option<ItemViewerAction>,
+) {
+    use crate::gui::windows::containers::structs::ViewPreset;
+
+    ui.menu_button("View", |ui| {
+        apply_eden_text_overrides(ui, palette);
+        for (preset, label) in ViewPreset::MENU {
+            if ui.radio(current == preset, label).clicked() {
+                *action = Some(ItemViewerAction::SetViewPreset(preset));
+                ui.close();
+            }
+        }
+    });
+    ui.separator();
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn draw_empty_item_viewer_area(
     ui: &mut egui::Ui,
     i18n: &I18n,
@@ -2252,6 +2274,7 @@ pub fn draw_empty_item_viewer_area(
     drag_state: &DragState,
     modal_input_blocked: bool,
     show_loading_spinner: bool,
+    current_view: crate::gui::windows::containers::structs::ViewPreset,
 ) -> Option<ItemViewerAction> {
     let empty_rect = ui.available_rect_before_wrap();
 
@@ -2295,6 +2318,7 @@ pub fn draw_empty_item_viewer_area(
             .show(|ui| {
                 ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::Default);
                 apply_eden_text_overrides(ui, palette);
+                draw_view_submenu(ui, palette, current_view, &mut action);
                 if ui.button("New Folder").clicked() {
                     action = Some(ItemViewerAction::CreateFolder);
                     ui.close();
