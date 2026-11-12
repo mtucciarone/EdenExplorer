@@ -31,6 +31,48 @@ fn a_new_driver_or_a_renamed_exe_changes_the_stamp() {
 }
 
 #[test]
+fn marker_is_bound_to_the_driver_exe_and_profile() {
+    let stamp = stamp_text("edenexplorer.exe", 100, 5);
+    let profile = "EdenExplorerNVIDIA-test-pc";
+    let marker = marker_text(&stamp, profile);
+    assert!(marker_matches(&marker, &stamp, profile));
+    assert!(!marker_matches(
+        &marker,
+        &stamp_text("eden.exe", 100, 5),
+        profile
+    ));
+    assert!(!marker_matches(
+        &marker,
+        &stamp,
+        "EdenExplorerNVIDIA-other-pc"
+    ));
+    assert!(!marker_matches("v1\nanything", &stamp, profile));
+}
+
+#[test]
+fn profile_name_has_a_vendor_and_machine_specific_namespace() {
+    let profile = profile_name_for("office-pc_01");
+    assert!(profile.starts_with(PROFILE_PREFIX));
+    assert!(
+        profile[PROFILE_PREFIX.len()..]
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+    );
+    assert!(profile.len() <= PROFILE_PREFIX.len() + 64);
+}
+
+#[test]
+fn profile_name_sanitizes_and_bounds_machine_names() {
+    let profile = profile_name_for("lab.pc/01");
+    assert_eq!(profile, "EdenExplorerNVIDIA-lab_pc_01");
+    assert_eq!(
+        profile_name_for(&"x".repeat(100)).len(),
+        PROFILE_PREFIX.len() + 64
+    );
+    assert_eq!(profile_name_for("..."), "EdenExplorerNVIDIA-___");
+}
+
+#[test]
 fn an_unknown_exe_gets_a_profile() {
     assert_eq!(plan(Existing::NoProfile), Plan::CreateProfileAndAddSetting);
 }
@@ -43,6 +85,19 @@ fn an_existing_profile_only_gains_the_setting() {
 #[test]
 fn a_gsync_value_someone_already_chose_is_kept() {
     assert_eq!(plan(Existing::ProfileWithSetting), Plan::Nothing);
+}
+
+#[test]
+fn an_existing_force_off_setting_is_confirmed_without_a_write() {
+    assert_eq!(plan(Existing::ProfileWithGsyncOff), Plan::AlreadyDisabled);
+}
+
+#[test]
+fn every_profile_state_has_an_explicit_plan() {
+    assert_eq!(plan(Existing::NoProfile), Plan::CreateProfileAndAddSetting);
+    assert_eq!(plan(Existing::ProfileWithoutSetting), Plan::AddSetting);
+    assert_eq!(plan(Existing::ProfileWithSetting), Plan::Nothing);
+    assert_eq!(plan(Existing::ProfileWithGsyncOff), Plan::AlreadyDisabled);
 }
 
 #[test]

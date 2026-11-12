@@ -22,7 +22,7 @@ const VRR_APP_OVERRIDE_ID: u32 = 0x10A8_79CF;
 /// `VRR_APP_OVERRIDE_FORCE_OFF`, the value NVIDIA's own Explorer profile uses.
 const VRR_APP_OVERRIDE_FORCE_OFF: u32 = 1;
 
-const PROFILE_NAME: &str = "EdenExplorer";
+const PROFILE_PREFIX: &str = "EdenExplorerNVIDIA-";
 
 const NVAPI_OK: i32 = 0;
 
@@ -169,11 +169,14 @@ enum Existing {
     ProfileWithoutSetting,
     /// A profile lists the exe and already has a G-SYNC value.
     ProfileWithSetting,
+    /// A profile lists the exe and explicitly forces G-SYNC off.
+    ProfileWithGsyncOff,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Plan {
     Nothing,
+    AlreadyDisabled,
     AddSetting,
     CreateProfileAndAddSetting,
 }
@@ -185,7 +188,31 @@ fn plan(existing: Existing) -> Plan {
         Existing::NoProfile => Plan::CreateProfileAndAddSetting,
         Existing::ProfileWithoutSetting => Plan::AddSetting,
         Existing::ProfileWithSetting => Plan::Nothing,
+        Existing::ProfileWithGsyncOff => Plan::AlreadyDisabled,
     }
+}
+
+fn profile_name() -> String {
+    let computer = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "unknown".to_owned());
+    profile_name_for(&computer)
+}
+
+fn profile_name_for(computer: &str) -> String {
+    let mut safe = computer
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    if safe.is_empty() {
+        safe.push_str("unknown");
+    }
+    safe.truncate(64);
+    format!("{PROFILE_PREFIX}{safe}")
 }
 
 fn unicode_string(text: &str) -> Option<UnicodeString> {
@@ -211,8 +238,10 @@ fn exe_name() -> Option<String> {
 enum Outcome {
     /// No NVIDIA driver, or it refused; nothing was changed.
     Unavailable,
-    /// The exe already had a G-SYNC value.
-    AlreadySet,
+    /// The exe has an explicit G-SYNC value other than force-off.
+    ExistingOverride,
+    /// The exe already had G-SYNC forced off.
+    AlreadyDisabled,
     /// The setting was written.
     Written,
 }
@@ -227,25 +256,33 @@ enum Outcome {
 /// the background, where it repairs a profile someone deleted in time for the
 /// next launch.
 pub fn ensure_gsync_disabled() {
-    let Some(stamp) = driver_stamp() else {
-        return;
-    };
+    // Do not use the DLL's presence as the capability check. Load/initialize
+    // NVAPI below; this also handles hybrid systems and driver installations
+    // where the file exists but DRS is unavailable.
+    let stamp = driver_stamp();
     let marker = marker_path();
     let confirmed = marker
         .as_ref()
         .and_then(|path| std::fs::read_to_string(path).ok())
-        .is_some_and(|saved| saved == stamp);
+        .is_some_and(|saved| {
+            stamp
+                .as_ref()
+                .is_some_and(|stamp| marker_matches(&saved, stamp, &profile_name()))
+        });
     if confirmed {
         std::thread::spawn(disable_gsync_for_this_exe);
         return;
     }
-    if disable_gsync_for_this_exe() != Outcome::Unavailable
-        && let Some(path) = marker
+    if matches!(
+        disable_gsync_for_this_exe(),
+        Outcome::Written | Outcome::AlreadyDisabled
+    ) && let Some(path) = marker
+        && let Some(stamp) = stamp.as_deref()
     {
         if let Some(folder) = path.parent() {
             let _ = std::fs::create_dir_all(folder);
         }
-        let _ = std::fs::write(path, stamp);
+        let _ = std::fs::write(path, marker_text(&stamp, &profile_name()));
     }
 }
 
@@ -264,6 +301,14 @@ fn driver_stamp() -> Option<String> {
         .ok()?
         .as_secs();
     Some(stamp_text(&exe_name()?, modified, metadata.len()))
+}
+
+fn marker_text(stamp: &str, profile: &str) -> String {
+    format!("v2\n{stamp}\n{profile}\n{VRR_APP_OVERRIDE_FORCE_OFF}")
+}
+
+fn marker_matches(saved: &str, stamp: &str, profile: &str) -> bool {
+    saved == marker_text(stamp, profile)
 }
 
 fn stamp_text(exe: &str, driver_modified: u64, driver_size: u64) -> String {
@@ -295,7 +340,7 @@ fn disable_gsync_for_this_exe() -> Outcome {
 
 fn write_setting(api: &NvApi, session: Handle, exe: &str) -> Option<Outcome> {
     let exe_wide = unicode_string(exe)?;
-    let profile_wide = unicode_string(PROFILE_NAME)?;
+    let profile_wide = unicode_string(&profile_name())?;
     let ok = |status: i32| (status == NVAPI_OK).then_some(());
 
     // SAFETY: every pointer passed below is to a live, correctly versioned
@@ -316,14 +361,19 @@ fn write_setting(api: &NvApi, session: Handle, exe: &str) -> Option<Outcome> {
             let mut setting: Box<Setting> = Box::new(std::mem::zeroed());
             setting.version = struct_version::<Setting>(1);
             if (api.get_setting)(session, profile, VRR_APP_OVERRIDE_ID, &mut *setting) == NVAPI_OK {
-                Existing::ProfileWithSetting
+                if setting.current.dword == VRR_APP_OVERRIDE_FORCE_OFF {
+                    Existing::ProfileWithGsyncOff
+                } else {
+                    Existing::ProfileWithSetting
+                }
             } else {
                 Existing::ProfileWithoutSetting
             }
         };
 
         match plan(existing) {
-            Plan::Nothing => return Some(Outcome::AlreadySet),
+            Plan::Nothing => return Some(Outcome::ExistingOverride),
+            Plan::AlreadyDisabled => return Some(Outcome::AlreadyDisabled),
             Plan::AddSetting => {}
             Plan::CreateProfileAndAddSetting => {
                 // A profile of ours may be left from a differently named exe.
