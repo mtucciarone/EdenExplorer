@@ -8,7 +8,7 @@ use crate::gui::windows::containers::enums::ItemViewerAction;
 use crate::gui::windows::containers::itemviewer::draw_item_viewer;
 use crate::gui::windows::containers::itemviewer_navbar::draw_itemviewer_navigation_bar;
 use crate::gui::windows::containers::structs::{
-    ItemViewerDisplayMode, ItemViewerNavBarAction, RenameState, TabView, TagsState,
+    ItemViewerDisplayMode, ItemViewerNavBarAction, RenameState, TabView, TagsState, ViewPreset,
 };
 use crate::gui::windows::structs::{SettingsWindow, ThemeCustomizer};
 use eframe::egui;
@@ -102,7 +102,8 @@ pub fn draw_tab_content(
             });
 
             strip.cell(|ui| {
-                if view.display_mode == ItemViewerDisplayMode::Gallery {
+                let viewer_rect = ui.max_rect();
+                if view.display_mode != ItemViewerDisplayMode::Details {
                     pending_action = draw_item_viewer(
                         ui,
                         i18n,
@@ -178,6 +179,21 @@ pub fn draw_tab_content(
                                 viewport_width,
                             );
                         });
+                }
+
+                // View changes apply to this pane directly (not the focused one), and
+                // the per-folder snapshot taken after drawing persists them.
+                if let Some(ItemViewerAction::SetViewPreset(preset)) = pending_action {
+                    preset.apply(view);
+                    pending_action = None;
+                }
+
+                // Ctrl + mouse wheel steps through the views like Windows Explorer.
+                if !is_drive_view && !is_recycle_bin_view {
+                    let steps = ctrl_wheel_steps(ui, viewer_rect, tab_id);
+                    if steps != 0 {
+                        ViewPreset::of(view).stepped(steps).apply(view);
+                    }
                 }
             });
 
@@ -380,4 +396,46 @@ fn draw_status_selected(
         font_id.clone(),
         color,
     );
+}
+
+/// Whole wheel notches turned with Ctrl held while the pointer is over `rect`
+/// (positive = away from the user). egui turns Ctrl+wheel into zoom rather than
+/// scrolling, so the raw wheel events are read here; smooth/touchpad deltas are
+/// accumulated so one gesture still moves one step at a time.
+fn ctrl_wheel_steps(ui: &egui::Ui, rect: egui::Rect, tab_id: u64) -> i32 {
+    if !ui.rect_contains_pointer(rect) {
+        return 0;
+    }
+
+    let delta: f32 = ui.input(|i| {
+        i.events
+            .iter()
+            .filter_map(|event| match event {
+                egui::Event::MouseWheel {
+                    unit,
+                    delta,
+                    modifiers,
+                    ..
+                } if modifiers.command => Some(match unit {
+                    egui::MouseWheelUnit::Line => delta.y,
+                    egui::MouseWheelUnit::Page => delta.y * 3.0,
+                    egui::MouseWheelUnit::Point => delta.y / 50.0,
+                }),
+                _ => None,
+            })
+            .sum()
+    });
+
+    let id = egui::Id::new(("item_viewer_ctrl_wheel", tab_id));
+    if delta == 0.0 {
+        if !ui.input(|i| i.modifiers.command) {
+            ui.data_mut(|d| d.remove::<f32>(id));
+        }
+        return 0;
+    }
+
+    let total = ui.data(|d| d.get_temp::<f32>(id).unwrap_or(0.0)) + delta;
+    let steps = total.trunc();
+    ui.data_mut(|d| d.insert_temp(id, total - steps));
+    steps as i32
 }

@@ -1978,6 +1978,16 @@ impl MainWindow {
             if action.toggle_active_tab_split {
                 self.toggle_split_for_active_tab();
             }
+
+            if let Some(preset) = action.set_view {
+                let side = self.focused_split;
+                preset.apply(self.active_tab_mut().view_mut(side));
+                let snapshot = directory_settings_snapshot_for_view(self.active_tab().view(side));
+                let _ = persist_directory_settings_snapshot(
+                    &mut self.settings_window.current_settings.directory_settings,
+                    snapshot,
+                );
+            }
         }
     }
 
@@ -3019,6 +3029,10 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 if explorer.active_tab().split_view.is_some() {
                     explorer.load_view(SplitSide::Secondary);
                 }
+            }
+            ItemViewerAction::SetViewPreset(preset) => {
+                // Normally applied by the pane that produced it; this is a fallback.
+                preset.apply(explorer.active_tab_mut().view_mut(side));
             }
             ItemViewerAction::ColumnSizesChanged { finished } => {
                 let snapshot =

@@ -13,7 +13,7 @@ use crate::gui::windows::containers::itemviewer_gallery::draw_gallery_view;
 use crate::gui::windows::containers::itemviewer_helper::*;
 use crate::gui::windows::containers::structs::{
     ItemViewerDisplayMode, ItemViewerFolderSizeState, ItemViewerLayout, ItemViewerNavBarAction,
-    RenameState, TabView, TagInfo, TagsState,
+    RenameState, TabView, TagInfo, TagsState, ViewPreset,
 };
 use crate::gui::windows::structs::{SettingsWindow, ThemeCustomizer};
 use eframe::egui;
@@ -59,6 +59,7 @@ pub fn draw_item_viewer(
     viewport_width: f32,
 ) -> Option<ItemViewerAction> {
     let display_mode = view.display_mode;
+    let current_view = ViewPreset::of(view);
     let files = &view.files;
     let sort_column = view.sort_column;
     let sort_ascending = view.sort_ascending;
@@ -153,10 +154,13 @@ pub fn draw_item_viewer(
         draw_object_drag_ghost(ui, palette, label, false);
     }
 
-    if display_mode == ItemViewerDisplayMode::Gallery && !is_drive_view && !is_recycle_bin_view {
+    if display_mode != ItemViewerDisplayMode::Details && !is_drive_view && !is_recycle_bin_view {
         return draw_gallery_view(
             ui,
             i18n,
+            display_mode,
+            current_view,
+            file_type_cache,
             files,
             &filter_state.cached_indices,
             sort_column,
@@ -200,6 +204,7 @@ pub fn draw_item_viewer(
             drag_state,
             modal_input_blocked,
             is_loading && files.is_empty(),
+            current_view,
         )
         .or(action);
     }
@@ -801,6 +806,7 @@ pub fn draw_item_viewer(
                         .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                         .show(|ui| {
                             apply_eden_text_overrides(ui, palette);
+                            draw_view_submenu(ui, palette, current_view, &mut action);
                             if ui.button("New Folder").clicked() {
                                 action = Some(ItemViewerAction::CreateFolder);
                                 ui.close();
