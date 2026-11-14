@@ -160,10 +160,6 @@ pub enum ItemViewerDisplayMode {
     SmallIcons,
     /// Windows "List": like Small icons, but filling columns and scrolling sideways.
     List,
-    /// Windows "Tiles": medium icon with name, type and size beside it.
-    Tiles,
-    /// Windows "Content": one item per row with type, date modified and size.
-    Content,
 }
 
 impl Default for ItemViewerDisplayMode {
@@ -217,13 +213,11 @@ pub enum ViewPreset {
     SmallIcons,
     List,
     Details,
-    Tiles,
-    Content,
 }
 
 impl ViewPreset {
-    /// The entries of Windows Explorer's View menu, in its order.
-    pub const MENU: [(ViewPreset, &'static str); 8] = [
+    /// The entries of the View menu, biggest first.
+    pub const MENU: [(ViewPreset, &'static str); 6] = [
         (
             ViewPreset::Icons(GalleryThumbnailSize::ExtraLarge),
             "Extra large icons",
@@ -239,12 +233,10 @@ impl ViewPreset {
         (ViewPreset::SmallIcons, "Small icons"),
         (ViewPreset::List, "List"),
         (ViewPreset::Details, "Details"),
-        (ViewPreset::Tiles, "Tiles"),
-        (ViewPreset::Content, "Content"),
     ];
 
     /// Ctrl+wheel order, biggest first (same order Windows Explorer steps through).
-    const LADDER: [ViewPreset; 10] = [
+    const LADDER: [ViewPreset; 8] = [
         ViewPreset::Icons(GalleryThumbnailSize::ExtraLarge),
         ViewPreset::Icons(GalleryThumbnailSize::Large),
         ViewPreset::Icons(GalleryThumbnailSize::Medium),
@@ -253,8 +245,6 @@ impl ViewPreset {
         ViewPreset::SmallIcons,
         ViewPreset::List,
         ViewPreset::Details,
-        ViewPreset::Tiles,
-        ViewPreset::Content,
     ];
 
     /// Short name shown next to the top bar's View button.
@@ -268,8 +258,6 @@ impl ViewPreset {
             Self::SmallIcons => "Small icons",
             Self::List => "List",
             Self::Details => "Details",
-            Self::Tiles => "Tiles",
-            Self::Content => "Content",
         }
     }
 
@@ -279,8 +267,6 @@ impl ViewPreset {
             ItemViewerDisplayMode::Gallery => Self::Icons(view.gallery_state.thumbnail_size),
             ItemViewerDisplayMode::SmallIcons => Self::SmallIcons,
             ItemViewerDisplayMode::List => Self::List,
-            ItemViewerDisplayMode::Tiles => Self::Tiles,
-            ItemViewerDisplayMode::Content => Self::Content,
         }
     }
 
@@ -293,15 +279,16 @@ impl ViewPreset {
             Self::SmallIcons => ItemViewerDisplayMode::SmallIcons,
             Self::List => ItemViewerDisplayMode::List,
             Self::Details => ItemViewerDisplayMode::Details,
-            Self::Tiles => ItemViewerDisplayMode::Tiles,
-            Self::Content => ItemViewerDisplayMode::Content,
         };
     }
 
     /// Moves along the ladder: positive `steps` = bigger (wheel up), negative =
     /// smaller. Stops at either end instead of wrapping, like Explorer.
     pub fn stepped(self, steps: i32) -> Self {
-        let index = Self::LADDER.iter().position(|p| *p == self).unwrap_or(7) as i32;
+        let index = Self::LADDER
+            .iter()
+            .position(|p| *p == self)
+            .unwrap_or(Self::LADDER.len() - 1) as i32;
         let last = Self::LADDER.len() as i32 - 1;
         Self::LADDER[(index - steps).clamp(0, last) as usize]
     }

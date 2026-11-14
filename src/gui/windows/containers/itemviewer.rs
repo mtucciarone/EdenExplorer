@@ -160,7 +160,6 @@ pub fn draw_item_viewer(
             i18n,
             display_mode,
             current_view,
-            file_type_cache,
             files,
             &filter_state.cached_indices,
             sort_column,

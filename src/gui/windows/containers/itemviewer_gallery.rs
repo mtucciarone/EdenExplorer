@@ -2,7 +2,6 @@ use crate::core::drives::is_raw_physical_drive_path;
 use crate::core::fs::FileItem;
 use crate::core::i18n::I18n;
 use crate::core::icons::IconCache;
-use crate::core::utils::files::{format_size, get_file_type_name};
 use crate::core::utils::text::apply_eden_text_overrides;
 use crate::core::utils::thumbnails::{ThumbnailPriority, ThumbnailService};
 use crate::core::utils::widgets::{
@@ -24,7 +23,7 @@ use crate::gui::windows::structs::{SettingsWindow, ThemeCustomizer};
 use eframe::egui;
 use egui::containers::{Popup, PopupCloseBehavior};
 use egui::{FontFamily, FontId};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::PathBuf;
 use windows::Win32::Foundation::HWND;
 
@@ -70,20 +69,6 @@ impl TileLayout {
                 (egui::vec2(240.0, compact_row), 8.0, 2.0, 16.0, false)
             }
             ItemViewerDisplayMode::List => (egui::vec2(280.0, compact_row), 8.0, 2.0, 16.0, true),
-            ItemViewerDisplayMode::Tiles => (
-                egui::vec2(300.0, (line_height * 3.0 + 12.0).max(64.0)),
-                8.0,
-                8.0,
-                48.0,
-                false,
-            ),
-            ItemViewerDisplayMode::Content => (
-                egui::vec2(viewport.x.max(200.0), (line_height * 2.0 + 20.0).max(64.0)),
-                0.0,
-                0.0,
-                48.0,
-                false,
-            ),
             // Gallery (Details never reaches this view).
             _ => {
                 let thumb = gallery_state.thumbnail_size.pixel_size();
@@ -151,12 +136,7 @@ impl TileLayout {
 
     /// Big enough boxes to be worth loading image thumbnails for.
     fn shows_thumbnails(&self) -> bool {
-        matches!(
-            self.mode,
-            ItemViewerDisplayMode::Gallery
-                | ItemViewerDisplayMode::Tiles
-                | ItemViewerDisplayMode::Content
-        )
+        self.mode == ItemViewerDisplayMode::Gallery
     }
 }
 
@@ -166,7 +146,6 @@ pub fn draw_gallery_view(
     i18n: &I18n,
     display_mode: ItemViewerDisplayMode,
     current_view: ViewPreset,
-    file_type_cache: &mut HashMap<String, String>,
     files: &[FileItem],
     filtered_indices: &[usize],
     sort_column: SortColumn,
@@ -348,7 +327,6 @@ pub fn draw_gallery_view(
                             item_index,
                             rect,
                             &layout,
-                            file_type_cache,
                             icon_cache,
                             thumbnail_service,
                             explorer_state,
@@ -671,7 +649,6 @@ fn draw_gallery_tile(
     item_index: usize,
     rect: egui::Rect,
     layout: &TileLayout,
-    file_type_cache: &mut HashMap<String, String>,
     icon_cache: &IconCache,
     thumbnail_service: &mut ThumbnailService,
     explorer_state: &ExplorerState,
@@ -711,7 +688,6 @@ fn draw_gallery_tile(
     } else {
         palette.text_normal
     };
-    let secondary_color = text_color.gamma_multiply(0.65);
 
     let name_rect = if layout.mode == ItemViewerDisplayMode::Gallery {
         let thumb_size = layout.icon;
@@ -755,11 +731,7 @@ fn draw_gallery_tile(
         )
     } else {
         // Icon on the left, text lines to its right.
-        let left_pad = if layout.mode == ItemViewerDisplayMode::Content {
-            12.0
-        } else {
-            6.0
-        };
+        let left_pad = 6.0;
         let icon_rect = egui::Rect::from_min_size(
             egui::pos2(rect.left() + left_pad, rect.center().y - layout.icon * 0.5),
             egui::vec2(layout.icon, layout.icon),
@@ -778,88 +750,26 @@ fn draw_gallery_tile(
         );
 
         let text_left = icon_rect.right() + if layout.icon > 20.0 { 10.0 } else { 6.0 };
-        let text_right = rect.right() - 8.0;
-        let line_h = layout.line_height;
-
-        let mut type_text = || -> String {
-            if file.is_dir {
-                "Folder".to_string()
-            } else {
-                let ext = file
-                    .path
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    .unwrap_or("");
-                get_file_type_name(ext, file_type_cache).to_string()
-            }
-        };
-        let size_text = || -> Option<String> {
-            (!file.is_dir)
-                .then_some(file.file_size)
-                .flatten()
-                .map(format_size)
-        };
-
-        // Content: date modified and size in a right-hand column when there is room.
-        let mut name_right = text_right;
-        if layout.mode == ItemViewerDisplayMode::Content && rect.width() > 560.0 {
-            const DETAIL_COLUMN_WIDTH: f32 = 240.0;
-            let detail_left = text_right - DETAIL_COLUMN_WIDTH;
-            name_right = detail_left - 16.0;
-
-            let details: Vec<String> = [
-                file.modified_time
-                    .as_deref()
-                    .map(|t| format!("Date modified: {t}")),
-                size_text().map(|s| format!("Size: {s}")),
-            ]
-            .into_iter()
-            .flatten()
-            .collect();
-            paint_text_lines(
-                ui,
-                &tile_painter,
-                details.iter().map(|t| (t.as_str(), secondary_color)),
-                detail_left,
-                text_right,
-                rect.center().y - details.len() as f32 * line_h * 0.5,
-                line_h,
-                font_id,
+        let name_rect = egui::Rect::from_min_max(
+            egui::pos2(text_left, rect.center().y - layout.line_height * 0.5),
+            egui::pos2(
+                rect.right() - 8.0,
+                rect.center().y + layout.line_height * 0.5,
+            ),
+        );
+        // While the name is being edited the text box takes its place.
+        if !rename_state.as_ref().is_some_and(|rs| rs.path == file.path) {
+            let (name, _) =
+                truncate_item_text(ui, &file.name, name_rect.width(), font_id, text_color);
+            tile_painter.text(
+                name_rect.left_center(),
+                egui::Align2::LEFT_CENTER,
+                name,
+                font_id.clone(),
+                text_color,
             );
         }
-
-        let mut lines: Vec<(String, egui::Color32)> = vec![(file.name.clone(), text_color)];
-        match layout.mode {
-            ItemViewerDisplayMode::Tiles => {
-                lines.push((type_text(), secondary_color));
-                if let Some(size) = size_text() {
-                    lines.push((size, secondary_color));
-                }
-            }
-            ItemViewerDisplayMode::Content => lines.push((type_text(), secondary_color)),
-            _ => {}
-        }
-
-        let block_top = rect.center().y - lines.len() as f32 * line_h * 0.5;
-        // While the name is being edited the text box takes the first line.
-        let skip = usize::from(rename_state.as_ref().is_some_and(|rs| rs.path == file.path));
-        paint_text_lines(
-            ui,
-            &tile_painter,
-            lines[skip..]
-                .iter()
-                .map(|(text, color)| (text.as_str(), *color)),
-            text_left,
-            name_right,
-            block_top + skip as f32 * line_h,
-            line_h,
-            font_id,
-        );
-
-        egui::Rect::from_min_max(
-            egui::pos2(text_left, block_top),
-            egui::pos2(name_right, block_top + line_h),
-        )
+        name_rect
     };
 
     if rename_state.as_ref().is_some_and(|rs| rs.path == file.path) {
@@ -887,32 +797,6 @@ fn draw_gallery_tile(
     }
 
     (response.on_hover_text(&file.name), None)
-}
-
-/// Paints `lines` left-aligned between `left` and `right`, one per `line_h`
-/// starting at `top`, truncating each line with an ellipsis.
-#[allow(clippy::too_many_arguments)]
-fn paint_text_lines<'a>(
-    ui: &mut egui::Ui,
-    painter: &egui::Painter,
-    lines: impl Iterator<Item = (&'a str, egui::Color32)>,
-    left: f32,
-    right: f32,
-    top: f32,
-    line_h: f32,
-    font_id: &FontId,
-) {
-    let width = (right - left).max(0.0);
-    for (i, (text, color)) in lines.enumerate() {
-        let (text, _) = truncate_item_text(ui, text, width, font_id, color);
-        painter.text(
-            egui::pos2(left, top + (i as f32 + 0.5) * line_h),
-            egui::Align2::LEFT_CENTER,
-            text,
-            font_id.clone(),
-            color,
-        );
-    }
 }
 
 /// Draws a file's thumbnail (when allowed and available) or its icon into
