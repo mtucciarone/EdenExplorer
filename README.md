@@ -183,6 +183,8 @@
 - [x] Customize shortcut keys for various actions
 - [x] Remember opened tabs global setting
 - [x] Decoupled icon rendering via SVG icons
+- [x] Added optional extra action buttons to the toolbar
+- [x] EdenExplorer Updates checker
 
 ## License
 This project is FOSS, released under the MIT License.

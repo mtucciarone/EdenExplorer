@@ -32,6 +32,7 @@ use crate::gui::windows::customizetheme::draw_theme_customizer;
 use crate::gui::windows::enums::{SettingsAction, ThemeCustomizerAction};
 use crate::gui::windows::settings::draw_settings_window;
 use crate::gui::windows::structs::{AppSettings, Navigation, ThemeCustomizer};
+use crate::gui::windows::updates::{draw_update_window, start_update_check};
 use crate::gui::windows::windowsoverrides::toggle_window_fullscreen;
 use crate::gui::windows::windowsoverrides::{mark_clipboard_dirty, save_manual_window_size};
 use crossbeam_channel::Receiver;
@@ -1446,6 +1447,22 @@ impl MainWindow {
         draw_about_window(&mut self.i18n, ctx, &mut self.about_window, palette);
     }
 
+    pub fn handle_draw_update_window(&mut self, ctx: &egui::Context, palette: &ThemePalette) {
+        if let Some(url) = draw_update_window(&self.i18n, ctx, &mut self.update_window, palette) {
+            let wide_url: Vec<u16> = url.encode_utf16().chain(std::iter::once(0)).collect();
+            unsafe {
+                let _ = ShellExecuteW(
+                    None,
+                    PCWSTR::null(),
+                    PCWSTR(wide_url.as_ptr()),
+                    PCWSTR::null(),
+                    PCWSTR::null(),
+                    SW_SHOWNORMAL,
+                );
+            }
+        }
+    }
+
     pub fn handle_tabbar_action(
         &mut self,
         tabbar_action: Option<ItemViewerNavBarAction>,
@@ -1952,6 +1969,10 @@ impl MainWindow {
                 self.about_window.open = true;
             }
 
+            if action.check_for_updates {
+                start_update_check(&mut self.update_window);
+            }
+
             if action.exit {
                 if let Some(hwnd) = self.hwnd {
                     unsafe {
@@ -1992,6 +2013,7 @@ impl MainWindow {
         self.theme_customizer.open
             || self.settings_window.open
             || self.about_window.open
+            || self.update_window.open
             || self.tags_state.picker.is_some()
             || self.tags_state.delete_confirmation.is_some()
             || self
