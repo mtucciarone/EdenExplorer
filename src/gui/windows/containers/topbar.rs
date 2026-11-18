@@ -258,7 +258,7 @@ fn draw_view_menu(
 ) {
     let icon = clickable_active_icon(
         ui,
-        AppIcon::Eye.regular(),
+        AppIcon::LayoutGrid.regular(),
         ui.visuals().text_color(),
         !is_file_explorer || has_split,
         palette,

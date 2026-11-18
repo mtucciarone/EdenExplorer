@@ -30,12 +30,8 @@ use windows::Win32::Foundation::HWND;
 const LABEL_HEIGHT: f32 = 34.0;
 const TOOLBAR_HEIGHT: f32 = 24.0;
 const GALLERY_TOOLBAR_GAP: f32 = 6.0;
-/// Room left under a sideways-scrolling List for its scrollbar.
-const HORIZONTAL_SCROLLBAR_ROOM: f32 = 14.0;
-
 /// Where every tile goes for one of the icon-style display modes (everything
-/// except Details). Row-major modes fill rows and scroll vertically; List is
-/// column-major and scrolls sideways, like Windows Explorer.
+/// except Details). Tiles fill rows and scroll vertically.
 #[derive(Clone, Copy)]
 struct TileLayout {
     mode: ItemViewerDisplayMode,
@@ -44,7 +40,6 @@ struct TileLayout {
     row_pitch: f32,
     columns: usize,
     rows: usize,
-    column_major: bool,
     /// Edge length of the icon / thumbnail box.
     icon: f32,
     line_height: f32,
@@ -63,12 +58,11 @@ impl TileLayout {
         let line_height = (palette.text_size * 1.4).ceil();
         let compact_row = (line_height + 6.0).max(22.0);
 
-        // (tile size, column gap, row gap, icon edge, column-major)
-        let (tile, gap_x, gap_y, icon, column_major) = match mode {
-            ItemViewerDisplayMode::SmallIcons => {
-                (egui::vec2(240.0, compact_row), 8.0, 2.0, 16.0, false)
+        // (tile size, column gap, row gap, icon edge)
+        let (tile, gap_x, gap_y, icon) = match mode {
+            ItemViewerDisplayMode::SmallIcons | ItemViewerDisplayMode::List => {
+                (egui::vec2(240.0, compact_row), 8.0, 2.0, 16.0)
             }
-            ItemViewerDisplayMode::List => (egui::vec2(280.0, compact_row), 8.0, 2.0, 16.0, true),
             // Gallery (Details never reaches this view).
             _ => {
                 let thumb = gallery_state.thumbnail_size.pixel_size();
@@ -79,23 +73,16 @@ impl TileLayout {
                     gap,
                     gap,
                     thumb,
-                    false,
                 )
             }
         };
 
         let col_pitch = tile.x + gap_x;
         let row_pitch = tile.y + gap_y;
-        let (columns, rows) = if column_major {
-            let usable_height = (viewport.y - HORIZONTAL_SCROLLBAR_ROOM).max(row_pitch);
-            let rows = ((usable_height + gap_y) / row_pitch).floor().max(1.0) as usize;
-            (count.div_ceil(rows).max(1), rows)
-        } else {
-            let columns = ((viewport.x.max(tile.x) + gap_x) / col_pitch)
-                .floor()
-                .max(1.0) as usize;
-            (columns, count.div_ceil(columns))
-        };
+        let columns = ((viewport.x.max(tile.x) + gap_x) / col_pitch)
+            .floor()
+            .max(1.0) as usize;
+        let rows = count.div_ceil(columns);
 
         Self {
             mode,
@@ -104,7 +91,6 @@ impl TileLayout {
             row_pitch,
             columns,
             rows,
-            column_major,
             icon,
             line_height,
             padding: gallery_state.thumbnail_padding,
@@ -112,26 +98,15 @@ impl TileLayout {
     }
 
     fn index(&self, row: usize, col: usize) -> usize {
-        if self.column_major {
-            col * self.rows + row
-        } else {
-            row * self.columns + col
-        }
+        row * self.columns + col
     }
 
     /// Size the scroll content has to cover (at least the visible area).
     fn content_size(&self, viewport: egui::Vec2) -> egui::Vec2 {
-        if self.column_major {
-            egui::vec2(
-                (self.columns as f32 * self.col_pitch).max(viewport.x),
-                (viewport.y - HORIZONTAL_SCROLLBAR_ROOM).max(self.row_pitch),
-            )
-        } else {
-            egui::vec2(
-                viewport.x.max(self.tile.x),
-                (self.rows as f32 * self.row_pitch).max(viewport.y),
-            )
-        }
+        egui::vec2(
+            viewport.x.max(self.tile.x),
+            (self.rows as f32 * self.row_pitch).max(viewport.y),
+        )
     }
 
     /// Big enough boxes to be worth loading image thumbnails for.
@@ -217,18 +192,6 @@ pub fn draw_gallery_view(
         .input(|i| i.pointer.interact_pos().or_else(|| i.pointer.hover_pos()));
     let pointer_released = ui.ctx().input(|i| i.pointer.primary_released());
     let hovered_target_ref = drag_hover_target.as_ref();
-    let thumb_size = gallery_state.thumbnail_size.pixel_size();
-    let tile_width = thumb_size + gallery_state.thumbnail_padding * 2.0 + 26.0;
-    let tile_height = thumb_size + gallery_state.thumbnail_padding * 2.0 + LABEL_HEIGHT;
-    let row_pitch = tile_height + gallery_state.thumbnail_gap;
-    let col_pitch = tile_width + gallery_state.thumbnail_gap;
-    let available_width = ui.available_width().max(tile_width);
-    let columns = ((available_width + gallery_state.thumbnail_gap) / col_pitch)
-        .floor()
-        .max(1.0) as usize;
-    let rows = filtered_indices.len().div_ceil(columns);
-    let content_height = (rows as f32 * row_pitch).max(ui.available_height());
-    let page_size = ((ui.available_height() / row_pitch).floor().max(1.0) as usize) * columns;
     let keyboard_navigation_pressed = ui.ctx().input(|i| {
         i.key_pressed(egui::Key::ArrowDown)
             || i.key_pressed(egui::Key::ArrowUp)
@@ -238,18 +201,6 @@ pub fn draw_gallery_view(
             || i.key_pressed(egui::Key::PageDown)
     });
 
-    if !modal_input_blocked && is_focused {
-        if let Some(a) = handle_keyboard_navigation(
-            ui.ctx(),
-            filtered_indices,
-            &files.to_vec(),
-            false,
-            page_size,
-            explorer_state,
-        ) {
-            action = Some(a);
-        }
-    }
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let mut best_hovered_tile: Option<(f32, bool, PathBuf, egui::Rect)> = None;
     let mut current_hovered_drop_target: Option<PathBuf> = None;
@@ -273,38 +224,28 @@ pub fn draw_gallery_view(
     let (rows, columns) = (layout.rows, layout.columns);
     let (row_pitch, col_pitch) = (layout.row_pitch, layout.col_pitch);
     let content_size = layout.content_size(scroll_rect.size());
+    let page_size = ((scroll_rect.height() / row_pitch).floor().max(1.0) as usize) * columns;
 
-    // List scrolls sideways; let the normal wheel drive it, like Explorer.
-    if layout.column_major && ui.rect_contains_pointer(scroll_rect) {
-        ui.ctx().input_mut(|i| {
-            if i.smooth_scroll_delta.x == 0.0 {
-                i.smooth_scroll_delta.x = i.smooth_scroll_delta.y;
-                i.smooth_scroll_delta.y = 0.0;
-            }
-        });
+    if !modal_input_blocked && is_focused {
+        if let Some(a) = handle_keyboard_navigation(
+            ui.ctx(),
+            filtered_indices,
+            &files.to_vec(),
+            false,
+            page_size,
+            explorer_state,
+        ) {
+            action = Some(a);
+        }
     }
 
     ui.scope_builder(egui::UiBuilder::new().max_rect(scroll_rect), |ui| {
-        let scroll_area = if layout.column_major {
-            egui::ScrollArea::horizontal()
-        } else {
-            egui::ScrollArea::vertical()
-        };
-        scroll_area
-            .id_salt((
-                "item_viewer_gallery_scroll",
-                active_tab_id,
-                layout.column_major,
-            ))
+        egui::ScrollArea::vertical()
+            .id_salt(("item_viewer_gallery_scroll", active_tab_id))
             .auto_shrink([false, true])
             .show_viewport(ui, |ui, viewport| {
-                if layout.column_major {
-                    ui.set_min_width(content_size.x);
-                    ui.set_height(content_size.y);
-                } else {
-                    ui.set_width(content_size.x);
-                    ui.set_min_height(content_size.y);
-                }
+                ui.set_width(content_size.x);
+                ui.set_min_height(content_size.y);
 
                 let visible_start_row = (viewport.top() / row_pitch).floor().max(0.0) as usize;
                 let visible_end_row = (viewport.bottom() / row_pitch).ceil().max(0.0) as usize;
@@ -333,7 +274,6 @@ pub fn draw_gallery_view(
 
                 let content_origin = ui.min_rect().min;
 
-                let bg_rect = egui::Rect::from_min_size(content_origin, content_size);
                 if is_focused
                     && keyboard_navigation_pressed
                     && let Some(focus_idx) = explorer_state.selection_focus
@@ -345,15 +285,12 @@ pub fn draw_gallery_view(
                                 (focus_idx % columns) as f32 * col_pitch,
                                 (focus_idx / columns) as f32 * row_pitch,
                             ),
-                        egui::vec2(tile_width, tile_height),
+                        layout.tile,
                     );
                     ui.scroll_to_rect(focus_rect, Some(egui::Align::Center));
                 }
 
-                let bg_rect = egui::Rect::from_min_size(
-                    content_origin,
-                    egui::vec2(available_width, content_height),
-                );
+                let bg_rect = egui::Rect::from_min_size(content_origin, content_size);
                 let bg_response = ui.interact(
                     bg_rect,
                     ui.id().with(("gallery_background", active_tab_id)),

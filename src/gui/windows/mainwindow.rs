@@ -539,20 +539,38 @@ impl eframe::App for MainWindow {
                             egui::vec2(sidebar_width, ui.available_height() + 15.5),
                             egui::Layout::top_down(egui::Align::Min),
                             |ui| {
-                                egui::Frame::NONE.show(ui, |ui| {
-                                    ui.add_space(8.0);
-                                    topbar_action = Some(draw_topbar(
-                                        ui,
-                                        &self.i18n,
-                                        self.theme == ThemeMode::Dark,
-                                        self.display_file_explorer,
-                                        self.sidebar_collapsed,
-                                        self.hwnd,
-                                        &palette,
-                                        has_split,
-                                        current_view,
-                                    ));
-                                });
+                                let sidebar_topbar_rect = ui
+                                    .allocate_exact_size(
+                                        // The sidebar frame's 1 px top stroke rasterizes on the
+                                        // following row, so end this region one pixel before the
+                                        // tab strip's 32 px allocation to keep the boundary flush.
+                                        egui::vec2(sidebar_width, 31.0),
+                                        egui::Sense::hover(),
+                                    )
+                                    .0;
+                                let sidebar_topbar_draw_rect = egui::Rect::from_min_size(
+                                    sidebar_topbar_rect.min,
+                                    egui::vec2(sidebar_width, 32.0),
+                                );
+                                ui.scope_builder(
+                                    egui::UiBuilder::new().max_rect(sidebar_topbar_draw_rect),
+                                    |ui| {
+                                        egui::Frame::NONE.show(ui, |ui| {
+                                            ui.add_space(8.0);
+                                            topbar_action = Some(draw_topbar(
+                                                ui,
+                                                &self.i18n,
+                                                self.theme == ThemeMode::Dark,
+                                                self.display_file_explorer,
+                                                self.sidebar_collapsed,
+                                                self.hwnd,
+                                                &palette,
+                                                has_split,
+                                                current_view,
+                                            ));
+                                        });
+                                    },
+                                );
                                 if !self.sidebar_collapsed {
                                     sidebar_frame.show(ui, |ui| {
                                         sidebar_action = Some(draw_sidebar(

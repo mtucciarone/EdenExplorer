@@ -157,9 +157,9 @@ impl TabView {
 pub enum ItemViewerDisplayMode {
     Details,
     Gallery,
-    /// Windows "Small icons": small icon with the name beside it, filling rows.
+    /// Legacy persisted value. It is rendered as the current Windows "List" mode.
     SmallIcons,
-    /// Windows "List": like Small icons, but filling columns and scrolling sideways.
+    /// Legacy persisted value for the removed sideways list layout.
     List,
 }
 
@@ -212,13 +212,12 @@ impl GalleryThumbnailSize {
 pub enum ViewPreset {
     Icons(GalleryThumbnailSize),
     SmallIcons,
-    List,
     Details,
 }
 
 impl ViewPreset {
     /// The entries of the View menu, biggest first.
-    pub const MENU: [(ViewPreset, &'static str); 6] = [
+    pub const MENU: [(ViewPreset, &'static str); 7] = [
         (
             ViewPreset::Icons(GalleryThumbnailSize::ExtraLarge),
             "Extra large icons",
@@ -231,20 +230,26 @@ impl ViewPreset {
             ViewPreset::Icons(GalleryThumbnailSize::Medium),
             "Medium icons",
         ),
-        (ViewPreset::SmallIcons, "Small icons"),
-        (ViewPreset::List, "List"),
+        (
+            ViewPreset::Icons(GalleryThumbnailSize::Small),
+            "Small icons",
+        ),
+        (
+            ViewPreset::Icons(GalleryThumbnailSize::ExtraSmall),
+            "Extra Small Icons",
+        ),
+        (ViewPreset::SmallIcons, "List"),
         (ViewPreset::Details, "Details"),
     ];
 
     /// Ctrl+wheel order, biggest first (same order Windows Explorer steps through).
-    const LADDER: [ViewPreset; 8] = [
+    const LADDER: [ViewPreset; 7] = [
         ViewPreset::Icons(GalleryThumbnailSize::ExtraLarge),
         ViewPreset::Icons(GalleryThumbnailSize::Large),
         ViewPreset::Icons(GalleryThumbnailSize::Medium),
         ViewPreset::Icons(GalleryThumbnailSize::Small),
         ViewPreset::Icons(GalleryThumbnailSize::ExtraSmall),
         ViewPreset::SmallIcons,
-        ViewPreset::List,
         ViewPreset::Details,
     ];
 
@@ -254,10 +259,9 @@ impl ViewPreset {
             Self::Icons(GalleryThumbnailSize::ExtraLarge) => "Extra large",
             Self::Icons(GalleryThumbnailSize::Large) => "Large icons",
             Self::Icons(GalleryThumbnailSize::Medium) => "Medium icons",
-            Self::Icons(GalleryThumbnailSize::Small) => "Small grid",
-            Self::Icons(GalleryThumbnailSize::ExtraSmall) => "Tiny grid",
-            Self::SmallIcons => "Small icons",
-            Self::List => "List",
+            Self::Icons(GalleryThumbnailSize::Small) => "Small icons",
+            Self::Icons(GalleryThumbnailSize::ExtraSmall) => "Extra Small Icons",
+            Self::SmallIcons => "List",
             Self::Details => "Details",
         }
     }
@@ -267,7 +271,7 @@ impl ViewPreset {
             ItemViewerDisplayMode::Details => Self::Details,
             ItemViewerDisplayMode::Gallery => Self::Icons(view.gallery_state.thumbnail_size),
             ItemViewerDisplayMode::SmallIcons => Self::SmallIcons,
-            ItemViewerDisplayMode::List => Self::List,
+            ItemViewerDisplayMode::List => Self::SmallIcons,
         }
     }
 
@@ -278,7 +282,6 @@ impl ViewPreset {
                 ItemViewerDisplayMode::Gallery
             }
             Self::SmallIcons => ItemViewerDisplayMode::SmallIcons,
-            Self::List => ItemViewerDisplayMode::List,
             Self::Details => ItemViewerDisplayMode::Details,
         };
     }
