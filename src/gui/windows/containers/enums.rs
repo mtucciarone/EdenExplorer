@@ -60,6 +60,7 @@ pub enum ItemViewerAction {
     ColumnSizesChanged {
         finished: bool,
     },
+    SetViewPreset(crate::gui::windows::containers::structs::ViewPreset),
 }
 
 #[derive(Clone, Debug)]

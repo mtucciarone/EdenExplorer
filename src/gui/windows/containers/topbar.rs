@@ -1,7 +1,7 @@
 use crate::core::i18n::I18n;
 use crate::gui::icon_system::{AppIcon, paint_icon};
 use crate::gui::utils::{clickable_active_icon, clickable_icon};
-use crate::gui::windows::containers::structs::TopbarAction;
+use crate::gui::windows::containers::structs::{TopbarAction, ViewPreset};
 use crate::gui::windows::windowsoverrides::toggle_window_fullscreen;
 use eframe::egui;
 use egui::Pos2;
@@ -16,6 +16,7 @@ pub fn draw_topbar(
     hwnd: Option<HWND>,
     palette: &crate::gui::theme::ThemePalette,
     has_split: bool,
+    current_view: Option<ViewPreset>,
 ) -> TopbarAction {
     let mut action = TopbarAction::default();
 
@@ -33,6 +34,7 @@ pub fn draw_topbar(
                 palette,
                 &mut action,
                 has_split,
+                current_view,
             );
             draw_drag_region(ui, hwnd);
         });
@@ -53,6 +55,7 @@ pub fn draw_topbar(
                     palette,
                     &mut action,
                     has_split,
+                    current_view,
                 );
             });
 
@@ -157,6 +160,7 @@ fn draw_mode_icons(
     palette: &crate::gui::theme::ThemePalette,
     action: &mut TopbarAction,
     has_split: bool,
+    current_view: Option<ViewPreset>,
 ) {
     let sidebar_tooltip_key = if sidebar_collapsed {
         "tooltip_show_sidebar"
@@ -225,45 +229,102 @@ fn draw_mode_icons(
         action.toggle_file_explorer = true;
     }
 
-    if clickable_active_icon(
+    draw_view_menu(
         ui,
-        AppIcon::Tag.regular(),
-        ui.visuals().text_color(),
-        !is_file_explorer,
+        i18n,
         palette,
-    )
+        is_file_explorer,
+        has_split,
+        current_view,
+        !sidebar_collapsed,
+        action,
+    );
+}
+
+/// One View button for everything that changes how the window shows items:
+/// Tags, split view and the focused pane's display mode. The current mode's
+/// name sits beside the icon. `current_view` is `None` where the mode can't
+/// change (drive list, Recycle Bin), which greys out those entries.
+#[allow(clippy::too_many_arguments)]
+fn draw_view_menu(
+    ui: &mut egui::Ui,
+    i18n: &I18n,
+    palette: &crate::gui::theme::ThemePalette,
+    is_file_explorer: bool,
+    has_split: bool,
+    current_view: Option<ViewPreset>,
+    show_label: bool,
+    action: &mut TopbarAction,
+) {
+    let icon = clickable_active_icon(
+        ui,
+        AppIcon::LayoutGrid.regular(),
+        ui.visuals().text_color(),
+        !is_file_explorer || has_split,
+        palette,
+    );
+    let label_text = if is_file_explorer {
+        current_view.map(ViewPreset::short_label)
+    } else {
+        Some("Tags")
+    };
+    let response = match label_text.filter(|_| show_label) {
+        Some(text) => {
+            let label = ui.add(
+                egui::Label::new(
+                    egui::RichText::new(text)
+                        .size((palette.text_size - 2.0).max(9.0))
+                        .color(ui.visuals().weak_text_color()),
+                )
+                .selectable(false)
+                .sense(egui::Sense::click()),
+            );
+            icon.union(label)
+        }
+        None => icon,
+    }
     .on_hover_text(
-        egui::RichText::new(&i18n.tr("tooltip_show_tags"))
+        egui::RichText::new("View")
             .size(palette.tooltip_text_size)
             .color(palette.tooltip_text_color),
     )
-    .on_hover_cursor(egui::CursorIcon::PointingHand)
-    .clicked()
-    {
-        action.toggle_file_explorer = true;
-    }
+    .on_hover_cursor(egui::CursorIcon::PointingHand);
 
-    if is_file_explorer {
-        let (icon, tooltip_key) = if has_split {
-            (
-                AppIcon::ArrowsInLineHorizontal.regular(),
-                "tooltip_close_split",
+    egui::Popup::menu(&response).show(|ui| {
+        crate::core::utils::text::apply_eden_text_overrides(ui, palette);
+
+        let mut show_tags = !is_file_explorer;
+        if ui
+            .checkbox(&mut show_tags, i18n.tr("tooltip_show_tags"))
+            .clicked()
+        {
+            action.toggle_file_explorer = true;
+            ui.close();
+        }
+        let mut split = has_split;
+        if ui
+            .add_enabled(
+                is_file_explorer,
+                egui::Checkbox::new(&mut split, i18n.tr("tooltip_open_split")),
             )
-        } else {
-            (AppIcon::SplitHorizontal.regular(), "tooltip_open_split")
-        };
-        if clickable_icon(ui, icon, palette)
-            .on_hover_text(
-                egui::RichText::new(i18n.tr(tooltip_key))
-                    .size(palette.tooltip_text_size)
-                    .color(palette.tooltip_text_color),
-            )
-            .on_hover_cursor(egui::CursorIcon::PointingHand)
             .clicked()
         {
             action.toggle_active_tab_split = true;
+            ui.close();
         }
-    }
+
+        ui.separator();
+
+        let current = current_view.filter(|_| is_file_explorer);
+        ui.add_enabled_ui(current.is_some(), |ui| {
+            for (preset, label) in ViewPreset::MENU {
+                if ui.radio(current == Some(preset), label).clicked() {
+                    action.set_view = Some(preset);
+                    ui.close();
+                }
+            }
+        });
+    });
 }
 
 fn draw_drag_region(ui: &mut egui::Ui, hwnd: Option<HWND>) {

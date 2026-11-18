@@ -12,11 +12,12 @@ use crate::gui::theme::ThemePalette;
 use crate::gui::utils::{SortColumn, truncate_item_text};
 use crate::gui::windows::containers::enums::{ItemViewerAction, ItemViewerContextAction};
 use crate::gui::windows::containers::itemviewer_helper::{
-    draw_empty_item_viewer_area, handle_context_menu_actions, handle_editing_file_name,
-    handle_keyboard_navigation, handle_row_click,
+    draw_empty_item_viewer_area, draw_view_submenu, handle_context_menu_actions,
+    handle_editing_file_name, handle_keyboard_navigation, handle_row_click,
 };
 use crate::gui::windows::containers::structs::{
-    DragState, ExplorerState, GalleryState, GalleryThumbnailSize, RenameState,
+    DragState, ExplorerState, GalleryState, GalleryThumbnailSize, ItemViewerDisplayMode,
+    RenameState, ViewPreset,
 };
 use crate::gui::windows::structs::{SettingsWindow, ThemeCustomizer};
 use eframe::egui;
@@ -29,11 +30,97 @@ use windows::Win32::Foundation::HWND;
 const LABEL_HEIGHT: f32 = 34.0;
 const TOOLBAR_HEIGHT: f32 = 24.0;
 const GALLERY_TOOLBAR_GAP: f32 = 6.0;
+/// Where every tile goes for one of the icon-style display modes (everything
+/// except Details). Tiles fill rows and scroll vertically.
+#[derive(Clone, Copy)]
+struct TileLayout {
+    mode: ItemViewerDisplayMode,
+    tile: egui::Vec2,
+    col_pitch: f32,
+    row_pitch: f32,
+    columns: usize,
+    rows: usize,
+    /// Edge length of the icon / thumbnail box.
+    icon: f32,
+    line_height: f32,
+    /// Gallery only: padding around the thumbnail.
+    padding: f32,
+}
+
+impl TileLayout {
+    fn new(
+        mode: ItemViewerDisplayMode,
+        gallery_state: &GalleryState,
+        palette: &ThemePalette,
+        viewport: egui::Vec2,
+        count: usize,
+    ) -> Self {
+        let line_height = (palette.text_size * 1.4).ceil();
+        let compact_row = (line_height + 6.0).max(22.0);
+
+        // (tile size, column gap, row gap, icon edge)
+        let (tile, gap_x, gap_y, icon) = match mode {
+            ItemViewerDisplayMode::SmallIcons | ItemViewerDisplayMode::List => {
+                (egui::vec2(240.0, compact_row), 8.0, 2.0, 16.0)
+            }
+            // Gallery (Details never reaches this view).
+            _ => {
+                let thumb = gallery_state.thumbnail_size.pixel_size();
+                let pad = gallery_state.thumbnail_padding;
+                let gap = gallery_state.thumbnail_gap;
+                (
+                    egui::vec2(thumb + pad * 2.0 + 26.0, thumb + pad * 2.0 + LABEL_HEIGHT),
+                    gap,
+                    gap,
+                    thumb,
+                )
+            }
+        };
+
+        let col_pitch = tile.x + gap_x;
+        let row_pitch = tile.y + gap_y;
+        let columns = ((viewport.x.max(tile.x) + gap_x) / col_pitch)
+            .floor()
+            .max(1.0) as usize;
+        let rows = count.div_ceil(columns);
+
+        Self {
+            mode,
+            tile,
+            col_pitch,
+            row_pitch,
+            columns,
+            rows,
+            icon,
+            line_height,
+            padding: gallery_state.thumbnail_padding,
+        }
+    }
+
+    fn index(&self, row: usize, col: usize) -> usize {
+        row * self.columns + col
+    }
+
+    /// Size the scroll content has to cover (at least the visible area).
+    fn content_size(&self, viewport: egui::Vec2) -> egui::Vec2 {
+        egui::vec2(
+            viewport.x.max(self.tile.x),
+            (self.rows as f32 * self.row_pitch).max(viewport.y),
+        )
+    }
+
+    /// Big enough boxes to be worth loading image thumbnails for.
+    fn shows_thumbnails(&self) -> bool {
+        self.mode == ItemViewerDisplayMode::Gallery
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 pub fn draw_gallery_view(
     ui: &mut egui::Ui,
     i18n: &I18n,
+    display_mode: ItemViewerDisplayMode,
+    current_view: ViewPreset,
     files: &[FileItem],
     filtered_indices: &[usize],
     sort_column: SortColumn,
@@ -69,6 +156,7 @@ pub fn draw_gallery_view(
         i18n,
         palette,
         gallery_state,
+        display_mode,
         sort_column,
         sort_ascending,
     );
@@ -85,6 +173,7 @@ pub fn draw_gallery_view(
             drag_state,
             modal_input_blocked,
             false,
+            current_view,
         )
         .or(action);
     }
@@ -103,18 +192,6 @@ pub fn draw_gallery_view(
         .input(|i| i.pointer.interact_pos().or_else(|| i.pointer.hover_pos()));
     let pointer_released = ui.ctx().input(|i| i.pointer.primary_released());
     let hovered_target_ref = drag_hover_target.as_ref();
-    let thumb_size = gallery_state.thumbnail_size.pixel_size();
-    let tile_width = thumb_size + gallery_state.thumbnail_padding * 2.0 + 26.0;
-    let tile_height = thumb_size + gallery_state.thumbnail_padding * 2.0 + LABEL_HEIGHT;
-    let row_pitch = tile_height + gallery_state.thumbnail_gap;
-    let col_pitch = tile_width + gallery_state.thumbnail_gap;
-    let available_width = ui.available_width().max(tile_width);
-    let columns = ((available_width + gallery_state.thumbnail_gap) / col_pitch)
-        .floor()
-        .max(1.0) as usize;
-    let rows = filtered_indices.len().div_ceil(columns);
-    let content_height = (rows as f32 * row_pitch).max(ui.available_height());
-    let page_size = ((ui.available_height() / row_pitch).floor().max(1.0) as usize) * columns;
     let keyboard_navigation_pressed = ui.ctx().input(|i| {
         i.key_pressed(egui::Key::ArrowDown)
             || i.key_pressed(egui::Key::ArrowUp)
@@ -124,18 +201,6 @@ pub fn draw_gallery_view(
             || i.key_pressed(egui::Key::PageDown)
     });
 
-    if !modal_input_blocked && is_focused {
-        if let Some(a) = handle_keyboard_navigation(
-            ui.ctx(),
-            filtered_indices,
-            &files.to_vec(),
-            false,
-            page_size,
-            explorer_state,
-        ) {
-            action = Some(a);
-        }
-    }
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let mut best_hovered_tile: Option<(f32, bool, PathBuf, egui::Rect)> = None;
     let mut current_hovered_drop_target: Option<PathBuf> = None;
@@ -149,31 +214,61 @@ pub fn draw_gallery_view(
         gallery_rect.right_bottom(),
     );
 
+    let layout = TileLayout::new(
+        display_mode,
+        gallery_state,
+        palette,
+        scroll_rect.size(),
+        filtered_indices.len(),
+    );
+    let (rows, columns) = (layout.rows, layout.columns);
+    let (row_pitch, col_pitch) = (layout.row_pitch, layout.col_pitch);
+    let content_size = layout.content_size(scroll_rect.size());
+    let page_size = ((scroll_rect.height() / row_pitch).floor().max(1.0) as usize) * columns;
+
+    if !modal_input_blocked && is_focused {
+        if let Some(a) = handle_keyboard_navigation(
+            ui.ctx(),
+            filtered_indices,
+            &files.to_vec(),
+            false,
+            page_size,
+            explorer_state,
+        ) {
+            action = Some(a);
+        }
+    }
+
     ui.scope_builder(egui::UiBuilder::new().max_rect(scroll_rect), |ui| {
         egui::ScrollArea::vertical()
             .id_salt(("item_viewer_gallery_scroll", active_tab_id))
             .auto_shrink([false, true])
             .show_viewport(ui, |ui, viewport| {
-                ui.set_width(available_width);
-                ui.set_min_height(content_height);
+                ui.set_width(content_size.x);
+                ui.set_min_height(content_size.y);
 
                 let visible_start_row = (viewport.top() / row_pitch).floor().max(0.0) as usize;
                 let visible_end_row = (viewport.bottom() / row_pitch).ceil().max(0.0) as usize;
-                let nearby_start_row = visible_start_row.saturating_sub(2);
-                let nearby_end_row = (visible_end_row + 3).min(rows);
+                let visible_start_col = (viewport.left() / col_pitch).floor().max(0.0) as usize;
+                let visible_end_col =
+                    ((viewport.right() / col_pitch).ceil().max(0.0) as usize + 1).min(columns);
 
-                for row in nearby_start_row..nearby_end_row {
-                    for col in 0..columns {
-                        let item_index = row * columns + col;
-                        let Some(&file_index) = filtered_indices.get(item_index) else {
-                            continue;
-                        };
-                        let priority = if row >= visible_start_row && row <= visible_end_row {
-                            ThumbnailPriority::Visible
-                        } else {
-                            ThumbnailPriority::Nearby
-                        };
-                        thumbnail_service.request(&files[file_index], priority);
+                if layout.shows_thumbnails() {
+                    let nearby_start_row = visible_start_row.saturating_sub(2);
+                    let nearby_end_row = (visible_end_row + 3).min(rows);
+                    for row in nearby_start_row..nearby_end_row {
+                        for col in 0..columns {
+                            let Some(&file_index) = filtered_indices.get(layout.index(row, col))
+                            else {
+                                continue;
+                            };
+                            let priority = if row >= visible_start_row && row <= visible_end_row {
+                                ThumbnailPriority::Visible
+                            } else {
+                                ThumbnailPriority::Nearby
+                            };
+                            thumbnail_service.request(&files[file_index], priority);
+                        }
                     }
                 }
 
@@ -190,15 +285,12 @@ pub fn draw_gallery_view(
                                 (focus_idx % columns) as f32 * col_pitch,
                                 (focus_idx / columns) as f32 * row_pitch,
                             ),
-                        egui::vec2(tile_width, tile_height),
+                        layout.tile,
                     );
                     ui.scroll_to_rect(focus_rect, Some(egui::Align::Center));
                 }
 
-                let bg_rect = egui::Rect::from_min_size(
-                    content_origin,
-                    egui::vec2(available_width, content_height),
-                );
+                let bg_rect = egui::Rect::from_min_size(content_origin, content_size);
                 let bg_response = ui.interact(
                     bg_rect,
                     ui.id().with(("gallery_background", active_tab_id)),
@@ -206,8 +298,8 @@ pub fn draw_gallery_view(
                 );
 
                 for row in visible_start_row.saturating_sub(1)..(visible_end_row + 2).min(rows) {
-                    for col in 0..columns {
-                        let item_index = row * columns + col;
+                    for col in visible_start_col.saturating_sub(1)..visible_end_col {
+                        let item_index = layout.index(row, col);
                         let Some(&file_index) = filtered_indices.get(item_index) else {
                             continue;
                         };
@@ -216,7 +308,7 @@ pub fn draw_gallery_view(
                         let rect = egui::Rect::from_min_size(
                             content_origin
                                 + egui::vec2(col as f32 * col_pitch, row as f32 * row_pitch),
-                            egui::vec2(tile_width, tile_height),
+                            layout.tile,
                         );
                         let (response, tile_action) = draw_gallery_tile(
                             i18n,
@@ -224,7 +316,7 @@ pub fn draw_gallery_view(
                             file,
                             item_index,
                             rect,
-                            thumb_size,
+                            &layout,
                             icon_cache,
                             thumbnail_service,
                             explorer_state,
@@ -233,7 +325,6 @@ pub fn draw_gallery_view(
                             is_cut_mode,
                             palette,
                             &font_id,
-                            &gallery_state,
                         );
 
                         if let Some(a) = tile_action {
@@ -372,6 +463,7 @@ pub fn draw_gallery_view(
                         .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
                         .show(|ui| {
                             apply_eden_text_overrides(ui, palette);
+                            draw_view_submenu(ui, palette, current_view, &mut action);
                             if ui.button("New Folder").clicked() {
                                 action = Some(ItemViewerAction::CreateFolder);
                                 ui.close();
@@ -434,11 +526,13 @@ pub fn draw_gallery_view(
     action
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_gallery_toolbar(
     ui: &mut egui::Ui,
     i18n: &I18n,
     palette: &ThemePalette,
     gallery_state: &mut GalleryState,
+    display_mode: ItemViewerDisplayMode,
     sort_column: SortColumn,
     sort_ascending: bool,
 ) -> Option<ItemViewerAction> {
@@ -498,27 +592,24 @@ fn draw_gallery_toolbar(
                 },
             );
 
-            for size in [
-                GalleryThumbnailSize::ExtraSmall,
-                GalleryThumbnailSize::Small,
-                GalleryThumbnailSize::Medium,
-                GalleryThumbnailSize::Large,
-                GalleryThumbnailSize::ExtraLarge,
-            ] {
-                if ui
-                    .selectable_label(
-                        gallery_state.thumbnail_size == size,
-                        egui::RichText::new(size.label()).color(
-                            if gallery_state.thumbnail_size == size {
-                                palette.text_header_section
-                            } else {
-                                palette.text_header_section
-                            },
-                        ),
-                    )
-                    .clicked()
-                {
-                    gallery_state.set_thumbnail_size(size);
+            // Fine-grained thumbnail sizes only make sense for the icon grid.
+            if display_mode == ItemViewerDisplayMode::Gallery {
+                for size in [
+                    GalleryThumbnailSize::ExtraSmall,
+                    GalleryThumbnailSize::Small,
+                    GalleryThumbnailSize::Medium,
+                    GalleryThumbnailSize::Large,
+                    GalleryThumbnailSize::ExtraLarge,
+                ] {
+                    if ui
+                        .selectable_label(
+                            gallery_state.thumbnail_size == size,
+                            egui::RichText::new(size.label()).color(palette.text_header_section),
+                        )
+                        .clicked()
+                    {
+                        gallery_state.set_thumbnail_size(size);
+                    }
                 }
             }
         },
@@ -534,7 +625,7 @@ fn draw_gallery_tile(
     file: &FileItem,
     item_index: usize,
     rect: egui::Rect,
-    thumb_size: f32,
+    layout: &TileLayout,
     icon_cache: &IconCache,
     thumbnail_service: &mut ThumbnailService,
     explorer_state: &ExplorerState,
@@ -543,7 +634,6 @@ fn draw_gallery_tile(
     is_cut_mode: bool,
     palette: &ThemePalette,
     font_id: &FontId,
-    gallery_state: &GalleryState,
 ) -> (egui::Response, Option<ItemViewerAction>) {
     let response = ui.interact(
         rect,
@@ -570,49 +660,157 @@ fn draw_gallery_tile(
         tile_painter.rect_filled(rect, egui::CornerRadius::same(palette.medium_radius), bg);
     }
 
-    let preview_rect = egui::Rect::from_center_size(
-        egui::pos2(
-            rect.center().x,
-            rect.top() + gallery_state.thumbnail_padding + thumb_size * 0.5,
-        ),
-        egui::vec2(thumb_size, thumb_size),
-    );
+    let text_color = if is_selected {
+        palette.item_viewer_row_text_selected
+    } else {
+        palette.text_normal
+    };
 
-    tile_painter.rect_filled(
-        preview_rect,
-        egui::CornerRadius::same(palette.medium_radius),
-        palette.application_bg_color.linear_multiply(0.65),
-    );
+    let name_rect = if layout.mode == ItemViewerDisplayMode::Gallery {
+        let thumb_size = layout.icon;
+        let preview_rect = egui::Rect::from_center_size(
+            egui::pos2(
+                rect.center().x,
+                rect.top() + layout.padding + thumb_size * 0.5,
+            ),
+            egui::vec2(thumb_size, thumb_size),
+        );
 
-    tile_painter.rect_stroke(
-        preview_rect,
-        egui::CornerRadius::same(palette.medium_radius),
-        egui::Stroke::new(1.0, palette.borders_default.linear_multiply(0.8)),
-        egui::StrokeKind::Inside,
-    );
+        tile_painter.rect_filled(
+            preview_rect,
+            egui::CornerRadius::same(palette.medium_radius),
+            palette.application_bg_color.linear_multiply(0.65),
+        );
 
-    // Clip image/icon rendering specifically to the preview rectangle.
-    let preview_painter = tile_painter.with_clip_rect(preview_rect.intersect(ui.clip_rect()));
+        tile_painter.rect_stroke(
+            preview_rect,
+            egui::CornerRadius::same(palette.medium_radius),
+            egui::Stroke::new(1.0, palette.borders_default.linear_multiply(0.8)),
+            egui::StrokeKind::Inside,
+        );
+
+        paint_file_visual(
+            ui,
+            &tile_painter,
+            file,
+            preview_rect,
+            (thumb_size * 0.35).clamp(26.0, 80.0),
+            true,
+            is_cut,
+            icon_cache,
+            thumbnail_service,
+            palette,
+        );
+
+        egui::Rect::from_min_max(
+            egui::pos2(rect.left() + layout.padding, preview_rect.bottom() + 8.0),
+            egui::pos2(rect.right() - layout.padding, rect.bottom() - 4.0),
+        )
+    } else {
+        // Icon on the left, text lines to its right.
+        let left_pad = 6.0;
+        let icon_rect = egui::Rect::from_min_size(
+            egui::pos2(rect.left() + left_pad, rect.center().y - layout.icon * 0.5),
+            egui::vec2(layout.icon, layout.icon),
+        );
+        paint_file_visual(
+            ui,
+            &tile_painter,
+            file,
+            icon_rect,
+            layout.icon,
+            layout.shows_thumbnails(),
+            is_cut,
+            icon_cache,
+            thumbnail_service,
+            palette,
+        );
+
+        let text_left = icon_rect.right() + if layout.icon > 20.0 { 10.0 } else { 6.0 };
+        let name_rect = egui::Rect::from_min_max(
+            egui::pos2(text_left, rect.center().y - layout.line_height * 0.5),
+            egui::pos2(
+                rect.right() - 8.0,
+                rect.center().y + layout.line_height * 0.5,
+            ),
+        );
+        // While the name is being edited the text box takes its place.
+        if !rename_state.as_ref().is_some_and(|rs| rs.path == file.path) {
+            let (name, _) =
+                truncate_item_text(ui, &file.name, name_rect.width(), font_id, text_color);
+            tile_painter.text(
+                name_rect.left_center(),
+                egui::Align2::LEFT_CENTER,
+                name,
+                font_id.clone(),
+                text_color,
+            );
+        }
+        name_rect
+    };
+
+    if rename_state.as_ref().is_some_and(|rs| rs.path == file.path) {
+        let action = handle_editing_file_name(
+            ui,
+            i18n,
+            file,
+            is_selected,
+            palette,
+            name_rect,
+            rename_state,
+        );
+        return (response, action);
+    }
+
+    if layout.mode == ItemViewerDisplayMode::Gallery {
+        let (name, _) = truncate_item_text(ui, &file.name, name_rect.width(), font_id, text_color);
+        tile_painter.text(
+            name_rect.center_top(),
+            egui::Align2::CENTER_TOP,
+            name,
+            font_id.clone(),
+            text_color,
+        );
+    }
+
+    (response.on_hover_text(&file.name), None)
+}
+
+/// Draws a file's thumbnail (when allowed and available) or its icon into
+/// `rect`, with icons drawn at `icon_size` in the middle of it.
+#[allow(clippy::too_many_arguments)]
+fn paint_file_visual(
+    ui: &mut egui::Ui,
+    tile_painter: &egui::Painter,
+    file: &FileItem,
+    rect: egui::Rect,
+    icon_size: f32,
+    allow_thumbnail: bool,
+    is_cut: bool,
+    icon_cache: &IconCache,
+    thumbnail_service: &mut ThumbnailService,
+    palette: &ThemePalette,
+) {
+    // Clip image/icon rendering to the visual's box.
+    let painter = tile_painter.with_clip_rect(rect.intersect(tile_painter.clip_rect()));
+    let icon_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(icon_size, icon_size));
+    let full_uv = egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0));
+    let icon_tint = if is_cut {
+        palette.icon_colored_hover.linear_multiply(0.45)
+    } else {
+        palette.icon_colored_hover
+    };
 
     // Keep the app's custom folder glyphs ahead of both Windows thumbnails and
-    // shell icons so recognized folders keep their visual identity in Gallery.
+    // shell icons so recognized folders keep their visual identity.
     if let Some(glyph) = icon_cache.get_custom_folder_icon(&file.path, file.is_dir) {
-        let icon_size = (thumb_size * 0.35).clamp(26.0, 80.0);
-        let icon_rect =
-            egui::Rect::from_center_size(preview_rect.center(), egui::vec2(icon_size, icon_size));
-        let icon_color = if is_cut {
-            palette.icon_colored_hover.linear_multiply(0.45)
-        } else {
-            palette.icon_colored_hover
-        };
-
         ui.scope_builder(egui::UiBuilder::new().max_rect(icon_rect), |icon_ui| {
             paint_icon(
                 icon_ui,
                 icon_ui.max_rect(),
                 glyph.regular(),
                 icon_size,
-                icon_color,
+                icon_tint,
             );
         });
     } else if file.is_dir {
@@ -620,41 +818,26 @@ fn draw_gallery_tile(
         // Use the path-specific shell icon instead, including desktop.ini
         // customizations, and only show the neutral placeholder while it loads.
         if let Some(icon) = icon_cache.get(&file.path, true) {
-            let icon_size = (thumb_size * 0.35).clamp(26.0, 80.0);
-            let icon_rect = egui::Rect::from_center_size(
-                preview_rect.center(),
-                egui::vec2(icon_size, icon_size),
-            );
-
-            preview_painter.image(
-                (&icon).into(),
-                icon_rect,
-                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-                if is_cut {
-                    palette.icon_colored_hover.linear_multiply(0.45)
-                } else {
-                    palette.icon_colored_hover
-                },
-            );
+            painter.image((&icon).into(), icon_rect, full_uv, icon_tint);
         } else {
-            ui.scope_builder(egui::UiBuilder::new().max_rect(preview_rect), |icon_ui| {
-                let size = (thumb_size * 0.35).clamp(24.0, 80.0);
+            ui.scope_builder(egui::UiBuilder::new().max_rect(icon_rect), |icon_ui| {
                 paint_icon(
                     icon_ui,
                     icon_ui.max_rect(),
                     AppIcon::FolderSimple.regular(),
-                    size,
+                    icon_size,
                     palette.text_header_section,
                 );
             });
         }
-    } else if let Some(texture) = thumbnail_service.texture_for(ui.ctx(), file) {
-        let image_rect = fit_rect(texture.size_vec2(), preview_rect);
-
-        preview_painter.image(
+    } else if let Some(texture) = allow_thumbnail
+        .then(|| thumbnail_service.texture_for(ui.ctx(), file))
+        .flatten()
+    {
+        painter.image(
             texture.id(),
-            image_rect,
-            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+            fit_rect(texture.size_vec2(), rect),
+            full_uv,
             if is_cut {
                 egui::Color32::WHITE.linear_multiply(0.45)
             } else {
@@ -662,80 +845,18 @@ fn draw_gallery_tile(
             },
         );
     } else if let Some(icon) = icon_cache.get(&file.path, file.is_dir) {
-        let icon_size = (thumb_size * 0.35).clamp(26.0, 80.0);
-
-        let icon_rect =
-            egui::Rect::from_center_size(preview_rect.center(), egui::vec2(icon_size, icon_size));
-
-        preview_painter.image(
-            (&icon).into(),
-            icon_rect,
-            egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
-            if is_cut {
-                palette.icon_colored_hover.linear_multiply(0.45)
-            } else {
-                palette.icon_colored_hover
-            },
-        );
+        painter.image((&icon).into(), icon_rect, full_uv, icon_tint);
     } else {
-        ui.scope_builder(egui::UiBuilder::new().max_rect(preview_rect), |icon_ui| {
-            let size = (thumb_size * 0.35).clamp(24.0, 80.0);
+        ui.scope_builder(egui::UiBuilder::new().max_rect(icon_rect), |icon_ui| {
             paint_icon(
                 icon_ui,
                 icon_ui.max_rect(),
                 AppIcon::ImageSquare.regular(),
-                size,
+                icon_size,
                 palette.text_header_section,
             );
         });
     }
-
-    let text_rect = egui::Rect::from_min_max(
-        egui::pos2(
-            rect.left() + gallery_state.thumbnail_padding,
-            preview_rect.bottom() + 8.0,
-        ),
-        egui::pos2(
-            rect.right() - gallery_state.thumbnail_padding,
-            rect.bottom() - 4.0,
-        ),
-    );
-
-    let editing_path = rename_state.as_ref().map(|rs| rs.path.clone());
-
-    if let Some(path) = editing_path {
-        if path == file.path {
-            let action = handle_editing_file_name(
-                ui,
-                i18n,
-                file,
-                is_selected,
-                palette,
-                text_rect,
-                rename_state,
-            );
-
-            return (response, action);
-        }
-    }
-
-    let text_color = if is_selected {
-        palette.item_viewer_row_text_selected
-    } else {
-        palette.text_normal
-    };
-
-    let (name, _) = truncate_item_text(ui, &file.name, text_rect.width(), font_id, text_color);
-
-    tile_painter.text(
-        text_rect.center_top(),
-        egui::Align2::CENTER_TOP,
-        name,
-        font_id.clone(),
-        text_color,
-    );
-
-    (response.on_hover_text(&file.name), None)
 }
 
 fn fit_rect(image_size: egui::Vec2, bounds: egui::Rect) -> egui::Rect {

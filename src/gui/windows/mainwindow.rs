@@ -17,7 +17,7 @@ use crate::gui::windows::containers::sidebar::draw_sidebar;
 use crate::gui::windows::containers::structs::{
     FavoriteItem, FileOpState, ItemViewerColumnState, ItemViewerFolderSizeState,
     ItemViewerNavBarAction, RenameState, SidebarAction, SplitSide, TabInfo, TabState, TabsAction,
-    TagsState, UpdateWindow,
+    TagsState, UpdateWindow, ViewPreset,
 };
 use crate::gui::windows::containers::tabs::draw_tabs;
 use crate::gui::windows::containers::tags::{
@@ -494,6 +494,10 @@ impl eframe::App for MainWindow {
         let mut secondary_pending_action: Option<ItemViewerAction> = None;
         let mut tags_changed = false;
         let has_split = self.tabs[self.active_tab].split_view.is_some();
+        let current_view = {
+            let view = self.tabs[self.active_tab].view(self.focused_split);
+            (!view.nav.is_root() && !view.nav.is_recycle_bin()).then(|| ViewPreset::of(view))
+        };
 
         let offset = egui::vec2(8.0, 8.0);
 
@@ -535,19 +539,38 @@ impl eframe::App for MainWindow {
                             egui::vec2(sidebar_width, ui.available_height() + 15.5),
                             egui::Layout::top_down(egui::Align::Min),
                             |ui| {
-                                egui::Frame::NONE.show(ui, |ui| {
-                                    ui.add_space(8.0);
-                                    topbar_action = Some(draw_topbar(
-                                        ui,
-                                        &self.i18n,
-                                        self.theme == ThemeMode::Dark,
-                                        self.display_file_explorer,
-                                        self.sidebar_collapsed,
-                                        self.hwnd,
-                                        &palette,
-                                        has_split,
-                                    ));
-                                });
+                                let sidebar_topbar_rect = ui
+                                    .allocate_exact_size(
+                                        // The sidebar frame's 1 px top stroke rasterizes on the
+                                        // following row, so end this region one pixel before the
+                                        // tab strip's 32 px allocation to keep the boundary flush.
+                                        egui::vec2(sidebar_width, 31.0),
+                                        egui::Sense::hover(),
+                                    )
+                                    .0;
+                                let sidebar_topbar_draw_rect = egui::Rect::from_min_size(
+                                    sidebar_topbar_rect.min,
+                                    egui::vec2(sidebar_width, 32.0),
+                                );
+                                ui.scope_builder(
+                                    egui::UiBuilder::new().max_rect(sidebar_topbar_draw_rect),
+                                    |ui| {
+                                        egui::Frame::NONE.show(ui, |ui| {
+                                            ui.add_space(8.0);
+                                            topbar_action = Some(draw_topbar(
+                                                ui,
+                                                &self.i18n,
+                                                self.theme == ThemeMode::Dark,
+                                                self.display_file_explorer,
+                                                self.sidebar_collapsed,
+                                                self.hwnd,
+                                                &palette,
+                                                has_split,
+                                                current_view,
+                                            ));
+                                        });
+                                    },
+                                );
                                 if !self.sidebar_collapsed {
                                     sidebar_frame.show(ui, |ui| {
                                         sidebar_action = Some(draw_sidebar(
