@@ -229,6 +229,22 @@ pub fn handle_context_menu_actions(
         ui.close();
     }
 
+    let all_shortcuts = context_paths.iter().all(|path| {
+        path.extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("lnk"))
+    });
+
+    if ui
+        .add_enabled(
+            all_shortcuts,
+            egui::Button::new(i18n.tr("open_file_location")),
+        )
+        .clicked()
+    {
+        *action = Some(ItemViewerAction::OpenFileLocation(context_paths.clone()));
+        ui.close();
+    }
+
     ui.separator();
 
     if ui
@@ -311,6 +327,7 @@ pub fn handle_context_menu_actions(
     if settings_window
         .current_settings
         .windows_context_menu_enabled
+        && !all_shortcuts
     {
         // The native mode owns the complete context menu. Close the egui
         // popup after the shell menu returns so only one menu is visible.
@@ -325,27 +342,69 @@ pub fn handle_context_menu_actions(
         return;
     }
 
-    // Compatibility mode keeps Eden's menu and appends every Windows shell
-    // command directly below it, without a submenu or hover toggle.
+    // Compatibility mode keeps Eden's menu and appends the Windows shell menu
+    // while preserving the shell-provided submenu hierarchy.
     ui.separator();
     if let Some(cache) = explorer_state.windows_context_menu_cache.as_ref() {
-        for item in cache.menu.items() {
-            if ui
-                .add_enabled(!item.disabled, egui::Button::new(&item.label))
-                .clicked()
-            {
-                if let Some(hwnd) = hwnd {
-                    if let Err(err) = cache.menu.invoke(hwnd, item.id) {
-                        eprintln!("Windows menu invoke failed: {}", err);
-                    }
-                }
-                ui.close();
-            }
-        }
+        draw_shell_menu_items(ui, cache.menu.items(), &cache.menu, hwnd, all_shortcuts);
     } else if hwnd.is_none() {
         ui.label(i18n.tr("contextmenu_windows_menu_available_missing"));
     } else {
         ui.label(i18n.tr("contextmenu_windows_menu_unavailable"));
+    }
+}
+
+fn draw_shell_menu_items(
+    ui: &mut egui::Ui,
+    items: &[crate::gui::windows::shell_context_menu::ShellContextMenuItem],
+    menu: &ShellContextMenu,
+    hwnd: Option<HWND>,
+    suppress_open_file_location: bool,
+) {
+    for item in items {
+        if suppress_open_file_location
+            && item
+                .label
+                .replace('&', "")
+                .trim()
+                .eq_ignore_ascii_case("Open file location")
+        {
+            continue;
+        }
+
+        if item.children.is_empty() {
+            if ui
+                .add_enabled(!item.disabled, egui::Button::new(&item.label))
+                .clicked()
+            {
+                invoke_shell_menu_item(menu, hwnd, item);
+                ui.close();
+            }
+        } else {
+            ui.add_enabled_ui(!item.disabled, |ui| {
+                ui.menu_button(&item.label, |ui| {
+                    draw_shell_menu_items(
+                        ui,
+                        &item.children,
+                        menu,
+                        hwnd,
+                        suppress_open_file_location,
+                    );
+                });
+            });
+        }
+    }
+}
+
+fn invoke_shell_menu_item(
+    menu: &ShellContextMenu,
+    hwnd: Option<HWND>,
+    item: &crate::gui::windows::shell_context_menu::ShellContextMenuItem,
+) {
+    if let Some(hwnd) = hwnd {
+        if let Err(err) = menu.invoke_item(hwnd, item) {
+            eprintln!("Windows menu invoke failed: {}", err);
+        }
     }
 }
 
@@ -1501,6 +1560,7 @@ pub fn handle_keyboard_navigation(
     filtered_indices: &[usize],
     files: &Vec<FileItem>,
     is_drive_view: bool,
+    page_size: usize,
     explorer_state: &mut ExplorerState,
 ) -> Option<ItemViewerAction> {
     if filtered_indices.is_empty() {
@@ -1539,6 +1599,25 @@ pub fn handle_keyboard_navigation(
     let mut action: Option<ItemViewerAction> = None;
     let home_pressed = ctx.input(|i| i.key_pressed(egui::Key::Home));
     let end_pressed = ctx.input(|i| i.key_pressed(egui::Key::End));
+    let page_up_pressed = ctx.input(|i| i.key_pressed(egui::Key::PageUp));
+    let page_down_pressed = ctx.input(|i| i.key_pressed(egui::Key::PageDown));
+
+    let page_target = |current: usize, direction: i32| {
+        let amount = page_size.max(1);
+        let target = if direction < 0 {
+            current.saturating_sub(amount)
+        } else {
+            current
+                .saturating_add(amount)
+                .min(filtered_indices.len() - 1)
+        };
+
+        if is_selectable(target) {
+            Some(target)
+        } else {
+            next_selectable(target, direction).or_else(|| next_selectable(target, -direction))
+        }
+    };
 
     let current_index = explorer_state
         .selected_paths
@@ -1627,6 +1706,18 @@ pub fn handle_keyboard_navigation(
             }
         }
 
+        if page_down_pressed {
+            if let Some(next) = page_target(focus, 1) {
+                new_focus = next;
+            }
+        }
+
+        if page_up_pressed {
+            if let Some(prev) = page_target(focus, -1) {
+                new_focus = prev;
+            }
+        }
+
         if home_pressed {
             if let Some(first) = first_selectable() {
                 new_focus = first;
@@ -1671,6 +1762,18 @@ pub fn handle_keyboard_navigation(
 
         if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
             if let Some(prev) = next_selectable(current_idx, -1) {
+                new_idx = prev;
+            }
+        }
+
+        if page_down_pressed {
+            if let Some(next) = page_target(current_idx, 1) {
+                new_idx = next;
+            }
+        }
+
+        if page_up_pressed {
+            if let Some(prev) = page_target(current_idx, -1) {
                 new_idx = prev;
             }
         }

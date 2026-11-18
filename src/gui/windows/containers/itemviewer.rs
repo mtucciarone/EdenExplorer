@@ -232,6 +232,8 @@ pub fn draw_item_viewer(
                 || i.key_pressed(egui::Key::ArrowUp)
                 || i.key_pressed(egui::Key::Home)
                 || i.key_pressed(egui::Key::End)
+                || i.key_pressed(egui::Key::PageUp)
+                || i.key_pressed(egui::Key::PageDown)
         });
 
         let column_layout = compute_item_viewer_column_layout(
@@ -258,6 +260,20 @@ pub fn draw_item_viewer(
         }
 
         let available_height = ui.available_height();
+        let page_size = (available_height / layout.row_height).floor().max(1.0) as usize;
+
+        if !modal_input_blocked && is_focused {
+            if let Some(a) = handle_keyboard_navigation(
+                ui.ctx(),
+                &filter_state.cached_indices,
+                files,
+                layout.is_drive_view,
+                page_size,
+                explorer_state,
+            ) {
+                action = Some(a);
+            }
+        }
         // IMPORTANT: register background interaction before TableBuilder.
         let bg_response = table_background_response(ui);
         let table_rect = ui.available_rect_before_wrap();
@@ -766,18 +782,6 @@ pub fn draw_item_viewer(
 
             *hovered_drop_target_out = hovered_drop_target.clone();
             *hovered_drop_target_rect_out = hovered_drop_target_rect;
-
-            if !modal_input_blocked {
-                if let Some(a) = handle_keyboard_navigation(
-                    ui.ctx(),
-                    &filter_state.cached_indices,
-                    files,
-                    layout.is_drive_view,
-                    explorer_state,
-                ) {
-                    action = Some(a);
-                }
-            }
 
             // --- Drag and Drop Detection ---
             *external_drag_to_internal_hover = native_drag_active || external_file_hover;

@@ -32,6 +32,7 @@ use crate::gui::windows::customizetheme::draw_theme_customizer;
 use crate::gui::windows::enums::{SettingsAction, ThemeCustomizerAction};
 use crate::gui::windows::settings::draw_settings_window;
 use crate::gui::windows::structs::{AppSettings, Navigation, ThemeCustomizer};
+use crate::gui::windows::updates::{draw_update_window, start_update_check};
 use crate::gui::windows::windowsoverrides::toggle_window_fullscreen;
 use crate::gui::windows::windowsoverrides::{mark_clipboard_dirty, save_manual_window_size};
 use crossbeam_channel::Receiver;
@@ -1446,6 +1447,22 @@ impl MainWindow {
         draw_about_window(&mut self.i18n, ctx, &mut self.about_window, palette);
     }
 
+    pub fn handle_draw_update_window(&mut self, ctx: &egui::Context, palette: &ThemePalette) {
+        if let Some(url) = draw_update_window(&self.i18n, ctx, &mut self.update_window, palette) {
+            let wide_url: Vec<u16> = url.encode_utf16().chain(std::iter::once(0)).collect();
+            unsafe {
+                let _ = ShellExecuteW(
+                    None,
+                    PCWSTR::null(),
+                    PCWSTR(wide_url.as_ptr()),
+                    PCWSTR::null(),
+                    PCWSTR::null(),
+                    SW_SHOWNORMAL,
+                );
+            }
+        }
+    }
+
     pub fn handle_tabbar_action(
         &mut self,
         tabbar_action: Option<ItemViewerNavBarAction>,
@@ -1952,6 +1969,10 @@ impl MainWindow {
                 self.about_window.open = true;
             }
 
+            if action.check_for_updates {
+                start_update_check(&mut self.update_window);
+            }
+
             if action.exit {
                 if let Some(hwnd) = self.hwnd {
                     unsafe {
@@ -2002,6 +2023,7 @@ impl MainWindow {
         self.theme_customizer.open
             || self.settings_window.open
             || self.about_window.open
+            || self.update_window.open
             || self.tags_state.picker.is_some()
             || self.tags_state.delete_confirmation.is_some()
             || self
@@ -2539,6 +2561,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 | ItemViewerAction::OpenTerminal
                 | ItemViewerAction::Open(_)
                 | ItemViewerAction::OpenWithDefault(_)
+                | ItemViewerAction::OpenFileLocation(_)
                 | ItemViewerAction::OpenInNewTab(_)
                 | ItemViewerAction::OpenInBackgroundTab(_)
                 | ItemViewerAction::OpenInSplitView(_)
@@ -2910,6 +2933,9 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     }
                 }
             }
+            ItemViewerAction::OpenFileLocation(paths) => {
+                open_file_locations_in_explorer(explorer, paths);
+            }
             ItemViewerAction::OpenInNewTab(path) => {
                 explorer.open_new_tab(path);
                 explorer.load_path();
@@ -3079,6 +3105,52 @@ fn open_path_in_explorer(explorer: &mut MainWindow, path: PathBuf) {
     explorer.current_nav_mut().go_to(path);
     explorer.mark_tab_infos_dirty();
     explorer.load_path();
+}
+
+fn open_file_locations_in_explorer(explorer: &mut MainWindow, paths: Vec<PathBuf>) {
+    let mut locations: std::collections::HashMap<PathBuf, Vec<PathBuf>> =
+        std::collections::HashMap::new();
+
+    for path in paths {
+        let Some(target) = resolve_shortcut_target(&path) else {
+            continue;
+        };
+        let Some(parent) = target
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        else {
+            continue;
+        };
+
+        locations
+            .entry(parent.to_path_buf())
+            .or_default()
+            .push(target);
+    }
+
+    for (index, (folder, targets)) in locations.into_iter().enumerate() {
+        if index > 0 {
+            explorer.open_new_tab(folder.clone());
+        }
+
+        prepare_file_location_navigation(explorer, folder, targets);
+        explorer.load_path();
+    }
+}
+
+fn prepare_file_location_navigation(
+    explorer: &mut MainWindow,
+    folder: PathBuf,
+    targets: Vec<PathBuf>,
+) {
+    let side = explorer.focused_split;
+    explorer
+        .active_tab_mut()
+        .view_mut(side)
+        .explorer_state
+        .pending_selection_paths = Some(targets);
+    explorer.current_nav_mut().go_to(folder);
+    explorer.mark_tab_infos_dirty();
 }
 
 /// Modal progress window for an in-flight background file operation (delete /

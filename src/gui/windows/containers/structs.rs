@@ -22,6 +22,7 @@ use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::mpsc::Receiver as StdReceiver;
 
 #[derive(Default)]
 pub struct ExplorerState {
@@ -984,11 +985,41 @@ pub struct TopbarAction {
     pub customize_theme: bool,
     pub open_settings: bool,
     pub about: bool,
+    pub check_for_updates: bool,
     pub exit: bool,
     pub toggle_file_explorer: bool,
     pub toggle_sidebar: bool,
     pub toggle_active_tab_split: bool,
     pub set_view: Option<ViewPreset>,
+}
+
+pub struct UpdateInfo {
+    pub version: String,
+    pub release_url: String,
+}
+
+pub enum UpdateCheckStatus {
+    Idle,
+    Checking,
+    UpToDate { version: String },
+    UpdateAvailable(UpdateInfo),
+    Failed(String),
+}
+
+pub struct UpdateWindow {
+    pub open: bool,
+    pub status: UpdateCheckStatus,
+    pub result_rx: Option<StdReceiver<Result<UpdateInfo, String>>>,
+}
+
+impl Default for UpdateWindow {
+    fn default() -> Self {
+        Self {
+            open: false,
+            status: UpdateCheckStatus::Idle,
+            result_rx: None,
+        }
+    }
 }
 
 #[derive(Default)]

@@ -124,6 +124,18 @@ fn draw_hamburger_menu(
                         ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
                     }
 
+                    if menu_item(
+                        ui,
+                        AppIcon::ArrowsClockwise.regular(),
+                        &i18n.tr("check_for_updates"),
+                        palette,
+                    )
+                    .clicked()
+                    {
+                        action.check_for_updates = true;
+                        ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
+                    }
+
                     if menu_item(ui, AppIcon::X.regular(), &i18n.tr("exit"), palette).clicked() {
                         action.exit = true;
                         ui.memory_mut(|mem| mem.data.insert_temp(menu_id, false));
