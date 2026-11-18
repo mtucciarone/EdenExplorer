@@ -17,7 +17,7 @@ use crate::gui::windows::containers::sidebar::draw_sidebar;
 use crate::gui::windows::containers::structs::{
     FavoriteItem, FileOpState, ItemViewerColumnState, ItemViewerFolderSizeState,
     ItemViewerNavBarAction, RenameState, SidebarAction, SplitSide, TabInfo, TabState, TabsAction,
-    TagsState,
+    TagsState, UpdateWindow,
 };
 use crate::gui::windows::containers::tabs::draw_tabs;
 use crate::gui::windows::containers::tags::{
@@ -55,6 +55,7 @@ pub struct MainWindow {
     pub(crate) theme_customizer: ThemeCustomizer,
     pub(crate) settings_window: SettingsWindow,
     pub(crate) about_window: AboutWindow,
+    pub(crate) update_window: UpdateWindow,
     pub(crate) dropped_files: Vec<PathBuf>,
     pub(crate) external_drag_to_internal_hover: bool,
     pub(crate) dropped_files_pending_ui_refresh: bool,
@@ -253,6 +254,7 @@ impl Default for MainWindow {
             theme_customizer: Default::default(),
             settings_window: Default::default(),
             about_window: Default::default(),
+            update_window: Default::default(),
             dropped_files: Vec::new(), // Files dropped from external drag and drop
             external_drag_to_internal_hover: false, // Whether external drag is hovering over the item viewer
             dropped_files_pending_ui_refresh: false,
@@ -1307,6 +1309,7 @@ impl eframe::App for MainWindow {
         );
         self.handle_draw_settings_window(ui.ctx(), &palette);
         self.handle_draw_about_window(ui.ctx(), &palette);
+        self.handle_draw_update_window(ui.ctx(), &palette);
         self.handle_global_shortcuts(ui.ctx());
 
         if tags_changed {

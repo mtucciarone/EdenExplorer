@@ -42,13 +42,14 @@ const HOTKEYS: &[(&str, &str, bool)] = &[
     ("Alt+Up Arrow", "hotkey_navigate_up", true),
     ("Enter", "hotkey_run_default_program", true),
     ("Ctrl+Delete", "hotkey_permanent_delete", false),
+    ("PageUp / PageDown", "hotkey_page_navigation", false),
 ];
 
 const HOTKEY_GROUPS: &[(&str, &[usize])] = &[
     ("hotkey_group_application", &[0]),
     ("hotkey_group_tabs", &[2, 3, 4, 5]),
     ("hotkey_group_files_folders", &[1, 6, 9, 10, 15, 16]),
-    ("hotkey_group_navigation", &[7, 8, 11, 12, 13, 14]),
+    ("hotkey_group_navigation", &[7, 8, 11, 12, 13, 14, 17]),
 ];
 
 /// Returns the last `max_chars` characters of `s` prefixed with "...", or `s`

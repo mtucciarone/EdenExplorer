@@ -70,6 +70,8 @@ rust-embed = "8"
 sys-locale = "0.3"
 rand = "0.9"
 notify = "8.2"
+semver = "1.0"
+ureq = { version = "2.12", features = ["json"] }
 
 [profile.release]
 opt-level = "z"

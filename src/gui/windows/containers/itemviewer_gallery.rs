@@ -114,6 +114,28 @@ pub fn draw_gallery_view(
         .max(1.0) as usize;
     let rows = filtered_indices.len().div_ceil(columns);
     let content_height = (rows as f32 * row_pitch).max(ui.available_height());
+    let page_size = ((ui.available_height() / row_pitch).floor().max(1.0) as usize) * columns;
+    let keyboard_navigation_pressed = ui.ctx().input(|i| {
+        i.key_pressed(egui::Key::ArrowDown)
+            || i.key_pressed(egui::Key::ArrowUp)
+            || i.key_pressed(egui::Key::Home)
+            || i.key_pressed(egui::Key::End)
+            || i.key_pressed(egui::Key::PageUp)
+            || i.key_pressed(egui::Key::PageDown)
+    });
+
+    if !modal_input_blocked && is_focused {
+        if let Some(a) = handle_keyboard_navigation(
+            ui.ctx(),
+            filtered_indices,
+            &files.to_vec(),
+            false,
+            page_size,
+            explorer_state,
+        ) {
+            action = Some(a);
+        }
+    }
     let font_id = FontId::new(palette.text_size, FontFamily::Proportional);
     let mut best_hovered_tile: Option<(f32, bool, PathBuf, egui::Rect)> = None;
     let mut current_hovered_drop_target: Option<PathBuf> = None;
@@ -156,6 +178,22 @@ pub fn draw_gallery_view(
                 }
 
                 let content_origin = ui.min_rect().min;
+
+                if is_focused
+                    && keyboard_navigation_pressed
+                    && let Some(focus_idx) = explorer_state.selection_focus
+                    && focus_idx < filtered_indices.len()
+                {
+                    let focus_rect = egui::Rect::from_min_size(
+                        content_origin
+                            + egui::vec2(
+                                (focus_idx % columns) as f32 * col_pitch,
+                                (focus_idx / columns) as f32 * row_pitch,
+                            ),
+                        egui::vec2(tile_width, tile_height),
+                    );
+                    ui.scroll_to_rect(focus_rect, Some(egui::Align::Center));
+                }
 
                 let bg_rect = egui::Rect::from_min_size(
                     content_origin,
@@ -392,19 +430,6 @@ pub fn draw_gallery_view(
     *hovered_drop_target_out = current_hovered_drop_target;
     *hovered_drop_target_rect_out = current_hovered_drop_target_rect;
     *external_drag_to_internal_hover = native_drag_active || external_file_hover;
-
-    if !modal_input_blocked
-        && is_focused
-        && let Some(a) = handle_keyboard_navigation(
-            ui.ctx(),
-            filtered_indices,
-            &files.to_vec(),
-            false,
-            explorer_state,
-        )
-    {
-        action = Some(a);
-    }
 
     action
 }

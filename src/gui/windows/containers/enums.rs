@@ -45,6 +45,7 @@ pub enum ItemViewerAction {
     RangeSelect(Vec<PathBuf>),
     Open(PathBuf),
     OpenWithDefault(Vec<PathBuf>),
+    OpenFileLocation(Vec<PathBuf>),
     OpenInNewTab(PathBuf),
     OpenInBackgroundTab(PathBuf),
     OpenInSplitView(PathBuf),

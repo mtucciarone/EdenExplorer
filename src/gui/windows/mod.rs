@@ -10,4 +10,5 @@ pub mod navigation;
 pub mod settings;
 pub mod shell_context_menu;
 pub mod structs;
+pub mod updates;
 pub mod windowsoverrides;
