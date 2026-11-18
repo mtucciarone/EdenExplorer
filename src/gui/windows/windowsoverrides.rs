@@ -8,6 +8,7 @@ use crate::core::launch::receive_copydata;
 use crate::gui::icon_system::AppIcon;
 use crate::gui::theme::ThemePalette;
 use crate::gui::utils::clickable_windows_icon;
+use crate::gui::windows::shell_context_menu::forward_active_shell_menu_message;
 use eframe::egui;
 use egui::Context;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -315,6 +316,16 @@ unsafe extern "system" fn custom_wndproc(
     lparam: LPARAM,
 ) -> LRESULT {
     match msg {
+        WM_INITMENUPOPUP | WM_DRAWITEM | WM_MEASUREITEM | WM_MENUCHAR => unsafe {
+            if let Some(result) = forward_active_shell_menu_message(msg, wparam, lparam) {
+                result
+            } else if let Some(orig) = get_original_wndproc() {
+                CallWindowProcW(orig, hwnd, msg, wparam, lparam)
+            } else {
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+        },
+
         WM_COPYDATA => {
             if receive_copydata(lparam) {
                 request_repaint();
