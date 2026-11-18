@@ -325,27 +325,52 @@ pub fn handle_context_menu_actions(
         return;
     }
 
-    // Compatibility mode keeps Eden's menu and appends every Windows shell
-    // command directly below it, without a submenu or hover toggle.
+    // Compatibility mode keeps Eden's menu and appends the Windows shell menu
+    // while preserving the shell-provided submenu hierarchy.
     ui.separator();
     if let Some(cache) = explorer_state.windows_context_menu_cache.as_ref() {
-        for item in cache.menu.items() {
-            if ui
-                .add_enabled(!item.disabled, egui::Button::new(&item.label))
-                .clicked()
-            {
-                if let Some(hwnd) = hwnd {
-                    if let Err(err) = cache.menu.invoke(hwnd, item.id) {
-                        eprintln!("Windows menu invoke failed: {}", err);
-                    }
-                }
-                ui.close();
-            }
-        }
+        draw_shell_menu_items(ui, cache.menu.items(), &cache.menu, hwnd);
     } else if hwnd.is_none() {
         ui.label(i18n.tr("contextmenu_windows_menu_available_missing"));
     } else {
         ui.label(i18n.tr("contextmenu_windows_menu_unavailable"));
+    }
+}
+
+fn draw_shell_menu_items(
+    ui: &mut egui::Ui,
+    items: &[crate::gui::windows::shell_context_menu::ShellContextMenuItem],
+    menu: &ShellContextMenu,
+    hwnd: Option<HWND>,
+) {
+    for item in items {
+        if item.children.is_empty() {
+            if ui
+                .add_enabled(!item.disabled, egui::Button::new(&item.label))
+                .clicked()
+            {
+                invoke_shell_menu_item(menu, hwnd, item);
+                ui.close();
+            }
+        } else {
+            ui.add_enabled_ui(!item.disabled, |ui| {
+                ui.menu_button(&item.label, |ui| {
+                    draw_shell_menu_items(ui, &item.children, menu, hwnd);
+                });
+            });
+        }
+    }
+}
+
+fn invoke_shell_menu_item(
+    menu: &ShellContextMenu,
+    hwnd: Option<HWND>,
+    item: &crate::gui::windows::shell_context_menu::ShellContextMenuItem,
+) {
+    if let Some(hwnd) = hwnd {
+        if let Err(err) = menu.invoke_item(hwnd, item) {
+            eprintln!("Windows menu invoke failed: {}", err);
+        }
     }
 }
 
