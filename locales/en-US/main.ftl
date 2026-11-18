@@ -96,6 +96,7 @@ item_capital = Item
 move_to_this_folder = Move to this folder
 properties = Properties
 open_default_program = Open in Default Program
+open_file_location = Open File Location
 open_files_default_program = Open Files in Default Program
 inputs_cut = Cut (ctrl+x)
 inputs_copy = Copy (ctrl+c)

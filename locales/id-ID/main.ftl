@@ -94,6 +94,7 @@ item_capital = Item
 move_to_this_folder = Pindahkan ke folder ini
 properties = Properti
 open_default_program = Buka dengan Program Default
+open_file_location = Buka Lokasi File
 open_files_default_program = Buka File dengan Program Default
 inputs_cut = Potong (ctrl+x)
 inputs_copy = Salin (ctrl+c)

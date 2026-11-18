@@ -94,6 +94,7 @@ item_capital = 项目
 move_to_this_folder = 移动到此文件夹
 properties = 属性
 open_default_program = 使用默认程序打开
+open_file_location = 打开文件所在位置
 open_files_default_program = 使用默认程序打开文件
 inputs_cut = 剪切（ctrl+x）
 inputs_copy = 复制（ctrl+c）

@@ -94,6 +94,7 @@ item_capital = 項目
 move_to_this_folder = 移動到此資料夾
 properties = 內容
 open_default_program = 使用預設程式開啟
+open_file_location = 開啟檔案位置
 open_files_default_program = 使用預設程式開啟檔案
 inputs_cut = 剪下（ctrl+x）
 inputs_copy = 複製（ctrl+c）

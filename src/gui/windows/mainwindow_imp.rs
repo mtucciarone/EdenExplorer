@@ -2529,6 +2529,7 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                 | ItemViewerAction::OpenTerminal
                 | ItemViewerAction::Open(_)
                 | ItemViewerAction::OpenWithDefault(_)
+                | ItemViewerAction::OpenFileLocation(_)
                 | ItemViewerAction::OpenInNewTab(_)
                 | ItemViewerAction::OpenInBackgroundTab(_)
                 | ItemViewerAction::OpenInSplitView(_)
@@ -2900,6 +2901,9 @@ pub fn handle_pending_actions(pending_action: Option<ItemViewerAction>, explorer
                     }
                 }
             }
+            ItemViewerAction::OpenFileLocation(paths) => {
+                open_file_locations_in_explorer(explorer, paths);
+            }
             ItemViewerAction::OpenInNewTab(path) => {
                 explorer.open_new_tab(path);
                 explorer.load_path();
@@ -3065,6 +3069,52 @@ fn open_path_in_explorer(explorer: &mut MainWindow, path: PathBuf) {
     explorer.current_nav_mut().go_to(path);
     explorer.mark_tab_infos_dirty();
     explorer.load_path();
+}
+
+fn open_file_locations_in_explorer(explorer: &mut MainWindow, paths: Vec<PathBuf>) {
+    let mut locations: std::collections::HashMap<PathBuf, Vec<PathBuf>> =
+        std::collections::HashMap::new();
+
+    for path in paths {
+        let Some(target) = resolve_shortcut_target(&path) else {
+            continue;
+        };
+        let Some(parent) = target
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        else {
+            continue;
+        };
+
+        locations
+            .entry(parent.to_path_buf())
+            .or_default()
+            .push(target);
+    }
+
+    for (index, (folder, targets)) in locations.into_iter().enumerate() {
+        if index > 0 {
+            explorer.open_new_tab(folder.clone());
+        }
+
+        prepare_file_location_navigation(explorer, folder, targets);
+        explorer.load_path();
+    }
+}
+
+fn prepare_file_location_navigation(
+    explorer: &mut MainWindow,
+    folder: PathBuf,
+    targets: Vec<PathBuf>,
+) {
+    let side = explorer.focused_split;
+    explorer
+        .active_tab_mut()
+        .view_mut(side)
+        .explorer_state
+        .pending_selection_paths = Some(targets);
+    explorer.current_nav_mut().go_to(folder);
+    explorer.mark_tab_infos_dirty();
 }
 
 /// Modal progress window for an in-flight background file operation (delete /

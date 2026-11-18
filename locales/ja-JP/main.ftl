@@ -94,6 +94,7 @@ item_capital = 項目
 move_to_this_folder = このフォルダーへ移動
 properties = プロパティ
 open_default_program = 既定のプログラムで開く
+open_file_location = ファイルの場所を開く
 open_files_default_program = ファイルを既定のプログラムで開く
 inputs_cut = 切り取り（ctrl+x）
 inputs_copy = コピー（ctrl+c）
